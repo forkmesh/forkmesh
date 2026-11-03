@@ -646,6 +646,7 @@ async def plan_pull(reader, branch, number):
         "number": number, "title": values.get("title") or
         "pull request #%d" % number, "state": values.get("status") or "open",
         "author": _record_author(values), "authorKey": values.get("author", ""),
+        "authorName": values.get("authorName", ""),
         "draft": _is_draft(values), "commits": commit_count,
         "ts": values.get("ts") or values.get("createdAt") or "",
         "base": values.get("base", ""), "head": values.get("head", ""),
@@ -1067,6 +1068,22 @@ def folded_conversation(events):
     return folded
 
 
+PULL_DESCRIPTION_TARGET = "description"
+
+
+def folded_description(pull):
+    latest = None
+    for event in pull.get("conversation") or []:
+        if not isinstance(event, dict) or event.get("type") != "comment-edit" \
+                or str(event.get("target") or "") != PULL_DESCRIPTION_TARGET \
+                or not _same_author(event, pull):
+            continue
+        if latest is None or _timestamp(latest.get("ts")) \
+                <= _timestamp(event.get("ts")):
+            latest = event
+    return str((latest if latest is not None else pull).get("body") or "")
+
+
 def _text_date(value):
     import datetime
     number = _timestamp(value)
@@ -1119,7 +1136,7 @@ def pull_text(bundle):
         "",
         "## Description",
         "",
-        str(pull.get("body") or "").strip() or "(no description)",
+        folded_description(pull).strip() or "(no description)",
         "",
     ]
     events = []

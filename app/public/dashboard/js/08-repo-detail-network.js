@@ -3657,6 +3657,11 @@
         return;
       }
 
+      if (event.target.closest("[data-repo-pull-description-edit]")) {
+        void handleWebPullDescriptionEdit();
+        return;
+      }
+
       const pullCommentEditButton = event.target.closest("[data-repo-pull-comment-edit]");
       if (pullCommentEditButton) {
         void handleWebPullCommentAction("edit", pullCommentEditButton.dataset.repoPullCommentEdit || "");

@@ -638,6 +638,29 @@ def test_pull_text_folds_edits_deletes_and_review_states():
     assert "## Comments and reviews (3)" in text
 
 
+def test_pull_text_shows_the_authors_newest_description_edit():
+    conversation = [
+        {"type": "comment-edit", "target": "description", "authorKey": "ka",
+         "ts": "1790000002000", "body": "Second description"},
+        {"type": "comment-edit", "target": "description", "authorKey": "ka",
+         "ts": "1790000001000", "body": "First description"},
+        {"type": "comment-edit", "target": "description", "authorKey": "kb",
+         "authorName": "bo", "ts": "1790000003000", "body": "Hijacked description"},
+    ]
+    pull = {"number": 9, "title": "T", "author": "ann", "authorKey": "ka",
+            "authorName": "ann", "state": "open", "base": "main", "head": "f",
+            "body": "Original description", "patch": "", "conversation": conversation}
+    text = repo_views.pull_text(types.SimpleNamespace(model={"pull": pull}))
+    assert "## Description\n\nSecond description\n" in text
+    assert "Original description" not in text and "Hijacked" not in text
+    assert "## Comments and reviews (0)" in text
+    by_name = dict(pull, conversation=[{"type": "comment-edit", "target": "description",
+                                        "authorKey": "kz", "authorName": "ANN", "body": "From the desktop"}])
+    assert "From the desktop" in repo_views.pull_text(types.SimpleNamespace(model={"pull": by_name}))
+    untouched = dict(pull, conversation=[])
+    assert "Original description" in repo_views.pull_text(types.SimpleNamespace(model={"pull": untouched}))
+
+
 SHORT_META = ('<meta name="forkmesh-repo-short" content="forkmesh">'
               '<meta name="forkmesh-repo-owner" content="forkmesh">'
               '<meta name="forkmesh-repo-canonical" content="forkmesh">')
