@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-03", "area": "Server", "text": "A network that an administrator is signed in from is no longer blocked as a scanner, and a block already placed on it is lifted within five minutes."},
   {"date": "2026-11-03", "area": "Desktop", "text": "The Claude app no longer opens by itself when a Claude Code agent finishes; adding agents to it is now an opt-in setting in Settings > Agents."},
   {"date": "2026-11-03", "area": "Market", "text": "Browser extension 2.31.0 and CRM 1.51.0 are out, so saving a Zoho Mail or Gmail contact to a CRM list and linking sent emails now work."},
   {"date": "2026-11-03", "area": "Server", "text": "Asking a server for its build version at an address like /BUILD_REV no longer gets your network blocked for a week as a scanner."},

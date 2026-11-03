@@ -32,6 +32,9 @@ PATH_MAX = 300
 IPV6_PREFIX = 64
 RULE_PREFIX = "auto-probe-"
 RULE_PRIORITY = 0
+ADMIN_SEEN_MS = 30 * DAY_MS
+MAX_ADMIN_SESSIONS = 200
+ADMIN_LIFTER = "admin sign-in"
 VISITOR_PREFIX = "probe-visitor:"
 EXEMPT_PATHS = frozenset({"/health", "/readyz"})
 EXEMPT_PREFIXES = ("/api/fleet/",)
@@ -471,6 +474,13 @@ async def observe(env, path, client, now=None, fetch_site=""):
             visitor, window_start, score, json.dumps(paths), now)
         if score < BAN_SCORE:
             return "scored"
+        if target in await admin_targets(env, now):
+            await d1_run(
+                env,
+                "UPDATE probe_visitors SET paths='[]',score=0,window_start=? "
+                "WHERE visitor_bi=?",
+                now, visitor)
+            return "trusted"
         return await _ban(env, visitor, target, client, paths, row, now,
                           current == "ban")
     except Exception as error:
@@ -536,10 +546,44 @@ async def _ban(env, visitor, target, client, paths, row, now, enforce):
     return "observed"
 
 
+async def admin_targets(env, now):
+    rows = await d1_all(
+        env,
+        "SELECT DISTINCT s.client_ip FROM account_sessions AS s "
+        "JOIN users AS u ON u.user_bi=s.account_bi "
+        "WHERE u.is_admin=1 AND s.revoked_at=0 AND s.expires_at>? "
+        "AND s.last_seen_at>? AND s.client_ip<>'' LIMIT ?",
+        now, now - ADMIN_SEEN_MS, MAX_ADMIN_SESSIONS)
+    return {key for key in (
+        _target_key(dict(row).get("client_ip")) for row in rows or [])
+        if key}
+
+
+async def _lift_admin_bans(env, now):
+    lifted = []
+    for target in sorted(await admin_targets(env, now)):
+        rule_id = rule_id_for(
+            await blind_index(env, VISITOR_PREFIX + target))
+        row = await d1_first(
+            env,
+            "SELECT visitor_bi,client,kinds,score FROM probe_bans "
+            "WHERE rule_id=? AND lifted_at=0 AND expires_at>?",
+            rule_id, now)
+        if row:
+            await _release(env, rule_id, dict(row), ADMIN_LIFTER, now)
+            _forget(target)
+            lifted.append(rule_id)
+    return lifted
+
+
 async def sweep(env, now=None):
     await ensure_schema(env)
     now = int(now or _now())
     enforcing = mode(env) == "ban"
+    try:
+        await _lift_admin_bans(env, now)
+    except Exception as error:
+        print("probe ban admin lift failed: %r" % (error,))
     await d1_run(
         env,
         "DELETE FROM request_block_rules WHERE substr(rule_id,1,?)=? "
@@ -572,18 +616,7 @@ async def lift(env, rule_id, account, now=None):
     if not row:
         return "ban_missing"
     row = dict(row)
-    await d1_run(
-        env,
-        "UPDATE probe_bans SET lifted_at=?,lifted_by=?,expires_at=? "
-        "WHERE rule_id=?",
-        now, str(account or "")[:80], now, rule_id)
-    await d1_run(env, "DELETE FROM request_block_rules WHERE rule_id=?",
-                 rule_id)
-    await d1_run(
-        env,
-        "UPDATE probe_visitors SET bans=0,last_ban_at=0,banned_until=0,"
-        "paths='[]',score=0,window_start=? WHERE visitor_bi=?",
-        now, str(row.get("visitor_bi") or ""))
+    await _release(env, rule_id, row, account, now)
     client = await _open(env, row.get("client"))
     if client.get("target"):
         _forget(str(client["target"]))
@@ -592,6 +625,21 @@ async def lift(env, rule_id, account, now=None):
         "success", {"kinds": str(row.get("kinds") or ""),
                     "score": int(row.get("score") or 0)})
     return "ban_lifted"
+
+
+async def _release(env, rule_id, row, lifted_by, now):
+    await d1_run(
+        env,
+        "UPDATE probe_bans SET lifted_at=?,lifted_by=?,expires_at=? "
+        "WHERE rule_id=?",
+        now, str(lifted_by or "")[:80], now, rule_id)
+    await d1_run(env, "DELETE FROM request_block_rules WHERE rule_id=?",
+                 rule_id)
+    await d1_run(
+        env,
+        "UPDATE probe_visitors SET bans=0,last_ban_at=0,banned_until=0,"
+        "paths='[]',score=0,window_start=? WHERE visitor_bi=?",
+        now, str(row.get("visitor_bi") or ""))
 
 
 async def _open(env, sealed):

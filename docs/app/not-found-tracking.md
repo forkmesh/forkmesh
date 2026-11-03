@@ -175,6 +175,17 @@ deep or repository `/api/…` paths, and ordinary asset extensions.
   user-run mirrors are not in the fleet file and are not covered.
 - Bans block the App, World and proxied site routes, not the static
   forkmesh.com files.
+- **An administrator's network is never banned.** A visitor whose address
+  (the IPv4 address or the IPv6 /64) is the sign-in address of a live
+  session of an `is_admin` account (not revoked, not expired, seen in the
+  last 30 days) is not banned when it reaches 3 points: its score is reset
+  and `observe` answers `trusted`. Each sweep also lifts an active ban on
+  such a network (`lifted_by` "admin sign-in"). The operator's coding agents
+  run `curl` from the workstation, with no `Sec-Fetch-Site`, and each new
+  path they guess can look like a probe: on 2026-11-03 a `/BUILD_REV` ban
+  stayed in force after the classifier fix and kept the operator's desktop,
+  web and git out. Trust comes only from an administrator's session, so a
+  scanner cannot earn it by opening an ordinary account.
 
 ### Modes
 
@@ -192,7 +203,8 @@ Outside `ban`, the next sweep deletes every `auto-probe-*` rule.
 
 ### Sweep
 
-Cron phase `probe-bans`, every 5 minutes: delete `auto-probe-*` rules without
+Cron phase `probe-bans`, every 5 minutes: lift active bans on an
+administrator's network (above); delete `auto-probe-*` rules without
 an active enforced ban; delete `probe_bans` rows expired over 7 days ago;
 delete `probe_visitors` unseen for 90 days and not banned; prune the memory
 table.
