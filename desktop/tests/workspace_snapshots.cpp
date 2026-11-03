@@ -11,6 +11,7 @@
 #include "WorkspaceLayout.h"
 
 #include <QApplication>
+#include <algorithm>
 #include <QDateTime>
 #include <QDir>
 #include <QElapsedTimer>
@@ -607,6 +608,33 @@ int runWorkspaceSnapshots(MainWindow &window)
                       remote->isChecked() && remote->isEnabled(),
                   QStringLiteral("the Remote control switch shows the connected phone (%1)")
                       .arg(label));
+            QStringList cards;
+            for (QFrame *card : panels.findChildren<QFrame *>(
+                     QStringLiteral("sessionsDetailCard")))
+                if (card->isVisible())
+                    cards << card->property("sessionsPanel").toString();
+            std::sort(cards.begin(), cards.end(), [&panels](const QString &a, const QString &b) {
+                return panels.cardFrame(a)->y() < panels.cardFrame(b)->y();
+            });
+            check(cards == QStringList{QStringLiteral("environment"), QStringLiteral("context"),
+                                       QStringLiteral("sources"), QStringLiteral("tools")},
+                  QStringLiteral("Environment and Context lead and empty cards stay hidden "
+                                 "(%1): %2")
+                      .arg(label, cards.join(QStringLiteral(", "))));
+            details.claudeRemote = QStringLiteral("on");
+            details.claudeRemoteSource = QStringLiteral("/home/a/.claude.json");
+            panels.setDetails(details);
+            settle();
+            bool claudeRemote = false;
+            for (QLabel *text : panels.cardFrame(QStringLiteral("environment"))
+                                    ->findChildren<QLabel *>(QStringLiteral("sessionsDetailText")))
+                if (text->isVisible() && text->text() == QStringLiteral("Claude Remote Control"))
+                    claudeRemote = text->parentWidget()
+                                       ->findChild<QLabel *>(QStringLiteral("sessionsDetailTrailing"))
+                                       ->text() == QStringLiteral("On");
+            check(claudeRemote, QStringLiteral("Environment shows Claude's own Remote Control "
+                                               "setting (%1)")
+                                    .arg(label));
             QDir().mkpath(dir);
             if (panels.grab().save(
                     QDir(dir).filePath(QStringLiteral("session-panels-phone.png"))))
@@ -733,11 +761,11 @@ int runWorkspaceSnapshots(MainWindow &window)
         settle();
         select(9301);
         settle(20);
-        check(shown(towerPanels()) && shown(subSessionsCard()) &&
+        check(shown(towerPanels()) && subSessionsCard() && !shown(subSessionsCard()) &&
                   !named("agentSubSessionStrip"),
-              QStringLiteral("Control Tower shows the side panels, Sub-sessions "
-                             "among them, beside the transcript instead of a "
-                             "strip above it"));
+              QStringLiteral("Control Tower shows the side panels beside the "
+                             "transcript, Sub-sessions hidden while none run, "
+                             "instead of a strip above it"));
         if (grab(dir, QStringLiteral("agents-control-tower")))
             ++saved;
         window.testSetAppViewMode(AppViewMode::Workspace);

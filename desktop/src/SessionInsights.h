@@ -129,6 +129,7 @@ QString memoryProjectSlug(const QString &path);
 QList<MemoryFile> memoryFiles(const QString &cwd, const QString &home);
 
 QStringList defaultCardOrder();
+bool customCardOrder(const QStringList &saved);
 QStringList normalizedCardOrder(const QStringList &saved);
 QStringList movedCard(const QStringList &order, const QString &key, int toIndex);
 

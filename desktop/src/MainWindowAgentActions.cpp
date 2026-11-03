@@ -34,6 +34,13 @@
 #include "UsageLimitCalendar.h"
 
 #include <QActionGroup>
+#include <QTextBlock>
+#include <QScrollBar>
+#include <QPlainTextEdit>
+#include <QVBoxLayout>
+#include <QSettings>
+#include <QScreen>
+#include <QCloseEvent>
 #include <QThread>
 #include <QComboBox>
 #include <QDebug>
@@ -69,6 +76,16 @@ using namespace forkmesh::ui;
 
 void MainWindow::appendAgentRawLog(const QString &text)
 {
+    if (m_agentRawWindowLog && m_agentRawWindow && m_agentRawWindow->isVisible() &&
+        m_agentRawWindowSession == m_selectedAgentSessionId) {
+        QScrollBar *bar = m_agentRawWindowLog->verticalScrollBar();
+        const bool pinned = !bar || bar->value() >= bar->maximum() - 4;
+        QTextCursor cursor(m_agentRawWindowLog->document());
+        cursor.movePosition(QTextCursor::End);
+        cursor.insertText(redactProviderCredentials(text, localProviderCredentialValues()));
+        if (pinned && bar)
+            bar->setValue(bar->maximum());
+    }
     if (!m_agentLog || !m_agentOutputStack ||
         m_agentOutputStack->currentWidget() != m_agentLog)
         return;
@@ -584,58 +601,132 @@ void MainWindow::refreshAgentAnnouncerButton()
     m_agentAnnouncerButton->setToolTip(tip);
 }
 
+namespace {
+
+constexpr char kAgentRawWindowGeometry[] = "agents/rawWindowGeometry";
+
+class AgentRawWindow : public QWidget
+{
+public:
+    using QWidget::QWidget;
+    std::function<void()> onClosed;
+
+protected:
+    void closeEvent(QCloseEvent *event) override
+    {
+        QSettings().setValue(QLatin1String(kAgentRawWindowGeometry), saveGeometry());
+        QWidget::closeEvent(event);
+        if (onClosed)
+            onClosed();
+    }
+};
+
+} // namespace
+
 void MainWindow::setAgentRawOutputMode(bool raw)
 {
     m_agentRawOutputMode = raw;
     if (m_agentOutputModeButton) {
-        m_agentOutputModeButton->setGlyph(
-            raw ? QStringLiteral("comment") : QStringLiteral("terminal"),
-            raw ? QStringLiteral("Transcript") : QStringLiteral("Raw"));
+        m_agentOutputModeButton->setCheckable(true);
+        m_agentOutputModeButton->setChecked(raw);
         m_agentOutputModeButton->setToolTip(
-            raw ? QStringLiteral("Show this run as rendered transcript cards")
-                : QStringLiteral("Show this run's raw, unformatted output"));
+            raw ? QStringLiteral("Close the window with this run's raw output")
+                : QStringLiteral("Open this run's raw, unformatted output in a window "
+                                 "beside the transcript"));
     }
-    if (raw) {
-        showAgentRawOutput();
-    } else if (m_agentOutputStack && m_agentTranscript) {
-        m_agentOutputStack->setCurrentWidget(m_agentTranscript);
+    if (!raw) {
+        if (m_agentRawWindow && m_agentRawWindow->isVisible()) {
+            QSettings().setValue(QLatin1String(kAgentRawWindowGeometry),
+                                 m_agentRawWindow->saveGeometry());
+            m_agentRawWindow->hide();
+        }
+        return;
+    }
+    ensureAgentRawWindow();
+    refreshAgentRawWindow(true);
+    m_agentRawWindow->show();
+    m_agentRawWindow->raise();
+}
+
+void MainWindow::ensureAgentRawWindow()
+{
+    if (m_agentRawWindow)
+        return;
+    auto *window = new AgentRawWindow(this, Qt::Window);
+    window->setObjectName(QStringLiteral("agentRawWindow"));
+    window->setAttribute(Qt::WA_DeleteOnClose, false);
+    auto *layout = new QVBoxLayout(window);
+    layout->setContentsMargins(0, 0, 0, 0);
+    auto *log = new QPlainTextEdit(window);
+    log->setObjectName(QStringLiteral("agentRawWindowLog"));
+    log->setReadOnly(true);
+    applyLogFont(log);
+    new AgentLogHighlighter(log->document());
+    log->setMaximumBlockCount(30000);
+    layout->addWidget(log);
+    log->setPlaceholderText(QStringLiteral("This session has no raw output yet."));
+    window->onClosed = [this] {
+        QTimer::singleShot(0, this, [this] {
+            if (m_agentRawOutputMode)
+                setAgentRawOutputMode(false);
+        });
+    };
+    m_agentRawWindow = window;
+    m_agentRawWindowLog = log;
+    m_agentRawWindowSession = -1;
+    if (!window->restoreGeometry(
+            QSettings().value(QLatin1String(kAgentRawWindowGeometry)).toByteArray())) {
+        const QRect main = frameGeometry();
+        const QRect screen = this->screen() ? this->screen()->availableGeometry() : main;
+        const int width = qBound(420, main.width() / 3, 760);
+        const int height = qMin(main.height(), screen.height());
+        const int x = main.right() + 8 + width <= screen.right()
+                          ? main.right() + 8
+                          : qMax(screen.left(), main.right() - width);
+        window->setGeometry(x, qMax(screen.top(), main.top()), width, height);
     }
 }
 
-void MainWindow::showAgentRawOutput()
+void MainWindow::refreshAgentRawWindow(bool force)
 {
-    if (!m_agentOutputStack || !m_agentLog)
+    if (!m_agentRawWindow || !m_agentRawWindowLog)
         return;
-    if (m_streamRaw.contains(m_selectedAgentSessionId)) {
-        m_agentLog->setPlainText(
-            redactProviderCredentials(
-                m_streamRaw.value(m_selectedAgentSessionId),
-                localProviderCredentialValues()));
-    } else if (m_agentLogSession == m_selectedAgentSessionId) {
-        m_agentLog->setPlainText(m_agentLogText);
-    }
-    m_agentLogSession = -1; // set out-of-band; the dedup tracker is now stale
-    m_agentOutputStack->setCurrentWidget(m_agentLog);
-    m_agentLog->moveCursor(QTextCursor::End); // always land on the tail when shown
+    if (!force && !m_agentRawWindow->isVisible())
+        return;
+    const int sessionId = m_selectedAgentSessionId;
+    const QString raw = m_streamRaw.contains(sessionId) || m_agentLogSession != sessionId
+                            ? m_streamRaw.value(sessionId)
+                            : m_agentLogText;
+    if (!force && sessionId == m_agentRawWindowSession &&
+        (raw.isEmpty() || !m_agentRawWindowLog->document()->isEmpty()))
+        return;
+    m_agentRawWindowSession = sessionId;
+    QString title = QStringLiteral("Raw output");
+    if (const AgentSession *session = findAgentSession(sessionId))
+        title += QStringLiteral(" \u00B7 ") + sessionsTitle(*session);
+    m_agentRawWindow->setWindowTitle(title);
+    m_agentRawWindowLog->setPlainText(
+        redactProviderCredentials(raw, localProviderCredentialValues()));
+    m_agentRawWindowLog->moveCursor(QTextCursor::End);
 }
 
 void MainWindow::showAgentRawLogEvent(const QJsonObject &event)
 {
     setAgentRawOutputMode(true);
-    if (!m_agentLog || !m_agentOutputStack ||
-        m_agentOutputStack->currentWidget() != m_agentLog)
+    if (!m_agentRawWindow || !m_agentRawWindowLog)
         return;
+    m_agentRawWindow->activateWindow();
     const int at = forkmesh::transcripttools::rawLogLineStart(
-        m_agentLog->toPlainText(), event);
+        m_agentRawWindowLog->toPlainText(), event);
     if (at < 0)
         return;
-    const QTextBlock block = m_agentLog->document()->findBlock(at);
+    const QTextBlock block = m_agentRawWindowLog->document()->findBlock(at);
     QTextCursor line(block);
     line.movePosition(QTextCursor::EndOfBlock);
     line.setPosition(block.position(), QTextCursor::KeepAnchor);
-    m_agentLog->setTextCursor(line);
-    m_agentLog->centerCursor();
-    m_agentLog->setFocus(Qt::OtherFocusReason);
+    m_agentRawWindowLog->setTextCursor(line);
+    m_agentRawWindowLog->centerCursor();
+    m_agentRawWindowLog->setFocus(Qt::OtherFocusReason);
 }
 
 void MainWindow::onAgentLog(int sessionId, const QString &text)

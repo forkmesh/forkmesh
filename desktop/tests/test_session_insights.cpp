@@ -142,7 +142,18 @@ static void testCardOrder()
                             QStringLiteral("progress"), QStringLiteral("tools")};
     const QStringList order = normalizedCardOrder(saved);
     check(order.size() == defaults.size(), "order holds every card once");
-    check(order.value(0) == QLatin1String("tools"), "saved order is kept");
+    check(order.indexOf(QStringLiteral("tools")) < order.indexOf(QStringLiteral("progress")),
+          "saved order is kept");
+    check(defaults.mid(0, 2) == QStringList({QStringLiteral("environment"), QStringLiteral("context")}),
+          "Environment then Context lead the default order");
+    check(!customCardOrder(defaults) && !customCardOrder({}), "the default order is not custom");
+    const QStringList formerDefault{
+        QStringLiteral("progress"), QStringLiteral("subsessions"), QStringLiteral("outputs"),
+        QStringLiteral("sources"),  QStringLiteral("background"),  QStringLiteral("changes"),
+        QStringLiteral("context"),  QStringLiteral("environment"), QStringLiteral("tools")};
+    check(!customCardOrder(formerDefault) && normalizedCardOrder(formerDefault) == defaults,
+          "a saved copy of the former default takes the new default");
+    check(customCardOrder(saved), "a reordered list is custom");
     check(order.indexOf(QStringLiteral("subsessions")) == order.indexOf(QStringLiteral("progress")) + 1,
           "missing cards slot in after their default neighbour");
     check(order.indexOf(QStringLiteral("outputs")) == order.indexOf(QStringLiteral("subsessions")) + 1,

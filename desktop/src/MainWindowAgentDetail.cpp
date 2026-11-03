@@ -1088,6 +1088,7 @@ void MainWindow::showAgentSession(int sessionId)
     }
     if (m_agentOutputModeButton)
         m_agentOutputModeButton->setVisible(transcript);
+    refreshAgentRawWindow(false);
     if (m_agentListenButton) {
         m_agentListenButton->setVisible(transcript);
         refreshAgentListenButton();
@@ -1111,9 +1112,7 @@ void MainWindow::showAgentSession(int sessionId)
         const bool termLive = sessionId == m_terminalSessionId && m_agentTerminal &&
                               m_agentTerminal->isRunning();
         if (transcript) {
-            m_agentOutputStack->setCurrentWidget(
-                m_agentRawOutputMode ? static_cast<QWidget *>(m_agentLog)
-                                     : static_cast<QWidget *>(m_agentTranscript));
+            m_agentOutputStack->setCurrentWidget(m_agentTranscript);
         } else if (termLive) {
             m_agentOutputStack->setCurrentWidget(m_agentTerminal);
         } else {

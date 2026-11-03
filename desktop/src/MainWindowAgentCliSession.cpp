@@ -557,7 +557,6 @@ void MainWindow::startCliTranscript(AgentSession &session, const Issue &issue,
         if (switchToTab && m_selectedAgentSessionId != sid)
             switchToAgentsTab(sid);
         showAgentSession(sid); // renders the buffered turn + selects the surface
-        setAgentRawOutputMode(false); // a fresh run opens on its transcript
     }
     reloadAgents();
 

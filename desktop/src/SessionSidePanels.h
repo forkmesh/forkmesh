@@ -60,6 +60,8 @@ public:
         bool remoteLocal = false;
         QString remotePaired;
         qint64 remoteLastSeenMs = 0;
+        QString claudeRemote;
+        QString claudeRemoteSource;
     };
 
     struct SubSession {
@@ -135,6 +137,7 @@ private:
         QPointer<QPushButton> more;
         QList<Row> rows;
         bool expanded = false;
+        bool empty = true;
     };
 
     Card &makeCard(const QString &key, const QString &title, const QString &hint);
@@ -142,12 +145,16 @@ private:
     Row makeRow(QWidget *parent, bool stop);
     void setRow(const Row &row, const Item &item);
     void fillList(Card &card, const QList<Item> &items, const QString &meta);
-    void fillFixed(Card &card, const QList<Item> &items, const QString &meta);
+    bool fillFixed(Card &card, const QList<Item> &items, const QString &meta);
+    void setCardEmpty(Card &card, bool empty);
+    bool cardShown(const QString &key) const;
+    int neighbourIndex(const QString &key, int step) const;
     void refreshActivity();
     void refreshDetails();
     void refreshRemote();
     void refreshMemory();
     void applyOrder();
+    void applyVisibility();
     void applyCollapsed(Card &card);
     void saveLayout() const;
     void scheduleSlice();

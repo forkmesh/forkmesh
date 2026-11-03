@@ -2780,8 +2780,10 @@ void MainWindow::buildAgentOutputViews(QWidget *detailPane)
 
     m_agentOutputModeButton =
         railActionButton(QStringLiteral("terminal"), QStringLiteral("Raw"),
-                         "Show this run's raw, unformatted output");
+                         "Open this run's raw, unformatted output in a window beside "
+                         "the transcript");
     m_agentOutputModeButton->setObjectName(QStringLiteral("agentOutputModeButton"));
+    m_agentOutputModeButton->setCheckable(true);
     {
         QFont f = QGuiApplication::font();
         f.setPixelSize(10);
