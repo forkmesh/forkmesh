@@ -217,7 +217,8 @@ the ones picked into ordinary stored agents. The run side (resuming with
   else in the checkout.
 - **Transcript.** `ClaudeSessionImport::convertLines` turns typed prompts into
   `_local_user`, keeps assistant turns and tool results with the session id
-  stamped on them, drops sidechains, meta lines and command echoes, and clips
+  stamped on them, drops sidechains, meta lines, command echoes and
+  `<...>`-wrapped text blocks (a prompt's other blocks stay), and clips
   a tool result to 16 KB. The readable log gets both sides, so a later switch
   to Codex hands over the conversation.
 - **Mirroring.** While `claudeImport.bytes` is 0 or more, every 3 s tick
