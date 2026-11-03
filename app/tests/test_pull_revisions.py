@@ -72,7 +72,7 @@ def test_web_signs_the_same_binding_and_offers_the_update_only_to_the_author():
     assert 'webEventSigningPrefix("pull-revision", repo)' in DASHBOARD_JS
     assert "webSessionAuthored({ author: values.author, authorName: values.authorName })" in DASHBOARD_JS
     assert '${renderPullRevisionPanel(number, parsed)}' in DASHBOARD_JS
-    assert 'if (headOid === String(values.creationHeadOid || "").toLowerCase()) throw new Error("no_new_commits");' in DASHBOARD_JS
+    assert 'if (headOid === String(values.creationHeadOid || "").toLowerCase()\n      && baseOid === String(values.creationBaseOid || "").toLowerCase()) throw new Error("no_new_commits");' in DASHBOARD_JS
 
 
 def test_desktop_drains_a_revision_before_treating_the_item_as_an_event():
@@ -102,10 +102,27 @@ def _js_function(name):
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 def test_the_browser_revision_verifies_on_the_relay():
+    script = _revision_harness("""
+(async () => {
+  const repo = { owner: "alice", name: "project" };
+  await submitWebPullRevision(repo, 12, { head: "carol:fix", base: "main", title: "Fix", creationHeadOid: "c".repeat(40) }, "fix-2");
+  process.stdout.write(JSON.stringify(sent));
+})();
+""")
+    result = subprocess.run(["node"], input=script, capture_output=True, text=True, check=True)
+    sent = json.loads(result.stdout)
+    assert sent["number"] == 12 and sent["revision"]["head"] == "carol:fix-2"
+    assert sent["revision"]["creationHeadOid"] == "b" * 40
+    assert _run(EV["verify_pull_revision"](12, sent["revision"], KEYS, False)) is True
+    assert _run(EV["verify_pull_revision"](11, sent["revision"], KEYS, False)) is False
+
+
+def _revision_harness(body):
     names = ("bytesToB64url", "sha256HexLower", "webEventSigningPrefix", "getWebIssueKey",
              "webIssueKeyPublic", "webSessionAuthored", "signWebPullContent",
-             "pullRevisionSource", "submitWebPullRevision")
-    script = """
+             "pullRevisionSource", "pullParentBaseOid", "fetchPullComparison",
+             "submitWebPullRevision")
+    return """
 const ISSUE_TEXT_ENCODER = new TextEncoder();
 const WEB_ISSUE_KEY_STORAGE = "k";
 const store = {};
@@ -118,15 +135,80 @@ async function fetchRepoJson(url) {
 }
 async function fetchRepoMutation(repo, kind, payload) { sent = payload; return { ok: true }; }
 %s
+%s
+""" % ("\n".join(_js_function(name) for name in names), body)
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_the_same_head_on_a_new_base_is_a_new_revision():
+    script = _revision_harness("""
+const repo = { owner: "alice", name: "project" };
+const values = { head: "carol:fix", base: "main", title: "Fix", creationHeadOid: "b".repeat(40) };
 (async () => {
-  const repo = { owner: "alice", name: "project" };
-  await submitWebPullRevision(repo, 12, { head: "carol:fix", base: "main", title: "Fix", creationHeadOid: "c".repeat(40) }, "fix-2");
-  process.stdout.write(JSON.stringify(sent));
+  const outcomes = [];
+  for (const creationBaseOid of ["a".repeat(40), "e".repeat(40)]) {
+    sent = null;
+    try {
+      await submitWebPullRevision(repo, 12, { ...values, creationBaseOid }, "fix");
+      outcomes.push(sent ? "sent" : "none");
+    } catch (error) {
+      outcomes.push(error.message);
+    }
+  }
+  process.stdout.write(JSON.stringify(outcomes));
 })();
-""" % "\n".join(_js_function(name) for name in names)
+""")
     result = subprocess.run(["node"], input=script, capture_output=True, text=True, check=True)
-    sent = json.loads(result.stdout)
-    assert sent["number"] == 12 and sent["revision"]["head"] == "carol:fix-2"
-    assert sent["revision"]["creationHeadOid"] == "b" * 40
-    assert _run(EV["verify_pull_revision"](12, sent["revision"], KEYS, False)) is True
-    assert _run(EV["verify_pull_revision"](11, sent["revision"], KEYS, False)) is False
+    assert json.loads(result.stdout) == ["no_new_commits", "sent"]
+
+
+def _fork_revision_compare(branches_js, compare_js):
+    names = ("pullParentBaseOid", "fetchPullComparison")
+    script = """
+const repoLiveUrl = (repo, op, params) => ({ repo, op, params });
+const asked = [];
+%s
+%s
+%s
+(async () => {
+  const comparison = await fetchPullComparison(
+    { owner: "carol", name: "project" }, "main", "fix-2", { owner: "alice", name: "project" });
+  process.stdout.write(JSON.stringify({ asked, comparison }));
+})();
+""" % (branches_js, compare_js, "\n".join(_js_function(name) for name in names))
+    result = subprocess.run(["node"], input=script, capture_output=True, text=True, check=True)
+    return json.loads(result.stdout)
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_a_fork_pull_compares_against_the_parent_base_tip():
+    tip = "d" * 40
+    out = _fork_revision_compare(
+        """async function fetchRepoBranches(repo, options) {
+  asked.push(["branches", repo.owner, Boolean(options && options.refresh)]);
+  return [{ name: "dev", commit: "e".repeat(40) }, { name: "main", commit: "%s" }];
+}""" % tip.upper(),
+        """async function fetchRepoJson(url) {
+  asked.push(["compare", url.repo.owner, url.params.base, url.params.head]);
+  return { baseOid: url.params.base };
+}""")
+    assert out["asked"] == [["branches", "alice", True], ["compare", "carol", tip, "fix-2"]]
+    assert out["comparison"]["baseOid"] == tip
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_a_fork_pull_falls_back_to_its_own_base_when_the_parent_tip_is_not_there():
+    out = _fork_revision_compare(
+        """async function fetchRepoBranches(repo) { return [{ name: "main", commit: "d".repeat(40) }]; }""",
+        """async function fetchRepoJson(url) {
+  asked.push(["compare", url.params.base]);
+  if (url.params.base !== "main") throw new Error("not_found");
+  return { baseOid: "a".repeat(40) };
+}""")
+    assert out["asked"] == [["compare", "d" * 40], ["compare", "main"]]
+    assert out["comparison"]["baseOid"] == "a" * 40
+
+
+def test_opening_a_fork_pull_compares_against_the_parent():
+    assert 'signWebPull(repo, targetRepo, title, body, base, head, signedHead, "", parent ? targetRepo : null)' in DASHBOARD_JS
+    assert "fetchPullComparison(sourceRepo, base, branch, source.owner ? repo : null)" in DASHBOARD_JS
