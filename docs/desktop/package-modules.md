@@ -161,9 +161,25 @@ from the window. None of them names a package:
 | `setting` / `setSetting` | the package's own settings (`market/packages/<id>/data/...`), removed with the package |
 | `attachPackageMenu(button)` | the right-click package menu (settings, export, remove) on a plugin's own button |
 | `accountApiUrl(path)` | the relay URL for a path under the contribution's `apiPrefix` or one of its `accountPaths`; invalid otherwise |
-| `accountSessionToken(url)` | this account's session token for a relay URL, empty when signed in by key only |
+| `accountSignedIn()` | whether the desktop is signed in to its account: the one sign-in check (see below) |
+| `accountSessionToken(url)` | this account's session token for a relay URL; empty while the desktop is still getting one, which it then starts |
+| `requestAccountSession(done)` | get a session for the account if there is none yet; `done` gets an empty error once `accountSessionToken` answers, else the reason to show |
 | `signProof(proof, resource, ...)` | the account key's `signer/ts/sig` over a proof; only the contribution's `requestProof` and `resourceProofs` |
 | `askAgentWith(provider, prompt, timeoutMs, done)` | one prompt to the local Codex or Claude Code CLI; returns a function that stops it |
+
+#### Checking sign-in
+
+Ask `accountSignedIn()` whether to show a "Sign in" state; never infer it from
+an empty `accountSessionToken`. A desktop signed in by its key (the normal
+launch, no password typed) has no session at first: it gets one from
+`POST /api/accounts/desktop-session` ([sessions](../app/auth-sessions.md#desktop-sessions-from-the-account-key))
+right after signing in, and again when a page asks. Until it arrives, a request
+either signs with `signProof` (Notes, Calendar, CRM) or waits on
+`requestAccountSession` (Spreadsheets, whose web editor needs a real session).
+Window code does the same through `ensureAccountSession` and
+`waitForAccountSession` (`MainWindowAccounts.cpp`). Checking the token instead
+once told signed-in people to sign in to Spreadsheets, runner accounts and
+their status.
 
 The window calls a plugin through `NativePackageWidget` virtuals:
 `refresh`, `searchHits` / `activateSearchHit`, `activate` (open the plugin's

@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-03", "area": "Desktop", "text": "Spreadsheets, your status and runner accounts no longer ask you to sign in when the desktop is already signed in."},
   {"date": "2026-11-03", "area": "Desktop", "text": "Spreadsheets now opens inside the desktop and stays open while you switch pages, signed in as your account, with save dialogs for downloads and PDFs and full clipboard copy and paste."},
   {"date": "2026-11-03", "area": "Market", "text": "The browser extension now looks up the email you open in Gmail or Zoho Mail with a loading spinner, links it to the contact that has its address on its own, and shows the address, other recipients and a Retry button in its header."},
   {"date": "2026-11-03", "area": "Server", "text": "A network that an administrator is signed in from is no longer blocked as a scanner, and a block already placed on it is lifted within five minutes."},

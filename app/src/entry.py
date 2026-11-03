@@ -24568,6 +24568,7 @@ CLIENT_CAPABILITIES = "browse,comment,submit_issue,submit_pr"
 BROWSER_CONTROL_CAPABILITIES = "desktop_control"
 BROWSER_CONTROL_DEVICE_KIND = "browser_control"
 BROWSER_CONTROL_BIND_PROOF = "forkmesh-browser-control-v1"
+DESKTOP_SESSION_PROOF = "forkmesh-desktop-session-v1"
 BROWSER_CONTROL_MAX_DEVICES = 20
 CHAT_NODE_DEVICE_KIND = "chat_node"
 CHAT_NODE_CAPABILITIES = "chat_node"
@@ -25634,6 +25635,81 @@ async def _account_browser_control_bind(env, request):
          "desktops": [{"key": item["key"], "node": item["node"]}
                       for item in desktops]},
         cache_control=no_store)
+
+
+def _desktop_session_canonical(account, pubkey, ts):
+    return (DESKTOP_SESSION_PROOF + "\n" + account + "\n" + pubkey + "\n"
+            + ts).encode()
+
+
+async def _account_desktop_session(env, request):
+    no_store = "no-store, max-age=0, must-revalidate"
+    try:
+        data = await bounded_json_request(request)
+    except Exception:
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    account = clean_string(data.get("nodeName", ""), MAX_NODE_NAME).strip().lower()
+    pubkey = clean_string(data.get("pubkey", ""), 120).strip()
+    ts = clean_string(str(data.get("ts", "")), 20)
+    sig = clean_string(data.get("sig", ""), 200)
+    if not valid_node_name(account) or not valid_node_pubkey(pubkey):
+        return json_response(
+            {"error": "invalid_request"}, status=400, cache_control=no_store)
+    if not sig or not _ts_ok(ts):
+        return json_response(
+            {"error": "stale_request"}, status=401, cache_control=no_store)
+    if not await ed25519_verify(
+            pubkey, sig, _desktop_session_canonical(account, pubkey, ts)):
+        return json_response(
+            {"error": "invalid_signature"}, status=401, cache_control=no_store)
+    account_bi, rec = await _account_row(env, account)
+    if (not account_bi or not rec or rec.get("status") != "active"
+            or _account_kind(rec) != "user"):
+        return json_response(
+            {"error": "invalid_session"}, status=401, cache_control=no_store)
+    if pubkey not in await _account_signing_pubkeys(env, account_bi, rec) \
+            or await _account_key_revoked(env, account_bi, pubkey):
+        return json_response(
+            {"error": "device_not_bound"}, status=401, cache_control=no_store)
+    primary = clean_string(rec.get("pubkey", ""), 120)
+    if pubkey != primary and (
+            rec.get("totp_enrolled") or await _is_admin_flag(env, account)):
+        return json_response(
+            {"error": "primary_key_required"}, status=403,
+            cache_control=no_store)
+    actor_bi = await blind_index(env, account)
+    replay_token = await blind_index(env, "audit:desktop_session:" + sig)
+    replayed = await d1_first(
+        env,
+        "SELECT 1 AS hit FROM sensitive_audit_log "
+        "WHERE actor_bi=? AND ts>=? AND target_token=? LIMIT 1",
+        actor_bi, int(Date.now()) - 2 * LOGIN_MAX_SKEW_MS, replay_token)
+    if replayed:
+        return json_response(
+            {"error": "stale_request"}, status=401, cache_control=no_store)
+    await _audit_sensitive_action(
+        env, account, "account.desktop_session", "desktop_session", sig,
+        "success")
+    device = await _account_device_for_pubkey(env, account_bi, pubkey)
+    device_bi = clean_string((device or {}).get("device_bi", ""), 128)
+    if device_bi:
+        await d1_run(
+            env,
+            "UPDATE account_sessions SET revoked_at=? "
+            "WHERE account_bi=? AND device_bi=? AND revoked_at=0",
+            int(Date.now()), account_bi, device_bi)
+    payload = await _account_public_payload(
+        env, rec,
+        session_device_label=_account_session_device_label(
+            request, desktop=True),
+        session_client_ip=_account_session_client_ip(request),
+        session_device_bi=device_bi)
+    payload = _with_session_capabilities(
+        payload, session_kind="desktop_node", device_kind="desktop_node",
+        key_matched=True, desktop_capable=True)
+    return json_response(payload, cache_control=no_store)
 
 
 def _chat_node_rate_ok(key, now):
@@ -36070,6 +36146,8 @@ async def accounts_handler(env, request):
         return await _account_ownership_transfer_confirm(env, request)
     if url.path == "/api/accounts/login" and method == "POST":
         return await _account_login(env, request)
+    if url.path == "/api/accounts/desktop-session" and method == "POST":
+        return await _account_desktop_session(env, request)
     if url.path == "/api/accounts/rotate" and method == "POST":
         return await _account_rotate(env, request)
     if url.path == "/api/accounts/logout" and method == "POST":

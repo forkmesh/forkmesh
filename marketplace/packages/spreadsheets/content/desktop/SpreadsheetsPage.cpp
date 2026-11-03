@@ -13,6 +13,7 @@
 #include <QHBoxLayout>
 #include <QJsonObject>
 #include <QLabel>
+#include <QPointer>
 #include <QPushButton>
 #include <QShowEvent>
 #include <QStackedWidget>
@@ -157,14 +158,19 @@ void SpreadsheetsPage::sync(bool create)
         return;
     }
     const QString account = m_host.accountName ? m_host.accountName().trimmed() : QString();
-    const QString token =
-        m_host.accountSessionToken ? m_host.accountSessionToken(page).trimmed() : QString();
-    if (account.isEmpty() || token.isEmpty()) {
+    if (account.isEmpty() || !m_host.accountSignedIn || !m_host.accountSignedIn()) {
         drop();
         showMessage(QStringLiteral("Sign in to use Spreadsheets"),
                     QStringLiteral("Spreadsheets opens your workbooks with this desktop's "
                                    "ForkMesh account. Sign in, then reload."),
                     false, true);
+        return;
+    }
+    const QString token =
+        m_host.accountSessionToken ? m_host.accountSessionToken(page).trimmed() : QString();
+    if (token.isEmpty()) {
+        drop();
+        requestSession();
         return;
     }
     if (!web::available()) {
@@ -189,6 +195,42 @@ void SpreadsheetsPage::sync(bool create)
     drop();
     if (create)
         build(origin, account, token, session);
+}
+
+void SpreadsheetsPage::requestSession()
+{
+    showMessage(QStringLiteral("Spreadsheets"), QStringLiteral("Opening your workbooks\xE2\x80\xA6"),
+                false, false);
+    if (m_sessionPending)
+        return;
+    if (!m_host.requestAccountSession) {
+        showMessage(QStringLiteral("Spreadsheets could not open your account"),
+                    QStringLiteral("This desktop cannot hand its account session to the "
+                                   "editor. Open Spreadsheets in your own browser."),
+                    true, true);
+        return;
+    }
+    m_sessionPending = true;
+    QPointer<SpreadsheetsPage> self(this);
+    m_host.requestAccountSession([self](const QString &error) {
+        if (!self)
+            return;
+        self->m_sessionPending = false;
+        const QString token = self->m_host.accountSessionToken
+                                  ? self->m_host.accountSessionToken(
+                                        self->pageUrl(kPagePath)).trimmed()
+                                  : QString();
+        if (error.isEmpty() && !token.isEmpty()) {
+            self->sync(self->isVisible());
+            return;
+        }
+        self->showMessage(QStringLiteral("Spreadsheets could not open your account"),
+                          error.isEmpty()
+                              ? QStringLiteral("Your ForkMesh host did not open a session "
+                                               "for this desktop. Reload to try again.")
+                              : error,
+                          true, true);
+    });
 }
 
 void SpreadsheetsPage::build(const QUrl &origin, const QString &account, const QString &token,

@@ -4793,6 +4793,7 @@ forkmesh::market::NativePackageHost MainWindow::nativePackageHost(
     host.accountName = [this] {
         return AccountCapability::normalizedAccount(m_accountName);
     };
+    host.accountSignedIn = [this] { return hasActiveAccountSession(); };
     host.openDirectMessage = [this](const QString &account) {
         const QString name = account.trimmed().toLower();
         if (forkmesh::ui::isValidNodeName(name))
@@ -4956,8 +4957,15 @@ forkmesh::market::NativePackageHost MainWindow::nativePackageHost(
             if (url.scheme() != base.scheme() || url.host() != base.host() ||
                 url.port() != base.port())
                 return QString();
-            return accountSessionTokenForUrl(url);
+            const QString token = accountSessionTokenForUrl(url);
+            if (token.isEmpty() && hasActiveAccountSession())
+                QTimer::singleShot(0, this, [this] { ensureAccountSession(); });
+            return token;
         };
+        host.requestAccountSession =
+            [this](std::function<void(const QString &)> done) {
+                ensureAccountSession(std::move(done));
+            };
         host.signProof = [this, contributionCopy](
                              const QString &proof, const QString &resource,
                              QString *signer, QString *ts, QString *sig) {
