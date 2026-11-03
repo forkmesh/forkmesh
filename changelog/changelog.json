@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-03", "area": "Server", "text": "Follow ForkMesh no longer stops on a patch your instance sent to ForkMesh and ForkMesh then revised: it takes ForkMesh's version and keeps your own changes."},
   {"date": "2026-11-03", "area": "Server", "text": "Asking a server for its build version at an address like /BUILD_REV no longer gets your network blocked for a week as a scanner."},
   {"date": "2026-11-03", "area": "Chat", "text": "Chat reloads itself once instead of stopping with an error when the browser has kept part of an older version."},
   {"date": "2026-11-03", "area": "Market", "text": "The browser extension adds a tiny open-tracking image to the emails you send from Gmail and Zoho Mail and pings you the first time each one is opened; turn it off in the toolbar popup."},
