@@ -3855,6 +3855,14 @@ SCHEMA_STATEMENTS = [
         data TEXT NOT NULL)""",
     "CREATE INDEX IF NOT EXISTS idx_note_comments_note "
     "ON note_comments(note_id, created_at)",
+    """CREATE TABLE IF NOT EXISTS note_chat (
+        message_id TEXT PRIMARY KEY,
+        note_id TEXT NOT NULL REFERENCES notes(note_id) ON DELETE CASCADE,
+        author_bi TEXT NOT NULL,
+        created_at INTEGER NOT NULL CHECK (created_at >= 0),
+        data TEXT NOT NULL)""",
+    "CREATE INDEX IF NOT EXISTS idx_note_chat_note "
+    "ON note_chat(note_id, created_at)",
     """CREATE TABLE IF NOT EXISTS note_pages (
         page_id TEXT PRIMARY KEY,
         owner_bi TEXT NOT NULL,

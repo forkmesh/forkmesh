@@ -42,6 +42,9 @@ MAX_PEOPLE = 200
 MENTION_RE = re.compile(r"(?<![\w@])@([a-z](?:[a-z0-9-]{0,61}[a-z0-9])?)", re.IGNORECASE)
 CLIENT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 PRESENCE_STATES = frozenset({"viewing", "editing", "left"})
+MAX_CHAT = 500
+MAX_CHAT_BODY = 2000
+MAX_LINE = 1000000
 PAGES = PREFIX + "/pages"
 PAGE_ACCENTS = ("blue", "purple", "pink", "red", "orange", "yellow", "teal", "gray")
 PAGE_LAYOUTS = ("outline", "continuous")
@@ -105,9 +108,9 @@ def _route(path):
     if page:
         return "pages", page.group(1), page.group(2) or "", ""
     match = re.fullmatch(
-        r"/api/notes/([0-9a-f]{32})(?:/(versions|shares|links|activity|ws|presence|comments)"
+        r"/api/notes/([0-9a-f]{32})(?:/(versions|shares|links|activity|ws|presence|comments|chat)"
         r"(?:/([0-9a-f]{32}))?)?", clean)
-    if not match or (match.group(3) and match.group(2) != "comments"):
+    if not match or (match.group(3) and match.group(2) not in ("comments", "chat")):
         return None
     return "note", match.group(1), match.group(2) or "", match.group(3) or ""
 
@@ -1017,6 +1020,78 @@ async def _comments(runtime, row, account_bi, actor, role, method, comment_id, d
     return _response(runtime, _with_comment(payload, comment_id))
 
 
+async def _chat_key(runtime, note_id):
+    row = await runtime.d1_first(
+        "SELECT COUNT(*) AS total,COALESCE(MAX(created_at),0) AS latest "
+        "FROM note_chat WHERE note_id=?", note_id) or {}
+    return "%d:%d" % (int(row.get("total") or 0), int(row.get("latest") or 0))
+
+
+async def _chat_payload(runtime, row, account_bi, actor):
+    note_id = row["note_id"]
+    rows = await runtime.d1_all(
+        "SELECT message_id,author_bi,created_at,data FROM note_chat "
+        "WHERE note_id=? ORDER BY created_at,message_id", note_id) or []
+    names = await _author_names(runtime, note_id, rows, account_bi, actor)
+    messages = []
+    for item in rows:
+        data = await runtime.open(item.get("data"))
+        data = data if isinstance(data, dict) else {}
+        messages.append({
+            "id": str(item.get("message_id") or ""),
+            "author": names.get(str(item.get("author_bi") or ""), ""),
+            "body": _comment_text(data.get("body"), MAX_CHAT_BODY),
+            "createdAt": int(item.get("created_at") or 0),
+        })
+    return {"ok": True, "messages": messages,
+            "canModerate": str(row.get("owner_bi") or "") == account_bi}
+
+
+async def _chat(runtime, row, account_bi, actor, role, method, message_id, data):
+    if role not in ("owner", "editor", "viewer"):
+        return _response(runtime, {"error": "note_not_found"}, status=404)
+    note_id = row["note_id"]
+    if method == "GET":
+        return _response(runtime, await _chat_payload(runtime, row, account_bi, actor))
+    if method == "POST":
+        body = _comment_text(data.get("body"), MAX_CHAT_BODY + 1).strip()
+        if not body or len(body) > MAX_CHAT_BODY:
+            return _response(runtime, {"error": "invalid_message"}, status=400)
+        message_id = runtime.new_id()
+        await runtime.d1_run(
+            "INSERT INTO note_chat(message_id,note_id,author_bi,created_at,data) "
+            "VALUES(?,?,?,?,?)", message_id, note_id, account_bi, runtime.now(),
+            await runtime.seal({"body": body}))
+        await runtime.d1_run(
+            "DELETE FROM note_chat WHERE note_id=? AND message_id NOT IN ("
+            "SELECT message_id FROM note_chat WHERE note_id=? "
+            "ORDER BY created_at DESC,message_id DESC LIMIT ?)",
+            note_id, note_id, MAX_CHAT)
+        await runtime.broadcast(note_id, {"type": "note-chat", "actor": actor})
+        payload = await _chat_payload(runtime, row, account_bi, actor)
+        payload["message"] = next((item for item in payload["messages"]
+                                   if item["id"] == message_id), None)
+        return _response(runtime, payload, status=201)
+    existing = await runtime.d1_first(
+        "SELECT author_bi FROM note_chat WHERE note_id=? AND message_id=?",
+        note_id, message_id)
+    if not existing:
+        return _response(runtime, {"error": "message_not_found"}, status=404)
+    if str(existing.get("author_bi") or "") != account_bi and role != "owner":
+        return _response(runtime, {"error": "message_author_required"}, status=403)
+    await runtime.d1_run(
+        "DELETE FROM note_chat WHERE note_id=? AND message_id=?", note_id, message_id)
+    await runtime.broadcast(note_id, {"type": "note-chat", "actor": actor})
+    return _response(runtime, await _chat_payload(runtime, row, account_bi, actor))
+
+
+def _line(value):
+    try:
+        return max(0, min(MAX_LINE, int(value or 0)))
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
 async def _presence(runtime, row, actor, role, method, data):
     if role not in ("owner", "editor", "viewer"):
         return _response(runtime, {"error": "note_not_found"}, status=404)
@@ -1030,6 +1105,9 @@ async def _presence(runtime, row, actor, role, method, data):
         if state == "editing" and role not in ("owner", "editor"):
             state = "viewing"
         frame = {"clientId": client_id, "name": actor, "state": state}
+        if _line(data.get("line")):
+            frame.update({"line": _line(data.get("line")),
+                          "column": _line(data.get("column"))})
     try:
         peers = await runtime.presence(row["note_id"], frame)
     except Exception:
@@ -1038,7 +1116,8 @@ async def _presence(runtime, row, actor, role, method, data):
              if isinstance(peer, dict) and peer.get("clientId") != client_id]
     return _response(runtime, {
         "ok": True, "peers": peers,
-        "commentsKey": await _comments_key(runtime, row["note_id"])})
+        "commentsKey": await _comments_key(runtime, row["note_id"]),
+        "chatKey": await _chat_key(runtime, row["note_id"])})
 
 
 async def _page_row(runtime, page_id):
@@ -1393,7 +1472,7 @@ async def handle(runtime, path):
                ("GET", "PATCH", "DELETE") if kind == "pages" else
                ("GET", "POST") if not note_id else
                ("PATCH", "DELETE") if comment_id else
-               ("GET", "POST") if action in ("versions", "activity", "presence", "comments") else
+               ("GET", "POST") if action in ("versions", "activity", "presence", "comments", "chat") else
                ("GET", "POST", "DELETE") if action in ("shares", "links") else
                ("GET",) if action == "ws" else
                ("GET", "PATCH", "DELETE"))
@@ -1449,6 +1528,11 @@ async def handle(runtime, path):
             return _response(runtime, {"error": "invalid_session"}, status=401)
         return await _comments(runtime, row, account_bi, actor, role, method,
                                comment_id, data)
+    if action == "chat":
+        if not account_bi:
+            return _response(runtime, {"error": "invalid_session"}, status=401)
+        return await _chat(runtime, row, account_bi, actor, role, method,
+                           comment_id, data)
     if action == "presence":
         if not account_bi:
             return _response(runtime, {"error": "invalid_session"}, status=401)

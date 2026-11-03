@@ -14109,7 +14109,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "57a0dddcc8a868059c8f9dcba09ec67d14ea7886b21002d334756e9cae9d0071"
+    "36ec6eeb070a4cabb36f5b533b197e63e82d93fe14494a7910395286e185c4f8"
 )
 
 
@@ -58244,10 +58244,16 @@ class ForkMeshNoteRoom(DurableObject):
                     self._send_all({"type": "leave", "clientId": client_id,
                                     "name": name})
             elif client_id in polled or len(polled) < self._MAX_POLLED:
+                try:
+                    line = max(0, min(1000000, int(frame.get("line") or 0)))
+                    column = max(0, min(1000000, int(frame.get("column") or 0)))
+                except (TypeError, ValueError, OverflowError):
+                    line, column = 0, 0
                 polled[client_id] = {"name": name, "state": state,
+                                     "line": line, "column": column,
                                      "at": int(Date.now())}
                 self._send_all({"type": "presence", "clientId": client_id,
-                                "name": name, "line": 0, "column": 0,
+                                "name": name, "line": line, "column": column,
                                 "state": state})
         peers = []
         for ws in self._peers():
@@ -58256,19 +58262,27 @@ class ForkMeshNoteRoom(DurableObject):
                 peers.append({"clientId": live_id,
                               "name": _ws_attr(ws, "actor", ""),
                               "state": _ws_attr(ws, "state", "viewing"),
+                              "line": int(_ws_attr(ws, "line", 0) or 0),
+                              "column": int(_ws_attr(ws, "column", 0) or 0),
                               "via": "live"})
         for poll_id, peer in polled.items():
             peers.append({"clientId": poll_id, "name": peer["name"],
-                          "state": peer["state"], "via": "poll"})
+                          "state": peer["state"], "line": peer.get("line", 0),
+                          "column": peer.get("column", 0), "via": "poll"})
         return peers
 
-    def _remember(self, ws, client_id, state):
+    def _remember(self, ws, client_id, state, line=None, column=None):
+        line = _ws_attr(ws, "line", 0) if line is None else line
+        column = _ws_attr(ws, "column", 0) if column is None else column
         if (_ws_attr(ws, "clientId", "") == client_id
-                and _ws_attr(ws, "state", "") == state):
+                and _ws_attr(ws, "state", "") == state
+                and _ws_attr(ws, "line", 0) == line
+                and _ws_attr(ws, "column", 0) == column):
             return
         values = {name: _ws_attr(ws, name) for name in (
             "id", "start", "count", "role", "actor")}
-        values.update({"clientId": client_id, "state": state})
+        values.update({"clientId": client_id, "state": state,
+                       "line": line, "column": column})
         try:
             ws.serializeAttachment(to_js(values))
         except Exception:
@@ -58292,7 +58306,7 @@ class ForkMeshNoteRoom(DurableObject):
                     frame if isinstance(frame, dict) else {})})
             if not isinstance(frame, dict) or frame.get("type") not in (
                     "note-updated", "note-deleted", "access-changed",
-                    "note-activity", "note-comments"):
+                    "note-activity", "note-comments", "note-chat"):
                 return json_response({"error": "invalid_event"}, status=400)
             payload = json.dumps(frame, separators=(",", ":"))
             for peer in self._peers():
@@ -58362,7 +58376,10 @@ class ForkMeshNoteRoom(DurableObject):
         else:
             state = _ws_attr(ws, "state", "viewing") or "viewing"
         if client_id:
-            self._remember(ws, client_id, state)
+            if frame["type"] == "cursor":
+                self._remember(ws, client_id, state, line, column)
+            else:
+                self._remember(ws, client_id, state)
         safe_frame = {
             "type": frame["type"],
             "clientId": client_id,

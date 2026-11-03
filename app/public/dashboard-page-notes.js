@@ -13,6 +13,8 @@
   const NOTE_COMMENT_CONTEXT = 32;
   const NOTE_QUOTE_MAX = 1000;
   const NOTE_MODE_KEY = "forkmesh.notes.mode";
+  const NOTE_MODES = ["write", "split", "preview", "live"];
+  const NOTE_CHAT_SEEN_KEY = "forkmesh.notes.chat-seen";
   const NOTE_SEARCH_MS = 250;
   const NOTE_ACTIVITY_KEY = "forkmesh.notes.activity";
   const NOTE_ACTIVITY_REFRESH_MS = 1200;
@@ -407,7 +409,7 @@
     const markdown = $("[data-note-markdown]")?.value || "";
     const emoji = state.notesView.selected?.emoji || "";
     const heading = $("[data-note-preview-title]");
-    if (heading) heading.textContent = title;
+    if (heading && document.activeElement !== heading) heading.textContent = noteLiveMode() ? $("[data-note-title]")?.value || "" : title;
     const crumb = $("[data-note-crumb]");
     if (crumb) crumb.textContent = title;
     document.querySelectorAll("[data-note-preview-emoji], [data-note-crumb-emoji]").forEach((node) => {
@@ -415,9 +417,15 @@
     });
     const preview = $("[data-note-preview]");
     if (preview) {
-      preview.innerHTML = markdown.trim()
-        ? renderMarkdown(markdown, { noteDocument: true })
-        : '<p class="notes-preview-empty">Nothing written yet.</p>';
+      if (noteLiveMode()) {
+        renderNoteLive(preview, markdown);
+        unmarkNoteComments(preview);
+      } else {
+        if (state.notesView.live) state.notesView.live = null;
+        preview.innerHTML = markdown.trim()
+          ? renderMarkdown(markdown, { noteDocument: true })
+          : '<p class="notes-preview-empty">Nothing written yet.</p>';
+      }
       markNoteCommentsInPreview(preview);
     }
     const words = markdown.split(/\s+/).filter(Boolean).length;
@@ -615,6 +623,14 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
     const mode = canEdit ? state.notesView.mode : "preview";
     const work = $("[data-note-work]");
     if (work) work.dataset.mode = mode;
+    const heading = $("[data-note-preview-title]");
+    if (heading && mode === "live") {
+      try { heading.contentEditable = "plaintext-only"; } catch (_) { heading.contentEditable = "true"; }
+      heading.setAttribute("role", "textbox");
+      heading.setAttribute("aria-label", "Note title");
+    } else if (heading) {
+      heading.removeAttribute("contenteditable"); heading.removeAttribute("role"); heading.removeAttribute("aria-label");
+    }
     const group = $("[data-note-mode-group]");
     if (group) group.hidden = !canEdit;
     document.querySelectorAll("[data-note-mode]").forEach((button) =>
@@ -949,6 +965,7 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
         view.seenAt = Date.now(); markNoteSeen(payload.note.id);
         view.comments = null; view.commentDraft = null; view.commentEditing = ""; view.commentFocus = "";
         renderNoteComments(); void loadNoteComments();
+        view.chat = null; renderNoteChat(); void loadNoteChat();
       }
     } catch (error) {
       if (error.status === 404 && view.selected?.id === id) {
@@ -1079,6 +1096,8 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
 
   function noteTyped() {
     const view = state.notesView;
+    if (view.follow) setNoteFollow("");
+    sendNoteCursor();
     const was = notePresenceState();
     view.lastTypedAt = Date.now();
     if (was !== "editing") { sendNotePresence(); renderNotePresence(); }
@@ -1109,6 +1128,10 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
   function renderNotePresence() {
     const view = state.notesView;
     const people = notePeople();
+    if (view.follow && !people.some((person) => person.name === view.follow)) {
+      if (view.socket?.readyState === WebSocket.OPEN) noteNotice("main", `${view.follow} left the note.`);
+      setNoteFollow("");
+    }
     const faces = $("[data-note-presence]");
     if (faces) {
       faces.hidden = !people.length;
@@ -1127,6 +1150,7 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
           <span class="notes-avatar" style="background:${noteAvatarColor(person.name)}">${escapeHtml(noteInitials(person.name))}</span>
           <span class="notes-person-name">${person.self ? "You" : escapeHtml(person.name)}</span>
           <span class="notes-here-state" data-state="${person.state}">${noteIcon(person.state === "editing" ? "pencil" : "eye")}${person.state === "editing" ? "Editing" : "Viewing"}</span>
+          ${person.self ? "<span></span>" : `<button type="button" class="notes-here-follow" data-note-follow-person="${escapeHtml(person.name)}" aria-pressed="${view.follow === person.name ? "true" : "false"}" title="Keep ${escapeHtml(person.name)}'s place in view">${view.follow === person.name ? "Following" : "Follow"}</button>`}
         </div>`).join("") + (people.length ? "" : `<p class="notes-comments-empty">Nobody else has this note open.</p>`);
       refreshNoteIcons();
     }
@@ -1138,6 +1162,7 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
     if (view.socket && view.socketNoteId === note.id && view.socket.readyState <= WebSocket.OPEN) return;
     view.socket?.close(); view.socket = null;
     view.peers = new Map();
+    if (view.follow) setNoteFollow("");
     clearInterval(view.presenceTimer);
     const token = state.session?.sessionToken;
     if (!token || !note.webSocketUrl) { renderNotePresence(); return; }
@@ -1162,11 +1187,13 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
         const peer = view.peers.get(frame.clientId) || { draftAt: 0 };
         const peerState = frame.type === "draft" || frame.state === "editing" ? "editing"
           : frame.type === "cursor" ? peer.state || "viewing" : "viewing";
-        view.peers.set(frame.clientId, { ...peer, name: String(frame.name || "Collaborator").slice(0, 32), seen: Date.now(), state: peerState });
+        const moved = Number(frame.line) > 0 ? { line: Number(frame.line), column: Number(frame.column) || 0, movedAt: Date.now() } : {};
+        view.peers.set(frame.clientId, { ...peer, ...moved, name: String(frame.name || "Collaborator").slice(0, 32), seen: Date.now(), state: peerState });
         if (!known) sendNotePresence();
       }
       if (frame.type === "leave" && frame.clientId) view.peers.delete(frame.clientId);
       if (frame.type === "note-comments") scheduleNoteComments();
+      if (frame.type === "note-chat") scheduleNoteChat();
       if (["note-comments", "note-updated"].includes(frame.type)) noteStillWatching();
       if (frame.type === "draft" && frame.clientId && frame.clientId !== view.clientId) {
         view.peers.get(frame.clientId).draftAt = Date.now();
@@ -1181,6 +1208,9 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
       if (frame.type === "note-updated" && frame.version > (view.selected?.version || 0) && !view.savePromise) {
         // With unsaved local edits the next autosave meets the 409 and asks.
         if (!view.localDirty) void selectNote(note.id);
+      }
+      if (view.follow && frame.clientId && Number(frame.line) > 0 && view.peers.get(frame.clientId)?.name === view.follow) {
+        noteFollowTo(Number(frame.line), Number(frame.column) || 0);
       }
       if (frame.type === "note-deleted") {
         noteNotice("main", "This note was deleted.", "bad");
@@ -1202,9 +1232,578 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
       socket.send(JSON.stringify({
         type: "draft", clientId: state.notesView.clientId,
         baseVersion: note.version, title: $("[data-note-title]").value,
-        markdown: $("[data-note-markdown]").value,
+        markdown: $("[data-note-markdown]").value, ...noteCursorFields(),
       }));
     }, 180);
+  }
+
+  function noteLiveMode() { return $("[data-note-work]")?.dataset.mode === "live"; }
+
+  function noteLineOffset(lines, line) {
+    let offset = 0;
+    for (let index = 0; index < line && index < lines.length; index += 1) offset += lines[index].length + 1;
+    return offset;
+  }
+
+  function noteLiveBlocks(lines, offset = 0) {
+    const ranges = [];
+    let start = -1, fence = "";
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index];
+      if (fence) { if (line.trim().startsWith(fence)) fence = ""; continue; }
+      const open = line.match(/^\s{0,3}(`{3,}|~{3,})/);
+      if (open) { if (start === -1) start = index; fence = open[1]; continue; }
+      if (!line.trim()) { if (start !== -1) ranges.push([start, index]); start = -1; continue; }
+      if (start === -1) start = index;
+    }
+    if (start !== -1) ranges.push([start, lines.length]);
+    return ranges.map(([from, to]) => ({ line: from + offset, source: lines.slice(from, to).join("\n") }));
+  }
+
+  function noteLiveLocate(lines, editor, near) {
+    const matches = (at) => editor.every((line, index) => lines[at + index] === line);
+    if (near + editor.length <= lines.length && matches(near)) return near;
+    let best = -1;
+    for (let at = 0; at + editor.length <= lines.length; at += 1) {
+      if (matches(at) && (best === -1 || Math.abs(at - near) < Math.abs(best - near))) best = at;
+    }
+    return best;
+  }
+
+  function noteLiveBlockElement(block, reuse) {
+    let element = reuse.get(block.source)?.shift();
+    if (!element) {
+      element = document.createElement("div");
+      element.className = "notes-live-block";
+      element.innerHTML = renderMarkdown(block.source, { noteDocument: true });
+      element.noteSource = block.source;
+    }
+    element.dataset.liveLine = String(block.line);
+    return element;
+  }
+
+  function renderNoteLive(preview, markdown) {
+    const view = state.notesView;
+    const lines = markdown.split("\n");
+    let editing = view.live && view.live.noteId === view.selected?.id && preview.contains(view.live.wrapper) ? view.live : null;
+    if (!editing) view.live = null;
+    let head = [], tail = [];
+    if (editing) {
+      const editorLines = editing.area.value.split("\n");
+      const at = noteLiveLocate(lines, editorLines, editing.start);
+      if (at === -1) { view.live = null; editing = null; }
+      else {
+        editing.start = at; editing.count = editorLines.length;
+        editing.wrapper.dataset.liveLine = String(at);
+        head = noteLiveBlocks(lines.slice(0, at));
+        tail = noteLiveBlocks(lines.slice(at + editorLines.length), at + editorLines.length);
+      }
+    }
+    if (!editing) head = noteLiveBlocks(lines);
+    const reuse = new Map();
+    for (const child of preview.children) {
+      if (typeof child.noteSource !== "string") continue;
+      if (!reuse.has(child.noteSource)) reuse.set(child.noteSource, []);
+      reuse.get(child.noteSource).push(child);
+    }
+    const before = head.map((block) => noteLiveBlockElement(block, reuse));
+    const after = tail.map((block) => noteLiveBlockElement(block, reuse));
+    const keep = new Set([...before, ...after, editing?.wrapper].filter(Boolean));
+    for (const node of [...preview.childNodes]) if (!keep.has(node)) node.remove();
+    if (editing) {
+      for (const element of before) preview.insertBefore(element, editing.wrapper);
+      for (const element of after) preview.appendChild(element);
+    } else preview.append(...before);
+    if (!keep.size) {
+      const empty = document.createElement("p");
+      empty.className = "notes-live-empty";
+      empty.textContent = "Click here to start writing.";
+      preview.appendChild(empty);
+    }
+  }
+
+  function unmarkNoteComments(root) {
+    root.querySelectorAll(".notes-comment-mark").forEach((mark) => {
+      const parent = mark.parentNode;
+      mark.replaceWith(...mark.childNodes);
+      parent?.normalize();
+    });
+  }
+
+  function growNoteLiveInput(area) {
+    area.style.height = "auto";
+    area.style.height = `${area.scrollHeight}px`;
+  }
+
+  function startNoteLiveEdit(wrapper, caret = -1) {
+    const view = state.notesView;
+    if (!wrapper || !noteCanEdit(view.selected) || view.live?.wrapper === wrapper) return;
+    if (view.live) endNoteLiveEdit();
+    if (!wrapper.isConnected) return;
+    const source = typeof wrapper.noteSource === "string" ? wrapper.noteSource : "";
+    const area = document.createElement("textarea");
+    area.className = "notes-live-input";
+    area.dataset.noteLiveInput = "";
+    area.rows = 1;
+    area.spellcheck = true;
+    area.setAttribute("aria-label", "Edit this part of the note");
+    area.value = source;
+    wrapper.replaceChildren(area);
+    wrapper.dataset.editing = "true";
+    wrapper.noteSource = null;
+    view.live = { noteId: view.selected.id, wrapper, area, start: Number(wrapper.dataset.liveLine) || 0, count: source.split("\n").length };
+    growNoteLiveInput(area);
+    area.focus({ preventScroll: true });
+    const at = caret < 0 ? area.value.length : Math.min(caret, area.value.length);
+    area.setSelectionRange(at, at);
+    view.selectionSource = "live";
+    sendNoteCursor();
+  }
+
+  function startNoteLiveBlockAtEnd() {
+    const view = state.notesView, area = $("[data-note-markdown]"), preview = $("[data-note-preview]");
+    if (!area || !preview || !noteCanEdit(view.selected)) return;
+    if (view.live) endNoteLiveEdit();
+    const trimmed = area.value.replace(/\s+$/, "");
+    area.value = trimmed ? `${trimmed}\n\n` : "";
+    const wrapper = document.createElement("div");
+    wrapper.className = "notes-live-block";
+    wrapper.dataset.liveLine = String(area.value.split("\n").length - 1);
+    wrapper.noteSource = "";
+    preview.querySelector(".notes-live-empty")?.remove();
+    preview.appendChild(wrapper);
+    startNoteLiveEdit(wrapper, 0);
+  }
+
+  function endNoteLiveEdit(render = true) {
+    const view = state.notesView, live = view.live;
+    if (!live) return;
+    view.live = null;
+    delete live.wrapper.dataset.editing;
+    const area = $("[data-note-markdown]");
+    if (area && !live.area.value.trim()) {
+      const lines = area.value.split("\n");
+      lines.splice(live.start, live.count);
+      let next = lines.join("\n");
+      const saved = String(view.selected?.markdown || "");
+      if (next.trimEnd() === saved.trimEnd()) next = saved;
+      if (next !== area.value) {
+        area.value = next;
+        if (render) { onNoteEdited(); return; }
+      }
+    }
+    if (render) renderNotePreview();
+  }
+
+  function noteLiveInput() {
+    const live = state.notesView.live, area = $("[data-note-markdown]");
+    if (!live || !area) return;
+    const lines = area.value.split("\n"), next = live.area.value.split("\n");
+    lines.splice(live.start, live.count, ...next);
+    live.count = next.length;
+    area.value = lines.join("\n");
+    growNoteLiveInput(live.area);
+    onNoteEdited();
+  }
+
+  function noteLiveCaret(block, event) {
+    const source = typeof block.noteSource === "string" ? block.noteSource : "";
+    let node = null, offset = 0;
+    if (document.caretPositionFromPoint) {
+      const position = document.caretPositionFromPoint(event.clientX, event.clientY);
+      node = position?.offsetNode; offset = position?.offset || 0;
+    } else if (document.caretRangeFromPoint) {
+      const range = document.caretRangeFromPoint(event.clientX, event.clientY);
+      node = range?.startContainer; offset = range?.startOffset || 0;
+    }
+    if (!node || node.nodeType !== Node.TEXT_NODE || !block.contains(node)) return -1;
+    const text = node.nodeValue || "";
+    const at = text.trim() ? source.indexOf(text) : -1;
+    if (at !== -1) return at + offset;
+    const before = text.slice(Math.max(0, offset - 12), offset);
+    const near = before ? source.indexOf(before) : -1;
+    return near === -1 ? -1 : near + before.length;
+  }
+
+  function noteLiveClick(event) {
+    const view = state.notesView, preview = $("[data-note-preview]");
+    if (!noteLiveMode() || !noteCanEdit(view.selected)) return;
+    if (event.target.closest("a, button, input, textarea, [data-note-thread-mark]")) return;
+    if (String(window.getSelection()?.toString() || "")) return;
+    const block = event.target.closest(".notes-live-block");
+    if (block && preview.contains(block)) { startNoteLiveEdit(block, noteLiveCaret(block, event)); return; }
+    const last = [...preview.children].reverse().find((child) => child.matches(".notes-live-block"));
+    if (last && event.clientY < last.getBoundingClientRect().bottom) return;
+    startNoteLiveBlockAtEnd();
+  }
+
+  function noteLiveKeydown(event) {
+    const live = state.notesView.live;
+    if (!live || event.target !== live.area) return;
+    const area = live.area, mod = event.metaKey || event.ctrlKey;
+    if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); endNoteLiveEdit(); return; }
+    if (mod && ["b", "i"].includes(event.key.toLowerCase())) {
+      event.preventDefault(); event.stopPropagation();
+      formatNoteSelection(event.key.toLowerCase() === "b" ? "bold" : "italic");
+      return;
+    }
+    const sibling = (forward) => {
+      let node = forward ? live.wrapper.nextElementSibling : live.wrapper.previousElementSibling;
+      while (node && !node.matches(".notes-live-block")) node = forward ? node.nextElementSibling : node.previousElementSibling;
+      return node;
+    };
+    if (event.key === "ArrowUp" && area.selectionStart === 0 && area.selectionEnd === 0) {
+      const previous = sibling(false);
+      if (previous) { event.preventDefault(); startNoteLiveEdit(previous); }
+      return;
+    }
+    if (event.key === "ArrowDown" && area.selectionStart === area.value.length && area.selectionEnd === area.value.length) {
+      const next = sibling(true);
+      if (next) { event.preventDefault(); startNoteLiveEdit(next, 0); }
+    }
+  }
+
+  function noteCaretOffset() {
+    const view = state.notesView, area = $("[data-note-markdown]");
+    if (!area) return -1;
+    if (view.live && document.activeElement === view.live.area) {
+      return noteLineOffset(area.value.split("\n"), view.live.start) + view.live.area.selectionStart;
+    }
+    return document.activeElement === area ? area.selectionStart : -1;
+  }
+
+  function noteCursorFields() {
+    const offset = noteCaretOffset();
+    if (offset < 0) return {};
+    const before = $("[data-note-markdown]").value.slice(0, offset);
+    return { line: before.split("\n").length, column: offset - before.lastIndexOf("\n") - 1 };
+  }
+
+  function sendNoteCursor() {
+    const view = state.notesView;
+    clearTimeout(view.cursorTimer);
+    view.cursorTimer = setTimeout(() => {
+      const socket = view.socket, cursor = noteCursorFields();
+      if (socket?.readyState !== WebSocket.OPEN || !cursor.line) return;
+      const key = `${view.selected?.id}:${cursor.line}:${cursor.column}`;
+      if (view.sentCursor === key) return;
+      view.sentCursor = key;
+      socket.send(JSON.stringify({ type: "cursor", clientId: view.clientId, ...cursor }));
+    }, 120);
+  }
+
+  function noteTextareaTop(area, offset) {
+    const style = getComputedStyle(area), mirror = document.createElement("div");
+    for (const name of ["boxSizing", "width", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
+      "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth", "fontFamily", "fontSize",
+      "fontWeight", "fontStyle", "letterSpacing", "lineHeight", "tabSize", "textIndent", "wordSpacing", "wordBreak"]) mirror.style[name] = style[name];
+    Object.assign(mirror.style, { position: "absolute", visibility: "hidden", top: "0", left: "-9999px", whiteSpace: "pre-wrap", overflowWrap: "break-word", borderStyle: "solid" });
+    mirror.textContent = area.value.slice(0, offset);
+    const marker = document.createElement("span");
+    marker.textContent = "​";
+    mirror.appendChild(marker);
+    document.body.appendChild(mirror);
+    const top = marker.offsetTop;
+    mirror.remove();
+    return top;
+  }
+
+  function noteFollowPreviewElement(preview, lines, index) {
+    for (let line = index; line >= 0 && line > index - 20; line -= 1) {
+      const needle = String(lines[line] || "").replace(/[*_`#>~]|\[|\]\([^)]*\)|^\s*[-+]\s+(\[[ xX]\]\s+)?|^\s*\d+\.\s+/g, "").trim().slice(0, 60);
+      if (!needle) continue;
+      const walker = document.createTreeWalker(preview, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        if (node.nodeValue.includes(needle)) return node.parentElement.closest("p, li, h1, h2, h3, h4, h5, h6, pre, blockquote, td, th, figure") || node.parentElement;
+      }
+    }
+    return null;
+  }
+
+  function showNoteFollowTag(top, left) {
+    const view = state.notesView, tag = $("[data-note-follow-tag]"), body = $(".notes-body");
+    if (!tag || !body) return;
+    const box = body.getBoundingClientRect();
+    tag.textContent = view.follow;
+    tag.style.background = noteAvatarColor(view.follow);
+    tag.style.top = `${Math.max(0, Math.min(box.height - 20, top - box.top - 20))}px`;
+    tag.style.left = `${Math.max(4, left - box.left)}px`;
+    tag.hidden = false;
+    clearTimeout(view.followTagTimer);
+    view.followTagTimer = setTimeout(() => { tag.hidden = true; }, 3000);
+  }
+
+  function clearNoteFollowMarks() {
+    document.querySelectorAll("[data-view=\"notes\"] [data-follow-name]").forEach((node) => {
+      node.removeAttribute("data-follow-name");
+      node.style.removeProperty("--follow-color");
+    });
+  }
+
+  function noteFollowTo(line, column = 0) {
+    const view = state.notesView, area = $("[data-note-markdown]");
+    if (!area || !view.follow || !(line > 0)) return;
+    const mode = $("[data-note-work]")?.dataset.mode || "split";
+    const lines = area.value.split("\n");
+    const index = Math.max(0, Math.min(lines.length - 1, line - 1));
+    clearNoteFollowMarks();
+    let tag = null;
+    if (mode === "write" || mode === "split") {
+      const pane = $("[data-note-write-pane]");
+      const y = noteTextareaTop(area, noteLineOffset(lines, index) + Math.min(column, lines[index].length));
+      if (area.scrollHeight > area.clientHeight) area.scrollTop = Math.max(0, y - area.clientHeight / 3);
+      const inPane = area.getBoundingClientRect().top - pane.getBoundingClientRect().top + pane.scrollTop + y - area.scrollTop;
+      pane.scrollTop = Math.max(0, inPane - pane.clientHeight / 3);
+      const rect = area.getBoundingClientRect();
+      tag = [rect.top + y - area.scrollTop, rect.left];
+    }
+    if (mode !== "write") {
+      const pane = $("[data-note-preview-pane]"), preview = $("[data-note-preview]");
+      let target = null;
+      if (mode === "live") {
+        for (const child of preview.children) if (child.matches(".notes-live-block") && Number(child.dataset.liveLine) <= index) target = child;
+      } else target = noteFollowPreviewElement(preview, lines, index);
+      if (target) {
+        const inPane = target.getBoundingClientRect().top - pane.getBoundingClientRect().top + pane.scrollTop;
+        pane.scrollTop = Math.max(0, inPane - pane.clientHeight / 3);
+        target.dataset.followName = view.follow;
+        target.style.setProperty("--follow-color", noteAvatarColor(view.follow));
+        if (!tag) { const rect = target.getBoundingClientRect(); tag = [rect.top, rect.left]; }
+      }
+    }
+    if (tag) showNoteFollowTag(tag[0], tag[1]);
+  }
+
+  function renderNoteFollow() {
+    const view = state.notesView, box = $("[data-note-follow]");
+    if (!box) return;
+    box.hidden = !view.follow;
+    $("[data-note-follow-label]").textContent = view.follow ? `Following ${view.follow}` : "";
+  }
+
+  function setNoteFollow(name) {
+    const view = state.notesView;
+    view.follow = name || "";
+    renderNoteFollow();
+    if (!view.follow) {
+      clearNoteFollowMarks();
+      const tag = $("[data-note-follow-tag]"); if (tag) tag.hidden = true;
+      return;
+    }
+    const peer = [...view.peers.values()].filter((item) => item.name === view.follow && item.line > 0)
+      .sort((a, b) => (b.movedAt || 0) - (a.movedAt || 0))[0];
+    if (peer) noteFollowTo(peer.line, peer.column);
+  }
+
+  function noteChatSeenMap() {
+    try { return JSON.parse(localStorage.getItem(NOTE_CHAT_SEEN_KEY) || "{}") || {}; } catch (_) { return {}; }
+  }
+
+  function markNoteChatSeen() {
+    const view = state.notesView, note = view.selected, messages = view.chat?.messages || [];
+    if (!note || !messages.length) return;
+    const latest = Number(messages[messages.length - 1].createdAt || 0), seen = noteChatSeenMap();
+    if (Number(seen[note.id] || 0) >= latest) return;
+    delete seen[note.id];
+    seen[note.id] = latest;
+    const ids = Object.keys(seen);
+    for (const id of ids.slice(0, Math.max(0, ids.length - 200))) delete seen[id];
+    try { localStorage.setItem(NOTE_CHAT_SEEN_KEY, JSON.stringify(seen)); } catch (_) {}
+  }
+
+  function noteChatUnread() {
+    const view = state.notesView, note = view.selected;
+    if (!note || !view.chat) return 0;
+    const seen = Number(noteChatSeenMap()[note.id] || 0), me = noteMe();
+    return view.chat.messages.filter((message) => message.author !== me && Number(message.createdAt || 0) > seen).length;
+  }
+
+  function noteChatVisible() { return state.notesView.commentsOpen && state.notesView.panelTab === "chat"; }
+
+  function applyNoteChat(noteId, payload) {
+    const view = state.notesView;
+    if (view.selected?.id !== noteId) return;
+    view.chat = { messages: payload.messages || [], canModerate: Boolean(payload.canModerate) };
+    renderNoteChat();
+  }
+
+  async function loadNoteChat() {
+    const view = state.notesView, note = view.selected;
+    if (!note || !state.session?.sessionToken) return;
+    const generation = ++view.chatGeneration;
+    try {
+      const payload = await noteRequest(`/api/notes/${note.id}/chat`);
+      if (generation === view.chatGeneration) applyNoteChat(note.id, payload);
+    } catch (error) {
+      if (generation === view.chatGeneration && view.selected?.id === note.id) noteNotice("chat", error.message, "bad");
+    }
+  }
+
+  function scheduleNoteChat() {
+    const view = state.notesView;
+    clearTimeout(view.chatTimer);
+    view.chatTimer = setTimeout(() => void loadNoteChat(), NOTE_COMMENTS_REFRESH_MS);
+  }
+
+  async function sendNoteChat(path, method, body) {
+    const view = state.notesView, note = view.selected;
+    if (!note) return null;
+    try {
+      const payload = await noteRequest(`/api/notes/${note.id}/chat${path}`, method, body);
+      view.chatGeneration++;
+      view.chatScroll = method === "POST";
+      applyNoteChat(note.id, payload);
+      noteNotice("chat", "");
+      return payload;
+    } catch (error) {
+      noteNotice("chat", error.message, "bad");
+      return null;
+    }
+  }
+
+  async function submitNoteChat(form) {
+    const view = state.notesView, input = form?.querySelector("[data-note-chat-input]");
+    const body = String(input?.value || "").trim();
+    if (!body || view.chatSending) return;
+    view.chatSending = true;
+    try {
+      if (await sendNoteChat("", "POST", { body })) { input.value = ""; growNoteChatInput(input); }
+    } finally { view.chatSending = false; }
+  }
+
+  function growNoteChatInput(input) {
+    input.style.height = "auto";
+    input.style.height = `${Math.min(input.scrollHeight + 2, 128)}px`;
+  }
+
+  function noteChatHtml(message) {
+    const view = state.notesView;
+    const mine = Boolean(message.author) && message.author === noteMe();
+    const tools = mine || view.chat?.canModerate
+      ? `<span class="notes-comment-tools"><button type="button" class="notes-icon-btn" data-note-chat-delete="${escapeHtml(message.id)}" title="Delete" aria-label="Delete message">${noteIcon("trash-2")}</button></span>` : "";
+    return `<li class="notes-chat-msg" data-note-chat-message="${escapeHtml(message.id)}">
+        <span class="notes-avatar" style="background:${noteAvatarColor(message.author)}">${escapeHtml(noteInitials(message.author))}</span>
+        <div class="notes-chat-head">
+          <span class="notes-comment-who">${mine ? "You" : escapeHtml(message.author || "Someone")}</span>
+          <time class="notes-comment-time" title="${escapeHtml(message.createdAt ? new Date(message.createdAt).toLocaleString() : "")}">${escapeHtml(message.createdAt ? relativeTimeLabel(message.createdAt) : "")}</time>
+          ${tools}
+        </div>
+        <div class="notes-chat-body">${escapeHtml(message.body || "")}</div>
+      </li>`;
+  }
+
+  function renderNoteChat() {
+    const view = state.notesView, visible = noteChatVisible();
+    if (visible) markNoteChatSeen();
+    const unread = visible ? 0 : noteChatUnread();
+    for (const badge of [$("[data-note-chat-badge]"), $("[data-note-chat-unread]")]) {
+      if (!badge) continue;
+      badge.hidden = !unread;
+      badge.textContent = unread > 99 ? "99+" : String(unread);
+    }
+    $("[data-note-chat-toggle]")?.setAttribute("title", unread ? `Chat · ${noteCountLabel(unread, "new message", "new messages")}` : "Chat");
+    const list = $("[data-note-chat-list]");
+    if (!list || !visible) return;
+    const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 40;
+    const messages = view.chat?.messages || [];
+    list.innerHTML = messages.map(noteChatHtml).join("")
+      || `<li class="notes-comments-empty">${view.chat ? "No messages yet. Say hello to everyone in this note." : "Loading chat…"}</li>`;
+    if (atBottom || view.chatScroll) { list.scrollTop = list.scrollHeight; view.chatScroll = false; }
+    refreshNoteIcons();
+  }
+
+  function renderNotePanelToggles() {
+    const view = state.notesView;
+    const comments = view.commentsOpen && view.panelTab === "comments", chat = view.commentsOpen && view.panelTab === "chat";
+    const commentsToggle = $("[data-note-comments-toggle]"), chatToggle = $("[data-note-chat-toggle]");
+    commentsToggle?.setAttribute("aria-pressed", comments ? "true" : "false");
+    commentsToggle?.setAttribute("aria-label", comments ? "Hide comments" : "Show comments");
+    chatToggle?.setAttribute("aria-pressed", chat ? "true" : "false");
+    chatToggle?.setAttribute("aria-label", chat ? "Hide chat" : "Show chat");
+  }
+
+  function setNotePanelTab(tab) {
+    const view = state.notesView;
+    view.panelTab = tab === "chat" ? "chat" : "comments";
+    document.querySelectorAll("[data-note-panel-tab]").forEach((button) =>
+      button.setAttribute("aria-selected", button.dataset.notePanelTab === view.panelTab ? "true" : "false"));
+    document.querySelectorAll("[data-note-panel]").forEach((panel) => { panel.hidden = panel.dataset.notePanel !== view.panelTab; });
+    const general = $("[data-note-comment-general]");
+    if (general) general.hidden = view.panelTab !== "comments";
+    if (view.panelTab === "chat") hideNoteMentions();
+    renderNotePanelToggles();
+    view.chatScroll = view.panelTab === "chat";
+    renderNoteChat();
+    renderNoteComments();
+  }
+
+  function openNotePanel(tab) {
+    setNotePanelTab(tab);
+    setNoteCommentsOpen(true);
+    if (tab === "chat") $("[data-note-chat-input]")?.focus();
+  }
+
+  function toggleNotePanel(tab) {
+    const view = state.notesView;
+    if (view.commentsOpen && view.panelTab === tab) setNoteCommentsOpen(false);
+    else openNotePanel(tab);
+  }
+
+  function wireNoteLiveAndChat() {
+    const view = state.notesView, preview = $("[data-note-preview]"), heading = $("[data-note-preview-title]");
+    preview?.addEventListener("click", noteLiveClick);
+    preview?.addEventListener("keydown", noteLiveKeydown);
+    preview?.addEventListener("input", (event) => { if (event.target.matches("[data-note-live-input]")) noteLiveInput(); });
+    for (const type of ["keyup", "select"]) {
+      preview?.addEventListener(type, (event) => {
+        if (!event.target.matches("[data-note-live-input]")) return;
+        view.selectionSource = "live"; sendNoteCursor();
+      });
+    }
+    preview?.addEventListener("focusout", (event) => {
+      const area = event.target;
+      if (!area.matches?.("[data-note-live-input]")) return;
+      setTimeout(() => { if (view.live?.area === area && document.activeElement !== area) endNoteLiveEdit(); }, 0);
+    });
+    heading?.addEventListener("input", () => {
+      if (!noteLiveMode()) return;
+      $("[data-note-title]").value = heading.textContent.replace(/\s+/g, " ").slice(0, 200);
+      onNoteEdited();
+    });
+    heading?.addEventListener("keydown", (event) => {
+      if (!noteLiveMode() || event.key !== "Enter") return;
+      event.preventDefault();
+      const first = [...preview.children].find((child) => child.matches(".notes-live-block"));
+      if (first) startNoteLiveEdit(first, 0); else startNoteLiveBlockAtEnd();
+    });
+    heading?.addEventListener("paste", (event) => {
+      if (!noteLiveMode()) return;
+      event.preventDefault();
+      document.execCommand("insertText", false, (event.clipboardData?.getData("text/plain") || "").replace(/\s+/g, " "));
+    });
+    const area = $("[data-note-markdown]");
+    for (const type of ["keyup", "mouseup", "select"]) area?.addEventListener(type, sendNoteCursor);
+    $("[data-note-chat-toggle]")?.addEventListener("click", () => toggleNotePanel("chat"));
+    document.querySelectorAll("[data-note-panel-tab]").forEach((button) =>
+      button.addEventListener("click", () => setNotePanelTab(button.dataset.notePanelTab)));
+    const form = $("[data-note-chat-form]"), input = $("[data-note-chat-input]");
+    form?.addEventListener("submit", (event) => { event.preventDefault(); void submitNoteChat(form); });
+    input?.addEventListener("input", () => growNoteChatInput(input));
+    input?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); void submitNoteChat(form); }
+    });
+    $("[data-note-chat-list]")?.addEventListener("click", (event) => {
+      const remove = event.target.closest("[data-note-chat-delete]");
+      if (remove && window.confirm("Delete this message?")) void sendNoteChat(`/${remove.dataset.noteChatDelete}`, "DELETE", {});
+    });
+    $("[data-note-people-panel]")?.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-note-follow-person]");
+      if (!button) return;
+      const name = button.dataset.noteFollowPerson;
+      closeNotePopovers();
+      setNoteFollow(view.follow === name ? "" : name);
+    });
+    $("[data-note-follow-stop]")?.addEventListener("click", () => setNoteFollow(""));
   }
 
   function closeNotePopovers() {
@@ -1225,7 +1824,8 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
   function setNoteMode(mode) {
     state.notesView.mode = mode;
     try { localStorage.setItem(NOTE_MODE_KEY, mode); } catch (_) {}
-    if (state.notesView.selected) renderNoteMode(state.notesView.selected);
+    endNoteLiveEdit(false);
+    if (state.notesView.selected) { renderNoteMode(state.notesView.selected); renderNotePreview(); }
   }
 
   function setNoteFilter(filter) {
@@ -1271,7 +1871,7 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
 
   function startNoteLink() {
     closeNotePopovers();
-    if ($("[data-note-work]").dataset.mode === "preview") setNoteMode("split");
+    if (["preview", "live"].includes($("[data-note-work]").dataset.mode)) setNoteMode("split");
     state.notesView.linking = true;
     renderNoteLinks(state.notesView.selected);
     $("[data-note-link-input]")?.focus();
@@ -1396,7 +1996,7 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
   }
 
   function formatNoteSelection(kind) {
-    const area = $("[data-note-markdown]"); if (!area || area.readOnly) return;
+    const area = state.notesView.live?.area || $("[data-note-markdown]"); if (!area || area.readOnly) return;
     const { selectionStart: start, selectionEnd: end, value } = area;
     const selected = value.slice(start, end);
     const wraps = { bold: ["**", "**", "bold text"], italic: ["_", "_", "italic text"], code: ["`", "`", "code"], link: ["[", "](https://)", "link text"] };
@@ -1500,7 +2100,7 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
       const wanted = view.comments.comments.find((comment) => comment.id === view.pendingComment);
       view.commentFocus = wanted.parentId || wanted.id;
       view.pendingComment = "";
-      setNoteCommentsOpen(true);
+      openNotePanel("comments");
       requestAnimationFrame(() => $(`[data-note-thread="${view.commentFocus}"]`)?.scrollIntoView({ block: "nearest" }));
     }
     renderNoteComments();
@@ -1674,11 +2274,10 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
     if (open && view.activityOpen) setNoteActivityOpen(false, false);
     const panel = $("[data-note-comments]");
     if (panel) panel.hidden = !open;
-    const toggle = $("[data-note-comments-toggle]");
-    toggle?.setAttribute("aria-pressed", open ? "true" : "false");
-    toggle?.setAttribute("aria-label", open ? "Hide comments" : "Show comments");
+    renderNotePanelToggles();
     if (!open) { view.commentDraft = null; hideNoteMentions(); }
     renderNoteComments();
+    renderNoteChat();
   }
 
   function noteFindRendered(markdown, text) {
@@ -1696,8 +2295,12 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
     const view = state.notesView;
     const area = $("[data-note-markdown]"), markdown = area?.value || "";
     let range = null;
+    const live = view.live;
     if (view.selectionSource === "write" && area && area.selectionEnd > area.selectionStart) {
       range = { start: area.selectionStart, end: area.selectionEnd };
+    } else if (view.selectionSource === "live" && live && live.area.selectionEnd > live.area.selectionStart) {
+      const base = noteLineOffset(markdown.split("\n"), live.start);
+      range = { start: base + live.area.selectionStart, end: base + live.area.selectionEnd };
     } else {
       const selection = window.getSelection();
       const text = String(selection?.toString() || "").trim();
@@ -1722,7 +2325,7 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
     if (!view.selected) return;
     view.commentDraft = anchor || { quote: "", prefix: "", suffix: "", start: 0, end: 0 };
     $("[data-note-comment-float]").hidden = true;
-    setNoteCommentsOpen(true);
+    openNotePanel("comments");
     $("[data-note-comment-new] [data-note-comment-input]")?.focus();
   }
 
@@ -1756,7 +2359,7 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
     renderNotePreview();
     if (!thread?.anchor) return;
     const area = $("[data-note-markdown]");
-    if (area && $("[data-note-work]").dataset.mode !== "preview") {
+    if (area && !["preview", "live"].includes($("[data-note-work]").dataset.mode)) {
       area.focus({ preventScroll: true });
       area.setSelectionRange(thread.anchor.start, thread.anchor.end);
       const lines = area.value.slice(0, thread.anchor.start).split("\n").length;
@@ -1854,7 +2457,7 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
 
   function wireNoteComments() {
     const view = state.notesView;
-    $("[data-note-comments-toggle]")?.addEventListener("click", () => setNoteCommentsOpen(!view.commentsOpen));
+    $("[data-note-comments-toggle]")?.addEventListener("click", () => toggleNotePanel("comments"));
     $("[data-note-comments-close]")?.addEventListener("click", () => setNoteCommentsOpen(false));
     $("[data-note-comment-general]")?.addEventListener("click", () => startNoteComment(null));
     $("[data-note-comment-selection]")?.addEventListener("click", commentOnNoteSelection);
@@ -1863,11 +2466,15 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
     const area = $("[data-note-markdown]");
     for (const type of ["mouseup", "keyup", "select"]) area?.addEventListener(type, () => { view.selectionSource = "write"; });
     area?.addEventListener("mouseup", showNoteCommentFloat);
-    $("[data-note-preview]")?.addEventListener("mouseup", (event) => { view.selectionSource = "preview"; showNoteCommentFloat(event); });
+    $("[data-note-preview]")?.addEventListener("mouseup", (event) => {
+      view.selectionSource = event.target.matches?.("[data-note-live-input]") ? "live" : "preview";
+      if (view.selectionSource === "live") sendNoteCursor();
+      showNoteCommentFloat(event);
+    });
     $("[data-note-preview]")?.addEventListener("click", (event) => {
       const mark = event.target.closest("[data-note-thread-mark]");
       if (!mark || String(window.getSelection()?.toString() || "")) return;
-      setNoteCommentsOpen(true); jumpToNoteThread(mark.dataset.noteThreadMark);
+      openNotePanel("comments"); jumpToNoteThread(mark.dataset.noteThreadMark);
       $(`[data-note-thread="${mark.dataset.noteThreadMark}"]`)?.scrollIntoView({ block: "nearest" });
     });
     document.addEventListener("selectionchange", () => {
@@ -2812,8 +3419,10 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
       pages: null, pagesError: "", pageId: "", page: null, pageNoteId: "", pageContent: new Map(),
       pageFetching: new Set(), pageCollapsed: new Map(), pageGeneration: 0, pageOutlineOpen: false,
       pageDraft: null, pageDraftVersion: 0, pageSaving: false, pageDrag: "",
+      live: null, follow: "", followTagTimer: 0, cursorTimer: 0, sentCursor: "", panelTab: "comments",
+      chat: null, chatTimer: 0, chatGeneration: 0, chatSending: false, chatScroll: false,
     });
-    try { view.mode = ["write", "split", "preview"].includes(localStorage.getItem(NOTE_MODE_KEY)) ? localStorage.getItem(NOTE_MODE_KEY) : "split"; } catch (_) { view.mode = "split"; }
+    try { view.mode = NOTE_MODES.includes(localStorage.getItem(NOTE_MODE_KEY)) ? localStorage.getItem(NOTE_MODE_KEY) : "split"; } catch (_) { view.mode = "split"; }
 
     let activityPreference = "";
     try { activityPreference = localStorage.getItem(NOTE_ACTIVITY_KEY) || ""; } catch (_) {}
@@ -2823,6 +3432,7 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
       setNoteActivityOpen(!view.activityOpen);
     });
     wireNoteComments();
+    wireNoteLiveAndChat();
     $("[data-note-activity-close]")?.addEventListener("click", () => setNoteActivityOpen(false));
     $("[data-note-activity]")?.addEventListener("click", (event) => {
       const tab = event.target.closest("[data-note-activity-tab]");
