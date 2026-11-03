@@ -2379,12 +2379,28 @@ void MainWindow::rebuildLedgerWalletStrip()
     paying.address =
         forkmesh::tips::linkedTipAddress(forkmesh::tips::defaultTipVaultPath())
             .trimmed();
-    paying.emptyText = QStringLiteral("Not linked");
-    paying.emptyPurpose = QStringLiteral(
-        "Link a Solana wallet in Settings to pay a reward from this page.");
+    const QString missingPaying =
+        paying.address.isEmpty()
+            ? QSettings().value(kTipLastLinkedAddressSetting).toString()
+            : QString();
+    paying.emptyText = missingPaying.isEmpty()
+                           ? QStringLiteral("Not linked")
+                           : QStringLiteral("Key file missing");
+    paying.emptyPurpose =
+        missingPaying.isEmpty()
+            ? QStringLiteral(
+                  "Link a Solana wallet in Settings to pay a reward from this "
+                  "page.")
+            : QStringLiteral(
+                  "This app was linked to %1, but its encrypted key file is "
+                  "gone from this machine. Import that wallet's key again to "
+                  "pay from it.")
+                  .arg(missingPaying);
     paying.signsPayments = true;
     if (Theme::isNext()) {
-        paying.setUpText = QStringLiteral("Link wallet");
+        paying.setUpText = missingPaying.isEmpty()
+                               ? QStringLiteral("Link wallet")
+                               : QStringLiteral("Relink wallet");
         paying.setUpIcon = QStringLiteral("link");
         paying.onSetUp = [this] {
             openAccountManagement();

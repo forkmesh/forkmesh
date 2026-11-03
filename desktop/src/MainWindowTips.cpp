@@ -919,6 +919,11 @@ void MainWindow::refreshTipWalletControls()
     const QString vaultPath = forkmesh::tips::defaultTipVaultPath();
     const QString linked = forkmesh::tips::linkedTipAddress(vaultPath);
     const bool hasWallet = !linked.isEmpty();
+    if (hasWallet) {
+        QSettings settings;
+        if (settings.value(kTipLastLinkedAddressSetting).toString() != linked)
+            settings.setValue(kTipLastLinkedAddressSetting, linked);
+    }
     if (!m_contributorAutoPayoutPassphrase.isEmpty() &&
         (m_contributorAutoPayoutWallet.isEmpty() ||
          linked != m_contributorAutoPayoutWallet)) {
@@ -942,6 +947,9 @@ void MainWindow::refreshTipWalletControls()
     // profile — the place where every other "this machine" control lives.
     m_profileTipWalletSection->setVisible(m_profileIsSelf);
     if (m_profileTipWalletLabel) {
+        const QString missing =
+            hasWallet ? QString()
+                      : QSettings().value(kTipLastLinkedAddressSetting).toString();
         m_profileTipWalletLabel->setText(
             hasWallet
                 ? QString::fromUtf8(
@@ -949,6 +957,12 @@ void MainWindow::refreshTipWalletControls()
                       "machine with your vault passphrase. Tips are signed "
                       "here; the key is never uploaded.")
                       .arg(linked.toHtmlEscaped())
+            : !missing.isEmpty()
+                ? QStringLiteral(
+                      "The key file for linked wallet <b>%1</b> is missing "
+                      "from this machine. Import that wallet's key again to "
+                      "relink it; nothing here can rebuild it.")
+                      .arg(missing.toHtmlEscaped())
                 : QStringLiteral(
                       "No tip wallet linked. Generate one here, or import an "
                       "existing Solana key, to send tips to other members. It "
@@ -956,8 +970,12 @@ void MainWindow::refreshTipWalletControls()
                       "machine."));
     }
     if (m_profileTipLinkButton) {
+        const bool missing =
+            !hasWallet &&
+            !QSettings().value(kTipLastLinkedAddressSetting).toString().isEmpty();
         m_profileTipLinkButton->setText(
             hasWallet ? QStringLiteral("Replace wallet…")
+            : missing ? QStringLiteral("Relink wallet…")
                       : QStringLiteral("Set up a wallet…"));
         m_profileTipLinkButton->setEnabled(!m_tipInFlight);
     }
@@ -1451,6 +1469,7 @@ void MainWindow::unlinkTipWallet()
                              safeTipText(error));
         return;
     }
+    QSettings().remove(kTipLastLinkedAddressSetting);
     tipStatus(QStringLiteral("Removed the local tip wallet vault."));
     refreshTipWalletControls();
 }
