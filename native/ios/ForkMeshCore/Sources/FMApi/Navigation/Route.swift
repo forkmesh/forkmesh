@@ -193,6 +193,7 @@ public enum Route: Codable, Hashable, Sendable {
     case glassesAlert
     case phoneSecurity
     case eyeControl
+    case silentSpeech
     case openWrtRouter
     case fileExplorer
     case nexus
@@ -321,6 +322,7 @@ public enum Route: Codable, Hashable, Sendable {
         case .glassesAlert: return .glassesAlert
         case .phoneSecurity: return .phoneSecurity
         case .eyeControl: return .eyeControl
+        case .silentSpeech: return .silentSpeech
         case .openWrtRouter: return .openWrtRouter
         case .fileExplorer: return .fileExplorer
         case .nexus: return .nexus
@@ -368,7 +370,7 @@ public enum Route: Codable, Hashable, Sendable {
         case notes, note, notePage, tasks, task, calendar, event, timers
         case desktops, desktop, hosts, host, runners, provision, network, node
         case market, package, crm, contact, crmOrg, marketing, analytics, competitors, invoices, surveys, booking, ads, ledger
-        case vault, coves, cove, calories, steps, water, sleep, sugarBreak, stretch, foodGuide, speech, glassesAlert, phoneSecurity, eyeControl, openWrtRouter, fileExplorer, nexus, faceChanger, videoMixDjStudio, poker, appStoreStatus, usage, rssReader, instanceFeed, mastodon, secureDrive, spiderRoom, workflows, localAI, activity, logs, diagnostics
+        case vault, coves, cove, calories, steps, water, sleep, sugarBreak, stretch, foodGuide, speech, glassesAlert, phoneSecurity, eyeControl, silentSpeech, openWrtRouter, fileExplorer, nexus, faceChanger, videoMixDjStudio, poker, appStoreStatus, usage, rssReader, instanceFeed, mastodon, secureDrive, spiderRoom, workflows, localAI, activity, logs, diagnostics
         case ember, strata, synapse
         case stats, status, admin
         case settings, orgs, org, projects, projectAccess, tour, updateRequired
@@ -398,7 +400,7 @@ public enum Route: Codable, Hashable, Sendable {
                 .booking, .ads, .ledger:
                 return "WS19"
             case .vault, .coves, .cove: return "WS21"
-            case .calories, .steps, .water, .sleep, .sugarBreak, .stretch, .foodGuide, .speech, .glassesAlert, .phoneSecurity, .eyeControl, .openWrtRouter, .fileExplorer, .nexus, .faceChanger, .videoMixDjStudio, .poker, .rssReader, .instanceFeed, .mastodon, .secureDrive, .spiderRoom, .workflows, .localAI, .ember, .strata, .synapse, .orgs,
+            case .calories, .steps, .water, .sleep, .sugarBreak, .stretch, .foodGuide, .speech, .glassesAlert, .phoneSecurity, .eyeControl, .silentSpeech, .openWrtRouter, .fileExplorer, .nexus, .faceChanger, .videoMixDjStudio, .poker, .rssReader, .instanceFeed, .mastodon, .secureDrive, .spiderRoom, .workflows, .localAI, .ember, .strata, .synapse, .orgs,
                 .org:
                 return "existing"
             case .projects, .projectAccess: return "WS1"

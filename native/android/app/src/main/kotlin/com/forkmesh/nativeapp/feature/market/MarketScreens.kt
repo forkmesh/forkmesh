@@ -145,6 +145,7 @@ internal fun routeFor(pkg: MarketPackage): Route? = when ((pkg.phoneSurface as? 
     "speech" -> Route.Speech
     "glassesAlert" -> Route.GlassesAlert
     "phoneSecurity" -> Route.PhoneSecurity
+    "silentSpeech" -> Route.SilentSpeech
     "ember" -> Route.Ember(null)
     "strata" -> Route.Strata(null)
     "synapse" -> Route.Synapse(null)

@@ -36,6 +36,7 @@ state on the ForkMesh account and follow every device.
   `steps`, `water`, `sleep`, `sugar-break`, `stretch`, `food-guide` (mobile
   only), `phone-security` (mobile only, [phone-security.md](phone-security.md)),
   `eye-control` (mobile only, [eye-control.md](eye-control.md)),
+  `silent-speech` (mobile only, [silent-speech.md](silent-speech.md)),
   `runners` (mobile and desktop, [runners.md](runners.md)),
   `strata`, `ember`, `synapse` (mobile and desktop since 1.1.0; desktop
   installs from before are carried to the account,

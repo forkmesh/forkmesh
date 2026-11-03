@@ -261,6 +261,7 @@ object RouteParser {
             "surveys" -> if (first == null) listOf(Route.Surveys(query["org"]?.trim()?.takeIf { it.isNotEmpty() }, query["survey"]?.trim()?.takeIf { it.isNotEmpty() })) else null
             "face-changer" -> listOf(Route.FaceChanger)
             "phone-security" -> listOf(Route.PhoneSecurity)
+            "silent-speech" -> listOf(Route.SilentSpeech)
             "speech" -> listOf(Route.Speech)
             "ember" -> if (first == null) listOf(Route.Ember(RepoRef.parse(query["repo"]))) else null
             "strata" -> if (first == null) listOf(Route.Strata(RepoRef.parse(query["repo"]))) else null
@@ -340,6 +341,7 @@ object RouteParser {
         "speech" -> listOf(Route.Speech)
         "glasses-alert" -> listOf(Route.GlassesAlert)
         "phone-security" -> listOf(Route.PhoneSecurity)
+        "silent-speech" -> listOf(Route.SilentSpeech)
         "ember" -> listOf(Route.Ember(null))
         "strata" -> listOf(Route.Strata(null))
         "synapse" -> listOf(Route.Synapse(null))

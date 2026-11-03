@@ -157,6 +157,7 @@ object RouteCatalog {
         Route.Kind.Speech -> "Speech"
         Route.Kind.GlassesAlert -> "Glasses Alert"
         Route.Kind.PhoneSecurity -> "Phone Security"
+        Route.Kind.SilentSpeech -> "Silent Speech"
         Route.Kind.Ember -> "Ember"
         Route.Kind.Strata -> "Strata"
         Route.Kind.Synapse -> "Synapse"
@@ -249,6 +250,7 @@ object RouteCatalog {
         Route.Kind.Speech -> "volume_up"
         Route.Kind.GlassesAlert -> "visibility"
         Route.Kind.PhoneSecurity -> "security"
+        Route.Kind.SilentSpeech -> "headphones"
         Route.Kind.Ember -> "local_fire_department_rounded"
         Route.Kind.Strata -> "layers"
         Route.Kind.Synapse -> "polyline"
@@ -379,6 +381,7 @@ object HubCatalog {
         HubItem.destination(Route.Speech),
         HubItem.destination(Route.GlassesAlert),
         HubItem.destination(Route.PhoneSecurity),
+        HubItem.destination(Route.SilentSpeech),
         HubItem.destination(Route.OpenWrtRouter),
         HubItem.destination(Route.FaceChanger),
         HubItem.destination(Route.RssReader),
