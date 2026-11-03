@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-03", "area": "Market", "text": "CRM 1.52.0: once your Mastodon account is connected, the CRM keeps a list of your followers up to date, adding each new follower as a contact so your conversations with them are tracked."},
   {"date": "2026-11-03", "area": "Market", "text": "The browser extension now works on Mastodon's redesigned post pages, private messages included, and logs the people a post mentions in the CRM as soon as you send it."},
   {"date": "2026-11-03", "area": "Desktop", "text": "Spreadsheets, your status and runner accounts no longer ask you to sign in when the desktop is already signed in."},
   {"date": "2026-11-03", "area": "Agents", "text": "A Claude Code agent you continue in the Claude app now shows those turns in ForkMesh, and ForkMesh's next message picks up from them, so the conversation carries on in either app."},
