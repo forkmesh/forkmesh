@@ -130,6 +130,8 @@ struct AgentSession {
     // run and show it once. Empty for a run started on this desktop.
     QString webSessionId;
     QString claudeAppSessionId;
+    QString claudeAppPath;
+    qint64 claudeAppBytes = 0;
     QString claudeImportId;
     QString claudeImportPath;
     QString claudeImportCwd;

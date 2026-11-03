@@ -614,6 +614,14 @@ void MainWindow::appendImportedClaudeEvents(int sessionId, const ClaudeImportBat
     s->claudeImportBytes = batch.newOffset;
     if (!title.isEmpty())
         s->issueTitle = title;
+    appendClaudeTranscriptEvents(sessionId, batch);
+}
+
+void MainWindow::appendClaudeTranscriptEvents(int sessionId, const ClaudeImportBatch &batch)
+{
+    AgentSession *s = findAgentSession(sessionId);
+    if (!s || !m_agentStore)
+        return;
     if (batch.lastMs > s->finishedAtMs)
         s->finishedAtMs = batch.lastMs;
     m_agentStore->saveSession(*s);

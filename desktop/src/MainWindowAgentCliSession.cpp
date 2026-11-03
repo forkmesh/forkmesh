@@ -2369,6 +2369,7 @@ void MainWindow::onExternalClaudeTick()
     if (!m_agentStore)
         return;
     syncImportedClaudeSessions();
+    syncClaudeAppSessions();
     if (QSettings().value(kExcludeExternalClaudeSetting, true).toBool()) {
         if (m_externalClaudeScanInFlight) {
             ++m_externalClaudeScanGeneration;
