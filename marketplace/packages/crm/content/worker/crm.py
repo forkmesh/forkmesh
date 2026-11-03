@@ -114,12 +114,15 @@ DEFAULT_FLOWS = (
     {"id": "partnerships", "name": "Partnerships", "icon": "partners", "stages": (
         "prospect", "contacted", "discovery", "negotiation", "active", "closed")},
     {"id": "customers", "name": "Customers", "icon": "customers", "stages": (
-        "lead", "qualified", "trial", "customer", "renewal", "inactive")},
+        "lead", "contacted", "qualified", "trial", "customer", "renewal", "inactive")},
     {"id": "grants", "name": "Grants", "icon": "grants", "stages": (
         "researching", "eligible", "drafting", "submitted", "awarded", "declined")},
 )
 CONTACTED_STAGE = "contacted"
 CONTACTED_BACKFILL = "contacted-stages"
+CUSTOMERS_CONTACTED_BACKFILL = "customers-contacted-stage"
+CUSTOMERS_FLOW = "customers"
+LEGACY_CUSTOMER_STAGES = ("lead", "qualified", "trial", "customer", "renewal", "inactive")
 # The kind of pipeline a flow is, shown as an icon on its tab and in every
 # pipeline picker. "pipeline" is the plain funnel a flow gets when none is set.
 FLOW_ICONS = ("pipeline", "investors", "hiring", "partners", "customers",
@@ -1300,10 +1303,10 @@ def _route(path):
         return "open", "", "open", opened.group(1)
     match = re.fullmatch(
         r"/api/crm/([a-z][a-z0-9-]{0,62})"
-        r"(?:/(contacts|emails|mail|settings|views|outreach|decks|zoho|boxes)"
+        r"(?:/(contacts|emails|mail|settings|views|outreach|decks|zoho|boxes|mastodon)"
         r"(?:/([0-9a-f]{32}|import|grants|export|send|auto|rate|lookup|link|copy|order|team|bulk|merge|sync"
         r"|move"
-        r"|toots|toot|pixel"
+        r"|toots|toot|pixel|follow-back|follow"
         r"|duplicates|evidence|activity|note"
         r"|connect|exchange"
         r"|delete-column"
@@ -2581,10 +2584,11 @@ async def _activity(runtime, org_bi, members):
     }
 
 
-async def _backfill_contacted_stages(runtime, org_bi, account_bi, actor):
+async def _backfill_contacted_stages(runtime, org_bi, account_bi, actor,
+                                     name=CONTACTED_BACKFILL, flow_ids=None):
     if await runtime.d1_first(
             "SELECT done_at FROM crm_backfills WHERE org_bi=? AND name=?",
-            org_bi, CONTACTED_BACKFILL):
+            org_bi, name):
         return 0
     flows = await _org_flows(runtime, org_bi)
     rows = await runtime.d1_all(
@@ -2594,6 +2598,8 @@ async def _backfill_contacted_stages(runtime, org_bi, account_bi, actor):
     for contact_row in rows or []:
         before = await runtime.open(contact_row.get("data"))
         if not isinstance(before, dict) or not _integer(before.get("lastContactedAt")):
+            continue
+        if flow_ids is not None and before.get("flow") not in flow_ids:
             continue
         contact = dict(before)
         if _advance_contacted(contact, flows):
@@ -2605,12 +2611,35 @@ async def _backfill_contacted_stages(runtime, org_bi, account_bi, actor):
         await _record_contact_changes(runtime, org_bi, account_bi, actor, changes)
     await runtime.d1_run(
         "INSERT OR IGNORE INTO crm_backfills(org_bi,name,done_at) VALUES(?,?,?)",
-        org_bi, CONTACTED_BACKFILL, now)
+        org_bi, name, now)
     return len(sealed)
+
+
+async def _backfill_customers_contacted_stage(runtime, org_bi, account_bi, actor):
+    if await runtime.d1_first(
+            "SELECT done_at FROM crm_backfills WHERE org_bi=? AND name=?",
+            org_bi, CUSTOMERS_CONTACTED_BACKFILL):
+        return 0
+    row = await runtime.d1_first("SELECT data FROM crm_settings WHERE org_bi=?", org_bi)
+    opened = await runtime.open(row.get("data")) if row else None
+    if isinstance(opened, dict) and isinstance(opened.get("flows"), list):
+        flows = _flows(opened["flows"])
+        legacy = [flow for flow in flows if flow["id"] == CUSTOMERS_FLOW
+                  and tuple(flow["stages"]) == LEGACY_CUSTOMER_STAGES]
+        for flow in legacy:
+            flow["stages"].insert(1, CONTACTED_STAGE)
+        if legacy:
+            await runtime.d1_run(
+                "UPDATE crm_settings SET data=? WHERE org_bi=?",
+                await runtime.seal(_settings_data({"flows": flows}, opened)), org_bi)
+    return await _backfill_contacted_stages(
+        runtime, org_bi, account_bi, actor, CUSTOMERS_CONTACTED_BACKFILL,
+        {CUSTOMERS_FLOW})
 
 
 async def _summary(runtime, org_bi, org_name, account_bi, actor, role):
     await _backfill_contacted_stages(runtime, org_bi, account_bi, actor)
+    await _backfill_customers_contacted_stage(runtime, org_bi, account_bi, actor)
     page_limit = _contact_page_limit(runtime.query_params().get("contacts"))
     totals, following = None, ""
     if page_limit:
@@ -6698,6 +6727,93 @@ async def _sync_toots(runtime, org_bi, org_name, account_bi, actor, data):
         "mastodon": _mastodon_project(config)})
 
 
+async def _mastodon_handles(runtime, host, path, token):
+    found = {}
+    for _ in range(FOLLOWER_SYNC_PAGES):
+        page, next_path, error = await _mastodon_page(runtime, host, path, token)
+        if error == "mastodon_token_rejected" and token:
+            token = ""
+            page, next_path, error = await _mastodon_page(runtime, host, path)
+        if error:
+            return None, error
+        for item in page:
+            acct = str((item or {}).get("acct") or "") if isinstance(item, dict) else ""
+            handle = _handle(acct if "@" in acct else "%s@%s" % (acct, host)) if acct else ""
+            if handle:
+                found.setdefault(handle, str(item.get("id") or ""))
+        if not next_path:
+            break
+        path = next_path
+    return found, ""
+
+
+async def _mastodon_connection(runtime, org_bi):
+    _, config = await _mastodon_config(runtime, org_bi)
+    account = _handle(config.get("account"))
+    token = _clean(config.get("token"), 600)
+    host = _mastodon_host(account)
+    return (account, token, host) if account and token and host else None
+
+
+async def _follow_back(runtime, org_bi):
+    connection = await _mastodon_connection(runtime, org_bi)
+    if not connection:
+        return _response(runtime, {"error": "mastodon_not_connected"}, 409)
+    account, token, host = connection
+    profile, error = await _mastodon_get(
+        runtime, host, "/api/v1/accounts/lookup?acct=" + quote(account.rsplit("@", 1)[0]))
+    account_id = str((profile or {}).get("id") or "") if isinstance(profile, dict) else ""
+    if error or not account_id.isdigit():
+        return _response(runtime, {"error": error or "mastodon_account_not_found"}, 502)
+    lists = {}
+    for kind in ("followers", "following"):
+        lists[kind], error = await _mastodon_handles(
+            runtime, host, "/api/v1/accounts/%s/%s?limit=%d" % (
+                account_id, kind, FOLLOWER_PAGE_SIZE), token)
+        if error:
+            return _response(runtime, {"error": error}, 502)
+    if not lists["followers"] and _integer((profile or {}).get("followers_count")):
+        return _response(runtime, {"error": "mastodon_followers_hidden"}, 502)
+    handles = [handle for handle in lists["followers"]
+               if handle != account and handle not in lists["following"]]
+    return _response(runtime, {"ok": True, "account": account, "handles": handles})
+
+
+async def _follow_handle(runtime, org_bi, org_name, actor, data):
+    handle = _handle(data.get("handle"))
+    if not handle:
+        return _response(runtime, {"error": "invalid_mastodon_handle"}, 400)
+    connection = await _mastodon_connection(runtime, org_bi)
+    if not connection:
+        return _response(runtime, {"error": "mastodon_not_connected"}, 409)
+    account, token, host = connection
+    if handle == account:
+        return _response(runtime, {"error": "invalid_mastodon_handle"}, 400)
+    user, home = handle.rsplit("@", 1)
+    found, error = await _mastodon_get(
+        runtime, host, "/api/v1/accounts/lookup?acct=" + quote(user if home == host else handle))
+    target = str((found or {}).get("id") or "") if isinstance(found, dict) else ""
+    if error or not target.isdigit():
+        return _response(runtime, {"error": "mastodon_account_not_found"
+                                   if error in ("", "mastodon_not_found") else error}, 502)
+    result = await runtime.outbound_json(
+        "https://%s/api/v1/accounts/%s/follow" % (host, target), "POST",
+        {"accept": "application/json", "authorization": "Bearer " + token})
+    status = _integer((result or {}).get("status"))
+    if not (result or {}).get("ok") or not 200 <= status < 300:
+        return _response(runtime, {"error": "mastodon_follow_not_allowed" if status == 403
+                                   else "mastodon_token_rejected" if status == 401
+                                   else "mastodon_unavailable"}, 502)
+    relationship = (result or {}).get("data")
+    relationship = relationship if isinstance(relationship, dict) else {}
+    await runtime.audit(actor, "crm.mastodon.follow", "organization", org_name,
+                        details={"account": account, "handle": handle})
+    return _response(runtime, {
+        "ok": True, "handle": handle,
+        "following": bool(relationship.get("following")),
+        "requested": bool(relationship.get("requested"))})
+
+
 async def _log_toot(runtime, org_bi, org_name, account_bi, actor, data):
     ref = _toot_ref(data.get("url"))
     if not ref:
@@ -9465,6 +9581,8 @@ async def handle(runtime, path):
         allowed = ("GET", "POST")
     elif resource == "emails" and item in ("send", "link", "toot", "toots"):
         allowed = ("POST",)
+    elif resource == "mastodon":
+        allowed = {"follow-back": ("GET",), "follow": ("POST",)}.get(item, ())
     elif resource == "emails" and item == "pixel":
         allowed = ("POST",)
     elif resource == "mail" and item == "import":
@@ -9678,6 +9796,10 @@ async def _organization_resource(runtime, method, org_bi, org_name, role, accoun
                 return _response(runtime, {"error": "organization_admin_required"}, 403)
             data = {key: data[key] for key in TABLE_VIEW_SETTINGS if key in data}
         return await _save_settings(runtime, org_bi, account_bi, actor, data)
+    if resource == "mastodon":
+        if item == "follow-back":
+            return await _follow_back(runtime, org_bi)
+        return await _follow_handle(runtime, org_bi, org_name, actor, data)
     if resource == "boxes":
         return await _box_resource(runtime, method, org_bi, org_name, actor, item, data)
     if resource == "contacts":

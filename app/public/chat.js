@@ -7446,17 +7446,30 @@ async function decideTrustBanner(approve) {
   const kids = String(trustBanner?.dataset.kids || "").split(" ").filter(Boolean);
   const transport = activeTrustTransport();
   if (!kids.length || !transport) return;
+  const hadFocus = trustBanner.contains(document.activeElement);
   if (trustApproveBtn) trustApproveBtn.disabled = true;
   if (trustBlockBtn) trustBlockBtn.disabled = true;
+  let failed = false;
   try {
     for (const kid of kids) {
       if (approve) await transport.approveDevice(kid);
       else await transport.blockDevice(kid);
     }
+  } catch (_) {
+    failed = true;
   } finally {
     if (trustApproveBtn) trustApproveBtn.disabled = false;
     if (trustBlockBtn) trustBlockBtn.disabled = false;
     renderTrustBanner();
+    if (failed && !trustBanner.hidden && trustBannerCopy) {
+      trustBannerCopy.textContent =
+        `${approve ? "Approving" : "Blocking"} did not finish. ` +
+        "Try again, or reload the chat if it keeps failing. " + trustBannerCopy.textContent;
+    }
+    if (hadFocus) {
+      if (!trustBanner.hidden) (approve ? trustApproveBtn : trustBlockBtn)?.focus();
+      else input?.focus();
+    }
     if (sealPanel && !sealPanel.hidden) renderSafetyNumber();
   }
 }

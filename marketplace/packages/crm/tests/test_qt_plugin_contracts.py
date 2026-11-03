@@ -1451,3 +1451,20 @@ def test_desktop_sheet_list_is_rebuilt_only_when_it_changed():
     assert side.index("joined == m_sheetListSignature") < side.index("m_sheetList->clear()")
     apply = FEATURE.split("void CrmFeature::applyAvatars()", 1)[1].split("\n}\n", 1)[0]
     assert "renderSheetList()" not in apply
+
+
+def test_mastodon_network_tab_offers_follow_back_for_followers_not_followed():
+    attach = FEATURE.split("void CrmFeature::attachRowWidgets(int row)", 1)[1].split("\n}\n", 1)[0]
+    assert "m_mastodonFollowBack.contains(source.mastodonKey)" in attach
+    assert 'text(activeSheet(), "network") == QLatin1String("mastodon")' in attach
+    assert "{followBack, email, prompt, edit, remove}" in attach
+    assert "[this, key] { followMastodonBack(key); }" in attach
+    load = _feature_body("loadMastodonFollowBack")
+    assert '"/mastodon/follow-back"' in load and 'QByteArrayLiteral("GET")' in load
+    assert "kMastodonFreshMs" in load and "rebuildFollowBackRows(QString())" in load
+    follow = _feature_body("followMastodonBack")
+    assert '"/mastodon/follow"' in follow and 'QByteArrayLiteral("POST")' in follow
+    assert "m_mastodonFollowBack.remove(key)" in follow
+    assert "loadMastodonFollowBack();" in _feature_body("fillContactRows")
+    assert '"follow-back": ("GET",), "follow": ("POST",)' in CRM_WORKER
+    assert "follow back its followers" in MANIFEST

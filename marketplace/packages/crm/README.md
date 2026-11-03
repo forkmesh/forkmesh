@@ -700,8 +700,8 @@ the send time (forward only) and moves the contact to the `contacted` stage
 when its pipeline has one and the contact sits before it (`sourced`,
 `prospect`, or a stage the pipeline does not know). Contacts at or past
 `contacted` (`meeting`, `passed`, `customer`, ...) keep their stage; a
-pipeline without a `contacted` stage (Customers, Applicants, Grants) only gets
-the date. A recipient who is not a contact is stored unlinked, as before, and
+pipeline without a `contacted` stage (Applicants, Grants, or a flow you made
+without one) only gets the date. A recipient who is not a contact is stored unlinked, as before, and
 no contact is created.
 
 The sync is idempotent: a message already linked to a contact is not
@@ -742,6 +742,19 @@ moved back by hand afterwards stays where it was put. The marker has its own
 table rather than a settings key because the Zoho sync rewrites settings from
 the known keys only, and would drop the marker. Uninstalling purges the
 marker with the rest. Tests: `tests/test_contact_made_marks_contacted.py`.
+
+**Customers has a `contacted` stage** (1.54.0). Customers used to run `lead`,
+`qualified`, `trial`, ... with no `contacted` stage, so a lead you had tooted
+at or emailed got its **Last contacted** date but stayed at `lead`, and the
+**contacted** stage filter and strip never showed it. Mastodon outreach lands
+in Customers, so that was most of it. Customers is now `lead`, `contacted`,
+`qualified`, `trial`, `customer`, `renewal`, `inactive`. An organization whose
+saved Customers flow still has the old stages exactly gets `contacted` put
+after `lead` once, the first time the CRM page loads
+(`_backfill_customers_contacted_stage`), and every Customers contact with a
+**Last contacted** date still at `lead` moves to it. A Customers flow edited
+by hand is left alone. The pass is marked `customers-contacted-stage` in
+`crm_backfills`, so removing the stage again afterwards sticks.
 
 ### Sending and tracking
 
@@ -1301,6 +1314,28 @@ raising, so the caller can keep the lead.
   (`?list=network:<field>`) that search and the Flow, Stage, Owner and
   Follow-up filters narrow. Desktop, iOS and Android show the same networks in
   the same order; `tests/test_networks.py` keeps the four lists equal.
+  <a id="follow-back"></a>**Follow back** (desktop and web): on the Mastodon
+  network tab, a contact who follows the organization's saved Mastodon account
+  (Settings → Mastodon toots) and whom that account does not follow gets a
+  **Follow back** button in its Actions strip. Opening the tab calls
+  `GET /mastodon/follow-back` at most once per 15 minutes per organization;
+  the worker reads the account's followers and following lists with the
+  saved token (up to 25 pages of 80 each, retrying without the token when it
+  lacks `read:accounts`, as the [followers list](#followers-list) does) and
+  returns the followers' handles it does not follow. The button calls
+  `POST /mastodon/follow {"handle"}`, which looks the handle up on the
+  account's instance and follows it there; a locked account answers
+  "requested". The token needs `write:follows` for that, else the error is
+  `mastodon_follow_not_allowed`. Any member who can write may follow back;
+  each follow is audited as `crm.mastodon.follow` and pings no one. Rows match
+  by the contact's **Mastodon** field. A follow request the account sent
+  earlier and is still waiting on is not in its following list, so that row
+  keeps the button. The web list puts the button first in the row's actions
+  (and on the narrow-screen cards), reads the list on the same 15-minute
+  schedule, and shows its errors above the list. The phones do not have it
+  yet. Code: `_follow_back`, `_follow_handle` (worker); `loadMastodonFollowBack`,
+  `followMastodonBack` (desktop); `loadCrmFollowBack`, `crmFollowMastodonBack`
+  (web).
 - **Desktop** (`CrmFeature.cpp`): columns for the lists, the table, Reach out
   / Follow up and the detail panel, spreadsheet-style editing, a People grid
   of contacts with pictures, imports, and a rail count of never-contacted

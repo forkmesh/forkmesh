@@ -47,20 +47,30 @@ extension ChatHub {
             .filter { !$0.isEmpty }.joined(separator: " \u{00B7} ")
     }
 
-    public func approveDevice(_ conversation: String, kid: String) async {
-        await direct?.approveDevice(conversation, kid: kid)
+    @discardableResult
+    public func approveDevice(_ conversation: String, kid: String) async -> Bool {
+        await direct?.approveDevice(conversation, kid: kid) ?? false
     }
 
-    public func blockDevice(_ conversation: String, kid: String) async {
-        await direct?.blockDevice(conversation, kid: kid)
+    @discardableResult
+    public func blockDevice(_ conversation: String, kid: String) async -> Bool {
+        await direct?.blockDevice(conversation, kid: kid) ?? false
     }
 
-    public func approveDevices(_ conversation: String, kids: [String]) async {
-        for kid in kids { await approveDevice(conversation, kid: kid) }
+    @discardableResult
+    public func approveDevices(_ conversation: String, kids: [String]) async -> Bool {
+        for kid in kids {
+            guard await approveDevice(conversation, kid: kid) else { return false }
+        }
+        return true
     }
 
-    public func blockDevices(_ conversation: String, kids: [String]) async {
-        for kid in kids { await blockDevice(conversation, kid: kid) }
+    @discardableResult
+    public func blockDevices(_ conversation: String, kids: [String]) async -> Bool {
+        for kid in kids {
+            guard await blockDevice(conversation, kid: kid) else { return false }
+        }
+        return true
     }
 
     public func safetyNumber(_ conversation: String) -> ChatSafetyNumber? {

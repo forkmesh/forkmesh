@@ -33,9 +33,17 @@ private struct MessagesTrustBanner: View {
     let onSafety: () -> Void
     @State private var working: Bool = false
     @State private var confirmBlock: Bool = false
+    @State private var failure: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: FmSpace.x2) {
+            if let failure {
+                Text(failure)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(fm.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("chat-trust-failure")
+            }
             HStack(alignment: .top, spacing: FmSpace.x2) {
                 Image(systemName: "exclamationmark.shield")
                     .font(.system(size: 16, weight: .semibold))
@@ -84,12 +92,19 @@ private struct MessagesTrustBanner: View {
     private func decide(approve: Bool) {
         guard notice.asksApproval, !working else { return }
         working = true
+        failure = nil
         Task { @MainActor in
-            if approve {
-                await hub.approveDevices(notice.conversation, kids: notice.kids)
-                FmHaptics.success()
+            let done =
+                approve
+                ? await hub.approveDevices(notice.conversation, kids: notice.kids)
+                : await hub.blockDevices(notice.conversation, kids: notice.kids)
+            if done {
+                if approve { FmHaptics.success() }
             } else {
-                await hub.blockDevices(notice.conversation, kids: notice.kids)
+                let text = DirectTrustText.decideFailed(approve: approve)
+                failure = text
+                FmHaptics.error()
+                UIAccessibility.post(notification: .announcement, argument: text)
             }
             working = false
         }
