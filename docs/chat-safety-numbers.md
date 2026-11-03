@@ -66,6 +66,19 @@ so there is no queue of approvals to click through. The desktop's details
 dialog lists each device's state with one Approve and Block for the waiting
 ones.
 
+On the web, if approving or blocking fails part way, the banner stays, starts
+with "Approving did not finish. Try again, or reload the chat if it keeps
+failing." and counts only the devices still waiting, and focus stays on the
+button pressed. When the banner closes, focus moves to the message box, so a
+keyboard or screen reader user is not dropped at the top of the page.
+
+The iPhone and Android apps do the same: the banner stays while any device
+still waits, shows "Approving did not finish. Try again, or reopen the chat if
+it keeps failing." (or "Blocking ...") above the waiting devices, and reads it
+out (a VoiceOver announcement, an Android live region). They stop at the first
+device that does not take, as the web does; `DirectTrustDecision` (Android) and
+`ChatHub.approveDevices` / `blockDevices` (iOS) report it.
+
 ## Reinstalling on iPhone
 
 Your iPhone keeps a projects folder, by default in iCloud Drive, that survives

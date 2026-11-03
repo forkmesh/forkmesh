@@ -47,6 +47,10 @@ final class DirectTrustUITests: XCTestCase {
         XCTAssertEqual(DirectTrustText.ownDevices(3).prefix(14), "3 new devices ")
         XCTAssertEqual(DirectTrustText.blockTitle(1), "Block this device?")
         XCTAssertEqual(DirectTrustText.blockTitle(2), "Block these 2 devices?")
+        XCTAssertEqual(
+            DirectTrustText.decideFailed(approve: true),
+            "Approving did not finish. Try again, or reopen the chat if it keeps failing.")
+        XCTAssertTrue(DirectTrustText.decideFailed(approve: false).hasPrefix("Blocking did not finish. "))
 
         let changedAt = base.addingTimeInterval(45)
         let lines = DirectTrustNotices.notices(
@@ -237,8 +241,13 @@ extension DirectMessagesTests {
         XCTAssertEqual(hub.trustBanners(conversation).first?.text, DirectTrustText.pendingDevice("pat"))
         XCTAssertTrue(hub.conversationItems.contains { $0.id == "trust-\(conversation)-devices" })
 
+        let refused = await hub.approveDevices(conversation, kids: ["not-a-device", injected.keyId])
+        XCTAssertFalse(refused, "a decision that does not take reports failure")
+        XCTAssertEqual(
+            hub.trustBanners(conversation).map(\.kids), [[injected.keyId]], "the banner stays while the device waits")
         let before = hub.trustRevision
-        await hub.approveDevice(conversation, kid: injected.keyId)
+        let approved = await hub.approveDevices(conversation, kids: [injected.keyId])
+        XCTAssertTrue(approved)
         XCTAssertGreaterThan(hub.trustRevision, before)
         XCTAssertTrue(hub.trustBanners(conversation).isEmpty)
         let changedLine = hub.conversationItems.first {

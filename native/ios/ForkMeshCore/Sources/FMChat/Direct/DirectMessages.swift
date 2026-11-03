@@ -1742,18 +1742,22 @@ extension DirectMessageService {
         devices(conversation).filter { $0.state == .pending }
     }
 
-    public func approveDevice(_ conversation: String, kid: String) async {
-        guard let record = record(for: conversation), let seal = await sealFor(record), seal.approve(kid) else { return }
+    @discardableResult
+    public func approveDevice(_ conversation: String, kid: String) async -> Bool {
+        guard let record = record(for: conversation), let seal = await sealFor(record), seal.approve(kid) else { return false }
         processHeld(seal, record: record)
         if let socket = sockets[record.id] { reseal(socket) }
         trustChanged()
+        return true
     }
 
-    public func blockDevice(_ conversation: String, kid: String) async {
+    @discardableResult
+    public func blockDevice(_ conversation: String, kid: String) async -> Bool {
         guard let record = record(for: conversation), let seal = await sealFor(record), kid != seal.keyId,
             seal.block(kid)
-        else { return }
+        else { return false }
         trustChanged()
+        return true
     }
 
     public func safetyNumber(_ conversation: String) -> ChatSafetyNumber? {
