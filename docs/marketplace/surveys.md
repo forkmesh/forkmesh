@@ -19,7 +19,7 @@ People answer on a public page at `/survey?t=<token>` with no account.
 | --- | --- |
 | `content/worker/surveys.py` | The Worker API at `/api/surveys`: surveys, questions, publishing, the public read and submit routes, results, responses, CSV export, org export and purge. |
 | `content/web/view.html`, `content/web/page.js` | The dashboard page: totals, the survey list, the question editor, the detail sheet with results and responses. |
-| `content/www/survey.{html,js,css}` | The respondent's page at `/survey?t=<token>`. Built with no site header, analytics or `innerHTML`. |
+| `content/www/survey.{html,js,css}` | The respondent's page at `/survey?t=<token>`. Built with no site header, analytics or `innerHTML`. It borrows the documentation pages' look (their palette, kicker pill, cards and blue primary button), follows the visitor's saved site theme or their OS, numbers each question in its own card, and shows a progress bar and the question count, an estimated time and how many are required. |
 | `content/desktop/SurveysPage.{h,cpp}` | The native desktop page and its registration (`/api/surveys`, proof `forkmesh-surveys-request-v1`). |
 | `content/desktop/SurveysModel.{h,cpp}`, `content/desktop/tests/test_surveys_model.cpp` | The page's logic without widgets (labels, filters, allowed actions, question validation, result lines) and its Qt test, target `forkmesh-surveys-tests`. |
 | `native/ios/ForkMeshCore/Sources/FMPackages/Survey*.swift`, `PackagesClient+Surveys.swift`; `native/ios/ForkMesh/Features/Packages/Survey*.swift` | iPhone models, client, screen model and screens. Tests: `FMPackagesTests/SurveysTests.swift`, `FMApiTests/SurveyRouteTests.swift`. |

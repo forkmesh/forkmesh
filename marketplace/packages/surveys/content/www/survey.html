@@ -15,22 +15,33 @@
     <link rel="stylesheet" href="/survey/survey.css?v=${version}" />
     <script src="/survey/survey.js?v=${version}" defer></script>
   </head>
-  <body>
+  <body class="sv-body">
+    <header class="sv-bar">
+      <div class="sv-bar-inner">
+        <a class="sv-brand" href="https://forkmesh.com" data-sv-brand><img src="/favicon/favicon.svg" alt="" width="22" height="22" /><span>ForkMesh</span></a>
+        <p class="sv-progress-label" data-sv-progress-label hidden></p>
+      </div>
+      <div class="sv-progress" data-sv-progress hidden><span data-sv-progress-bar></span></div>
+    </header>
     <main class="sv-wrap">
-      <p class="sv-status" data-sv-status role="status">Loading the survey…</p>
-      <form class="sv-sheet" data-sv-form novalidate hidden>
-        <header class="sv-head">
+      <p class="sv-status" data-sv-status role="status">Loading…</p>
+      <form class="sv-form" data-sv-form novalidate hidden>
+        <header class="sv-hero">
           <p class="sv-kicker" data-sv-organization></p>
           <h1 class="sv-title" data-sv-title></h1>
-          <p class="sv-muted sv-pre" data-sv-description></p>
-          <p class="sv-muted sv-note" data-sv-required-note hidden>Questions marked * need an answer.</p>
+          <p class="sv-lead sv-pre" data-sv-description></p>
+          <ul class="sv-meta" data-sv-meta></ul>
         </header>
         <ol class="sv-questions" data-sv-questions></ol>
-        <p class="sv-error" data-sv-error role="alert" hidden></p>
-        <div class="sv-actions"><button type="submit" class="primary-button" data-sv-submit>Send answers</button></div>
+        <div class="sv-submit">
+          <p class="sv-error" data-sv-error role="alert" hidden></p>
+          <button type="submit" class="sv-button" data-sv-submit>Send answers</button>
+          <p class="sv-fine">No account needed.</p>
+        </div>
       </form>
-      <section class="sv-sheet sv-done" data-sv-done hidden>
-        <h1 class="sv-title" data-sv-done-title>Thank you</h1>
+      <section class="sv-done" data-sv-done hidden>
+        <span class="sv-done-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="26" height="26"><path d="M20 6 9 17l-5-5" /></svg></span>
+        <h1 class="sv-done-title" data-sv-done-title>Thank you</h1>
         <p class="sv-pre" data-sv-thanks></p>
       </section>
       <p class="sv-credit" data-sv-credit>Made with <a href="https://forkmesh.com">ForkMesh</a></p>
