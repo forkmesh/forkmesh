@@ -10857,6 +10857,9 @@ private:
     void refreshDirectFocus();
     void refreshDirectRoute();
     void refreshDevicePendingBanner();
+    QStringList pendingDirectDevices(const QString &conversation) const;
+    void decideDirectDevices(const QString conversation, const QStringList kids,
+                             bool approve);
     void noteDirectDevicePending(const QString &conversation, const QString &kid);
     void noteDirectSafetyChanged(const QString &conversation);
     void addChatSecurityLine(const QString &conversation, const QString &text);
@@ -11771,7 +11774,9 @@ private:
     QLabel *m_directRouteLabel = nullptr;
     QWidget *m_devicePendingBanner = nullptr;
     QLabel *m_devicePendingLabel = nullptr;
-    QString m_devicePendingKid;
+    QPushButton *m_devicePendingApprove = nullptr;
+    QPushButton *m_devicePendingBlock = nullptr;
+    QStringList m_devicePendingKids;
     bool m_directMeshWired = false;
     bool m_directFocusHooked = false;
     QHash<QString, int> m_directServerCopies;

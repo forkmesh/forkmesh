@@ -13779,9 +13779,11 @@ QWidget *MainWindow::buildChatHeader()
     auto *approveDevice = new QPushButton(QStringLiteral("Approve"));
     approveDevice->setObjectName(QStringLiteral("primaryButton"));
     approveDevice->setCursor(Qt::PointingHandCursor);
+    m_devicePendingApprove = approveDevice;
     auto *blockDevice = new QPushButton(QStringLiteral("Block"));
     blockDevice->setObjectName(QStringLiteral("ghostButton"));
     blockDevice->setCursor(Qt::PointingHandCursor);
+    m_devicePendingBlock = blockDevice;
     auto *safetyButton = new QPushButton(QStringLiteral("Safety number"));
     safetyButton->setObjectName(QStringLiteral("ghostButton"));
     safetyButton->setCursor(Qt::PointingHandCursor);
@@ -13794,16 +13796,10 @@ QWidget *MainWindow::buildChatHeader()
     pendingLayout->addWidget(approveDevice);
     m_devicePendingBanner->hide();
     connect(approveDevice, &QPushButton::clicked, this, [this] {
-        if (m_officeChannelMirror && !m_devicePendingKid.isEmpty())
-            m_officeChannelMirror->approveDirectDevice(m_currentConversation,
-                                                       m_devicePendingKid);
-        refreshDevicePendingBanner();
+        decideDirectDevices(m_currentConversation, m_devicePendingKids, true);
     });
     connect(blockDevice, &QPushButton::clicked, this, [this] {
-        if (m_officeChannelMirror && !m_devicePendingKid.isEmpty())
-            m_officeChannelMirror->blockDirectDevice(m_currentConversation,
-                                                     m_devicePendingKid);
-        refreshDevicePendingBanner();
+        decideDirectDevices(m_currentConversation, m_devicePendingKids, false);
     });
     connect(safetyButton, &QPushButton::clicked, this,
             [this] { showDirectDetails(m_currentConversation); });

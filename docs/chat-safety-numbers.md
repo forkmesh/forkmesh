@@ -53,10 +53,11 @@ Check the safety number, then approve or block." and a banner with
   older history.
 
 When several devices are waiting at once, for example after someone signs in
-on a new phone and a new browser, the iPhone shows one banner for all of them
-("2 new devices for Alex want to join this chat"), and Approve and Block act
-on all of them. The web shows one device at a time and says how many are
-waiting. On Android the single banner is still being ported.
+on a new phone and a new browser, every app shows one banner for all of them
+("2 new devices for Alex want to join this chat"), and **Approve all** and **Block all** act on all of them at once,
+so there is no queue of approvals to click through. The desktop's details
+dialog lists each device's state with one Approve and Block for the waiting
+ones.
 
 ## Reinstalling on iPhone
 
