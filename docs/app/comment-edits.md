@@ -75,6 +75,27 @@ The issue `edit` signature covers body and attachments but not `target`; the
 relay check above is what stops an edit being pointed at someone else's
 comment.
 
+### Editing your own issue
+
+The relay already accepted an `edit` of the `open` event from the person who
+opened the issue, but the web drew the title and description editors only for
+repository managers (`issueMutationAuthorized`), so someone who filed an issue
+could not fix a typo in it. `renderRepoIssueDetail` now shows the title
+**Edit** button, the description pencil, **Add a description** and the
+clickable task checkboxes when the signed-in session authored the issue's
+`open` event (`webSessionAuthored`), as well as to managers. Labels,
+assignees, milestones and the rest stay manager-only.
+
+A `title` event used to need a manager. When the manager check fails,
+`_accept_issue_submission` now calls `_issue_comment_owned_by_submitter` with
+`opening=True`, which accepts the event when its signer (the same key, or the
+session-verified account) wrote the issue's `open` event. Readers apply
+`title` events without their own check, so this relay check is the gate.
+
+`title` joins `ISSUE_REPLAY_CHECKED_EVENT_TYPES`: a stored title event resent
+later would otherwise put back an old title. The Go intake already skips any
+event whose signature it holds.
+
 ## Replayed issue events
 
 The signature on an issue `edit` covers its body and attachments but not its
