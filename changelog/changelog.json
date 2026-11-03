@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-03", "area": "Desktop", "text": "The session side panel's Changes card has a Commit changes button, and running background tasks show how long they have been running."},
   {"date": "2026-11-03", "area": "Desktop", "text": "The session side panels now look like the Claude app's: muted section titles, roomier rows, a slimmer context bar, line counts on the Changes row and finished background tasks folded into one row."},
   {"date": "2026-11-03", "area": "Market", "text": "On a GitHub, Codeberg or Gitea repository, the Chrome extension's popup now opens a size map and a code map of it in a new tab, and the popup is wider with a cleaner look."},
   {"date": "2026-11-03", "area": "Market", "text": "The browser extension now works on Mastodon's redesigned post pages, private messages included, and logs the people a post mentions in the CRM as soon as you send it."},

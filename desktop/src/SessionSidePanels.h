@@ -20,6 +20,7 @@
 class QAbstractButton;
 class QFrame;
 class QLabel;
+class QTimer;
 class QPushButton;
 class QToolButton;
 class QVBoxLayout;
@@ -32,6 +33,7 @@ public:
     static QUrl openTargetUrl(const QString &target);
     struct Details {
         bool session = false;
+        int sessionId = 0;
         QString machine;
         QString machineNote;
         QString machineIcon;
@@ -54,6 +56,7 @@ public:
         int dirty = -1;
         int prNumber = 0;
         bool conflicted = false;
+        bool canCommit = false;
         bool remoteAvailable = false;
         bool remoteOn = true;
         QStringList remotePhones;
@@ -87,7 +90,9 @@ public:
     void replaceActivity(const QList<QJsonObject> &events);
     void appendActivity(const QList<QJsonObject> &events, qsizetype from);
     void setDetails(const Details &details);
+    const Details &details() const { return m_details; }
     void setRemoteActions(std::function<void(bool)> toggle, std::function<void()> connect);
+    void setCommitAction(std::function<void()> commit);
     void setSubSessions(const QList<SubSession> &subSessions, bool canStop,
                         std::function<void(const QString &)> stop);
     Feed &feed() { return m_feed; }
@@ -150,7 +155,9 @@ private:
     bool cardShown(const QString &key) const;
     int neighbourIndex(const QString &key, int step) const;
     void refreshActivity();
+    void refreshBackground();
     void refreshDetails();
+    void refreshCommit();
     void refreshRemote();
     void refreshMemory();
     void applyOrder();
@@ -189,6 +196,9 @@ private:
     QPointer<QLabel> m_remoteStatus;
     std::function<void(bool)> m_remoteToggle;
     std::function<void()> m_remoteConnect;
+    QPointer<QPushButton> m_commitButton;
+    std::function<void()> m_commit;
+    QTimer *m_elapsedTimer = nullptr;
     Details m_details;
     Feed m_feed;
     std::function<void(const QString &)> m_stopSubSession;

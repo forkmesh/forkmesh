@@ -135,3 +135,9 @@ QToolButton#sessionsSubSessionStop {
     border-radius: 6px; font-size: 11px; padding: 1px 8px;
 }
 QToolButton#sessionsSubSessionStop:hover { color: @danger; border-color: @danger; }
+QPushButton#sessionsCommitButton {
+    color: @fgSecondary; background-color: @surfaceRaised; border: none; border-radius: 6px;
+    font-size: 12px; padding: 3px 10px; min-height: 18px;
+}
+QPushButton#sessionsCommitButton:hover { color: @fg; background-color: @surfaceActive; }
+QPushButton#sessionsCommitButton:focus { border: 1px solid @accent; }

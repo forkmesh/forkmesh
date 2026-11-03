@@ -395,6 +395,21 @@ SessionSidePanels::SessionSidePanels(QWidget *parent) : QScrollArea(parent)
     for (int row = 0; row < kChangesRows; ++row)
         addRow(changes);
     changes.rows.first().trailing->setTextFormat(Qt::RichText);
+    m_commitButton = new QPushButton(QStringLiteral("Commit changes"), changes.rows.at(1).row);
+    m_commitButton->setObjectName(QStringLiteral("sessionsCommitButton"));
+    m_commitButton->setCursor(Qt::PointingHandCursor);
+    m_commitButton->setToolTip(QStringLiteral("Commit every uncommitted file in this session's "
+                                              "worktree to its branch"));
+    m_commitButton->hide();
+    changes.rows.at(1).row->layout()->addWidget(m_commitButton);
+    QObject::connect(m_commitButton, &QPushButton::clicked, this, [this] {
+        if (m_commit)
+            m_commit();
+    });
+
+    m_elapsedTimer = new QTimer(this);
+    m_elapsedTimer->setSingleShot(true);
+    QObject::connect(m_elapsedTimer, &QTimer::timeout, this, [this] { refreshBackground(); });
 
     m_layout->addStretch(1);
     setWidget(m_inner);
@@ -683,37 +698,7 @@ void SessionSidePanels::refreshActivity()
         }
         fillList(card, items, items.isEmpty() ? QString() : QString::number(items.size()));
     }
-    {
-        Card &card = m_cards[QStringLiteral("background")];
-        QList<Item> items;
-        QStringList finished;
-        for (const si::Background &task : m_collector.background()) {
-            if (task.status == QLatin1String("completed") || task.status == QLatin1String("stopped")) {
-                finished << task.label;
-                continue;
-            }
-            Item item;
-            item.icon = task.kind == QLatin1String("agent") ? QStringLiteral("smart-toy")
-                                                            : QStringLiteral("terminal");
-            item.text = task.label;
-            item.trailing = statusLabel(task.status);
-            item.tip = QStringLiteral("%1 · %2")
-                           .arg(task.kind == QLatin1String("agent") ? QStringLiteral("Subagent")
-                                                                    : QStringLiteral("Background shell"),
-                                statusLabel(task.status));
-            items << item;
-        }
-        if (!finished.isEmpty())
-            items << Item{QStringLiteral("check-circle"),
-                          QStringLiteral("%1 finished").arg(finished.size()), QString(),
-                          finished.mid(0, 20).join(QLatin1Char('\n')), QString()};
-        const int running = m_collector.runningBackground();
-        fillList(card, items,
-                 running > 0 ? QStringLiteral("%1 running").arg(running)
-                 : items.isEmpty()
-                     ? QString()
-                     : QString::number(int(m_collector.background().size())));
-    }
+    refreshBackground();
     {
         Card &card = m_cards[QStringLiteral("tools")];
         QList<Item> items;
@@ -731,6 +716,57 @@ void SessionSidePanels::refreshActivity()
                  calls > 0 ? (calls == 1 ? QStringLiteral("1 call") : QStringLiteral("%1 calls").arg(calls))
                            : QString());
     }
+}
+
+void SessionSidePanels::refreshBackground()
+{
+    namespace si = sessioninsights;
+    Card &card = m_cards[QStringLiteral("background")];
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    qint64 nextTick = -1;
+    QList<Item> items;
+    QStringList finished;
+    for (const si::Background &task : m_collector.background()) {
+        if (task.status == QLatin1String("completed") || task.status == QLatin1String("stopped")) {
+            finished << task.label;
+            continue;
+        }
+        const bool timed = task.running() && task.startedMs > 0 && task.startedMs <= now;
+        if (timed) {
+            const qint64 age = now - task.startedMs;
+            const qint64 wait = age < 60000 ? 1000 - age % 1000 : 60000 - age % 60000;
+            nextTick = nextTick < 0 ? wait : qMin(nextTick, wait);
+        }
+        Item item;
+        item.icon = task.kind == QLatin1String("agent") ? QStringLiteral("smart-toy")
+                                                        : QStringLiteral("terminal");
+        item.text = task.label;
+        item.trailing = timed ? si::elapsedText(now - task.startedMs) : statusLabel(task.status);
+        item.tip = QStringLiteral("%1 · %2")
+                       .arg(task.kind == QLatin1String("agent") ? QStringLiteral("Subagent")
+                                                                : QStringLiteral("Background shell"),
+                            timed ? QStringLiteral("running since %1")
+                                        .arg(QDateTime::fromMSecsSinceEpoch(task.startedMs)
+                                                 .toString(QStringLiteral("HH:mm")))
+                                  : statusLabel(task.status));
+        items << item;
+    }
+    if (!finished.isEmpty())
+        items << Item{QStringLiteral("check-circle"),
+                      QStringLiteral("%1 finished").arg(finished.size()), QString(),
+                      finished.mid(0, 20).join(QLatin1Char('\n')), QString()};
+    const int running = m_collector.runningBackground();
+    fillList(card, items,
+             running > 0 ? QStringLiteral("%1 running").arg(running)
+             : items.isEmpty()
+                 ? QString()
+                 : QString::number(int(m_collector.background().size())));
+    if (!m_elapsedTimer)
+        return;
+    if (nextTick < 0 || !isVisible())
+        m_elapsedTimer->stop();
+    else
+        m_elapsedTimer->start(int(nextTick) + 20);
 }
 
 void SessionSidePanels::refreshDetails()
@@ -931,7 +967,23 @@ void SessionSidePanels::refreshDetails()
                     QString(), QString(), QString()}},
                   stats);
     }
+    refreshCommit();
     refreshRemote();
+}
+
+void SessionSidePanels::refreshCommit()
+{
+    if (!m_commitButton)
+        return;
+    const bool show = m_commit != nullptr && m_details.canCommit && m_details.dirty > 0;
+    if (m_commitButton->isVisibleTo(m_commitButton->parentWidget()) != show)
+        m_commitButton->setVisible(show);
+}
+
+void SessionSidePanels::setCommitAction(std::function<void()> commit)
+{
+    m_commit = std::move(commit);
+    refreshCommit();
 }
 
 void SessionSidePanels::refreshRemote()
@@ -1144,6 +1196,7 @@ void SessionSidePanels::showEvent(QShowEvent *event)
     QScrollArea::showEvent(event);
     reloadLayout();
     scheduleSlice();
+    refreshBackground();
 }
 
 void SessionSidePanels::reloadLayout()

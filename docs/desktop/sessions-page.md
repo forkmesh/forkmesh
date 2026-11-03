@@ -169,8 +169,8 @@ right column in Control Tower
 | **Sub-sessions** | Live subagents, shells and workflows with Stop ([agents-ui.md](agents-ui.md#sub-sessions)) |
 | **Outputs** | Files the agent wrote or edited, newest first, with line counts; a failed edit is taken back |
 | **Sources** | Files read, pages fetched, web searches, skills and connectors |
-| **Background tasks** | Running and failed subagents and background shells; finished and stopped ones fold into one "N finished" row |
-| **Changes** | Files changed on the branch with their +/− line counts, uncommitted files, the pull request and conflicts |
+| **Background tasks** | Running and failed subagents and background shells, a running one with how long it has run; finished and stopped ones fold into one "N finished" row |
+| **Changes** | Files changed on the branch with their +/− line counts, uncommitted files with **Commit changes**, the pull request and conflicts |
 | **Tools** | Calls per tool and failures |
 
 - Outputs, Sources and Background come from `sessioninsights::Collector`
@@ -215,7 +215,21 @@ right column in Control Tower
   context bar with gaps between its parts. Environment shows the folder's name
   with its parent after a dot (`141-relink · .worktrees`); Outputs use the code
   icon; Changes puts the coloured +/− counts on its first row and in the header
-  only while folded. The column has no border
+  only while folded.
+- **Commit changes** shows on the uncommitted row of a local session with a
+  worktree. It runs the Branches page's worktree commit
+  (`MainWindow::commitWorktreeChanges`: a commit message, then `git add -A` and
+  `git commit`), with its notices as flash messages since the Branches page is
+  not on screen. A commit sets the cached uncommitted count to 0, asks for a
+  fresh diff pass (`scheduleAgentLiveDiffRefresh`) and refills the panel if it
+  still shows that session.
+- **Running time.** A background task starts at its `tool_use` event's time:
+  the desktop's `_ts` receive stamp, or an imported transcript's `timestamp`,
+  else the last time seen in the stream (`sessioninsights::eventTimeMs`). With
+  no time at all the row says "running". The age reads `45s`, `22m` or
+  `1h 5m` (`elapsedText`) and a single-shot timer re-arms to the next second
+  (first minute) or minute boundary, only while the panel is visible and a
+  timed task runs. The column has no border
   of its own; the splitter handle is the one line between the transcript and
   the panels, in Control Tower (`agentCodeSplit`) and on the Sessions page.
 - **Context** reads like Claude Code's context panel: "N% used"

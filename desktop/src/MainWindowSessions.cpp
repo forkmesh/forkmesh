@@ -2250,10 +2250,12 @@ void forkmesh::ui::NextAccess::fillSessionSidePanels(MainWindow &window,
         }
     }
     if (!session) {
+        panels->setCommitAction({});
         panels->setDetails(details);
         return;
     }
     details.session = true;
+    details.sessionId = sessionId;
     const bool cloud = window.isCloudSession(session->id);
     const bool outside = window.isExternalSession(session->id) && !cloud;
     const AgentDiffStat stat = window.m_agentDiffStats.value(session->id);
@@ -2315,6 +2317,30 @@ void forkmesh::ui::NextAccess::fillSessionSidePanels(MainWindow &window,
     details.dirty = stat.dirty;
     details.conflicted = stat.conflicted;
     details.prNumber = session->prNumber;
+    details.canCommit = !cloud && !stat.worktree.isEmpty() && !branch.isEmpty();
+    std::function<void()> commit;
+    if (details.canCommit) {
+        const QString worktree = stat.worktree;
+        const QPointer<SessionSidePanels> target(panels);
+        commit = [self, target, sessionId, worktree, branch] {
+            if (!self)
+                return;
+            self->commitWorktreeChanges(
+                worktree, branch, [self, target, sessionId](bool committed) {
+                    if (!self)
+                        return;
+                    if (committed) {
+                        auto stat = self->m_agentDiffStats.find(sessionId);
+                        if (stat != self->m_agentDiffStats.end())
+                            stat->dirty = 0;
+                    }
+                    self->scheduleAgentLiveDiffRefresh(sessionId);
+                    if (target && target->details().sessionId == sessionId)
+                        fillSessionSidePanels(*self, target, sessionId);
+                });
+        };
+    }
+    panels->setCommitAction(std::move(commit));
     panels->setDetails(details);
 }
 

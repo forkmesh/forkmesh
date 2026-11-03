@@ -662,9 +662,12 @@ int runWorkspaceSnapshots(MainWindow &window)
                                            {QStringLiteral("content"),
                                             QStringLiteral("a\nb\nc\n")}}));
             panels.append(result(QStringLiteral("w1"), QStringLiteral("ok")));
-            panels.append(call(QStringLiteral("a1"), QStringLiteral("Task"),
-                               QJsonObject{{QStringLiteral("description"),
-                                            QStringLiteral("Scan the scratch drive")}}));
+            QJsonObject scan = call(QStringLiteral("a1"), QStringLiteral("Task"),
+                                    QJsonObject{{QStringLiteral("description"),
+                                                 QStringLiteral("Scan the scratch drive")}});
+            scan.insert(QStringLiteral("_ts"),
+                        double(QDateTime::currentMSecsSinceEpoch() - 22 * 60000 - 5000));
+            panels.append(scan);
             panels.append(call(QStringLiteral("a2"), QStringLiteral("Task"),
                                QJsonObject{{QStringLiteral("description"),
                                             QStringLiteral("Explore code")}}));
@@ -674,6 +677,10 @@ int runWorkspaceSnapshots(MainWindow &window)
             details.files = 3;
             details.added = 52;
             details.removed = 4;
+            details.dirty = 2;
+            details.canCommit = true;
+            bool committed = false;
+            panels.setCommitAction([&committed] { committed = true; });
             panels.setDetails(details);
             settle(20);
             QStringList background;
@@ -681,6 +688,26 @@ int runWorkspaceSnapshots(MainWindow &window)
                                     ->findChildren<QLabel *>(QStringLiteral("sessionsDetailText")))
                 if (text->isVisible())
                     background << text->text();
+            QString scanAge;
+            for (QLabel *text : panels.cardFrame(QStringLiteral("background"))
+                                    ->findChildren<QLabel *>(QStringLiteral("sessionsDetailText")))
+                if (text->isVisible() && text->text() == QStringLiteral("Scan the scratch drive"))
+                    scanAge = text->parentWidget()
+                                  ->findChild<QLabel *>(QStringLiteral("sessionsDetailTrailing"))
+                                  ->text();
+            check(scanAge == QStringLiteral("22m"),
+                  QStringLiteral("a running background task shows how long it has run "
+                                 "(%1): %2")
+                      .arg(label, scanAge));
+            auto *commitButton =
+                panels.findChild<QPushButton *>(QStringLiteral("sessionsCommitButton"));
+            check(commitButton && commitButton->isVisible(),
+                  QStringLiteral("Changes offers Commit changes while files are uncommitted "
+                                 "(%1)")
+                      .arg(label));
+            if (commitButton)
+                commitButton->click();
+            check(committed, QStringLiteral("Commit changes starts the commit (%1)").arg(label));
             check(background == QStringList{QStringLiteral("Scan the scratch drive"),
                                             QStringLiteral("1 finished")},
                   QStringLiteral("Background tasks lists running ones and counts the finished "
