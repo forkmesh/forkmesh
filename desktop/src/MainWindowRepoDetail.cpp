@@ -6032,55 +6032,85 @@ void MainWindow::fillOverviewEntryCommits(const QString &dir, const QString &ref
             // the worker ran: those rows are gone and this answer with them.
             if (m_overviewLoadedKey != loadedKey)
                 return;
-            OverviewTreeCache &cache = overviewTreeCache();
-            const bool sameTree = !treeKey.isEmpty() && cache.key == treeKey;
-            bool changed = false;
-            for (auto it = records.cbegin(); it != records.cend(); ++it) {
-                if (sameTree)
-                    cache.entryLog.insert(it.key(), it.value());
-                const QString text = QString::fromUtf8(it.value()).trimmed();
-                if (text.isEmpty())
-                    continue;
-                const QStringList f = text.split('\x1f');
-                for (OverviewRow &row : m_overviewRows) {
-                    if (row.path != it.key())
-                        continue;
-                    row.commitTs = f.value(0).toLongLong();
-                    row.whenText = f.value(1);
-                    row.subject = f.value(2);
-                    changed = true;
-                    break;
-                }
-            }
-            if (changed)
-                populateOverviewTree();
+            mergeOverviewEntryCommits(treeKey, records);
         });
 }
+
+void MainWindow::mergeOverviewEntryCommits(const QString &treeKey,
+                                           const QHash<QString, QByteArray> &records)
+{
+    OverviewTreeCache &cache = overviewTreeCache();
+    const bool sameTree = !treeKey.isEmpty() && cache.key == treeKey;
+    bool changed = false;
+    for (auto it = records.cbegin(); it != records.cend(); ++it) {
+        if (sameTree)
+            cache.entryLog.insert(it.key(), it.value());
+        const QString text = QString::fromUtf8(it.value()).trimmed();
+        if (text.isEmpty())
+            continue;
+        const QStringList f = text.split('\x1f');
+        for (OverviewRow &row : m_overviewRows) {
+            if (row.path != it.key())
+                continue;
+            row.commitTs = f.value(0).toLongLong();
+            row.whenText = f.value(1);
+            row.subject = f.value(2);
+            changed = true;
+            break;
+        }
+    }
+    if (changed && !refreshOverviewRowCommits())
+        populateOverviewTree();
+}
+
+class OverviewMetricTracks : public QWidget
+{
+public:
+    OverviewMetricTracks(const QList<double> &fractions, QWidget *parent = nullptr)
+        : QWidget(parent), m_fractions(fractions)
+    {
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        const bool dark = Theme::activeDark();
+        const bool next = Theme::isNext();
+        const QString classicTrack =
+            dark ? QStringLiteral("#21262d") : QStringLiteral("#eaeef2");
+        const QColor track(next ? Theme::nextPalette(dark).value(classicTrack, classicTrack)
+                                : classicTrack);
+        const QColor fill = next ? Theme::color(Theme::Role::FgMuted)
+                                 : QColor(dark ? 0x3fb950 : 0x2da44e);
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setPen(Qt::NoPen);
+        int x = 1;
+        for (double fraction : std::as_const(m_fractions)) {
+            painter.setBrush(track);
+            painter.drawRoundedRect(QRectF(x, 0, 3, 16), 2, 2);
+            const int height = fraction <= 0.0 ? 0
+                : qMax(2, qRound(16 * qMin(1.0, fraction)));
+            if (height > 0) {
+                painter.setBrush(fill);
+                painter.drawRoundedRect(QRectF(x, 16 - height, 3, height), 2, 2);
+            }
+            x += 3 + 2;
+        }
+    }
+
+private:
+    QList<double> m_fractions;
+};
 
 static QWidget *makeOverviewMetricTracks(double sizeFraction, double locFraction,
                                          double fileFraction,
                                          const QStringList &toolTips)
 {
-    auto *metrics = new QWidget;
+    auto *metrics = new OverviewMetricTracks({sizeFraction, locFraction, fileFraction});
+    metrics->setObjectName(QStringLiteral("overviewMetricTracks"));
     metrics->setFixedSize(16, 16);
     metrics->setToolTip(toolTips.join(QLatin1Char('\n')));
-    const QList<double> fractions{sizeFraction, locFraction, fileFraction};
-    auto *layout = new QHBoxLayout(metrics);
-    layout->setContentsMargins(1, 0, 1, 0);
-    layout->setSpacing(2);
-    for (double fraction : fractions) {
-        auto *track = new QFrame(metrics);
-        track->setObjectName("overviewMetricTrack");
-        track->setFixedSize(3, 16);
-        auto *fill = new QFrame(track);
-        fill->setObjectName("overviewMetricFill");
-        const int height = fraction <= 0.0 ? 0
-            : qMax(2, qRound(16 * qMin(1.0, fraction)));
-        fill->setGeometry(0, 16 - height, 3, height);
-        for (QWidget *child : {track, fill})
-            child->setAttribute(Qt::WA_TransparentForMouseEvents);
-        layout->addWidget(track);
-    }
     return metrics;
 }
 
@@ -6279,16 +6309,8 @@ void MainWindow::populateOverviewTree()
         auto *item = new QTreeWidgetItem(m_overviewList);
         const QIcon icon = e.isDir ? iconForDir(false) : iconForFile(e.name);
         const QString updated = formatShortRelativeTime(e.commitTs);
-        item->setSizeHint(
-            0, QSize(QFontMetrics(m_overviewList->font()).horizontalAdvance(e.name) +
-                         QFontMetrics(m_overviewList->font()).horizontalAdvance(updated) +
-                         16 + 16 + 5 * 5 + 12,
-                     rowHeight));
         item->setData(0, Qt::UserRole, e.path);
         item->setData(0, Qt::UserRole + 1, e.isDir ? 1 : 0);
-        item->setToolTip(0, QStringLiteral("Size: %1\nLines of code: %2\nFiles: %3")
-                                .arg(formatByteSize(e.size), QLocale().toString(e.loc),
-                                     QLocale().toString(e.fileCount)));
         const double sizeFraction = maxSize > 0 ? double(e.size) / double(maxSize) : 0.0;
         const double locFraction = maxLoc > 0 ? double(e.loc) / double(maxLoc) : 0.0;
         const double fileFraction =
@@ -6299,11 +6321,7 @@ void MainWindow::populateOverviewTree()
                                             fileFraction, e.size, e.loc, e.fileCount)
                  : makeOverviewNameCell(icon, e.name, updated, sizeFraction, locFraction,
                                         fileFraction, e.size, e.loc, e.fileCount));
-        item->setText(1, e.subject);
-        if (next)
-            item->setData(1, kNextOverviewTimeRole, updated);
-        item->setToolTip(1, e.subject);
-        item->setToolTip(0, item->toolTip(0) + QStringLiteral("\nUpdated: %1").arg(e.whenText));
+        applyOverviewRowCommit(item, e, next, rowHeight);
     }
     int listHeight = m_overviewList->frameWidth() * 2;
     if (!m_overviewList->header()->isHidden())
@@ -6312,6 +6330,55 @@ void MainWindow::populateOverviewTree()
         listHeight += qMax(rowHeight, m_overviewList->sizeHintForRow(row));
     m_overviewList->setFixedHeight(qMax(1, listHeight));
     m_overviewList->setUpdatesEnabled(true);
+}
+
+void MainWindow::applyOverviewRowCommit(QTreeWidgetItem *item, const OverviewRow &row,
+                                        bool next, int rowHeight)
+{
+    const QString updated = formatShortRelativeTime(row.commitTs);
+    const QFontMetrics metrics(m_overviewList->font());
+    item->setSizeHint(0, QSize(metrics.horizontalAdvance(row.name) +
+                                   metrics.horizontalAdvance(updated) + 16 + 16 + 5 * 5 + 12,
+                               rowHeight));
+    item->setToolTip(0, QStringLiteral("Size: %1\nLines of code: %2\nFiles: %3\nUpdated: %4")
+                            .arg(formatByteSize(row.size), QLocale().toString(row.loc),
+                                 QLocale().toString(row.fileCount), row.whenText));
+    item->setText(1, row.subject);
+    item->setToolTip(1, row.subject);
+    if (next) {
+        item->setData(1, kNextOverviewTimeRole, updated);
+    } else if (QWidget *cell = m_overviewList->itemWidget(item, 0)) {
+        if (auto *label = cell->findChild<QLabel *>(QStringLiteral("overviewUpdatedTime")))
+            label->setText(updated);
+    }
+}
+
+bool MainWindow::refreshOverviewRowCommits()
+{
+    if (!m_overviewList || m_overviewSortKey == QLatin1String("updated") ||
+        m_overviewSortKey == QLatin1String("subject"))
+        return false;
+    const int first = m_overviewPath.isEmpty() ? 0 : 1;
+    if (m_overviewList->topLevelItemCount() - first != m_overviewRows.size())
+        return false;
+    QHash<QString, int> rowByPath;
+    rowByPath.reserve(m_overviewRows.size());
+    for (int i = 0; i < m_overviewRows.size(); ++i)
+        rowByPath.insert(m_overviewRows.at(i).path, i);
+    QList<QPair<QTreeWidgetItem *, int>> matched;
+    matched.reserve(m_overviewRows.size());
+    for (int at = first; at < m_overviewList->topLevelItemCount(); ++at) {
+        QTreeWidgetItem *item = m_overviewList->topLevelItem(at);
+        const auto row = rowByPath.constFind(item->data(0, Qt::UserRole).toString());
+        if (row == rowByPath.constEnd() || !m_overviewList->itemWidget(item, 0))
+            return false;
+        matched.append({item, row.value()});
+    }
+    const bool next = m_overviewList->property("nextCodeTable").toBool();
+    const int rowHeight = next ? kNextCodeRowHeight : 28;
+    for (const auto &[item, row] : std::as_const(matched))
+        applyOverviewRowCommit(item, m_overviewRows.at(row), next, rowHeight);
+    return true;
 }
 
 QString MainWindow::currentRef() const

@@ -47,6 +47,10 @@ meeting app"; this page may name them.
   Face Changer on the phones); the desktop does the same with Qt WebEngine, which every desktop
   build that has a browser pane already ships. A build without WebEngine
   shows a note and "Open in browser".
+- **The engine starts when the page is first shown.** Creating the first
+  `QWebEngineView` starts Chromium, so `FaceChangerFeature::showEvent` builds
+  it, not the constructor that runs during startup's package-page build
+  (report #23, [../desktop/diagnostics.md](../desktop/diagnostics.md#rules-from-report-23-2026-11-03)).
 - **Video only.** The page asks for the camera alone (`audio: false`) and the
   permission handler grants only `MediaVideoCapture` to the page's own host,
   denying everything else. A changed voice for meetings is Voice Changer's

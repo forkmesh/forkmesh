@@ -1188,12 +1188,22 @@ void SurveysPage::renderDetail()
         auto *tabs = new QTabWidget;
         tabs->setObjectName(QStringLiteral("surveysDetailTabs"));
         tabs->setDocumentMode(true);
-        tabs->addTab(resultsPage(), QStringLiteral("Results"));
-        tabs->addTab(responsesPage(), QStringLiteral("Responses (%1)").arg(survey.responseCount));
-        tabs->addTab(activityPage(), QStringLiteral("Activity"));
-        tabs->setCurrentIndex(std::clamp(m_detailTab, 0, 2));
-        connect(tabs, &QTabWidget::currentChanged, this, [this](int index) {
+        const QStringList labels{QStringLiteral("Results"),
+                                 QStringLiteral("Responses (%1)").arg(survey.responseCount),
+                                 QStringLiteral("Activity")};
+        for (const QString &label : labels) {
+            auto *holder = new QWidget;
+            auto *holderLayout = new QVBoxLayout(holder);
+            holderLayout->setContentsMargins(0, 0, 0, 0);
+            holderLayout->setSpacing(0);
+            tabs->addTab(holder, label);
+        }
+        const int current = std::clamp(m_detailTab, 0, 2);
+        fillDetailTab(tabs, current);
+        tabs->setCurrentIndex(current);
+        connect(tabs, &QTabWidget::currentChanged, this, [this, tabs](int index) {
             m_detailTab = index;
+            fillDetailTab(tabs, index);
             if (index == 1 && m_responsesFor != m_detailId && !m_responsesLoading)
                 loadResponses();
         });
@@ -1222,6 +1232,16 @@ void SurveysPage::renderDetail()
         actionsLayout->addLayout(secondary);
     else
         delete secondary;
+}
+
+void SurveysPage::fillDetailTab(QTabWidget *tabs, int index)
+{
+    QWidget *holder = tabs->widget(index);
+    if (!holder || holder->property("surveysTabFilled").toBool())
+        return;
+    holder->setProperty("surveysTabFilled", true);
+    QWidget *page = index == 0 ? resultsPage() : index == 1 ? responsesPage() : activityPage();
+    holder->layout()->addWidget(page);
 }
 
 QWidget *SurveysPage::resultsPage()

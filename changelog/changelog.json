@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-03", "area": "Desktop", "text": "A repository's file list, a survey's results and the app's startup no longer pause the window while they fill in."},
   {"date": "2026-11-03", "area": "Desktop", "text": "Fixed two crashes: one when closing the window with the Mastodon page open, and one when the app exits while a network request is finishing."},
   {"date": "2026-11-02", "area": "Android", "text": "The Android app now asks you to confirm a new desktop's pairing code, and signing out of ForkMesh also signs you out of Mastodon."},
   {"date": "2026-11-02", "area": "Server", "text": "A renamed or deleted account's name can no longer be taken by someone else, and a password reset now removes other device and SSH keys."},
