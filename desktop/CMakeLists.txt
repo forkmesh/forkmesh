@@ -4074,6 +4074,17 @@ forkmesh_link_opengl(forkmesh-window-tests)
     target_link_libraries(forkmesh-background-mode-tests PRIVATE Qt6::Gui Qt6::Network)
     target_include_directories(forkmesh-background-mode-tests PRIVATE src)
 
+    qt_add_executable(forkmesh-background-activity-exit-tests
+        tests/test_background_activity_exit.cpp
+        src/BackgroundActivity.h
+        src/ActionTelemetry.h
+        src/ActionTelemetry.cpp
+        src/LogSource.h
+        src/LogSource.cpp
+    )
+    target_link_libraries(forkmesh-background-activity-exit-tests PRIVATE Qt6::Core)
+    target_include_directories(forkmesh-background-activity-exit-tests PRIVATE src)
+
     qt_add_executable(forkmesh-safe-delete-tests
         tests/test_safe_delete.cpp
         src/SafeDelete.h
@@ -4406,6 +4417,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-agent-parity-tests
         forkmesh-process-reaper-tests
         forkmesh-background-mode-tests
+        forkmesh-background-activity-exit-tests
         forkmesh-stall-watchdog-tests
         forkmesh-qt-runtime-diagnostics-tests
         forkmesh-prompt-spellcheck-tests
@@ -4556,6 +4568,8 @@ forkmesh_link_opengl(forkmesh-perf-tests)
              COMMAND forkmesh-process-reaper-tests)
     add_test(NAME forkmesh-background-mode-tests
              COMMAND forkmesh-background-mode-tests)
+    add_test(NAME forkmesh-background-activity-exit-tests
+             COMMAND forkmesh-background-activity-exit-tests)
     add_test(NAME forkmesh-agent-access-tests
              COMMAND forkmesh-agent-access-tests)
     add_test(NAME forkmesh-agent-boundary-tests
@@ -5029,6 +5043,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-agent-parity-tests
         forkmesh-process-reaper-tests
         forkmesh-background-mode-tests
+        forkmesh-background-activity-exit-tests
         forkmesh-stall-watchdog-tests
         forkmesh-qt-runtime-diagnostics-tests
         forkmesh-e2e-stub-agent)

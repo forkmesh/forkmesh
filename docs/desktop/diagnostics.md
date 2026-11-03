@@ -990,6 +990,16 @@ Crash-safety rules:
   the crash and fails on any direct connection under `desktop/src` or
   `marketplace/packages`.
 - `glib` `SIGTRAP` crashes have come from file-descriptor exhaustion.
+- Process-wide registries that a `destroyed` handler, a deferred delete or a
+  worker can reach are never destroyed: `BackgroundActivity`'s ticket bus and
+  `ActionTelemetry`'s writer are leaked on purpose. An `exit()` from inside a
+  library (an X11 IO error in an offscreen instance) runs static destructors
+  and then flushes posted events, and a `QNetworkReply` deleted then closed its
+  ticket in the destroyed hash (SIGSEGV in `QHashPrivate::Data::detached`,
+  report #23). The writer still flushes `actions.jsonl` from an `atexit`
+  handler registered when it is created; records that arrive after that are
+  dropped. `forkmesh-background-activity-exit-tests` closes a ticket from an
+  exit handler registered before the bus existed.
 
 ## What is reported to the relay
 
