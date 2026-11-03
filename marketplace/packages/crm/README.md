@@ -92,6 +92,32 @@ which cannot read sealed list memberships.
   saved copy is never partial; a newer load or another organization drops an
   older one, and a failed page clears the revision. The desktop table is not
   row-paged.
+- **Desktop row widgets**: the Actions buttons (Email, Copy prompt, Edit,
+  Delete) and the Mastodon cell's refresh button are real widgets, and every
+  one is polished against the application style sheet. Built for every row,
+  3,222 contacts made about 20,000 widgets, and each 100-row fill chunk
+  stalled the window for 500 ms or more (diagnostic report #24, November
+  2026). `fillContactRows` now puts in only the text items;
+  `attachVisibleRowWidgets` builds the widgets for the rows in view plus six
+  rows above and below (`kRowWidgetMargin`), and drops rows more than three
+  screens away, so scrolling back reuses them while a jump down the scroll bar
+  builds only one screen. It runs after each chunk, on scrolling, on a range
+  change (filtering, resizing) and when the table is shown; while the scroll
+  bar is held it waits for the release, since each screen of buttons costs
+  about 100 ms under a large style sheet. The filter only touches rows whose
+  hidden state changes. Measured offscreen on the November 2026 saved copy
+  (3,222 contacts) with a 400-rule application style sheet: the old fill put
+  in the 739-row Mastodon list in 2,928 ms with a longest freeze of 785 ms;
+  the new one puts in the 1,480-row Investors list in 397 ms with a longest of
+  156 ms (8,058 widgets on the page before, 665 after).
+- **Sheet list and pictures**: `renderSheetList` builds a signature of what
+  the side list shows (tabs, names, counts, sharing, colours) and skips the
+  rebuild when it is unchanged. `applyAvatars` no longer rebuilds that list:
+  its access badges draw initials, not pictures, so the 150 ms picture batches
+  (2,251 of them while pictures load) only re-polished its widgets. Reading a
+  saved picture off disk and saving a fetched one run on the global thread
+  pool (`fetchAvatar`, then `fetchAvatarRemote` when the copy is missing or
+  older than a week).
 - **Phones** (iOS `CrmViewModel`, Android `CrmModel`) ask the summary for the
   first 250 contacts, show them, then read the rest 1000 at a time
   (`crmContactsPage`) in the background, with "Loading contacts, N of M" in

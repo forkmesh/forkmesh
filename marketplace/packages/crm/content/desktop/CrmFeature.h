@@ -330,6 +330,9 @@ private:
     // so a tab of thousands of contacts keeps the window answering meanwhile.
     void renderContacts();
     void fillContactRows();
+    void scheduleRowWidgets();
+    void attachVisibleRowWidgets();
+    void attachRowWidgets(int row);
     bool contactRowShown(const ContactRow &row) const;
     // The chevron header over the open tab: its pipeline's stages in order,
     // each with how many of the tab's contacts sit there.
@@ -498,6 +501,7 @@ private:
     void queueAvatars();
     void pumpAvatars();
     void fetchAvatar(const QString &source);
+    void fetchAvatarRemote(const QString &source);
     void fetchAvatarImage(const QString &source, const QUrl &url);
     void finishAvatar(const QString &source, const QImage &image);
     void applyAvatars();
@@ -781,6 +785,9 @@ private:
     QList<ContactRow> m_fillSource;
     QVector<int> m_fillRows;
     QVector<int> m_tableRows; // table row -> m_fillSource index
+    QSet<int> m_widgetRows;
+    bool m_rowWidgetsQueued = false;
+    QString m_sheetListSignature;
     int m_fillNext = 0;
     quint64 m_fillGeneration = 0;
     bool m_filling = false;
