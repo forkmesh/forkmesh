@@ -64,6 +64,15 @@ BULK_TAG_FIELDS = ("addTags", "removeTags")
 # Sealed rows are packed into one JSON bind per UPDATE; D1 caps a bound string
 # at 2 MB, so each write stays well under it.
 BULK_WRITE_BYTES = 900_000
+SYNC_FIELDS = ("name", "email", "company", "title", "phone", "twitter", "mastodon",
+               "bluesky", "linkedin", "github", "website", "location", "stage", "value",
+               "nextStep", "owner", "source", "tags", "notes", "lastContactedAt")
+SYNC_CUSTOM_PREFIX = "fields."
+SYNC_MAX_ROWS = 500
+SYNC_MAX_COLUMNS = 60
+SYNC_PIPELINE_PREFIX = "pipeline:"
+SYNC_NO_PIPELINE = "no-pipeline"
+SYNC_RESERVED_LABELS = frozenset({"crm id"})
 # A CSV import may arrive in parts so the page can show real progress; every
 # part of one import carries the same client-chosen id.
 IMPORT_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{7,63}$")
@@ -354,6 +363,10 @@ AUTO_EMAIL_FORKMESH_BRIEF = (
     "full node that hosts and mirrors repositories and runs Codex or Claude Code "
     "agents whose work becomes pull requests. The protocol, self-hosting and "
     "public clone are free; only bounded hosted services are paid.")
+AUTO_EMAIL_FORKMESH_MISSION = (
+    "Let developers collaborate on, mirror, and preserve source-code repositories "
+    "across independent hosts, without relying on any single hosting provider.")
+AUTO_EMAIL_OFFER_LIMIT = 6
 REFERRAL_ORIGIN = "https://forkmesh.com/r/"
 TRACK_ORIGIN = "https://app.forkmesh.com"
 TRACK_LOGO = "https://app.forkmesh.com/assets/logo-96.png"
@@ -714,9 +727,30 @@ DATA_SCHEMA_UP = [
         updated_at INTEGER NOT NULL CHECK (updated_at >= 0),
         data TEXT NOT NULL,
         PRIMARY KEY (org_bi, member_bi))""",
+    """CREATE TABLE IF NOT EXISTS crm_boxes (
+        box_id TEXT PRIMARY KEY,
+        org_bi TEXT NOT NULL,
+        org_name TEXT NOT NULL,
+        created_by_name TEXT NOT NULL,
+        updated_by_name TEXT NOT NULL,
+        created_at INTEGER NOT NULL CHECK (created_at >= 0),
+        updated_at INTEGER NOT NULL CHECK (updated_at >= 0),
+        data TEXT NOT NULL)""",
+    "CREATE INDEX IF NOT EXISTS idx_crm_boxes_org "
+    "ON crm_boxes(org_bi,created_at,box_id)",
+    """CREATE TABLE IF NOT EXISTS crm_box_members (
+        contact_id TEXT PRIMARY KEY,
+        org_bi TEXT NOT NULL,
+        box_id TEXT NOT NULL,
+        pinned INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0, 1)),
+        assigned_at INTEGER NOT NULL CHECK (assigned_at >= 0))""",
+    "CREATE INDEX IF NOT EXISTS idx_crm_box_members_org_box "
+    "ON crm_box_members(org_bi,box_id)",
 ]
 # Indexes and triggers drop with their tables; children drop before contacts.
 DATA_SCHEMA_DOWN = [
+    "DROP TABLE IF EXISTS crm_box_members",
+    "DROP TABLE IF EXISTS crm_boxes",
     "DROP TABLE IF EXISTS crm_zoho_members",
     "DROP TABLE IF EXISTS crm_backfills",
     "DROP TABLE IF EXISTS crm_list_activity",
@@ -1262,8 +1296,9 @@ def _route(path):
         return "open", "", "open", opened.group(1)
     match = re.fullmatch(
         r"/api/crm/([a-z][a-z0-9-]{0,62})"
-        r"(?:/(contacts|emails|mail|settings|views|outreach|decks|zoho)"
-        r"(?:/([0-9a-f]{32}|import|grants|export|send|auto|rate|lookup|link|copy|order|team|bulk|merge"
+        r"(?:/(contacts|emails|mail|settings|views|outreach|decks|zoho|boxes)"
+        r"(?:/([0-9a-f]{32}|import|grants|export|send|auto|rate|lookup|link|copy|order|team|bulk|merge|sync"
+        r"|move"
         r"|toots|toot"
         r"|duplicates|evidence|activity|note"
         r"|connect|exchange"
@@ -1449,6 +1484,7 @@ def _contact_fields(row, data):
         "lastContactedAt": _integer(data.get("lastContactedAt")),
         "fields": _custom_fields(data.get("fields")),
         "views": _view_ids(data.get("views")),
+        "personKeys": _person_keys(data),
         "account": data.get("account") if isinstance(data.get("account"), dict) else {},
         "createdBy": str(row.get("created_by_name") or ""),
         "updatedBy": str(row.get("updated_by_name") or ""),
@@ -1620,6 +1656,7 @@ async def _mail_message_project(runtime, row):
         "sourceFolder": str(data.get("sourceFolder") or ""),
         "threadId": str(data.get("threadId") or ""),
         "flag": str(data.get("flag") or ""),
+        "sent": bool(data.get("sent")),
         "hasAttachment": bool(data.get("hasAttachment")),
         "providerUrl": str(data.get("providerUrl") or ""),
         "receivedAt": _integer(row.get("received_at")),
@@ -2831,6 +2868,346 @@ async def _write_sealed_contacts(runtime, org_bi, account_bi, actor, now, sealed
         chunk, size = {}, 0
 
 
+def _sync_field(field):
+    field = str(field or "")
+    if field in SYNC_FIELDS:
+        return field
+    if field.startswith(SYNC_CUSTOM_PREFIX):
+        key = field[len(SYNC_CUSTOM_PREFIX):]
+        if FIELD_KEY_RE.fullmatch(key) and key not in CONTACT_COLUMN_FIELDS:
+            return field
+    return ""
+
+
+def _sync_patch(source):
+    patch = {}
+    if not isinstance(source, dict):
+        return patch, ""
+    for field, value in source.items():
+        known = _sync_field(field)
+        if not known:
+            return {}, str(field)[:80]
+        if isinstance(value, (dict, bool)) or (isinstance(value, list) and known != "tags"):
+            return {}, known
+        if known.startswith(SYNC_CUSTOM_PREFIX):
+            patch.setdefault("fields", {})[known[len(SYNC_CUSTOM_PREFIX):]] = value
+        else:
+            patch[known] = value
+    return patch, ""
+
+
+def _sync_value(contact, field):
+    contact = contact if isinstance(contact, dict) else {}
+    if field.startswith(SYNC_CUSTOM_PREFIX):
+        fields = contact.get("fields") if isinstance(contact.get("fields"), dict) else {}
+        return _custom_fields(
+            {field[len(SYNC_CUSTOM_PREFIX):]: fields.get(field[len(SYNC_CUSTOM_PREFIX):])}
+        ).get(field[len(SYNC_CUSTOM_PREFIX):], "")
+    patch, _ = _sync_patch({field: contact.get(field)})
+    return _contact_data(patch).get(field)
+
+
+def _sync_expected(field, value):
+    if field.startswith(SYNC_CUSTOM_PREFIX):
+        return _sync_value({"fields": {field[len(SYNC_CUSTOM_PREFIX):]: value}}, field)
+    return _sync_value({field: value}, field)
+
+
+def _sync_contact(contact):
+    out = {"id": contact["id"], "flow": contact["flow"],
+           "updatedAt": contact["updatedAt"], "updatedBy": contact["updatedBy"],
+           "fields": contact["fields"]}
+    for field in SYNC_FIELDS:
+        out[field] = contact[field]
+    return out
+
+
+def _sync_columns(view_columns, contacts):
+    columns, fields, labels = [], set(), set()
+
+    def add(field, label):
+        if field in fields or len(columns) >= SYNC_MAX_COLUMNS:
+            return
+        label = _clean(label, 60) or field
+        base, number = label, 2
+        while label.lower() in labels or label.lower() in SYNC_RESERVED_LABELS:
+            label = "%s %d" % (base, number)
+            number += 1
+        fields.add(field)
+        labels.add(label.lower())
+        columns.append({"field": field, "label": label})
+
+    shown = [column for column in view_columns or [] if not column.get("hidden")]
+    named = {column["field"]: column["label"] for column in view_columns or []}
+    for field in ("name", "email"):
+        add(field, named.get(field) or CONTACT_COLUMN_LABELS[field])
+    for column in shown:
+        field = (SYNC_CUSTOM_PREFIX + column["field"]) if column.get("custom") else column["field"]
+        if _sync_field(field):
+            add(field, column["label"])
+    for field in SYNC_FIELDS:
+        add(field, named.get(field) or CONTACT_COLUMN_LABELS[field])
+    for column in view_columns or []:
+        if column.get("custom"):
+            add(SYNC_CUSTOM_PREFIX + column["field"], column["label"])
+    for contact in contacts:
+        for key in contact.get("fields") or {}:
+            if _sync_field(SYNC_CUSTOM_PREFIX + key):
+                add(SYNC_CUSTOM_PREFIX + key, key.replace("_", " ").title())
+    return columns
+
+
+async def _sync_list(runtime, org_bi, account_bi, actor, role, list_id):
+    list_id = _clean(list_id, 80)
+    flows = await _org_flows(runtime, org_bi)
+    views = await _org_list_views(runtime, org_bi)
+    pipeline_lists = _pipeline_lists(views)
+    stages = {flow["id"]: list(flow["stages"]) for flow in flows}
+    if CONTACT_ID_RE.fullmatch(list_id):
+        row = await _view_row(runtime, org_bi, list_id)
+        view = await _view_project(runtime, row, account_bi, role) if row else None
+        if not row or not _view_readable(
+                view, str(row.get("owner_bi") or ""), account_bi, actor, role):
+            return None
+        return ({"id": view["id"], "name": view["name"], "flow": view["flow"],
+                 "stages": stages.get(view["flow"], []), "canAdd": True},
+                view["columns"], lambda contact: _contact_in_view(contact, view, pipeline_lists),
+                flows, views)
+    if list_id.startswith(SYNC_PIPELINE_PREFIX):
+        flow_id = list_id[len(SYNC_PIPELINE_PREFIX):]
+        flow = next((item for item in flows if item["id"] == flow_id), None)
+        if not flow or flow_id in pipeline_lists:
+            return None
+        return ({"id": list_id, "name": flow["name"], "flow": flow_id,
+                 "stages": list(flow["stages"]), "canAdd": True},
+                [], lambda contact: contact.get("flow") == flow_id, flows, views)
+    if list_id == SYNC_NO_PIPELINE:
+        known = set(stages) | set(pipeline_lists)
+        return ({"id": list_id, "name": "No pipeline", "flow": "", "stages": [],
+                 "canAdd": False},
+                [], lambda contact: contact.get("flow") not in known, flows, views)
+    return None
+
+
+async def _sync_members(runtime, org_bi):
+    rows = await runtime.d1_all(
+        "SELECT name FROM org_members WHERE org_bi=? ORDER BY name LIMIT 200", org_bi)
+    return [str(row.get("name") or "") for row in rows or [] if row.get("name")]
+
+
+async def _sync_read(runtime, org_bi, account_bi, actor, role):
+    found = await _sync_list(runtime, org_bi, account_bi, actor, role,
+                             runtime.query_params().get("list"))
+    if found is None:
+        return _response(runtime, {"error": "list_not_found"}, 404)
+    info, view_columns, member, _, _ = found
+    contacts = [contact for contact in await _contacts(runtime, org_bi) if member(contact)]
+    return _response(runtime, {
+        "ok": True, "list": info,
+        "columns": _sync_columns(view_columns, contacts),
+        "contacts": [_sync_contact(contact) for contact in contacts],
+        "members": await _sync_members(runtime, org_bi),
+        "canWrite": role not in ORG_READ_ONLY_ROLES,
+        "readAt": runtime.now(),
+    })
+
+
+def _sync_stage_error(contact, patch, flows):
+    if "stage" not in patch:
+        return None
+    flow = next((item for item in flows if item["id"] == contact.get("flow")), None)
+    if flow and contact.get("stage") not in flow["stages"]:
+        return {"error": "unknown_stage", "stages": list(flow["stages"])}
+    return None
+
+
+def _sync_contact_error(contact, patch):
+    if not contact.get("name") and not contact.get("email"):
+        return {"error": "name_or_email_required"}
+    if patch.get("email") and not contact.get("email"):
+        return {"error": "invalid_email"}
+    return None
+
+
+async def _sync_email_holders(runtime, org_bi, email_bis):
+    if not email_bis:
+        return {}
+    rows = await runtime.d1_all(
+        "SELECT contact_id,email_bi FROM crm_contacts WHERE org_bi=? AND email_bi IN "
+        "(SELECT value FROM json_each(?))",
+        org_bi, json.dumps(sorted(email_bis)))
+    return {str(row["email_bi"]): str(row["contact_id"]) for row in rows or []}
+
+
+async def _sync_write(runtime, org_bi, org_name, account_bi, actor, role, data):
+    found = await _sync_list(runtime, org_bi, account_bi, actor, role, data.get("list"))
+    if found is None:
+        return _response(runtime, {"error": "list_not_found"}, 404)
+    info, _, _, flows, views = found
+    updates = data.get("updates") if isinstance(data.get("updates"), list) else []
+    creates = data.get("creates") if isinstance(data.get("creates"), list) else []
+    if not updates and not creates:
+        return _response(runtime, {"error": "changes_required"}, 400)
+    if len(updates) + len(creates) > SYNC_MAX_ROWS:
+        return _response(runtime, {"error": "too_many_rows", "limit": SYNC_MAX_ROWS}, 413)
+    wanted = [str((item if isinstance(item, dict) else {}).get("id") or "").lower()
+              for item in updates]
+    rows = await runtime.d1_all(
+        "SELECT contact_id,org_name,created_by_name,updated_by_name,created_at,updated_at,"
+        "email_bi,data FROM crm_contacts WHERE org_bi=? AND contact_id IN "
+        "(SELECT value FROM json_each(?))",
+        org_bi, json.dumps([item for item in wanted if CONTACT_ID_RE.fullmatch(item)]))
+    by_id = {str(row["contact_id"]): row for row in rows or []}
+    results, staged, seen = [], [], set()
+    for item, contact_id in zip(updates, wanted):
+        item = item if isinstance(item, dict) else {}
+        if not CONTACT_ID_RE.fullmatch(contact_id) or contact_id in seen:
+            results.append({"id": contact_id[:32], "status": "error",
+                            "error": "duplicate_contact_id" if contact_id in seen
+                            else "invalid_contact_id"})
+            continue
+        seen.add(contact_id)
+        row = by_id.get(contact_id)
+        if not row:
+            results.append({"id": contact_id, "status": "missing"})
+            continue
+        existing = await runtime.open(row.get("data"))
+        existing = existing if isinstance(existing, dict) else {}
+        patch, bad = _sync_patch(item.get("set"))
+        expect = item.get("expect") if isinstance(item.get("expect"), dict) else {}
+        if bad or any(not _sync_field(field) for field in expect):
+            results.append({"id": contact_id, "status": "error", "error": "invalid_field",
+                            "field": bad or next(f for f in expect if not _sync_field(f))})
+            continue
+        current = _contact_fields(row, existing)
+        changed = [field for field, value in expect.items()
+                   if _sync_expected(field, value) != _sync_value(current, field)]
+        if changed:
+            results.append({"id": contact_id, "status": "conflict", "fields": changed,
+                            "contact": _sync_contact(current)})
+            continue
+        contact = _contact_data(patch, existing)
+        problem = _sync_stage_error(contact, patch, flows) or _sync_contact_error(contact, patch)
+        if problem:
+            results.append(dict(problem, id=contact_id, status="error"))
+            continue
+        if _edit_marks_contacted(patch, existing, contact):
+            _advance_contacted(contact, flows)
+        if contact == existing:
+            results.append({"id": contact_id, "status": "unchanged",
+                            "contact": _sync_contact(current)})
+            continue
+        email_bi = await _unique_email_bi(runtime, org_bi, contact.get("email"))
+        staged.append((len(results), contact_id, row, existing, contact, email_bi))
+        results.append(None)
+    holders = await _sync_email_holders(runtime, org_bi, {
+        entry[5] for entry in staged if entry[5] != str(entry[2].get("email_bi") or "")})
+    claimed = {}
+    now = runtime.now()
+    sealed, changes, email_moves = {}, [], []
+    for index, contact_id, row, existing, contact, email_bi in staged:
+        moved = email_bi != str(row.get("email_bi") or "")
+        holder = holders.get(email_bi, "") if moved else ""
+        if email_bi and ((holder and holder != contact_id)
+                         or claimed.get(email_bi, contact_id) != contact_id):
+            results[index] = {"id": contact_id, "status": "error",
+                              "error": "contact_email_exists"}
+            continue
+        if email_bi:
+            claimed[email_bi] = contact_id
+        if moved:
+            email_moves.append((index, contact_id, row, existing, contact, email_bi))
+            continue
+        sealed[contact_id] = await runtime.seal(contact)
+        changes.append((existing, contact))
+        results[index] = {"id": contact_id, "status": "updated", "contact": _sync_contact(
+            _contact_fields(dict(row, updated_by_name=actor, updated_at=now), contact))}
+    await _write_sealed_contacts(runtime, org_bi, account_bi, actor, now, sealed)
+    for index, contact_id, row, existing, contact, email_bi in email_moves:
+        try:
+            await runtime.d1_run(
+                "UPDATE crm_contacts SET email_bi=?,updated_by_bi=?,updated_by_name=?,"
+                "updated_at=?,data=? WHERE org_bi=? AND contact_id=?",
+                email_bi, account_bi, actor, now, await runtime.seal(contact), org_bi,
+                contact_id)
+        except Exception as error:
+            if not _unique_conflict(error):
+                raise
+            results[index] = {"id": contact_id, "status": "error",
+                              "error": "contact_email_exists"}
+            continue
+        changes.append((existing, contact))
+        results[index] = {"id": contact_id, "status": "updated", "contact": _sync_contact(
+            _contact_fields(dict(row, updated_by_name=actor, updated_at=now), contact))}
+    created = 0
+    for item in creates:
+        item = item if isinstance(item, dict) else {}
+        ref = _clean(item.get("ref"), 40)
+        result = await _sync_create(runtime, org_bi, org_name, account_bi, actor, info,
+                                    flows, item, claimed)
+        if result.pop("_created", False):
+            changes.append((None, result.pop("_contact")))
+            created += 1
+        results.append(dict(result, ref=ref))
+    if changes:
+        await runtime.audit(actor, "crm.contacts.sync", "organization", org_name,
+                            details={"contacts": len(changes), "created": created,
+                                     "list": info["id"]})
+        await _record_contact_changes(runtime, org_bi, account_bi, actor, changes, views)
+    return _response(runtime, {"ok": True, "list": info, "results": results})
+
+
+async def _sync_create(runtime, org_bi, org_name, account_bi, actor, info, flows, item,
+                       claimed):
+    if not info["canAdd"]:
+        return {"status": "error", "error": "list_cannot_add"}
+    request_id = str(item.get("requestId") or "").lower()
+    request_id = request_id if CONTACT_ID_RE.fullmatch(request_id) else ""
+    if request_id:
+        replay = await _contact_row(runtime, org_bi, request_id)
+        if replay:
+            return {"id": request_id, "status": "created", "replayed": True,
+                    "contact": _sync_contact(await _contact_project(runtime, replay))}
+    patch, bad = _sync_patch(item.get("set"))
+    if bad:
+        return {"status": "error", "error": "invalid_field", "field": bad}
+    if info["flow"]:
+        patch["flow"] = info["flow"]
+    if CONTACT_ID_RE.fullmatch(info["id"]):
+        patch["views"] = [info["id"]]
+    contact = _contact_data(patch)
+    placed = _flow_placement(contact, flows)
+    problem = None
+    if "stage" in patch and placed["stage"] != contact["stage"]:
+        flow = next((entry for entry in flows if entry["id"] == placed["flow"]), None)
+        problem = {"error": "unknown_stage", "stages": list(flow["stages"]) if flow else []}
+    contact = placed
+    problem = problem or _sync_contact_error(contact, patch)
+    if problem:
+        return dict(problem, status="error")
+    email_bi = await _unique_email_bi(runtime, org_bi, contact.get("email"))
+    taken = await _contact_taken(runtime, org_bi, email_bi)
+    if taken or (email_bi and email_bi in claimed):
+        return {"status": "error", "error": "contact_email_exists",
+                **({"existing": taken["contact_id"]} if taken else {})}
+    contact_id = request_id or runtime.new_id()
+    try:
+        inserted = await _insert_contact(runtime, contact_id, org_bi, org_name, email_bi,
+                                         account_bi, actor, runtime.now(), contact)
+    except Exception as error:
+        if not _unique_conflict(error):
+            raise
+        return {"status": "error", "error": "contact_email_exists"}
+    if not inserted:
+        return {"status": "error", "error": "crm_full"}
+    if email_bi:
+        claimed[email_bi] = contact_id
+    await runtime.audit(actor, "crm.contact.create", "crm_contact", contact_id)
+    return {"id": contact_id, "status": "created", "_created": True, "_contact": contact,
+            "contact": _sync_contact(await _contact_project(
+                runtime, await _contact_row(runtime, org_bi, contact_id)))}
+
+
 async def _delete_custom_column(runtime, org_bi, org_name, account_bi, actor, data):
     """Delete a custom column outright: its value leaves every contact that
     carries it and the column leaves every sheet's saved layout, so it stops
@@ -3142,6 +3519,8 @@ async def _merge_contacts(runtime, org_bi, account_bi, actor, data):
     )
     await runtime.d1_run(
         "DELETE FROM crm_contacts WHERE org_bi=? AND contact_id=?", org_bi, source_id)
+    await runtime.d1_run(
+        "DELETE FROM crm_box_members WHERE org_bi=? AND contact_id=?", org_bi, source_id)
     await runtime.audit(actor, "crm.contact.merge", "crm_contact", target_id,
                         details={"merged": source_id})
     views = await _org_list_views(runtime, org_bi)
@@ -4973,6 +5352,20 @@ def _box_emails(data):
     return found
 
 
+def _person_keys(data):
+    emails = {_email(data.get("email"))} - {""}
+    fields = data.get("fields")
+    for key, value in (fields.items() if isinstance(fields, dict) else ()):
+        if "mail" not in str(key).lower():
+            continue
+        for match in BOX_EMAIL_ANY_RE.finditer(_text(value, MAX_CUSTOM_FIELD_BYTES)):
+            emails.add(_email(match.group(0)))
+    keys = {"email:" + item for item in emails if item}
+    keys |= {"x:" + item.split(":", 1)[1] for item in _box_profiles(data)
+             if item.startswith("twitter:")}
+    return sorted(keys)
+
+
 def _box_profiles(data):
     """The LinkedIn, GitHub and X accounts a box names, as "site:user"."""
     found = set()
@@ -5127,6 +5520,409 @@ def _contact_handles(data):
         if any(word in str(key).lower() for word in ("mastodon", "fedi")):
             found |= _handles_in(value)
     return found
+
+
+BOX_COMPANY_FREE_MAIL = BOX_FREE_MAIL | frozenset({
+    "126.com", "163.com", "aliyun.com", "bk.ru", "cock.li", "daum.net", "disroot.org",
+    "duck.com", "foxmail.com", "gmx.at", "gmx.ch", "hotmail.co.uk", "hotmail.de",
+    "hotmail.fr", "hushmail.com", "inbox.ru", "list.ru", "live.co.uk", "mail.com",
+    "mail.ru", "mailbox.org", "msn.cn", "naver.com", "outlook.de", "outlook.fr",
+    "posteo.de", "posteo.net", "protonmail.ch", "rambler.ru", "riseup.net",
+    "seznam.cz", "sina.com", "sohu.com", "tuta.com", "tuta.io", "tutamail.com",
+    "ya.ru", "yahoo.co.jp", "yahoo.co.uk", "yahoo.de", "yahoo.fr", "yandex.ru",
+    "yeah.net", "ymail.com"})
+BOX_PLATFORM_DOMAINS = frozenset({
+    "about.me", "academia.edu", "apple.com", "appspot.com", "archive.org", "arxiv.org",
+    "bio.link", "bit.ly", "bitbucket.org", "blogspot.com", "bsky.app",
+    "buymeacoffee.com", "carrd.co", "codeberg.org", "codeberg.page", "crates.io",
+    "dev.to", "discord.com", "discord.gg", "docker.com", "facebook.com",
+    "firebaseapp.com", "forkmesh.com", "gitbook.io", "gitee.com", "github.com",
+    "github.io", "githubusercontent.com", "gitlab.com", "gitlab.io", "ghost.io",
+    "goo.gl", "google.com", "hashnode.dev", "herokuapp.com", "huggingface.co",
+    "instagram.com", "keybase.io", "ko-fi.com", "liberapay.com", "linkedin.com",
+    "linktr.ee", "matrix.to", "medium.com", "netlify.app", "notion.site", "notion.so",
+    "npmjs.com", "opencollective.com", "orcid.org", "pages.dev", "patreon.com",
+    "pypi.org", "readthedocs.io", "reddit.com", "researchgate.net", "sourceforge.net",
+    "sr.ht", "substack.com", "t.co", "t.me", "telegram.me", "tiktok.com",
+    "tinyurl.com", "tumblr.com", "twitch.tv", "twitter.com", "vercel.app", "wa.me",
+    "web.app", "webflow.io", "wikipedia.org", "wixsite.com", "wordpress.com",
+    "workers.dev", "x.com", "youtu.be", "youtube.com"})
+BOX_SECOND_LEVEL = frozenset({
+    "ac", "co", "com", "edu", "go", "gob", "gov", "mil", "ne", "net", "or", "org"})
+BOX_GENERIC_COMPANIES = frozenset({
+    "consultant", "contractor", "freelance", "freelancer", "home", "independent",
+    "individual", "none", "other", "personal", "private", "retired", "self",
+    "selfemployed", "student", "unemployed", "unknown", "various"})
+BOX_KEY_ORDER = ("email", "x", "github", "domain", "company")
+BOX_NAME_LIMIT = 120
+BOX_NOTES_LIMIT = 8000
+
+
+def _registrable_domain(host):
+    labels = [part for part in str(host or "").lower().strip(".").split(".") if part]
+    if len(labels) < 2:
+        return ""
+    keep = 3 if (len(labels) >= 3 and len(labels[-1]) == 2
+                 and labels[-2] in BOX_SECOND_LEVEL) else 2
+    return ".".join(labels[-keep:])
+
+
+def _company_domain(host, website=False):
+    host = str(host or "").lower().strip(".")
+    domain = _registrable_domain(host)
+    if not domain or "noreply" in host or host in BOX_COMPANY_FREE_MAIL:
+        return ""
+    if domain in BOX_COMPANY_FREE_MAIL:
+        return ""
+    if website and (domain in BOX_PLATFORM_DOMAINS or host in BOX_PLATFORM_DOMAINS):
+        return ""
+    return domain
+
+
+def _company_keys(data):
+    data = data if isinstance(data, dict) else {}
+    keys = set(_person_keys(data))
+    for address in _box_emails(data):
+        domain = _company_domain(address.rsplit("@", 1)[1])
+        if domain:
+            keys.add("domain:" + domain)
+    website = _clean(data.get("website"), 320)
+    if website and not re.search(r"/[@~]", website):
+        domain = _company_domain(_box_host(website), website=True)
+        if domain:
+            keys.add("domain:" + domain)
+    keys |= {"github:" + item.split(":", 1)[1] for item in _box_profiles(data)
+             if item.startswith("github:")}
+    company = _box_squash(data.get("company"))
+    if len(company) >= 3 and company not in BOX_GENERIC_COMPANIES:
+        keys.add("company:" + company)
+    return keys
+
+
+def _box_key_rank(key):
+    kind = key.split(":", 1)[0]
+    return BOX_KEY_ORDER.index(kind) if kind in BOX_KEY_ORDER else len(BOX_KEY_ORDER)
+
+
+def _box_suggested_name(members):
+    counts = {}
+    for data in members:
+        company = _clean(data.get("company"), BOX_NAME_LIMIT)
+        squashed = _box_squash(company)
+        if len(squashed) >= 2 and squashed not in BOX_GENERIC_COMPANIES:
+            counts[company] = counts.get(company, 0) + 1
+    if counts:
+        return min(counts, key=lambda name: (-counts[name], len(name), name.lower()))
+    domains = {}
+    for data in members:
+        for key in _company_keys(data):
+            if key.startswith("domain:"):
+                domains[key[7:]] = domains.get(key[7:], 0) + 1
+    if domains:
+        return min(domains, key=lambda name: (-domains[name], len(name), name))
+    for data in members:
+        label = _clean(data.get("name"), BOX_NAME_LIMIT) or _email(data.get("email"))
+        if label:
+            return label
+    return "Unnamed box"
+
+
+def _box_data(value):
+    value = value if isinstance(value, dict) else {}
+    keys = value.get("keys")
+    return {
+        "name": _clean(value.get("name"), BOX_NAME_LIMIT) or "Unnamed box",
+        "named": bool(value.get("named")),
+        "notes": _text(value.get("notes"), BOX_NOTES_LIMIT),
+        "keys": sorted({_clean(item, 340).lower() for item in keys
+                        if isinstance(item, str) and ":" in item}
+                       if isinstance(keys, list) else []),
+    }
+
+
+async def _write_box_json(runtime, sql, args_before, chunk_values, args_after=()):
+    chunk, size = {}, 0
+    items = list(chunk_values.items())
+    for index, (key, value) in enumerate(items):
+        chunk[key] = value
+        size += len(json.dumps(value)) + 40
+        if size < BULK_WRITE_BYTES and index < len(items) - 1:
+            continue
+        await runtime.d1_run(sql, *args_before, json.dumps(chunk), *args_after)
+        chunk, size = {}, 0
+
+
+async def _save_boxes(runtime, org_bi, org_name, actor, now, created, changed):
+    if created:
+        await _write_box_json(
+            runtime,
+            "INSERT INTO crm_boxes(box_id,org_bi,org_name,created_by_name,"
+            "updated_by_name,created_at,updated_at,data) SELECT key,?1,?2,?3,?3,?4,?4,"
+            "value FROM json_each(?5)",
+            (org_bi, org_name, actor, now),
+            {box_id: await runtime.seal(data) for box_id, data in created.items()})
+    if changed:
+        await _write_box_json(
+            runtime,
+            "UPDATE crm_boxes SET updated_by_name=?1,updated_at=?2,"
+            "data=json_extract(?3,'$.\"'||box_id||'\"') "
+            "WHERE org_bi=?4 AND box_id IN (SELECT key FROM json_each(?3))",
+            (actor, now),
+            {box_id: await runtime.seal(data) for box_id, data in changed.items()},
+            (org_bi,))
+
+
+async def _save_members(runtime, org_bi, now, members):
+    if members:
+        await _write_box_json(
+            runtime,
+            "INSERT INTO crm_box_members(contact_id,org_bi,box_id,pinned,assigned_at) "
+            "SELECT key,?1,json_extract(value,'$.box'),json_extract(value,'$.pinned'),?2 "
+            "FROM json_each(?3) WHERE 1 ON CONFLICT(contact_id) DO UPDATE SET "
+            "org_bi=excluded.org_bi,box_id=excluded.box_id,pinned=excluded.pinned,"
+            "assigned_at=excluded.assigned_at",
+            (org_bi, now), members)
+
+
+async def _box_rows(runtime, org_bi):
+    rows = await runtime.d1_all(
+        "SELECT box_id,created_by_name,updated_by_name,created_at,updated_at,data "
+        "FROM crm_boxes WHERE org_bi=? ORDER BY created_at,box_id", org_bi)
+    opened = {}
+    for row in rows or []:
+        opened[str(row.get("box_id") or "")] = (row, _box_data(await runtime.open(row.get("data"))))
+    return opened
+
+
+async def _drop_empty_boxes(runtime, org_bi):
+    if await runtime.d1_first(
+            "SELECT box_id FROM crm_boxes WHERE org_bi=?1 AND box_id NOT IN "
+            "(SELECT box_id FROM crm_box_members WHERE org_bi=?1) LIMIT 1", org_bi):
+        await runtime.d1_run(
+            "DELETE FROM crm_boxes WHERE org_bi=?1 AND box_id NOT IN "
+            "(SELECT box_id FROM crm_box_members WHERE org_bi=?1)", org_bi)
+
+
+async def _assign_boxes(runtime, org_bi, org_name, actor):
+    if await runtime.d1_first(
+            "SELECT contact_id FROM crm_box_members WHERE org_bi=?1 AND contact_id NOT IN "
+            "(SELECT contact_id FROM crm_contacts WHERE org_bi=?1) LIMIT 1", org_bi):
+        await runtime.d1_run(
+            "DELETE FROM crm_box_members WHERE org_bi=?1 AND contact_id NOT IN "
+            "(SELECT contact_id FROM crm_contacts WHERE org_bi=?1)", org_bi)
+    rows = await runtime.d1_all(
+        "SELECT c.contact_id,c.data FROM crm_contacts c LEFT JOIN crm_box_members m "
+        "ON m.contact_id=c.contact_id AND m.org_bi=c.org_bi "
+        "WHERE c.org_bi=? AND m.contact_id IS NULL ORDER BY c.created_at,c.contact_id "
+        "LIMIT ?", org_bi, MAX_CONTACTS)
+    if rows:
+        boxes = await _box_rows(runtime, org_bi)
+        holder = {}
+        for box_id, (_, data) in boxes.items():
+            for key in data["keys"]:
+                holder.setdefault(key, box_id)
+        parent, keys_of, data_of, order = {}, {}, {}, []
+        for row in rows:
+            contact_id = str(row.get("contact_id") or "")
+            data = await runtime.open(row.get("data"))
+            data_of[contact_id] = data if isinstance(data, dict) else {}
+            keys_of[contact_id] = _company_keys(data_of[contact_id])
+            parent[contact_id] = contact_id
+            order.append(contact_id)
+
+        def root(item):
+            while parent[item] != item:
+                parent[item] = parent[parent[item]]
+                item = parent[item]
+            return item
+
+        owner = {}
+        for contact_id in order:
+            for key in keys_of[contact_id]:
+                if key in owner:
+                    parent[root(contact_id)] = root(owner[key])
+                else:
+                    owner[key] = contact_id
+        groups = {}
+        for contact_id in order:
+            groups.setdefault(root(contact_id), []).append(contact_id)
+        created, changed, members = {}, {}, {}
+        for ids in groups.values():
+            keys = set().union(*(keys_of[item] for item in ids))
+            hits = sorted((_box_key_rank(key), key) for key in keys if key in holder)
+            if hits:
+                box_id = holder[hits[0][1]]
+                data = changed.get(box_id) or created.get(box_id) or dict(boxes[box_id][1])
+                target = created if box_id in created else changed
+            else:
+                box_id = runtime.new_id()
+                data = {"name": _box_suggested_name([data_of[item] for item in ids]),
+                        "named": False, "notes": "", "keys": []}
+                target = created
+            data["keys"] = sorted(set(data["keys"]) | keys)
+            target[box_id] = data
+            for key in keys:
+                holder.setdefault(key, box_id)
+            for item in ids:
+                members[item] = {"box": box_id, "pinned": 0}
+        now = runtime.now()
+        await _save_boxes(runtime, org_bi, org_name, actor, now, created, changed)
+        await _save_members(runtime, org_bi, now, members)
+    await _drop_empty_boxes(runtime, org_bi)
+
+
+async def _boxes(runtime, org_bi):
+    members = {}
+    for row in await runtime.d1_all(
+            "SELECT contact_id,box_id,pinned FROM crm_box_members WHERE org_bi=? "
+            "ORDER BY assigned_at,contact_id", org_bi) or []:
+        members.setdefault(str(row.get("box_id") or ""), []).append(
+            str(row.get("contact_id") or ""))
+    result = []
+    for box_id, (row, data) in (await _box_rows(runtime, org_bi)).items():
+        result.append({
+            "id": box_id, "name": data["name"], "named": data["named"],
+            "notes": data["notes"], "keys": data["keys"],
+            "contacts": members.get(box_id, []),
+            "createdBy": str(row.get("created_by_name") or ""),
+            "updatedBy": str(row.get("updated_by_name") or ""),
+            "createdAt": _integer(row.get("created_at")),
+            "updatedAt": _integer(row.get("updated_at")),
+        })
+    return result
+
+
+async def _box_keys_from_members(runtime, org_bi, box_id):
+    rows = await runtime.d1_all(
+        "SELECT c.data FROM crm_contacts c JOIN crm_box_members m "
+        "ON m.contact_id=c.contact_id AND m.org_bi=c.org_bi "
+        "WHERE m.org_bi=? AND m.box_id=?", org_bi, box_id)
+    keys = set()
+    for row in rows or []:
+        keys |= _company_keys(await runtime.open(row.get("data")))
+    return sorted(keys)
+
+
+async def _refresh_boxes(runtime, org_bi, org_name, actor, box_ids):
+    boxes = await _box_rows(runtime, org_bi)
+    changed = {}
+    for box_id in box_ids:
+        if box_id in boxes:
+            data = dict(boxes[box_id][1])
+            data["keys"] = await _box_keys_from_members(runtime, org_bi, box_id)
+            changed[box_id] = data
+    await _save_boxes(runtime, org_bi, org_name, actor, runtime.now(), {}, changed)
+    await _drop_empty_boxes(runtime, org_bi)
+
+
+def _box_contact_ids(value):
+    values = value if isinstance(value, list) else []
+    found = []
+    for item in values[:MAX_CONTACTS]:
+        contact_id = _clean(item, 64).lower()
+        if CONTACT_ID_RE.fullmatch(contact_id) and contact_id not in found:
+            found.append(contact_id)
+    return found
+
+
+async def _boxes_response(runtime, org_bi, extra=None, status=200):
+    payload = {"ok": True, "boxes": await _boxes(runtime, org_bi)}
+    payload.update(extra or {})
+    return _response(runtime, payload, status)
+
+
+async def _move_to_box(runtime, org_bi, org_name, actor, data):
+    contact_ids = _box_contact_ids(data.get("contacts"))
+    if not contact_ids:
+        return _response(runtime, {"error": "contacts_required"}, 400)
+    known = {str(row.get("contact_id") or "") for row in await runtime.d1_all(
+        "SELECT contact_id FROM crm_contacts WHERE org_bi=? AND contact_id IN "
+        "(SELECT value FROM json_each(?))", org_bi, json.dumps(contact_ids)) or []}
+    contact_ids = [item for item in contact_ids if item in known]
+    if not contact_ids:
+        return _response(runtime, {"error": "contact_not_found"}, 404)
+    await _assign_boxes(runtime, org_bi, org_name, actor)
+    boxes = await _box_rows(runtime, org_bi)
+    box_id = _clean(data.get("box"), 64).lower()
+    name = _clean(data.get("name"), BOX_NAME_LIMIT)
+    created = {}
+    if box_id:
+        if box_id not in boxes:
+            return _response(runtime, {"error": "box_not_found"}, 404)
+    elif name:
+        box_id = runtime.new_id()
+        created[box_id] = {"name": name, "named": True, "notes": "", "keys": []}
+    else:
+        return _response(runtime, {"error": "box_required"}, 400)
+    previous = {str(row.get("box_id") or "") for row in await runtime.d1_all(
+        "SELECT box_id FROM crm_box_members WHERE org_bi=? AND contact_id IN "
+        "(SELECT value FROM json_each(?))", org_bi, json.dumps(contact_ids)) or []}
+    now = runtime.now()
+    await _save_boxes(runtime, org_bi, org_name, actor, now, created, {})
+    await _save_members(runtime, org_bi, now,
+                        {item: {"box": box_id, "pinned": 1} for item in contact_ids})
+    await _refresh_boxes(runtime, org_bi, org_name, actor, sorted(previous | {box_id}))
+    await runtime.audit(actor, "crm.box.move", "crm_box", box_id,
+                        details={"contacts": len(contact_ids)})
+    return await _boxes_response(runtime, org_bi, {"box": box_id})
+
+
+async def _merge_boxes(runtime, org_bi, org_name, actor, data):
+    source = _clean(data.get("from"), 64).lower()
+    target = _clean(data.get("into"), 64).lower()
+    if source == target or not CONTACT_ID_RE.fullmatch(source) or not CONTACT_ID_RE.fullmatch(target):
+        return _response(runtime, {"error": "merge_needs_two_boxes"}, 400)
+    boxes = await _box_rows(runtime, org_bi)
+    if source not in boxes or target not in boxes:
+        return _response(runtime, {"error": "box_not_found"}, 404)
+    kept = dict(boxes[target][1])
+    gone = boxes[source][1]
+    kept["notes"] = _text("\n\n".join(item for item in (kept["notes"], gone["notes"])
+                                      if item.strip()), BOX_NOTES_LIMIT)
+    await runtime.d1_run(
+        "UPDATE crm_box_members SET box_id=?,pinned=1 WHERE org_bi=? AND box_id=?",
+        target, org_bi, source)
+    await _save_boxes(runtime, org_bi, org_name, actor, runtime.now(), {}, {target: kept})
+    await _refresh_boxes(runtime, org_bi, org_name, actor, [target])
+    await runtime.audit(actor, "crm.box.merge", "crm_box", target,
+                        details={"merged": source})
+    return await _boxes_response(runtime, org_bi, {"box": target, "merged": source})
+
+
+async def _update_box(runtime, org_bi, org_name, actor, box_id, data):
+    boxes = await _box_rows(runtime, org_bi)
+    if box_id not in boxes:
+        return _response(runtime, {"error": "box_not_found"}, 404)
+    box = dict(boxes[box_id][1])
+    if "name" in data:
+        name = _clean(data.get("name"), BOX_NAME_LIMIT)
+        if not name:
+            return _response(runtime, {"error": "box_name_required"}, 400)
+        box.update(name=name, named=True)
+    if "notes" in data:
+        box["notes"] = _text(data.get("notes"), BOX_NOTES_LIMIT)
+    await _save_boxes(runtime, org_bi, org_name, actor, runtime.now(), {}, {box_id: box})
+    await runtime.audit(actor, "crm.box.update", "crm_box", box_id)
+    return await _boxes_response(runtime, org_bi, {"box": box_id})
+
+
+async def _box_resource(runtime, method, org_bi, org_name, actor, item, data):
+    if not item:
+        if method == "GET":
+            await _assign_boxes(runtime, org_bi, org_name, actor)
+            return await _boxes_response(runtime, org_bi)
+        return await _move_to_box(runtime, org_bi, org_name, actor, dict(data, box=""))
+    if item == "move":
+        return await _move_to_box(runtime, org_bi, org_name, actor, data)
+    if item == "merge":
+        return await _merge_boxes(runtime, org_bi, org_name, actor, data)
+    if method == "PATCH":
+        return await _update_box(runtime, org_bi, org_name, actor, item, data)
+    boxes = await _boxes(runtime, org_bi)
+    box = next((entry for entry in boxes if entry["id"] == item), None)
+    if box is None:
+        return _response(runtime, {"error": "box_not_found"}, 404)
+    return _response(runtime, {"ok": True, "box": box})
 
 
 def _link_details(data):
@@ -6403,7 +7199,8 @@ def _auto_email_lessons(sends):
 
 
 def _auto_email_prompt(org_name, sender, brief, contact, mode, link_kind, link,
-                       angle, flow_name, conversation, lessons, reason, activity=()):
+                       angle, flow_name, conversation, lessons, reason, activity=(),
+                       actor="", mission="", offers=()):
     name = _contact_label(contact)
     investor = link_kind == "deck"
     goal = ("This is our first contact with %s: introduce %s in a sentence and give "
@@ -6441,8 +7238,17 @@ def _auto_email_prompt(org_name, sender, brief, contact, mode, link_kind, link,
     lines += [
         "", "## About us: " + org_name,
         brief or "(No description saved: describe us only in general terms.)",
-        "", "## About " + name,
     ]
+    if mission:
+        lines += ["", "## Our mission", mission]
+    if actor:
+        lines += ["", "## About me, the sender",
+                  "%s, writing as %s on ForkMesh. Sign with my name only." % (sender, actor)]
+    if offers:
+        lines += ["", "## Pages you may offer (at most one or two that fit their next step, "
+                      "each exactly as given on its own line; leave out the rest)"]
+        lines += ["- %s: %s" % (label, url) for label, url in offers]
+    lines += ["", "## About " + name]
     lines += facts or ["- Nothing beyond the name is on record."]
     if notes:
         lines += ["", "Our notes on them:", notes]
@@ -7221,6 +8027,37 @@ async def _auto_email_link(runtime, flows, org_bi, org_name, account_bi, actor,
     return "referral", REFERRAL_ORIGIN + quote(actor)
 
 
+async def _auto_email_offers(runtime, org_bi, account_bi):
+    origin = _track_origin(runtime)
+    offers = []
+    try:
+        page = await runtime.d1_first(
+            "SELECT slug FROM booking_pages WHERE account_bi=? AND enabled=1", account_bi)
+    except Exception:
+        page = None
+    slug = _clean((page or {}).get("slug"), 63).lower()
+    if re.fullmatch(r"[a-z0-9-]{1,63}", slug):
+        offers.append(("Book a meeting with me", "%s/meet?%s" % (origin, slug)))
+    try:
+        rows = await runtime.d1_all(
+            "SELECT survey_id,data FROM survey_forms WHERE org_bi=? AND status='open' "
+            "ORDER BY published_at DESC LIMIT ?", org_bi, AUTO_EMAIL_OFFER_LIMIT)
+    except Exception:
+        rows = []
+    for row in rows or []:
+        survey_id = _clean(row.get("survey_id"), 64).lower()
+        if not re.fullmatch(r"[0-9a-f]{32}", survey_id):
+            continue
+        try:
+            data = await runtime.open(row.get("data"))
+        except Exception:
+            data = {}
+        title = _clean((data if isinstance(data, dict) else {}).get("title"), 120) or "Survey"
+        token = "%s.%s" % (survey_id, (await runtime.blind("survey-link:" + survey_id))[:24])
+        offers.append(("Survey: " + title, "%s/survey?t=%s" % (origin, token)))
+    return offers[:AUTO_EMAIL_OFFER_LIMIT]
+
+
 async def _auto_email_write(runtime, account_bi, prompt, link):
     ai_json = getattr(runtime, "ai_json", None)
     if ai_json is None:
@@ -7283,16 +8120,25 @@ async def _auto_email(runtime, org_bi, org_name, account_bi, actor, data):
         AUTO_EMAIL_FORKMESH_BRIEF if org_name == "forkmesh" else "")
     sends = await _auto_email_history(runtime, org_bi, now)
     note_link = "" if link_kind == "deck" else link
+    offers = await _auto_email_offers(runtime, org_bi, account_bi)
     prompt = _auto_email_prompt(
         org_name, from_name, brief, contact, mode, link_kind, link,
         _auto_email_angle([_clean(data.get("list"), 80), flow_name]), flow_name,
         await _auto_email_conversation(runtime, org_bi, contact_id),
         _auto_email_lessons(sends), _clean(data.get("reason"), 400),
-        await _auto_email_activity(runtime, org_bi, contact_id, contact))
+        await _auto_email_activity(runtime, org_bi, contact_id, contact),
+        actor=actor,
+        mission=AUTO_EMAIL_FORKMESH_MISSION if org_name == "forkmesh" else "",
+        offers=offers)
     learning = _auto_email_stats(sends)
     fallback = {"prompt": "\n\n".join((AUTO_EMAIL_RULES, prompt, AUTO_EMAIL_AGENT_REPLY)),
                 "link": link,
-                "linkKind": link_kind, "mode": mode, "learning": learning}
+                "linkKind": link_kind, "mode": mode, "learning": learning,
+                "offers": [{"label": label, "url": url} for label, url in offers]}
+    if data.get("promptOnly"):
+        return _response(runtime, dict(
+            fallback, ok=True, preview=True, to=recipient, fromEmail=from_email,
+            fromName=from_name))
     model = ""
     if data.get("subject") or data.get("text"):
         draft = _auto_email_draft(data.get("subject"), data.get("text"), note_link, prompt)
@@ -8131,6 +8977,7 @@ async def export_org_data(runtime, org_bi, org_name):
             "SELECT token,org_bi,org_name,contact_id,deck,created_by_bi,"
             "created_by_name,created_at,revoked_at,data FROM crm_deck_links "
             "WHERE org_bi=? ORDER BY created_at DESC,token", org_bi)],
+        "boxes": await _boxes(runtime, org_bi),
     }
 
 
@@ -8151,6 +8998,8 @@ async def purge_org_data(runtime, org_bi):
     await runtime.d1_run("DELETE FROM crm_list_activity WHERE org_bi=?", org_bi)
     await runtime.d1_run("DELETE FROM crm_view_shares WHERE org_bi=?", org_bi)
     await runtime.d1_run("DELETE FROM crm_views WHERE org_bi=?", org_bi)
+    await runtime.d1_run("DELETE FROM crm_box_members WHERE org_bi=?", org_bi)
+    await runtime.d1_run("DELETE FROM crm_boxes WHERE org_bi=?", org_bi)
     await runtime.d1_run("DELETE FROM crm_contacts WHERE org_bi=?", org_bi)
     await runtime.d1_run("DELETE FROM crm_settings WHERE org_bi=?", org_bi)
     await runtime.d1_run("DELETE FROM crm_backfills WHERE org_bi=?", org_bi)
@@ -8186,7 +9035,7 @@ ACTIVITY_RECIPIENTS = 10
 ACTIVITY_SEEN_MAX = 512
 ACTIVITY_NAMED_ITEMS = frozenset({
     "import", "grants", "lookup", "bulk", "merge", "delete-column", "evidence",
-    "send", "link", "note",
+    "send", "link", "note", "sync",
     "toot", "toots", "copy", "order", "activity", "team", "connect", "exchange",
     "auto", "rate"})
 ACTIVITY_PINGS = {
@@ -8194,6 +9043,7 @@ ACTIVITY_PINGS = {
     ("contacts", "import", "POST"): ("CRM contacts imported", "others", True),
     ("contacts", "grants", "POST"): ("CRM grants loaded", "others", True),
     ("contacts", "bulk", "POST"): ("CRM contacts updated", "team", True),
+    ("contacts", "sync", "POST"): ("CRM contacts updated from a spreadsheet", "team", True),
     ("contacts", "merge", "POST"): ("CRM contacts merged", "team", False),
     ("contacts", "delete-column", "POST"): ("CRM column removed", "team", False),
     ("contacts", "evidence", "POST"): ("CRM account evidence recorded", "team", True),
@@ -8333,6 +9183,7 @@ async def handle(runtime, path):
         ("organization", "views"): ("GET", "POST"),
         ("organization", "outreach"): ("GET",),
         ("organization", "decks"): ("GET", "POST"),
+        ("organization", "boxes"): ("GET", "POST"),
         ("shared", "shared"): ("GET",),
         ("zoho-callback", "zoho"): ("GET",),
     }.get((route[0], resource), ())
@@ -8346,6 +9197,8 @@ async def handle(runtime, path):
         allowed = ("POST",)
     elif resource == "contacts" and item in ("export", "duplicates"):
         allowed = ("GET",)
+    elif resource == "contacts" and item == "sync":
+        allowed = ("GET", "POST")
     elif resource == "emails" and item in ("send", "link", "toot", "toots"):
         allowed = ("POST",)
     elif resource == "mail" and item == "import":
@@ -8361,6 +9214,9 @@ async def handle(runtime, path):
         allowed = ("POST",)
     elif resource == "decks" and item:
         allowed = ("GET", "DELETE") if DECK_TOKEN_RE.fullmatch(item) else ()
+    elif resource == "boxes" and item:
+        allowed = (("POST",) if item in ("move", "merge")
+                   else ("GET", "PATCH") if CONTACT_ID_RE.fullmatch(item) else ())
     elif route[0] == "shared":
         allowed = ("GET",) if not item or CONTACT_ID_RE.fullmatch(item) else ()
     elif (resource in ("contacts", "emails", "mail", "views") and item
@@ -8556,6 +9412,8 @@ async def _organization_resource(runtime, method, org_bi, org_name, role, accoun
                 return _response(runtime, {"error": "organization_admin_required"}, 403)
             data = {key: data[key] for key in TABLE_VIEW_SETTINGS if key in data}
         return await _save_settings(runtime, org_bi, account_bi, actor, data)
+    if resource == "boxes":
+        return await _box_resource(runtime, method, org_bi, org_name, actor, item, data)
     if resource == "contacts":
         if not item:
             if method == "GET":
@@ -8590,6 +9448,10 @@ async def _organization_resource(runtime, method, org_bi, org_name, role, accoun
         if item == "bulk":
             return await _bulk_update_contacts(
                 runtime, org_bi, org_name, account_bi, actor, data)
+        if item == "sync":
+            if method == "GET":
+                return await _sync_read(runtime, org_bi, account_bi, actor, role)
+            return await _sync_write(runtime, org_bi, org_name, account_bi, actor, role, data)
         if item == "merge":
             return await _merge_contacts(runtime, org_bi, account_bi, actor, data)
         if item == "delete-column":
@@ -8608,6 +9470,8 @@ async def _organization_resource(runtime, method, org_bi, org_name, role, accoun
         removed = await runtime.open(row.get("data"))
         await runtime.d1_run(
             "DELETE FROM crm_contacts WHERE org_bi=? AND contact_id=?", org_bi, item)
+        await runtime.d1_run(
+            "DELETE FROM crm_box_members WHERE org_bi=? AND contact_id=?", org_bi, item)
         await runtime.audit(actor, "crm.contact.delete", "crm_contact", item)
         if isinstance(removed, dict):
             await _record_contact_changes(runtime, org_bi, account_bi, actor,

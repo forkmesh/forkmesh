@@ -161,6 +161,20 @@ into an update) instead of a `500`. A shared sheet's add still answers
   websites are ignored), **Paying members**, **Stage behind evidence**.
 - Bulk **Assign / Tag / Untag shown contacts** applies to the filtered rows in
   chunks of 500.
+- **Open in spreadsheet** (a list's menu on the web and the desktop, or the
+  web's **More > Open list in spreadsheet**, 1.48.0; the desktop opens it in
+  the browser) edits the list in a workbook linked to it
+  ([Spreadsheets](../../../docs/marketplace/spreadsheets.md#linked-crm-lists)).
+  `GET /api/crm/<org>/contacts/sync?list=<id>` returns the list (a list id,
+  `pipeline:<flow>` or `no-pipeline`), its contacts, the editable columns and
+  the members. `POST /contacts/sync` with `{"list", "updates": [{"id", "set",
+  "expect"}], "creates": [{"ref", "requestId", "set"}]}` (at most 500 rows)
+  answers one result per row: `updated`, `unchanged`, `created`, `conflict`
+  (a field no longer matches `expect`; the row is not written and the current
+  contact comes back), `missing` or `error` with a reason (`unknown_stage`
+  with the stages, `contact_email_exists`, `invalid_email`, `invalid_field`,
+  `list_cannot_add`). New contacts join the list (and its pipeline); a stage
+  must be one of the contact's pipeline stages. It never deletes a contact.
 
 ## Importing
 
@@ -282,14 +296,19 @@ people connected to its lists. Notes are separate from the free-text
 
 ## Reach out and follow up
 
-The top of the CRM shows two cards (desktop and web) or two sections (phones):
+The web shows two cards at the top of the CRM, the phones two sections. The
+desktop puts them in a column right of the table, as two tabs, **Reach out**
+and **Follow up**, each with how many are due (2026-11-02: the table was
+pushed below the fold by the cards, and the queue under Reach out repeated
+what the table can show). With no column sort chosen the table is in the open
+tab's order, the card's contact first; picking a tab drops a column sort.
 
 - **Reach out**: the best never-contacted, reachable lead outside a won or
   ended stage, ordered by their newest public Mastodon post (newest first;
   contacts without a handle or a post follow), then next step, deal value, a
   `rank`/`*_rank` column (lowest first), a `score`/`*_score` column (highest
   first), having an email, and age on the CRM. The card shows that post's
-  date, excerpt and link, and lists the next five in line with theirs.
+  date, excerpt and link; the web card also lists the next five in line.
 - **Follow up**: an unanswered reply first (newest first, any stage), then
   contacts last contacted 14 or more days ago with nothing back (longest
   silence first, open stages only); a next step goes first in each group.
@@ -304,6 +323,32 @@ open list; the web ranks the whole organization. Code:
 `CrmNextContact.pick` (iOS and Android). Tests:
 `tests/test_qt_plugin_contracts.py`, `tests/test_web_layout.py`,
 `tests/contact_detail_checks.js`, `CrmParityTests.swift`, `CrmParityTest.kt`.
+
+### One person, several records
+
+An import can give one person several records with different names: the
+net4people list has a record per repository, so one maintainer or organization
+(Tor, v2fly, Signal) shows up under several repository names. Emails are unique
+per organization, so the import keeps a second record's address in an
+`other_emails` column instead. Records that share an email address (the email
+field or any custom column whose name contains "mail") or an X account are one
+person, also through a third record (A shares an email with B, B an X account
+with C). Nothing is merged or deleted. Every record keeps its own notes and
+fields, and the grouping is worked out again on every load.
+
+- The worker sends each contact's `personKeys` (`email:<address>`,
+  `x:<handle>`, lower case; `_person_keys` in `worker/crm.py`), and each
+  client joins records that share a key.
+- **Reach out** and **Follow up** offer each person once, through their best
+  record. A contact, a reply, a won or ended stage, or a **Skip** on any of
+  their records counts for all of them, and **Why them** names the other
+  records' shared keys. Desktop, web, iOS and Android all do this.
+- **Never contacted** and **Quiet 30+ days** go by the person, and the detail
+  card lists the records under **Same person**. The web table groups whole
+  boxes (see [Boxes](#boxes)), and a person's records always share one box.
+
+This differs from **Possible duplicates**, which also matches GitHub profiles
+and names, is meant for merging, and folds a record away for good.
 
 ### Newest Mastodon post on Reach out
 
@@ -348,6 +393,69 @@ named for grants get the grant-funder angle.
 the prompt in the URL (or on the clipboard past 14,000 characters). Nothing is
 sent from the CRM and nothing is stored except a saved brief. Tests:
 `tests/test_ai_writer.py`.
+
+## Boxes
+
+A box is a named record for one company or project. Everyone the CRM knows
+there is in it, and everything tracked on those people adds up in it. Every
+contact is in exactly one box. The server works boxes out and keeps them, so
+every client reads the same ones. The web shows them; the desktop and phone
+apps do not show boxes yet.
+
+**Sorting contacts into boxes.** `GET /api/crm/<org>/boxes` first places
+every contact not yet in a box (`_assign_boxes` in `worker/crm.py`), so a new,
+imported, linked or looked-up contact lands in a box the next time any client
+loads boxes. The same company is detected by `_company_keys`:
+
+- the **work email domain**, from the email field and any address in a custom
+  column (`mail.sager.example` counts as `sager.example`; a country's second
+  level such as `.co.uk` or `.edu.cn` keeps three labels). Free mail
+  (`BOX_COMPANY_FREE_MAIL`: Gmail, Outlook, Proton and the like) and noreply
+  addresses never count;
+- the **website's domain**, unless it is a platform or profile host
+  (`BOX_PLATFORM_DOMAINS`: GitHub, GitLab, social networks, link shorteners,
+  blog and page hosts) or a profile path (`/@name`, `/~name`);
+- the **GitHub account or organization**;
+- the **company** name, ignoring "Freelance", "Independent" and the like;
+- the same person's email and X keys ([One person, several
+  records](#one-person-several-records)).
+
+Contacts that share any key form one box, also through a third contact. A new
+contact joins the existing box that matches its strongest key (email, then X,
+GitHub, domain, company). Otherwise a new box is named after the most common
+company among its people, then the most common domain, then the person. The
+box keeps every key its people brought, so the next person from that domain
+joins it. The CRM never moves a contact that is already in a box.
+
+**Tracking.** A box's card adds up, newest first:
+
+- every email to or from its people, with opens, clicks and reading time;
+- toots, deck views and notes;
+- inbox mail whose other party is one of its people or writes from the
+  company's domain. Mail from someone new at a known company shows as "same
+  company", and the inbox shows the box on that message.
+
+Nothing is copied: the box reads the people's own records, so tracking that
+arrives later shows up straight away.
+
+**Editing.**
+- Rename a box or keep box notes (`PATCH /boxes/<id>` with `name`, `notes`).
+  A box named by hand keeps its name.
+- **Move…** puts contacts into another box, or into a new one named on the
+  spot (`POST /boxes/move` with `contacts` and `box` or `name`;
+  `POST /boxes` with `contacts` and `name` starts a box). A moved contact is
+  pinned. A box left empty is removed, and the box it left recomputes its keys.
+- **Merge into another box** moves every person and appends the notes
+  (`POST /boxes/merge` with `from` and `into`).
+- Boxes are sealed like contacts, exported on uninstall and purged with the
+  organization (`crm_boxes`, `crm_box_members`).
+
+**Web.** **Group by box** (on by default, off under **Possible duplicates**)
+shows one row per box. Its name chip opens the box card, and **+N** shows the
+other people under the first row. The contact card names its box with
+**Move…**, and the row menu has **Open box** and **Move to box…**. Code:
+`crmGroups`, `crmGroupChip`, `renderCrmBox`, `crmMailBox`. Tests:
+`tests/test_boxes.py`, `tests/contact_detail_checks.js`.
 
 ## Email
 
@@ -642,6 +750,33 @@ on the outreach team (`POST /api/crm/<org>/outreach/team`, audited).
 emails; it was 50 until 1.38.0, when the iPhone's auto-send was paced at 100 a
 day) and recent sends; `POST /outreach/send` sends one email. Every attempt is written to
 `crm_outreach_log` with recipient and subject sealed.
+
+## Write email on the desktop
+
+**Write email** on the desktop's Reach out or Follow up card opens an email
+panel in that column instead of the mail app, so the send is tracked and the
+contact marked contacted without leaving ForkMesh:
+
+1. `POST /outreach/auto {…, promptOnly: true}` returns the prompt below, the
+   recipient and sender, the referral link, and `offers`: the sender's
+   Booking page (`/meet?<slug>`, from `booking_pages`) and up to five of the
+   organization's open surveys (`/survey?t=<token>`, from `survey_forms`).
+   Neither package installed means no offers. Nothing is written or sent.
+2. The desktop's selected agent (the model picked for agents) writes the
+   draft from that prompt; without one the host model writes it
+   (`preview: true`).
+3. Subject and body are editable; **+ Book a meeting with me** and the survey
+   buttons add a link. **Send with tracking** posts the edited draft to the
+   same route, so it goes out with open and click pings and stamps
+   `lastContactedAt` like **Send AI email**. **Rewrite** asks again.
+
+The prompt now also carries **About me, the sender** (the account sending)
+and, for the `forkmesh` organization, **Our mission**
+(`AUTO_EMAIL_FORKMESH_MISSION`, the product promise). Offered pages are in
+the prompt, so a draft that uses one passes the invented-link check. The
+pages log their own visits ([Booking](../../../docs/marketplace/booking.md),
+[Surveys](../../../docs/marketplace/surveys.md)). Tests:
+`tests/test_auto_email.py`, `tests/test_qt_plugin_contracts.py`.
 
 ## Automated outreach email
 
@@ -1051,9 +1186,13 @@ raising, so the caller can keep the lead.
   no step to show or while My Zoho Mail is open. Compose says which mailbox it
   sends from. Inbox groups that hold mail from your own mailbox carry **Only
   you**.
-- **Desktop** (`CrmFeature.cpp`): a three-column page (lists, table, detail
-  panel), spreadsheet-style editing, a People grid of contacts with pictures,
-  imports, and a rail count of never-contacted contacts. Data is read when the
+- **Desktop** (`CrmFeature.cpp`): columns for the lists, the table, Reach out
+  / Follow up and the detail panel, spreadsheet-style editing, a People grid
+  of contacts with pictures, imports, and a rail count of never-contacted
+  contacts. Each list is one line: icon, name, `<not contacted>/<total>` and
+  who can open it. The header holds only the title, the organization, Import,
+  Mail, `⋯` (People, Pipelines, History, Extension), Settings, Refresh and
+  Add contact; a status message other than an error fades after six seconds. Data is read when the
   CRM opens and on **Refresh**; nothing re-reads itself. Sorting and list
   membership are computed off the GUI thread.
 - **iPhone layout**: a section bar under the title holds **Home** (greeting,

@@ -50,7 +50,7 @@ const USER_SESSION = {
   status: "active",
 };
 
-async function openHome(page, { repos = repositories(3), notifications = NOTIFICATIONS, session = USER_SESSION } = {}) {
+async function openHome(page, { repos = repositories(3), notifications = NOTIFICATIONS, session = USER_SESSION, agents = AGENT_SESSIONS, repoApi = () => null } = {}) {
   await page.addInitScript((stored) => {
     localStorage.setItem("forkmesh.session", JSON.stringify(stored));
   }, session);
@@ -76,7 +76,9 @@ async function openHome(page, { repos = repositories(3), notifications = NOTIFIC
     } else if (url.pathname === "/api/notifications") {
       body = { ok: true, notifications, unread: notifications.length };
     } else if (url.pathname === "/api/account/agent-sessions") {
-      body = AGENT_SESSIONS;
+      body = agents;
+    } else if (url.pathname.startsWith("/api/repo/")) {
+      body = repoApi(url) || body;
     }
     return route.fulfill({
       status: 200,
@@ -124,10 +126,14 @@ test("home hides the prompt slot when the composer does not mount", async ({ pag
   await expect(page.locator("[data-composer]")).toHaveCount(0);
 });
 
-test("the left rail feed shows only other people's activity", async ({ page }) => {
+test("the Feed tab shows only other people's activity", async ({ page }) => {
   await openHome(page);
 
-  const feed = page.locator("[data-home-left-rail] [data-home-feed]");
+  await expect(page.locator('[data-home-tab-panel="feed"]')).toBeHidden();
+  await page.locator('[data-home-left-rail] [data-home-tab="feed"]').click();
+  await expect(page.locator('[data-home-tab-panel="home"]')).toBeHidden();
+  const feed = page.locator('[data-home-tab-panel="feed"] [data-home-feed]');
+  await expect(feed).toBeVisible();
   const cards = feed.locator('[data-home-feed-kind="activity"]');
   await expect(cards).toHaveCount(2);
   await expect(feed).toContainText("bob mentioned you");
@@ -142,8 +148,10 @@ test("repositories live in the rail list and the finder hides below ten", async 
 
   const rows = page.locator("[data-home-top-repositories] [data-home-repo-row]");
   await expect(rows).toHaveCount(3);
-  await expect(rows.first()).toContainText("The first repository");
-  await expect(rows.first()).toContainText("live host");
+  await expect(rows.first()).toHaveAttribute("title", /The first repository/);
+  await expect(rows.first()).not.toContainText("The first repository");
+  await expect(rows.first().locator("[data-home-repo-served-by]")).toHaveAttribute("title", "live host");
+  await expect(page.locator("[data-home-repo-search-toggle]")).toBeHidden();
   await expect(page.locator("[data-home-repo-search-field]")).toBeHidden();
 });
 
@@ -152,7 +160,68 @@ test("the finder shows once there are ten repositories", async ({ page }) => {
 
   await expect(page.locator("[data-home-top-repositories] [data-home-repo-row]")).toHaveCount(8);
   const search = page.locator("[data-home-repo-search]");
+  await expect(search).toBeHidden();
+  await page.locator("[data-home-repo-search-toggle]").click();
   await expect(search).toBeVisible();
+  await expect(search).toBeFocused();
   await search.fill("repo-9");
   await expect(page.locator("[data-home-top-repositories] [data-home-repo-row]")).toHaveCount(1);
+});
+
+
+test("home greets the account and says when there are no agent sessions", async ({ page }) => {
+  await openHome(page, { agents: { ok: true, account: "alice", activeCount: 0, sessions: [] } });
+
+  await expect(page.locator("[data-home-greeting]")).toHaveText(/^Good (morning|afternoon|evening), alice!$/);
+  await expect(page.locator("[data-home-account-name]")).toHaveText("alice");
+  await expect(page.locator("[data-home-agents]")).toHaveText("No agent sessions.");
+  await expect(page.locator("[data-home-pulls-section]")).toBeHidden();
+  await expect(page.locator("[data-home-issues-section]")).toBeHidden();
+});
+
+test("home lists the open pull requests and issues in the account's repositories", async ({ page }) => {
+  const now = Date.now();
+  const pull = (number, title, status) => ({
+    content: `---\ntitle: ${title}\nstatus: ${status}\nauthor: bob\nauthorName: bob\nupdatedAt: ${now - number * 1000}\n---\nBody`,
+  });
+  await openHome(page, {
+    repos: repositories(2).map((repo, index) => ({ ...repo, openPulls: index === 0 ? 2 : 0, openIssues: index === 0 ? 1 : 0 })),
+    repoApi(url) {
+      if (!url.pathname.startsWith("/api/repo/alice/repo-0/")) return null;
+      const action = url.pathname.split("/").pop();
+      if (action === "tree") {
+        return { ok: true, commit: "a".repeat(40), entries: [{ type: "tree", name: "2" }, { type: "tree", name: "1" }] };
+      }
+      if (action === "blobs") {
+        return {
+          ok: true,
+          blobs: {
+            ".forkmesh/pulls/2/pull.md": pull(2, "Open change", "open"),
+            ".forkmesh/pulls/1/pull.md": pull(1, "Merged change", "merged"),
+          },
+        };
+      }
+      if (action === "issue-index") {
+        return {
+          ok: true,
+          issues: [
+            { number: 5, title: "Open bug", status: "open", author: "carol", dateValue: now, commentCount: 3 },
+            { number: 4, title: "Closed bug", status: "closed", author: "carol", dateValue: now },
+          ],
+        };
+      }
+      return null;
+    },
+  });
+
+  const pulls = page.locator('[data-home-pulls] [data-home-work-row="pull"]');
+  await expect(pulls).toHaveCount(1);
+  await expect(pulls.first()).toContainText("Open change");
+  await expect(pulls.first()).toHaveAttribute("href", "/alice/repo-0/pull/2");
+  await expect(page.locator("[data-home-pulls-count]")).toHaveText("1 open pull request");
+
+  const issues = page.locator('[data-home-issues] [data-home-work-row="issue"]');
+  await expect(issues).toHaveCount(1);
+  await expect(issues.first()).toContainText("Open bug");
+  await expect(issues.first()).toHaveAttribute("href", "/alice/repo-0/issues/5");
 });

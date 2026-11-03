@@ -286,7 +286,7 @@ def test_issue_manager_supports_personal_and_org_repository_owners():
     assert "await _authorize_owner_account" in authorization
     assert "await _org_row" in authorization
     assert "await _org_role" in authorization
-    assert 'role in ("owner", "admin")' in authorization
+    assert '_org_rbac.org_role_allows(role, "organization.issues.manage")' in authorization
 
 
 def test_subscription_can_be_set_and_reloaded_with_account_session():
@@ -397,7 +397,7 @@ def test_issue_sidebar_edits_through_pickers_that_submit_the_metadata_form():
     assert "picker && editable" in detail
     assert 'sidebarSection("Development", developmentValue, "development", Boolean(state.session?.nodeName))' in detail
 
-    pickers = _slice(REPO_UI, "let issuePicker = null;", "function mountIssueStickyHeader(container)")
+    pickers = _slice(REPO_UI, "let issuePicker = null;", "function mountRecordStickyHeader(container)")
     assert "form.requestSubmit();" in pickers
     assert 'selected.length < 10' in pickers
     wiring = (ROOT / "public/dashboard/js/08-repo-detail-network.js").read_text()

@@ -11,7 +11,7 @@
   },
   "type": "extension.native",
   "category": "Productivity",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "summary": "A full spreadsheet editor: sheets, 230+ functions, formatting, charts, filters, pivot tables and an AI assistant. Opens and saves Excel .xls and .xlsx, OpenDocument and CSV, encrypted under your account's own key.",
   "screenshots": [
     {
@@ -68,6 +68,11 @@
       "id": "files.local.open",
       "label": "Open .xls, .xlsx, .ods and .csv files you choose; they are read in your browser",
       "risk": "low"
+    },
+    {
+      "id": "organization.crm.link",
+      "label": "Read and change the contacts of a CRM list you link, with your own CRM access",
+      "risk": "sensitive"
     },
     {
       "id": "ai.spreadsheets.assist",

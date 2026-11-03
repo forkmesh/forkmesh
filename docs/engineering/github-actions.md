@@ -68,6 +68,28 @@ python3 tools/github_actions_status.py --repo owner/name --branch release
 
 Same rules as the watcher; sends `GITHUB_TOKEN` or `GH_TOKEN` if set.
 
+## Fixing red workflows with an agent workflow
+
+`.claude/workflows/fix-github-actions.js` is a saved Claude Code workflow
+(run it by name, `fix-github-actions`; an optional string argument narrows it
+to one workflow or test). It runs four stages:
+
+1. **Diagnose.** One agent reads the status above, reproduces each failing
+   step locally and groups the failures by root cause (one stale test often
+   fails several workflows on every OS). Using `git log -S` on the cause, it
+   decides which side is wrong: a code regression, a test that still checks
+   behaviour that was changed on purpose, or a stale manifest or generated
+   file. Flakes and CI-environment failures are reported, not fixed.
+2. **Fix.** One agent per cause, one after another in the same worktree, so
+   fixes that touch the same manifest do not conflict. It fixes the wrong
+   side and must not skip, loosen or unwire a check.
+3. **Verify.** A separate agent rereads the diff, reruns the reproduction
+   and rejects a fix that bent the test to match a regression.
+4. **Recheck.** Every reproduction runs again together, and the agent checks
+   that no stray files were left behind.
+
+It does not commit; the session that ran it reviews the result and commits.
+
 ## Failures readable without a login
 
 Check-run annotations (`/repos/<repo>/check-runs/<job id>/annotations`) need

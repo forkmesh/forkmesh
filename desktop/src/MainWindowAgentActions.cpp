@@ -1824,8 +1824,18 @@ void MainWindow::scheduleAgentEfficiencyRefresh()
         m_agentEfficiencySaveTimer->setSingleShot(true);
         m_agentEfficiencySaveTimer->setInterval(5000);
         connect(m_agentEfficiencySaveTimer, &QTimer::timeout, this, [this] {
-            if (m_agentToolLedger)
-                m_agentToolLedger->saveLater();
+            if (!m_agentToolLedger)
+                return;
+            AgentToolEfficiencyLedger snapshot = *m_agentToolLedger;
+            snapshot.changed = {};
+            snapshot.callObserved = {};
+            const quint64 generation = m_agentToolLedger->beginBackgroundSave();
+            runOffThread<QByteArray>(
+                [snapshot = std::move(snapshot)] { return snapshot.serialized(); },
+                [this, generation](QByteArray bytes) {
+                    if (m_agentToolLedger)
+                        m_agentToolLedger->finishBackgroundSave(generation, bytes);
+                });
         });
     }
     if (!m_agentEfficiencySaveTimer->isActive())

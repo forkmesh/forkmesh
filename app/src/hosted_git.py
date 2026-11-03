@@ -1371,6 +1371,7 @@ async def _hosted_settings(env, request):
             "repositoriesPerAccount": _hosted_repos.max_per_account(env),
             "repositoryBytes": _hosted_repos.max_bytes(env),
         }
+        body["coreNodeCount"] = len(_hosted_repos.core_nodes(env))
     body["contributorPush"] = contributor_push_patterns(env)
     if actor and core:
         runtime = _ReplicaRuntime(env, request)

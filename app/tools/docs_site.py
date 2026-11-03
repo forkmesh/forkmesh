@@ -16,11 +16,13 @@ from __future__ import annotations
 import datetime
 import html
 import json
+import math
 import posixpath
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import docs_art
 import docs_history
 import docs_markdown
 
@@ -46,6 +48,23 @@ LIBRARY_PLACEHOLDER = "<!-- forkmesh-docs-library -->"
 LIBRARY_NAV_PLACEHOLDER = "<!-- forkmesh-docs-library-nav -->"
 LIBRARY_TOC_PLACEHOLDER = "<!-- forkmesh-docs-library-toc -->"
 DESCRIPTION_LIMIT = 180
+READER_INDEX_URL = "/docs/reader-index.json"
+MAP_VISIBLE = 6
+KEYWORDS_PER_PAGE = 12
+WORD_RE = re.compile(r"[a-z][a-z0-9]+")
+STOPWORDS = frozenset(
+    """
+    about above after again against all also and any are because been before being below
+    between both but can cannot could did does doing down during each few for from further
+    had has have having her here hers him his how into its itself just more most must
+    not now off once only other our ours out over own same she should some such than that
+    the their theirs them then there these they this those through too under until upon
+    use used uses using very was way were what when where which while who whom why will
+    with within without would you your yours one two three first second new set get gets
+    see page pages forkmesh docs doc file files line lines run runs see need needs make
+    makes like still even every many much may might shows show keep keeps without per
+    """.split()
+)
 
 
 @dataclass(frozen=True)
@@ -113,6 +132,48 @@ PILLARS = (
     "censorship-resilience.md",
     "protocol/threat-model.md",
 )
+PILLAR_LABELS: dict[str, tuple[str, str]] = {
+    "architecture.md": ("Architecture", "network"),
+    "encryption.md": ("Encryption", "lock"),
+    "mirroring.md": ("Mirroring", "mirror"),
+    "self-hosting.md": ("Self-hosting", "server"),
+    "censorship-resilience.md": ("Censorship resilience", "shield"),
+    "protocol/threat-model.md": ("Threat model", "radar"),
+}
+AREA_STYLE: dict[str, tuple[str, str]] = {
+    "pillars": ("layers", "shield"),
+    "product": ("cube", "logo"),
+    "guides": ("compass", "compass"),
+    "protocol": ("doc", "doc"),
+    "security": ("shield-check", "key"),
+    "operations": ("gauge", "server"),
+    "mobile": ("phone", "phone"),
+    "project": ("flag", "flag"),
+    "desktop": ("monitor", "monitor"),
+    "app": ("browser", "browser"),
+    "native": ("phone", "phone"),
+    "marketplace": ("package", "package"),
+    "world": ("globe", "globe"),
+    "tools": ("sliders", "sliders"),
+    "schemas": ("braces", "braces"),
+}
+DOCS_TABS: tuple[tuple[str, str], ...] = (
+    ("/docs/", "Overview"),
+    ("/docs/#pillars", "Pillars"),
+    ("/docs/#quickstart", "Get started"),
+    ("/docs/#repository", "Concepts"),
+    ("/docs/#api-websockets", "APIs"),
+    ("/docs/protocol/", "Protocol"),
+    (LIBRARY_URL, "Library"),
+    (HISTORY_URL, "Updates"),
+    ("/blog", "Blog"),
+)
+PLATFORMS: tuple[tuple[str, str], ...] = (
+    ("/docs/", "Desktop"),
+    ("/docs/browser-extension/", "Extension"),
+    ("/docs/mobile/", "Mobile"),
+)
+SIDEBAR_PLACEHOLDER = "<!-- forkmesh-docs-sidebar -->"
 # Curated order for the top-level guides; everything else sorts by title.
 GUIDE_ORDER = (
     "README.md",
@@ -331,6 +392,7 @@ def load_catalog(docs_root: Path = DOCS_ROOT) -> Catalog:
         rendered = docs_markdown.render(
             (docs_root / relative).read_text(encoding="utf-8"),
             link_rewriter=rewriter,
+            rich=True,
         )
         entry.title = rendered.title or relative.rsplit("/", 1)[-1][: -len(".md")]
         entry.description = _truncate(rendered.description)
@@ -455,36 +517,56 @@ def _e(text: str) -> str:
     return html.escape(text, quote=True)
 
 
-LIBRARY_PAGES: tuple[tuple[str, str], ...] = (
-    (LIBRARY_URL, "Library overview"),
-    (HISTORY_URL, "Recent updates"),
-    (DOCUMENTS_URL, "All documents"),
+LIBRARY_PAGES: tuple[tuple[str, str, str], ...] = (
+    ("/docs/", "Overview", "home"),
+    ("/docs/#pillars", "The six pillars", "layers"),
+    (LIBRARY_URL, "Library overview", "grid"),
+    (HISTORY_URL, "Recent updates", "clock"),
+    (DOCUMENTS_URL, "All documents", "list"),
 )
 
 
 def home_nav_html(current: str) -> str:
-    """The three library-wide entry points above the per-area sidebar."""
+    """The library-wide entry points above the per-area sidebar."""
     parts: list[str] = []
-    for url, label in LIBRARY_PAGES:
+    for url, label, glyph in LIBRARY_PAGES:
         active = " active" if url == current else ""
         aria = ' aria-current="page"' if url == current else ""
         parts.append(
-            f'<a class="dp-nav-link dp-nav-home{active}" href="{_e(url)}"{aria}>{_e(label)}</a>'
+            f'<a class="dp-nav-link dp-nav-home{active}" href="{_e(url)}"{aria}>'
+            f"{docs_art.icon(glyph)}<span>{_e(label)}</span></a>"
         )
     return "\n".join(parts)
 
 
-def tabs_html(current: str) -> str:
-    updates = current in {HISTORY_URL, DOCUMENTS_URL}
-    tabs = (
-        ("/docs/", "Desktop", False),
-        (LIBRARY_URL, "Library", not updates),
-        (HISTORY_URL, "Updates", updates),
-        ("/blog", "Blog", False),
+def platforms_html(current: str = "/docs/") -> str:
+    links = "".join(
+        f'<a class="{"active" if url == current else ""}" href="{_e(url)}">{_e(label)}</a>'
+        for url, label in PLATFORMS
     )
+    return f'<nav class="dp-platforms" aria-label="Platform">{links}</nav>'
+
+
+def promo_html(uid: str = "promo") -> str:
+    return (
+        '<a class="dp-promo" href="/desktop">'
+        f'{docs_art.art("logo", uid)}'
+        "<strong>Run ForkMesh</strong>"
+        "<span>Get the desktop app: host, mirror and collaborate from your own machine.</span>"
+        f'<em>Download {docs_art.icon("download")}</em></a>'
+    )
+
+
+def tabs_html(current: str) -> str:
+    if current in {HISTORY_URL, DOCUMENTS_URL}:
+        active_url = HISTORY_URL
+    elif current == "/docs/":
+        active_url = "/docs/"
+    else:
+        active_url = LIBRARY_URL
     return "\n".join(
-        f'<a class="{"active" if active else ""}" href="{_e(url)}">{_e(label)}</a>'
-        for url, label, active in tabs
+        f'<a class="{"active" if url == active_url else ""}" href="{_e(url)}">{_e(label)}</a>'
+        for url, label in DOCS_TABS
     )
 
 
@@ -514,10 +596,12 @@ def meta_html(entry: Entry) -> str:
 def sidebar_html(catalog: Catalog, current: str) -> str:
     parts: list[str] = []
     for area, members in catalog.grouped():
-        expanded = area.key == "pillars" or any(entry.url == current for entry in members)
+        here = any(entry.url == current for entry in members)
+        expanded = area.key == "pillars" or here
+        glyph = AREA_STYLE.get(area.key, ("cube", "logo"))[0]
         parts.append(
-            f'<details class="dp-nav-group"{" open" if expanded else ""}>'
-            f'<summary><h2>{_e(area.label)}</h2></summary>'
+            f'<details class="dp-nav-group{" current" if here else ""}"{" open" if expanded else ""}>'
+            f'<summary>{docs_art.icon(glyph)}<h2>{_e(area.label)}</h2></summary>'
         )
         for entry in members:
             active = " active" if entry.url == current else ""
@@ -529,6 +613,10 @@ def sidebar_html(catalog: Catalog, current: str) -> str:
             )
         parts.append("</details>")
     return "\n".join(parts)
+
+
+def landing_sidebar_html(catalog: Catalog) -> str:
+    return home_nav_html("/docs/") + sidebar_html(catalog, "/docs/") + promo_html()
 
 
 def library_html(catalog: Catalog, *, heading_level: int = 3, include_product: bool = True) -> str:
@@ -567,7 +655,7 @@ def library_nav_html(catalog: Catalog, *, include_product: bool = True) -> str:
 
 def library_toc_html(catalog: Catalog, *, include_product: bool = True) -> str:
     return "\n".join(
-        f'<a class="mb-4 block font-bold text-[var(--docs-muted)] no-underline" href="#library-{area.key}">{_e(area.label)}</a>'
+        f'<a class="dp-outline-link level-3" href="#library-{area.key}">{_e(area.label)}</a>'
         for area, _ in catalog.grouped()
         if include_product or area.key != "product"
     )
@@ -625,12 +713,219 @@ def _card_list(title: str, entries: list[Entry], current: Entry) -> str:
     return "\n".join(parts)
 
 
+def _map_column(kind: str, title: str, entries: list[Entry]) -> str:
+    if not entries:
+        return (
+            f'<div class="dp-map-col dp-map-{kind} dp-map-empty"><h3>{_e(title)}</h3>'
+            '<p>No pages yet.</p></div>'
+        )
+    nodes = [
+        f'<a class="dp-map-node" href="{_e(entry.url)}" data-map-node>'
+        f'<strong>{_e(entry.title)}</strong><span>{_e(entry.description)}</span></a>'
+        for entry in entries
+    ]
+    visible, hidden = nodes[:MAP_VISIBLE], nodes[MAP_VISIBLE:]
+    more = (
+        f'<details class="dp-map-more"><summary>Show {len(hidden)} more</summary>{"".join(hidden)}</details>'
+        if hidden
+        else ""
+    )
+    return (
+        f'<div class="dp-map-col dp-map-{kind}"><h3>{_e(title)}'
+        f' <span class="dp-map-count">{len(entries)}</span></h3>{"".join(visible)}{more}</div>'
+    )
+
+
+def page_map_html(entry: Entry, references: list[Entry]) -> str:
+    incoming = [other for other in entry.backlinks if other is not entry]
+    outgoing = [other for other in references if other is not entry]
+    if not incoming and not outgoing:
+        return ""
+    area = AREA_BY_KEY[entry.area]
+    return (
+        '<section class="dp-map" aria-labelledby="dp-page-map">'
+        '<h2 id="dp-page-map">Page map</h2>'
+        '<p class="dp-map-lead">How this page connects to the rest of the library.</p>'
+        '<div class="dp-map-grid" data-map>'
+        + _map_column("in", "Pages that link here", incoming)
+        + '<div class="dp-map-hub" data-map-hub><span>You are here</span>'
+        f"<strong>{_e(entry.title)}</strong><em>{_e(area.label)}</em></div>"
+        + _map_column("out", "Pages this one links to", outgoing)
+        + "</div></section>"
+    )
+
+
+def _words(text: str) -> list[str]:
+    return [word for word in WORD_RE.findall(text.lower()) if word not in STOPWORDS and len(word) > 2]
+
+
+def reader_index(catalog: Catalog) -> dict:
+    pages = [entry for entry in catalog.entries if entry.kind in ("doc", "product")]
+    position = {entry.url: index for index, entry in enumerate(pages)}
+    counts: list[dict[str, float]] = []
+    frequency: dict[str, int] = {}
+    for entry in pages:
+        weights: dict[str, float] = {}
+        for word in _words(entry.title):
+            weights[word] = weights.get(word, 0.0) + 4.0
+        for heading in entry.headings:
+            for word in _words(heading.text):
+                weights[word] = weights.get(word, 0.0) + 2.0
+        for word in _words(entry.description + " " + entry.plain_text):
+            weights[word] = weights.get(word, 0.0) + 1.0
+        counts.append(weights)
+        for word in weights:
+            frequency[word] = frequency.get(word, 0) + 1
+    total = len(pages) or 1
+    records = []
+    for entry, weights in zip(pages, counts):
+        scored = sorted(
+            (
+                count / (count + 4.0) * math.log(total / frequency[word]),
+                word,
+            )
+            for word, count in weights.items()
+            if 3 <= frequency[word] < total * 0.7
+        )[::-1]
+        peak = scored[0][0] if scored else 1.0
+        title_words = list(dict.fromkeys(word for word in _words(entry.title) if word in frequency))[:4]
+        keywords = [[word, 1.0] for word in title_words]
+        keywords += [
+            [word, round(score / peak, 2)] for score, word in scored if word not in title_words
+        ][: KEYWORDS_PER_PAGE - len(keywords)]
+        records.append(
+            {
+                "u": entry.url,
+                "t": entry.title,
+                "d": entry.description,
+                "a": entry.area,
+                "m": reading_minutes(entry.words),
+                "o": sorted(position[url] for url in entry.outgoing if url in position),
+                "k": keywords,
+            }
+        )
+    return {
+        "version": 1,
+        "areas": {area.key: area.label for area in AREAS},
+        "pages": records,
+    }
+
+
 def breadcrumbs_html(entry: Entry) -> str:
     area = AREA_BY_KEY[entry.area]
-    crumbs = [f'<a href="/docs/">Docs</a>', f'<a href="{LIBRARY_URL}#library-{area.key}">{_e(area.label)}</a>']
+    crumbs = [
+        f'<a href="/docs/" aria-label="Docs home">{docs_art.icon("home")}</a>',
+        '<a href="/docs/">Docs</a>',
+        f'<a href="{LIBRARY_URL}#library-{area.key}">{_e(area.label)}</a>',
+    ]
     if entry.url != LIBRARY_URL:
         crumbs.append(f"<span>{_e(entry.title)}</span>")
     return '<nav class="dp-crumbs" aria-label="Breadcrumb">' + " <span aria-hidden=\"true\">/</span> ".join(crumbs) + "</nav>"
+
+
+HERO_RE = re.compile(r"^\s*(<h1\b.*?</h1>)\s*(?:<p>(.*?)</p>)?", re.DOTALL)
+CORE_PARAGRAPH_RE = re.compile(r"<p>Part of the core documentation:.*?</p>\s*", re.DOTALL)
+AUDIENCE_RE = re.compile(r'(<h2 id="who-it-is-for">.*?</h2>)\s*(<p>.*?</p>)', re.DOTALL)
+
+
+def pillar_entries(catalog: Catalog) -> list[tuple[Entry, str, str]]:
+    by_source = {entry.source: entry for entry in catalog.documents}
+    return [
+        (by_source["docs/" + path], label, art)
+        for path, (label, art) in PILLAR_LABELS.items()
+        if "docs/" + path in by_source
+    ]
+
+
+def pillar_strip_html(catalog: Catalog, current: str) -> str:
+    links = []
+    for entry, label, _ in pillar_entries(catalog):
+        aria = ' aria-current="page"' if entry.url == current else ""
+        links.append(f'<a href="{_e(entry.url)}"{aria}>{_e(label)}{docs_art.icon("arrow")}</a>')
+    return (
+        '<nav class="dp-pillar-strip" aria-label="Core documentation">'
+        "<span>Part of the core documentation</span>" + "".join(links) + "</nav>"
+    )
+
+
+def art_key(entry: Entry) -> str:
+    pillar = PILLAR_LABELS.get(entry.source[len("docs/"):])
+    if pillar:
+        return pillar[1]
+    return AREA_STYLE.get(entry.area, ("cube", "logo"))[1]
+
+
+def hero_html(catalog: Catalog, entry: Entry) -> str:
+    body = entry.html
+    is_pillar = entry.source[len("docs/"):] in PILLAR_LABELS
+    if is_pillar:
+        body = CORE_PARAGRAPH_RE.sub("", body, count=1)
+    body = AUDIENCE_RE.sub(
+        lambda match: '<section class="dp-callout"><span class="dp-callout-icon">'
+        + docs_art.icon("users")
+        + "</span>"
+        + match.group(1)
+        + match.group(2)
+        + "</section>",
+        body,
+        count=1,
+    )
+    match = HERO_RE.match(body)
+    if not match:
+        return meta_html(entry) + body
+    area = AREA_BY_KEY[entry.area]
+    glyph = AREA_STYLE.get(area.key, ("cube", "logo"))[0]
+    kicker = (
+        f'<a class="dp-kicker" href="{LIBRARY_URL}#library-{area.key}">'
+        f"{docs_art.icon(glyph)}{_e(area.label)}</a>"
+    )
+    lead = f'<p class="dp-hero-lead">{match.group(2)}</p>' if match.group(2) else ""
+    strip = pillar_strip_html(catalog, entry.url) if is_pillar else ""
+    hero = (
+        '<header class="dp-hero"><div class="dp-hero-text">'
+        + kicker
+        + match.group(1)
+        + lead
+        + meta_html(entry)
+        + strip
+        + '</div><div class="dp-hero-art">'
+        + docs_art.art(art_key(entry), "hero-art")
+        + "</div></header>"
+    )
+    return hero + body[match.end():]
+
+
+def core_path_html(catalog: Catalog, current: str) -> str:
+    items = []
+    for index, (entry, label, _) in enumerate(pillar_entries(catalog), start=1):
+        aria = ' aria-current="page"' if entry.url == current else ""
+        items.append(
+            f'<li><a href="{_e(entry.url)}"{aria}><span class="dp-step">{index}</span>{_e(label)}</a></li>'
+        )
+    return (
+        '<section class="dp-rail-card dp-rail-path" aria-label="Core documentation">'
+        f'<h2>{docs_art.icon("layers")}Core documentation</h2><ol>' + "".join(items) + "</ol></section>"
+    )
+
+
+def related_rail_html(entry: Entry, references: list[Entry], siblings: list[Entry]) -> str:
+    pillar_urls = {item.url for item in references if item.source[len("docs/"):] in PILLAR_LABELS}
+    picks = [item for item in references if item.url not in pillar_urls and item is not entry]
+    if len(picks) < 5:
+        index = siblings.index(entry) if entry in siblings else 0
+        nearby = siblings[index + 1:] + siblings[:index]
+        picks += [item for item in nearby if item not in picks and item is not entry]
+    picks = picks[:5]
+    if not picks:
+        return ""
+    items = "".join(
+        f'<li><a href="{_e(item.url)}">{docs_art.icon("chevron")}{_e(item.title)}</a></li>'
+        for item in picks
+    )
+    return (
+        '<section class="dp-rail-card dp-rail-related" aria-label="Related">'
+        f'<h2>{docs_art.icon("network")}Related</h2><ul>{items}</ul></section>'
+    )
 
 
 def page_html(catalog: Catalog, entry: Entry) -> str:
@@ -674,14 +969,13 @@ def page_html(catalog: Catalog, entry: Entry) -> str:
         url=entry.url,
         source=SOURCE_TREE_URL + entry.source,
         crumbs=breadcrumbs_html(entry),
-        meta=meta_html(entry),
-        body=entry.html,
+        body=hero_html(catalog, entry),
         library=library_section,
         pager="".join(pager),
         related=_card_list(f"More in {area.label}", siblings, entry),
-        references=_card_list("Referenced from this page", references, entry),
-        backlinks=_card_list("Pages that link here", entry.backlinks, entry),
+        page_map=page_map_html(entry, references),
         outline=outline_html(entry),
+        rail_extra=core_path_html(catalog, entry.url) + related_rail_html(entry, references, siblings),
     )
 
 
@@ -698,9 +992,9 @@ def render_shell(
     library: str = "",
     pager: str = "",
     related: str = "",
-    references: str = "",
-    backlinks: str = "",
+    page_map: str = "",
     outline: str = "",
+    rail_extra: str = "",
     wide: bool = False,
 ) -> str:
     """The shared documentation shell around already-rendered body HTML."""
@@ -710,9 +1004,11 @@ def render_shell(
         title=_e(title),
         description=_e(description),
         url=_e(url),
+        platforms=platforms_html(),
         home=home_nav_html(url),
         tabs=tabs_html(url),
         sidebar=sidebar_html(catalog, url),
+        promo=promo_html(),
         crumbs=crumbs,
         meta=meta,
         source=_e(source),
@@ -720,9 +1016,9 @@ def render_shell(
         library=library,
         pager=pager,
         related=related,
-        references=references,
-        backlinks=backlinks,
+        page_map=page_map,
         outline=outline,
+        rail_extra=rail_extra,
     )
 
 
@@ -947,9 +1243,10 @@ PAGE_TEMPLATE = """<!doctype html>
     <link rel="stylesheet" href="/docs-page.css?v=${{version}}" />
     <script src="/site-header.js?v=${{version}}" defer></script>
     <script src="/docs-page.js?v=${{version}}" defer></script>
+    <script src="/docs-explore.js?v=${{version}}" defer></script>
     <script src="/genie-spider.js?v=${{version}}" defer></script>
   </head>
-  <body class="dp-body">
+  <body class="dp-body" data-reader-index="{reader_index}">
     <div data-forkmesh-header="simple"></div>
     <header class="dp-toolbar">
       <div class="dp-toolbar-inner">
@@ -975,15 +1272,17 @@ PAGE_TEMPLATE = """<!doctype html>
         <details class="dp-nav" open>
           <summary>All documentation</summary>
           <nav aria-label="Documentation library">
+{platforms}
 {home}
 {sidebar}
+{promo}
           </nav>
         </details>
       </aside>
 
       <article class="dp-article">
+        <div class="dp-topline">
         {crumbs}
-        {meta}
         <div class="dp-actions">
           <button id="copy-page" class="dp-button" type="button">
             <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"></rect><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path></svg>
@@ -994,14 +1293,16 @@ PAGE_TEMPLATE = """<!doctype html>
             <span>View source</span>
           </a>
         </div>
+        </div>
+        {meta}
         <div class="dp-prose">
 {body}
         </div>
         {library}
         {pager}
+        <section class="dp-suggest" data-suggest hidden aria-labelledby="dp-suggest-title"></section>
         {related}
-        {references}
-        {backlinks}
+        {page_map}
         <section class="dp-feedback">
           <p data-feedback-status>Was this page helpful?</p>
           <div>
@@ -1017,6 +1318,7 @@ PAGE_TEMPLATE = """<!doctype html>
         </section>
         <footer class="dp-footer">
           <a href="/docs/">Docs home</a>
+          <a href="/docs/#pillars">Pillars</a>
           <a href="{library_url}">Library</a>
           <a href="https://app.forkmesh.com/chat">Chat</a>
           <a href="/network">Network</a>
@@ -1025,7 +1327,10 @@ PAGE_TEMPLATE = """<!doctype html>
       </article>
 
       <aside class="dp-rail">
+        <div class="dp-rail-stack">
         {outline}
+        {rail_extra}
+        </div>
       </aside>
     </main>
 
@@ -1043,7 +1348,7 @@ PAGE_TEMPLATE = """<!doctype html>
     </div>
   </body>
 </html>
-""".replace("{library_url}", LIBRARY_URL)
+""".replace("{library_url}", LIBRARY_URL).replace("{reader_index}", READER_INDEX_URL)
 
 
 # ---------------------------------------------------------------- staging
@@ -1055,6 +1360,7 @@ def _inject(document: str, placeholder: str, replacement: str) -> str:
 
 
 def inject_library(index_html: str, catalog: Catalog) -> str:
+    index_html = _inject(index_html, SIDEBAR_PLACEHOLDER, landing_sidebar_html(catalog))
     index_html = _inject(index_html, LIBRARY_PLACEHOLDER, library_html(catalog, include_product=False))
     # The landing page already lists the hand-written product pages in its
     # own sidebar, so its library section only carries the Markdown tree.
@@ -1086,6 +1392,13 @@ def stage_docs(destination: Path, docs_root: Path = DOCS_ROOT) -> Catalog:
             raise RuntimeError(f"generated page {url} would overwrite {target}")
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(render(catalog), encoding="utf-8")
+    reader_target = destination / READER_INDEX_URL.lstrip("/")
+    if reader_target.exists():
+        raise RuntimeError(f"the reader index would overwrite {reader_target}")
+    reader_target.write_text(
+        json.dumps(reader_index(catalog), ensure_ascii=False, separators=(",", ":")),
+        encoding="utf-8",
+    )
     index_path = docs_destination / "index.html"
     index_path.write_text(
         inject_library(index_path.read_text(encoding="utf-8"), catalog),

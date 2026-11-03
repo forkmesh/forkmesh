@@ -830,6 +830,8 @@ bool runGitFilterBranch(const QString &workTree, const QStringList &args,
     return ok;
 }
 
+QString deletedPullBranchTombstoneRef(int number);
+
 bool rewritePullHistoryWithoutPaths(const QString &workTree, int number,
                                     const QStringList &relPaths,
                                     QString *error)
@@ -851,6 +853,10 @@ bool rewritePullHistoryWithoutPaths(const QString &workTree, int number,
     if (runGit(workTree,
                {"rev-parse", "--verify", "-q", metadataRef + "^{commit}"}))
         refsToRewrite << metadataRef;
+    const QString tombstoneRef = deletedPullBranchTombstoneRef(number);
+    if (runGit(workTree,
+               {"rev-parse", "--verify", "-q", tombstoneRef + "^{commit}"}))
+        refsToRewrite << tombstoneRef;
 
     QStringList historyArgs{"rev-list"};
     historyArgs << refsToRewrite << QStringLiteral("--") << relPaths;

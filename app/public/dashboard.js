@@ -126,6 +126,10 @@
     // parsed from /blog/rss.xml. null until the feed read resolves so the card
     // can tell "loading" apart from "feed unavailable".
     homeBlogPosts: null,
+    homeChangelogNotes: null,
+    homeWork: null,
+    homeWorkSignature: "",
+    homeRepoSearchOpen: false,
     repoRemoteForks: { key: "", forks: [], canManage: false, loaded: false },
     // Organization aliases are not duplicate catalog publications: load the
     // signed-in viewer's linked aliases separately so Top repositories can
@@ -891,9 +895,13 @@
       const nodeName = String(account?.nodeName || "").trim();
       if (!payload?.portable || !nodeName) return null;
 
+      const stored = readSession();
+      const storedCase = String(stored?.nodeName || "").toLowerCase() === nodeName.toLowerCase()
+        ? stored?.nameCase : "";
       const hydrated = {
         ...account,
         nodeName,
+        nameCase: account.nameCase || storedCase || "",
         sessionToken: "cookie",
         portable: true,
         controllerIndependent: payload.controllerIndependent === true,
@@ -4867,7 +4875,7 @@
       detail.number,
       detail.parsed,
     ));
-    mountIssueStickyHeader(container);
+    mountRecordStickyHeader(container);
     decorateIssueModeration(container, detail.repo, detail.number, detail.parsed);
     window.lucide?.createIcons();
   }
@@ -9912,6 +9920,7 @@
         : "Verify email in profile";
     }
     applyAvatar(avatar, session);
+    renderHomeAccount(session);
     const publicProfileLink = $("[data-account-menu-public-profile]");
     if (publicProfileLink && session?.nodeName) {
       publicProfileLink.href = publicProfileUrl(session.nodeName);
@@ -10570,17 +10579,35 @@
       : range?.from;
     const missing = (Array.isArray(coverage?.missing) ? coverage.missing : [])
       .map((item) => String(item || "").trim()).filter(Boolean).slice(0, 4);
+    const hasForge = Boolean(profileContributionCount(coverage?.forge?.repositories));
     const missingLabels = missing.map((item) => ({
       commits: "commit history",
-      collaboration: "collaboration events",
+      collaboration: hasForge ? "collaboration events outside hosted repositories" : "collaboration events",
       languages: "language footprint",
       history: "earlier history",
     })[item] || item);
+    const forgeNote = profileContributionForgeNote(coverage?.forge);
     if (coverage?.status === "partial") {
-      return `Partial verified history from ${verifiedLabel || "the available sources"}${missingLabels.length ? `. Missing ${missingLabels.join(", ")}.` : "."}`;
+      return `Partial verified history from ${verifiedLabel || "the available sources"}${missingLabels.length ? `. Missing ${missingLabels.join(", ")}.` : "."}${forgeNote}`;
     }
-    if (coverage?.status === "unavailable") return "Verified contribution history is not available yet.";
-    return `Complete verified public history for ${range?.label || "this period"}.`;
+    if (coverage?.status === "unavailable") {
+      return forgeNote
+        ? `${forgeNote.trim()} Desktop-published contribution history is not available yet.`
+        : "Verified contribution history is not available yet.";
+    }
+    return `Complete verified public history for ${range?.label || "this period"}.${forgeNote}`;
+  }
+
+  function profileContributionForgeNote(forge) {
+    const repositories = profileContributionCount(forge?.repositories);
+    if (!repositories) return "";
+    const labels = { issues: "issues", pulls: "pull requests", reviews: "reviews" };
+    const kinds = (Array.isArray(forge?.kinds) ? forge.kinds : [])
+      .map((kind) => labels[kind]).filter(Boolean);
+    const what = kinds.length > 1
+      ? `${kinds.slice(0, -1).join(", ")} and ${kinds[kinds.length - 1]}`
+      : (kinds[0] || "collaboration");
+    return ` Includes ${what} recorded on ${formatCount(repositories)} public hosted repositor${repositories === 1 ? "y" : "ies"} in the last year.`;
   }
 
   function renderProfileContributionStatus(status, { hasData = false } = {}) {
@@ -11928,7 +11955,7 @@
     if (locationInput && document.activeElement !== locationInput) {
       locationInput.value = session?.profileLocation || "";
     }
-    if (nameCaseInput && document.activeElement !== nameCaseInput) {
+    if (nameCaseInput && document.activeElement !== nameCaseInput && !nameCaseInput.dataset.edited) {
       nameCaseInput.value = session?.nameCase || session?.nodeName || "";
       nameCaseInput.placeholder = session?.nodeName || "username";
     }
@@ -12564,6 +12591,11 @@
         followersPublic: Boolean($("[data-profile-page-followers-public]")?.checked),
         profileLinks: collectProfileLinks(),
       });
+      const nameCaseInput = $("[data-profile-page-name-case]");
+      if (nameCaseInput) {
+        delete nameCaseInput.dataset.edited;
+        nameCaseInput.value = state.session?.nameCase || state.session?.nodeName || "";
+      }
       setProfilePageHint("[data-profile-public-hint]", "Public profile saved.", "good");
     } catch (error) {
       const messages = {
@@ -14300,9 +14332,43 @@
       : null;
   }
 
+  const REPOSITORY_FORK_COUNTS_STORE = "forkmesh.repoForkCounts.v1";
+  const REPOSITORY_FORK_COUNTS_TTL_MS = 120000;
+
+  function loadStoredRepositoryForkCounts() {
+    const counts = new Map();
+    try {
+      const stored = JSON.parse(sessionStorage.getItem(REPOSITORY_FORK_COUNTS_STORE) || "{}");
+      if (Date.now() - Number(stored.at || 0) < REPOSITORY_FORK_COUNTS_TTL_MS) {
+        Object.entries(stored.counts || {}).forEach(([key, value]) => {
+          const found = repositoryForkCountsValue(value);
+          if (isRepoKey(key) && found) counts.set(key, found);
+        });
+        return { counts, asked: new Set((stored.asked || []).filter(isRepoKey)) };
+      }
+    } catch (_) {}
+    return { counts, asked: new Set() };
+  }
+
+  function storeRepositoryForkCounts() {
+    try {
+      const stored = JSON.parse(sessionStorage.getItem(REPOSITORY_FORK_COUNTS_STORE) || "{}");
+      const fresh = Date.now() - Number(stored.at || 0) < REPOSITORY_FORK_COUNTS_TTL_MS;
+      sessionStorage.setItem(REPOSITORY_FORK_COUNTS_STORE, JSON.stringify({
+        at: fresh ? Number(stored.at) : Date.now(),
+        counts: Object.fromEntries(state.repositoryForkCounts),
+        asked: [...state.repositoryForkCountsAsked],
+      }));
+    } catch (_) {}
+  }
+
   async function hydrateRepositoryForkCounts(root) {
+    if (!state.repositoryForkCounts) {
+      const stored = loadStoredRepositoryForkCounts();
+      state.repositoryForkCounts = stored.counts;
+      state.repositoryForkCountsAsked = stored.asked;
+    }
     const nodes = applyRepositoryForkCounts(root);
-    if (!state.repositoryForkCounts) state.repositoryForkCounts = new Map();
     if (!state.repositoryForkCountsAsked) state.repositoryForkCountsAsked = new Set();
     const wanted = [...new Set(nodes.map((node) => node.getAttribute("data-repo-fork-counts")))]
       .filter((key) => isRepoKey(key) && !state.repositoryForkCountsAsked.has(key));
@@ -14324,6 +14390,7 @@
         });
       } catch (_) {}
     }
+    storeRepositoryForkCounts();
     applyRepositoryForkCounts(document);
   }
 
@@ -14432,7 +14499,7 @@
       : [];
     const entries = [
       ...organizationRepositories.map((repo) => ({
-        repo,
+        repo: organizationEntryRepository(repo),
         key: repoHasShortAddress(repo) ? String(repo.name) : `${repo.owner}/${repo.name}`,
         href: repoPathUrl(repo),
         organization: true,
@@ -14509,12 +14576,22 @@
     loadHomeRepositoryViews(keys, signature);
   }
 
+  function organizationEntryRepository(repo) {
+    const node = String(repo?.linkedNode || "").trim().toLowerCase();
+    const name = String(repo?.name || "").trim().toLowerCase();
+    if (!node || !name) return repo;
+    return (Array.isArray(state.repositories) ? state.repositories : []).find((candidate) =>
+      String(candidate?.owner || "").toLowerCase() === node
+      && String(candidate?.name || "").toLowerCase() === name) || repo;
+  }
+
   function homeRepositoryEntries() {
     return [
       ...(Array.isArray(state.homeOrganizationRepositories)
         ? state.homeOrganizationRepositories
         : []).map((repo) => ({
-          repo,
+          repo: organizationEntryRepository(repo),
+          label: repoDisplayName(repo),
           href: repoPathUrl(repo),
           organization: true,
         })),
@@ -14525,7 +14602,8 @@
     ].map((entry) => ({ ...entry, label: entry.label || repoDisplayName(entry.repo) }))
       .filter((entry, index, values) =>
         values.findIndex((candidate) =>
-          candidate.label.toLowerCase() === entry.label.toLowerCase()) === index)
+          candidate.label.toLowerCase() === entry.label.toLowerCase()
+          || (candidate.organization && repoKey(candidate.repo).toLowerCase() === repoKey(entry.repo).toLowerCase())) === index)
       .sort((a, b) => homeRepositoryLastViewedAt(b) - homeRepositoryLastViewedAt(a));
   }
 
@@ -14540,25 +14618,25 @@
     const status = live
       ? (repoServedByMirror(repo) ? "served by mirror" : "live host")
       : "offline";
-    const statusHtml = dashboardOnInstance() ? "" : `<span data-home-repo-served-by class="inline-flex items-center gap-1.5"><span class="h-2 w-2 shrink-0 rounded-full ${live ? "bg-success" : "bg-muted-foreground/40"}"></span>${status}</span>`;
-    const logo = nativeRepositoryLogoMarkup(repo, "h-8 w-8")
-      || '<span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-border bg-secondary text-muted-foreground"><i data-lucide="book-marked" class="h-4 w-4"></i></span>';
+    const statusHtml = dashboardOnInstance() ? "" : `<span data-home-repo-served-by title="${status}" class="ml-auto h-1.5 w-1.5 shrink-0 rounded-full ${live ? "bg-success" : "bg-muted-foreground/40"}"><span class="sr-only">${status}</span></span>`;
+    const logo = nativeRepositoryLogoMarkup(repo, "h-5 w-5")
+      || '<span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border bg-secondary text-muted-foreground"><i data-lucide="book-marked" class="h-3 w-3"></i></span>';
+    const label = entry.label || repoDisplayName(repo);
     const description = String(repo.description || "").trim();
     const views = Number(homeRepositoryViewTotals(repo)?.views) || 0;
     const forks = Math.max(Number(repo.forkCount) || 0, Number(nestedForks) || 0);
-    return `<a href="${escapeHtml(entry.href)}" data-home-repo-row class="flex min-w-0 items-start gap-2.5 rounded-md px-2 py-2 text-left text-sm text-muted-foreground hover:bg-secondary hover:text-foreground">
+    const hint = [
+      label,
+      description,
+      views ? `${formatCount(views)} ${views === 1 ? "view" : "views"}` : "",
+      forks ? `${formatCount(forks)} ${forks === 1 ? "fork" : "forks"}` : "",
+    ].filter(Boolean).join(" · ");
+    return `<a href="${escapeHtml(entry.href)}" data-home-repo-row title="${escapeHtml(hint)}" class="flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-foreground hover:bg-secondary">
       ${logo}
-      <span class="min-w-0 flex-1">
-        <span class="block truncate font-medium text-foreground" title="${escapeHtml(entry.label || repoDisplayName(repo))}">${homeRepositoryLabelHtml(entry.label || repoDisplayName(repo))}</span>
-        ${description ? `<span data-user-content class="mt-0.5 block line-clamp-2 text-xs leading-5 text-muted-foreground">${escapeHtml(description)}</span>` : ""}
-        <span class="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          ${statusHtml}
-          ${entry.organization ? '<span class="shrink-0 text-[9px] uppercase text-muted-foreground">organization</span>' : ""}
-          ${views ? `<span data-home-repo-views class="inline-flex items-center gap-1"><i data-lucide="eye" class="h-3 w-3"></i>${escapeHtml(formatCount(views))} ${views === 1 ? "view" : "views"}</span>` : ""}
-          ${forks ? `<span data-home-repo-fork-count class="inline-flex items-center gap-1" title="${escapeHtml(`${formatCount(forks)} ${forks === 1 ? "fork" : "forks"}`)}"><i data-lucide="git-fork" class="h-3 w-3"></i>${escapeHtml(formatCount(forks))} ${forks === 1 ? "fork" : "forks"}</span>` : ""}
-          ${repositoryTermsBadge(repo, true)}
-        </span>
-      </span>
+      <span class="min-w-0 flex-1 truncate font-medium">${homeRepositoryLabelHtml(label)}</span>
+      ${entry.organization ? '<span class="shrink-0 text-[9px] uppercase text-muted-foreground">organization</span>' : ""}
+      ${repositoryTermsBadge(repo, true)}
+      ${statusHtml}
     </a>`;
   }
 
@@ -14590,11 +14668,15 @@
     const all = homeRepositoryEntries();
     refreshHomeRepositoryViews(all);
     const searchField = $("[data-home-repo-search-field]");
+    const searchToggle = $("[data-home-repo-search-toggle]");
     const searchable = all.length >= HOME_REPO_SEARCH_MIN_REPOSITORIES;
-    searchField?.classList.toggle("hidden", !searchable);
-    searchField?.classList.toggle("flex", searchable);
     const search = $("[data-home-repo-search]");
     if (!searchable && search?.value) search.value = "";
+    const searchOpen = searchable && (state.homeRepoSearchOpen || Boolean(search?.value));
+    searchToggle?.classList.toggle("hidden", !searchable);
+    searchToggle?.setAttribute("aria-expanded", String(searchOpen));
+    searchField?.classList.toggle("hidden", !searchOpen);
+    searchField?.classList.toggle("flex", searchOpen);
     const query = (search?.value || "").trim().toLowerCase();
     const matches = all.filter((entry) => repositoryMatchesPageFilter(entry.repo, query));
     const groups = nestRepositoryForks(matches, (entry) => homeRepositoryViewTotals(entry.repo)?.views);
@@ -14621,6 +14703,185 @@
     window.lucide?.createIcons();
     hydrateNativeRepositoryLogos(container);
     hydrateRepositoryForkCounts(container);
+    refreshHomeWork(all);
+  }
+
+  function homeGreeting(date = new Date()) {
+    const hour = date.getHours();
+    if (hour < 5 || hour >= 18) return "Good evening";
+    return hour < 12 ? "Good morning" : "Good afternoon";
+  }
+
+  function renderHomeAccount(session = state.session) {
+    const account = $("[data-home-account]");
+    if (!account) return;
+    const name = session?.nodeName ? userDisplayName(session.nodeName) : (session?.email || "");
+    const nameEl = $("[data-home-account-name]");
+    if (nameEl) nameEl.textContent = name || "Your account";
+    applyAvatar($("[data-home-account-avatar]"), session);
+    const greeting = $("[data-home-greeting]");
+    if (greeting) greeting.textContent = name ? `${homeGreeting()}, ${name}!` : `${homeGreeting()}!`;
+  }
+
+  function setHomeTab(tab) {
+    const active = tab === "feed" ? "feed" : "home";
+    $$("[data-home-tab]").forEach((button) => {
+      button.setAttribute("aria-pressed", String(button.dataset.homeTab === active));
+    });
+    $$("[data-home-tab-panel]").forEach((panel) => {
+      panel.hidden = panel.dataset.homeTabPanel !== active;
+    });
+  }
+
+  const HOME_WORK_REPO_LIMIT = 6;
+  const HOME_WORK_ROW_LIMIT = 5;
+
+  function homeWorkStamp(value) {
+    let stamp = Number(value) || Date.parse(String(value || "")) || 0;
+    if (stamp > 0 && stamp < 10_000_000_000) stamp *= 1000;
+    return Number.isFinite(stamp) ? stamp : 0;
+  }
+
+  function homeWorkRepositories(entries) {
+    const aliases = profileRepositoryAliases(state.session);
+    if (!aliases.size) return [];
+    return entries
+      .filter((entry) => entry.repo && !entry.repo.isPrivate
+        && (entry.organization || repoBelongsToProfile(entry.repo, aliases)))
+      .slice(0, HOME_WORK_REPO_LIMIT);
+  }
+
+  async function loadHomeRepositoryWork(entry) {
+    const repo = entry.repo;
+    const label = entry.label;
+    const pullCount = repoCount(repo, ["openPulls", "pullCount", "pulls", "pullsCount"]);
+    const issueCount = repoCount(repo, ["openIssues", "issueCount", "issues", "issuesCount"]);
+    const [pulls, issues] = await Promise.all([
+      pullCount === 0 ? [] : loadRepoRecordsFromMirror(repo, repoCollectionConfig.pulls).catch(() => []),
+      issueCount === 0 ? null : fetchRepoIssueIndex(repo),
+    ]);
+    return {
+      pulls: pulls
+        .filter((pull) => String(pull.state || "").toLowerCase() === "open")
+        .map((pull) => ({
+          kind: "pull",
+          number: pull.number,
+          title: pull.title,
+          author: pull.author,
+          updatedAt: homeWorkStamp(pull.updatedAtMs || pull.createdAtMs),
+          href: `${entry.href}/pull/${pull.number}`,
+          repoLabel: label,
+        })),
+      issues: (Array.isArray(issues?.issues) ? issues.issues : [])
+        .map(issueFromIndex)
+        .filter((issue) => issue.status !== "closed" && !issue.deleted && Number.isFinite(issue.number))
+        .map((issue) => ({
+          kind: "issue",
+          number: issue.number,
+          title: issue.title,
+          author: issue.author,
+          comments: Number(issue.commentCount) || 0,
+          updatedAt: homeWorkStamp(issue.dateValue),
+          href: `${entry.href}/issues/${issue.number}`,
+          repoLabel: label,
+        })),
+    };
+  }
+
+  function refreshHomeWork(entries) {
+    if (!$("[data-home-pulls]") || state.repositoriesLoading) return;
+    const repos = homeWorkRepositories(entries);
+    const signature = repos.map((entry) => entry.href).sort().join("\n");
+    if (signature === state.homeWorkSignature) return;
+    state.homeWorkSignature = signature;
+    if (!repos.length) {
+      state.homeWork = { pulls: [], issues: [] };
+      renderHomeWork();
+      return;
+    }
+    Promise.all(repos.map((entry) => loadHomeRepositoryWork(entry).catch(() => ({ pulls: [], issues: [] }))))
+      .then((results) => {
+        if (state.homeWorkSignature !== signature) return;
+        const byRecent = (a, b) => b.updatedAt - a.updatedAt;
+        state.homeWork = {
+          pulls: results.flatMap((result) => result.pulls).sort(byRecent),
+          issues: results.flatMap((result) => result.issues).sort(byRecent),
+        };
+        renderHomeWork();
+      });
+  }
+
+  function homeWorkRow(item) {
+    const icon = item.kind === "pull"
+      ? pullStateIconHtml("open")
+      : '<i data-lucide="circle-dot" class="h-4 w-4 text-[var(--dashboard-open)]"></i>';
+    const meta = [
+      `${escapeHtml(item.repoLabel)}#${escapeHtml(String(item.number))}`,
+      item.author ? `Opened by ${issuePersonNameHtml(item.author, "", { inLink: true })}` : "",
+      item.updatedAt ? `Updated ${escapeHtml(formatTimeAgo(item.updatedAt))}` : "",
+    ].filter(Boolean).join(" · ");
+    return `<a href="${escapeHtml(item.href)}" data-home-work-row="${item.kind}" class="fm-home-row">
+        <span class="fm-home-row-icon">${icon}</span>
+        <span class="min-w-0 flex-1">
+          <span class="fm-home-row-title">${escapeHtml(item.title)}</span>
+          <span class="fm-home-row-meta">${meta}</span>
+        </span>
+        ${item.comments ? `<span class="fm-home-row-end" title="${formatCount(item.comments)} comment${item.comments === 1 ? "" : "s"}"><i data-lucide="message-square" class="h-4 w-4"></i>${formatCount(item.comments)}</span>` : ""}
+      </a>`;
+  }
+
+  function renderHomeWork() {
+    const work = state.homeWork || { pulls: [], issues: [] };
+    [["pulls", work.pulls, "open pull request"], ["issues", work.issues, "open issue"]].forEach(([key, items, noun]) => {
+      const section = $(`[data-home-${key}-section]`);
+      const list = $(`[data-home-${key}]`);
+      const count = $(`[data-home-${key}-count]`);
+      if (!section || !list) return;
+      section.hidden = !items.length;
+      list.innerHTML = items.slice(0, HOME_WORK_ROW_LIMIT).map(homeWorkRow).join("");
+      if (count) count.textContent = items.length ? `${formatCount(items.length)} ${noun}${items.length === 1 ? "" : "s"}` : "";
+    });
+    window.lucide?.createIcons();
+  }
+
+  const HOME_CHANGELOG_NOTE_LIMIT = 4;
+  const HOME_CHANGELOG_URL = "/changelog.json";
+
+  function homeChangelogDate(value) {
+    const text = String(value || "");
+    const parsed = /^\d{4}-\d{2}-\d{2}$/.test(text) ? new Date(`${text}T00:00:00`) : null;
+    if (!parsed || Number.isNaN(parsed.getTime())) return text;
+    return parsed.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  }
+
+  function renderHomeChangelog() {
+    const container = $("[data-home-changelog-list]");
+    if (!container) return;
+    const notes = state.homeChangelogNotes;
+    if (notes === null) return;
+    container.innerHTML = notes.length
+      ? notes.map((note) => `<li>
+          <time datetime="${escapeHtml(note.date)}">${escapeHtml(homeChangelogDate(note.date))}</time>
+          <a href="/changelog" class="line-clamp-2">${escapeHtml(note.text)}</a>
+        </li>`).join("")
+      : '<li><p class="text-muted-foreground">The changelog is unavailable right now.</p></li>';
+  }
+
+  async function loadHomeChangelog() {
+    if (!$("[data-home-changelog-list]")) return;
+    try {
+      const response = await fetch(HOME_CHANGELOG_URL, { credentials: "omit", headers: { accept: "application/json" } });
+      if (!response.ok) throw new Error(`changelog returned ${response.status}`);
+      const data = await response.json();
+      state.homeChangelogNotes = (Array.isArray(data?.notes) ? data.notes : [])
+        .filter((note) => note && note.text && note.date)
+        .map((note) => ({ date: String(note.date), text: String(note.text) }))
+        .sort((a, b) => b.date.localeCompare(a.date))
+        .slice(0, HOME_CHANGELOG_NOTE_LIMIT);
+    } catch (_) {
+      state.homeChangelogNotes = [];
+    }
+    renderHomeChangelog();
   }
 
   const HOME_FEED_CARD_LIMIT = 8;
@@ -14670,12 +14931,12 @@
       item.repo ? escapeHtml(repoPublicKey(item.repo)) : "",
     ].filter(Boolean).join(" · ");
     return `
-      <${tag}${hrefAttr} data-home-feed-kind="activity" class="flex min-w-0 items-start gap-2.5 rounded-md border border-border bg-background px-3 py-2.5 hover:bg-secondary">
-        <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"></i>
+      <${tag}${hrefAttr} data-home-feed-kind="activity" class="fm-home-row">
+        <span class="fm-home-row-icon"><i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="text-muted-foreground"></i></span>
         <span class="min-w-0 flex-1">
-          <span class="block break-words text-sm font-medium text-foreground">${escapeHtml(repoPublicText(item.title) || `${platformName()} activity`)}</span>
-          ${item.body ? `<span class="mt-0.5 block line-clamp-2 text-xs leading-5 text-muted-foreground">${escapeHtml(repoPublicText(item.body))}</span>` : ""}
-          <span class="mt-1 block break-words text-xs text-muted-foreground">${meta}</span>
+          <span class="fm-home-row-title">${escapeHtml(repoPublicText(item.title) || `${platformName()} activity`)}</span>
+          ${item.body ? `<span class="fm-home-row-meta line-clamp-2">${escapeHtml(repoPublicText(item.body))}</span>` : ""}
+          <span class="fm-home-row-meta">${meta}</span>
         </span>
       </${tag}>
     `;
@@ -14690,13 +14951,13 @@
     container.innerHTML = cards.length
       ? cards.join("")
       : seasonActive("halloween")
-        ? `<div class="flex items-center gap-3 rounded-md border border-border bg-background px-3 py-3 text-sm text-muted-foreground">${HALLOWEEN_PUMPKIN}<span>Nothing from others yet. It's quiet in here. Too quiet.</span></div>`
-        : '<div class="rounded-md border border-border bg-background px-3 py-3 text-sm text-muted-foreground">Nothing from others yet. Mentions, pull requests and pushes by other people show up here.</div>';
+        ? `<div class="fm-home-empty flex items-center gap-3">${HALLOWEEN_PUMPKIN}<span>Nothing from others yet. It's quiet in here. Too quiet.</span></div>`
+        : '<div class="fm-home-empty">Nothing from others yet. Mentions, pull requests and pushes by other people show up here.</div>';
     window.lucide?.createIcons();
   }
 
   // Home right-rail "Latest from the blog" (adhoc #381): the newest feature
-  // posts with their artwork, read from the blog's own RSS document. The feed
+  // posts, read from the blog's own RSS document. The feed
   // is derived from the shipped blog index and edge-cached for thirty minutes
   // (see blog_feed.py), so this is one cheap same-origin read per dashboard
   // load rather than a second hand-maintained copy of the post list.
@@ -14717,30 +14978,6 @@
     }
   }
 
-  // Artwork cannot take that shortcut: the blog images live in the WWW
-  // worker's asset bundle only (build_site_assets.shared_assets deliberately
-  // skips assets/blog for App and World), so a path-only src 404s on the
-  // dashboard's own origin and every card paints a broken image. Keep the
-  // feed's absolute URL, but only for ForkMesh's own sites, so a rewritten
-  // feed can still never make the dashboard fetch a foreign host.
-  const HOME_BLOG_IMAGE_HOSTS = new Set(["forkmesh.com", "www.forkmesh.com"]);
-
-  function homeBlogImageUrl(value) {
-    const raw = String(value || "").trim();
-    if (!raw) return "";
-    try {
-      const parsed = new URL(raw, window.location.origin);
-      if (parsed.origin === window.location.origin) {
-        return parsed.pathname + parsed.search;
-      }
-      if (parsed.protocol !== "https:") return "";
-      if (!HOME_BLOG_IMAGE_HOSTS.has(parsed.hostname.toLowerCase())) return "";
-      return parsed.href;
-    } catch (_) {
-      return "";
-    }
-  }
-
   function parseHomeBlogFeed(xml) {
     const doc = new DOMParser().parseFromString(String(xml || ""), "application/xml");
     if (doc.querySelector("parsererror")) return [];
@@ -14749,22 +14986,17 @@
         title: (item.querySelector("title")?.textContent || "").trim(),
         href: homeBlogUrl(item.querySelector("link")?.textContent),
         meta: (item.querySelector("category")?.textContent || "").trim(),
-        image: homeBlogImageUrl(item.querySelector("enclosure")?.getAttribute("url")),
       }))
       .filter((post) => post.title && post.href)
       .slice(0, HOME_BLOG_POST_LIMIT);
   }
 
-  function homeBlogPostCard(post) {
-    return `
-      <a href="${escapeHtml(post.href)}"${/^https:/.test(post.href) ? ' target="_blank" rel="noopener"' : ""} class="group block overflow-hidden rounded-md border border-border hover:bg-secondary">
-        ${post.image ? `<img src="${escapeHtml(post.image)}" alt="" loading="lazy" class="block aspect-[16/9] w-full object-cover" />` : ""}
-        <span class="block px-3 py-2.5">
-          ${post.meta ? `<span class="block truncate font-mono text-[10px] uppercase text-muted-foreground">${escapeHtml(post.meta)}</span>` : ""}
-          <span class="mt-1 block text-sm font-semibold leading-5 text-foreground group-hover:text-accent">${escapeHtml(post.title)}</span>
-        </span>
-      </a>
-    `;
+  function homeBlogPostItem(post) {
+    const external = /^https:/.test(post.href) ? ' target="_blank" rel="noopener"' : "";
+    return `<li>
+        ${post.meta ? `<span class="fm-home-kicker">${escapeHtml(post.meta)}</span>` : ""}
+        <a href="${escapeHtml(post.href)}"${external} class="line-clamp-2">${escapeHtml(post.title)}</a>
+      </li>`;
   }
 
   function renderHomeBlogPosts() {
@@ -14772,32 +15004,24 @@
     if (!container) return;
     const posts = state.homeBlogPosts;
     if (posts === null) {
-      container.innerHTML = '<div class="text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading blog posts...</div>';
+      container.innerHTML = '<li><span class="text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading blog posts...</span></li>';
       return;
     }
     container.innerHTML = posts.length
-      ? posts.map(homeBlogPostCard).join("")
-      : '<div class="text-sm text-muted-foreground">Blog posts are unavailable right now.</div>';
+      ? posts.map(homeBlogPostItem).join("")
+      : '<li><p class="text-muted-foreground">Blog posts are unavailable right now.</p></li>';
   }
-
-  const HOME_DEVTO_IMAGE_HOSTS = new Set(["media2.dev.to", "dev-to-uploads.s3.amazonaws.com"]);
 
   function homeDevtoPost(article) {
     let href = "";
-    let image = "";
     try {
       const link = new URL(String(article?.url || ""));
       if (link.protocol === "https:" && link.hostname === "dev.to") href = link.href;
-    } catch (_) {}
-    try {
-      const cover = new URL(String(article?.cover_image || article?.social_image || ""));
-      if (cover.protocol === "https:" && HOME_DEVTO_IMAGE_HOSTS.has(cover.hostname)) image = cover.href;
     } catch (_) {}
     const when = Date.parse(String(article?.published_at || ""));
     return {
       title: String(article?.title || "").trim(),
       href,
-      image,
       meta: Number.isFinite(when) ? relativeTimeLabel(when) : "",
     };
   }
@@ -14805,7 +15029,7 @@
   async function loadHomeDevtoPosts(user) {
     const card = $("[data-home-blog-card]");
     card?.removeAttribute("data-instance-plugin");
-    const viewAll = card?.querySelector("a[href]");
+    const viewAll = card?.querySelector(".fm-home-more");
     if (viewAll) {
       viewAll.href = `https://dev.to/${encodeURIComponent(user)}`;
       viewAll.target = "_blank";
@@ -14894,7 +15118,18 @@
     renderHomeRepositories();
   }
 
-  const HOME_AGENT_LIMIT = 10;
+  const HOME_AGENT_LIMIT = 5;
+
+  function homeAgentStatusIcon(status) {
+    const key = String(status || "").toLowerCase();
+    if (["completed", "succeeded", "done", "merged"].includes(key)) {
+      return '<i data-lucide="check" class="text-success"></i>';
+    }
+    if (["failed", "error", "cancelled", "canceled", "stopped"].includes(key)) {
+      return '<i data-lucide="x" class="text-destructive"></i>';
+    }
+    return `<span class="h-2 w-2 rounded-full ${orgAgentStatusDotClass(status)}"></span>`;
+  }
 
   function homeAgentRow(session, account) {
     const owner = String(session.org || account || "").trim();
@@ -14908,21 +15143,20 @@
     const status = String(session.displayStatus || session.status || "unknown");
     const title = String(session.title || "").trim()
       || (session.issueNumber ? `Issue #${session.issueNumber}` : `${orgAgentProviderLabel(session)} session`);
+    const started = session.createdAt || session.updatedAt;
     const meta = [
       repoLabel,
       orgAgentProviderLabel(session),
       session.targetNode ? `on ${session.targetNode}` : "",
-      notificationTimeLabel(session.updatedAt || session.createdAt),
+      started ? `Started ${notificationTimeLabel(started)}` : "",
     ].filter(Boolean).map(escapeHtml);
+    const statusLabel = status.replace(/_/g, " ");
     return `
-      <${tag}${hrefAttr} data-home-agent="${escapeHtml(String(session.id || ""))}" class="flex min-w-0 items-start gap-3 rounded-lg border border-border bg-card px-4 py-3 hover:bg-secondary/40">
-        <span class="mt-1.5 h-2 w-2 shrink-0 rounded-full ${orgAgentStatusDotClass(session.status)}"></span>
+      <${tag}${hrefAttr} data-home-agent="${escapeHtml(String(session.id || ""))}" class="fm-home-row">
+        <span class="fm-home-row-icon">${homeAgentStatusIcon(session.status)}</span>
         <span class="min-w-0 flex-1">
-          <span class="flex min-w-0 items-start justify-between gap-3">
-            <span class="min-w-0 break-words text-sm font-medium text-foreground">${escapeHtml(title)}</span>
-            <span class="shrink-0 font-mono text-xs ${repoAgentStatusTone(session.status)}">${escapeHtml(status.replace(/_/g, " "))}</span>
-          </span>
-          <span class="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">${meta.map((part) => `<span>${part}</span>`).join("")}</span>
+          <span class="fm-home-row-title">${escapeHtml(title)}</span>
+          <span class="fm-home-row-meta">${meta.join(" · ")} · <span class="${repoAgentStatusTone(session.status)}">${escapeHtml(statusLabel.charAt(0).toUpperCase() + statusLabel.slice(1))}</span></span>
         </span>
       </${tag}>`;
   }
@@ -14938,14 +15172,15 @@
       count.textContent = data?.activeCount ? `${formatCount(data.activeCount)} running` : "";
     }
     if (data?.error) {
-      container.innerHTML = `<div class="rounded-lg border border-border bg-card px-4 py-6 text-sm text-muted-foreground">${escapeHtml(data.error)}</div>`;
+      container.innerHTML = `<div class="fm-home-empty">${escapeHtml(data.error)}</div>`;
       return;
     }
     container.innerHTML = sessions.length
       ? sessions.slice(0, HOME_AGENT_LIMIT).map((session) => homeAgentRow(session, data.account)).join("")
       : seasonActive("halloween")
-        ? `<div class="flex items-center gap-4 rounded-lg border border-border bg-card px-4 py-4 text-sm text-muted-foreground">${HALLOWEEN_PUMPKIN}<span>No agents yet. Type a prompt above and press new to summon one.</span></div>`
-        : '<div class="rounded-lg border border-border bg-card px-4 py-6 text-sm text-muted-foreground">No agents yet. Type a prompt above and press new to start one.</div>';
+        ? `<div class="fm-home-empty flex items-center gap-4">${HALLOWEEN_PUMPKIN}<span>No agent sessions.</span></div>`
+        : '<div class="fm-home-empty">No agent sessions.</div>';
+    window.lucide?.createIcons();
   }
 
   async function loadHomeAgentSessions() {
@@ -15484,16 +15719,146 @@
     fillSelect($("[data-new-repo-license]"), hostedSettings?.licenseTemplates, {
       mit: "MIT", "bsd-3-clause": "BSD 3-Clause", isc: "ISC", unlicense: "Unlicense",
     });
+    renderNewRepoQuota();
+    renderNewRepoNodeStatus();
+    setNewRepoSource(newRepoSource());
+  }
+
+  function newRepoSizeLabel(bytes) {
+    const megabytes = Math.round(Number(bytes || 0) / 1048576);
+    if (megabytes >= 1024 && megabytes % 1024 === 0) return `${megabytes / 1024} GB`;
+    return `${megabytes} MB`;
+  }
+
+  function newRepoMoveGuideUrl() {
+    const path = "/docs/hosted-repositories/#moving-to-your-own-device";
+    return dashboardOnInstance() ? `https://forkmesh.com${path}` : path;
+  }
+
+  function serverCountLabel(count) {
+    return count === 1 ? "1 server" : `${count} servers`;
+  }
+
+  function newRepoCopiesWarning(count) {
+    return count === 1
+      ? `${escapeHtml(platformName())} runs on one server, so it keeps one copy of this repository. Keep your own clone as a backup, or <a href="${escapeHtml(newRepoMoveGuideUrl())}">move it to your own device</a>.`
+      : "";
+  }
+
+  function renderNewRepoQuota() {
+    const core = hostedCoreMode();
+    const limits = hostedSettings?.limits || {};
+    const perAccount = Number(limits.repositoriesPerAccount || 0);
+    const used = Number(hostedSettings?.used || 0);
+    const size = newRepoSizeLabel(limits.repositoryBytes);
+    const servers = Number(hostedSettings?.coreNodeCount || 0);
     const quota = $("[data-new-repo-quota]");
-    if (quota) {
-      const limits = hostedSettings?.limits || {};
-      const perAccount = Number(limits.repositoriesPerAccount || 0);
-      const megabytes = Math.round(Number(limits.repositoryBytes || 0) / 1048576);
+    if (quota && quota.classList.contains("nr-meter")) {
+      if (core && perAccount) {
+        const percent = Math.min(100, Math.round((used / perAccount) * 100));
+        quota.classList.toggle("nr-meter-high", used / perAccount >= 0.8);
+        quota.innerHTML = `<div class="nr-meter-bar" role="img" aria-label="${used} of ${perAccount} repositories used"><i style="width:${percent}%"></i></div>`
+          + `<div class="nr-meter-row"><span><b>${used} of ${perAccount}</b> repositories used</span>`
+          + `<span>Each up to <b>${escapeHtml(size)}</b></span>`
+          + `<a href="${escapeHtml(newRepoMoveGuideUrl())}" class="text-accent hover:underline">Need more?</a></div>`;
+      } else {
+        quota.textContent = "";
+      }
+    } else if (quota) {
       quota.textContent = core && perAccount
-        ? `${platformName()} hosts up to ${perAccount} repositories per account (${Number(hostedSettings.used || 0)} used), ${megabytes} MB each, on every core node. Move one to your own node any time to grow past that.`
+        ? `You have used ${used} of your ${perAccount} repositories on ${platformName()}. Each one can be up to ${size}.`
         : "";
     }
-    setNewRepoSource(newRepoSource());
+    const meta = $("[data-new-repo-hosted-meta]");
+    if (meta) {
+      meta.textContent = core && perAccount
+        ? [servers ? serverCountLabel(servers) : "", `${used} of ${perAccount} used`, `up to ${size} each`].filter(Boolean).join(" · ")
+        : "";
+    }
+    const copies = $("[data-new-repo-copies]");
+    if (copies) {
+      const warning = core ? newRepoCopiesWarning(servers) : "";
+      copies.innerHTML = warning;
+      copies.classList.toggle("hidden", !warning);
+    }
+  }
+
+  function renderNewRepoNodeStatus() {
+    const status = $("[data-new-repo-node-status]");
+    if (!status) return;
+    const nodes = Array.isArray(state.session?.nodes)
+      ? [...new Set(state.session.nodes.map((node) => String(node || "").trim()).filter(Boolean))]
+      : [];
+    status.textContent = nodes.length
+      ? `Linked: ${nodes.slice(0, 2).join(", ")}${nodes.length > 2 ? ` and ${nodes.length - 2} more` : ""}`
+      : "Desktop or phone app · no device linked yet";
+  }
+
+  function newRepoLocation() {
+    return $('[data-new-repo-location][aria-checked="true"]')?.dataset.newRepoLocation || "hosted";
+  }
+
+  function setNewRepoLocation(where) {
+    const buttons = $$("[data-new-repo-location]");
+    if (!buttons.length) return;
+    buttons.forEach((button) => {
+      const active = button.dataset.newRepoLocation === where;
+      button.setAttribute("aria-checked", active ? "true" : "false");
+      button.tabIndex = active ? 0 : -1;
+    });
+    const node = where === "node";
+    $("[data-new-repo-node-guide]")?.classList.toggle("hidden", !node);
+    $("[data-new-repo-hosted-form]")?.classList.toggle("hidden", node);
+    $("[data-new-repo-submit]")?.classList.toggle("hidden", node);
+    const name = $("[data-new-repo-name]");
+    if (name) name.required = !node && newRepoSource() !== "provider";
+    setNewRepoHint("");
+  }
+
+  function initialNewRepoLocation() {
+    const requested = new URLSearchParams(location.search).get("where") || "";
+    if (requested === "node" || requested === "hosted") return requested;
+    return Array.isArray(state.session?.nodes) && state.session.nodes.length ? "node" : "hosted";
+  }
+
+  function newRepoImportChoice() {
+    const code = $("[data-new-repo-import-code]");
+    const issues = $("[data-new-repo-import-issues]");
+    if (!code && !issues) return null;
+    return { code: code?.checked !== false, issues: Boolean(issues?.checked) };
+  }
+
+  function renderNewRepoImportChoice() {
+    const choice = newRepoImportChoice();
+    if (!choice) return;
+    $("[data-new-repo-provider-token-wrap]")?.classList.toggle("hidden", !choice.issues);
+    const issuesOnly = choice.issues && !choice.code;
+    $("[data-new-repo-name-row]")?.parentElement?.classList.toggle("hidden", issuesOnly);
+    $("[data-new-repo-description-wrap]")?.classList.toggle("hidden", issuesOnly);
+    $("[data-new-repo-visibility-wrap]")?.classList.toggle("hidden", issuesOnly);
+    const name = $("[data-new-repo-name]");
+    if (name) name.required = !issuesOnly;
+    renderNewRepoNameCheck();
+  }
+
+  function newRepoNameProblem(name) {
+    if (!name) return "";
+    if (name.length > 64) return "Use at most 64 characters.";
+    if (!/^[A-Za-z0-9._-]+$/.test(name)) return "Use letters, numbers, dots, dashes, or underscores in the name.";
+    if (name.startsWith(".") || /\.git$/i.test(name)) return "A name can't start with a dot or end in .git.";
+    const owner = String($("[data-new-repo-owner]")?.value || state.session?.nodeName || "").toLowerCase();
+    const taken = (Array.isArray(state.repositories) ? state.repositories : []).some((repo) =>
+      String(repo?.name || "").toLowerCase() === name.toLowerCase()
+      && [String(repo?.owner || "").toLowerCase(), String(repoPublicOwner(repo) || "").toLowerCase()].includes(owner));
+    return taken ? `You already have a repository called ${name}.` : "";
+  }
+
+  function renderNewRepoNameCheck() {
+    const check = $("[data-new-repo-name-check]");
+    if (!check) return;
+    const field = $("[data-new-repo-name]");
+    const visible = field && !field.closest(".hidden");
+    check.textContent = visible ? newRepoNameProblem(String(field.value || "").trim()) : "";
   }
 
   function hostedImportAllowed(url) {
@@ -15526,10 +15891,15 @@
     // field visibility, hint, and submit label before the form is seen,
     // instead of waiting for the first click on a tab.
     setNewRepoSource(requestedNewRepoSource() || newRepoSource());
+    setNewRepoLocation(initialNewRepoLocation());
+    renderNewRepoNodeStatus();
     setNewRepoHint("");
     loadHostedSettings();
     $(`[data-new-repo-migration-status]`)?.classList.add("hidden");
-    window.setTimeout(() => $("[data-new-repo-name]")?.focus(), 0);
+    window.setTimeout(() => {
+      const name = $("[data-new-repo-name]");
+      if (name && !name.closest(".hidden")) name.focus();
+    }, 0);
     window.lucide?.createIcons();
   }
 
@@ -15575,7 +15945,7 @@
   // The empty source needs neither a node nor another provider, so it must
   // not repeat the desktop-handoff sentence (issue #676).
   const NEW_REPO_EMPTY_SUBTITLE =
-    `A repository holds your project's files and history. ${platformName()} keeps a copy on every core node.`;
+    "A repository holds your project's files and history.";
 
   const NEW_REPO_BACKUP_GUIDE =
     `<a href="/docs/back-up-a-github-repository/" class="text-accent hover:underline">how to back up a GitHub repository</a>`;
@@ -15597,6 +15967,7 @@
   }
 
   function newRepoSubtitleFor(source) {
+    if ($("[data-new-repo-page]")) return NEW_REPO_EMPTY_SUBTITLE;
     if (source === "provider") return NEW_REPO_PROVIDER_SUBTITLE;
     if (source === "empty") return NEW_REPO_EMPTY_SUBTITLE;
     if (source === "remote" && hostedCoreMode()) {
@@ -15678,7 +16049,7 @@
     const name = $("[data-new-repo-name]");
     if (name) name.required = !provider;
     const submitLabel = $("[data-new-repo-submit-label]");
-    if (submitLabel) submitLabel.textContent = provider ? "Start resumable import" : "Create & mirror";
+    if (submitLabel) submitLabel.textContent = source === "empty" || source === "local" ? "Create repository" : "Import repository";
     const subtitle = $("[data-new-repo-subtitle]");
     if (subtitle) subtitle.textContent = newRepoSubtitleFor(source);
     // Switching tabs starts a different flow, so a previous run's steps panel
@@ -15693,7 +16064,6 @@
     // path or URL the flow never reads (issue #676).
     const empty = source === "empty";
     if (value) value.classList.toggle("hidden", empty);
-    if (submitLabel && empty) submitLabel.textContent = "Create empty repository";
     // A single hosted write node cannot hold a private repository (only a node
     // holding the account key can seal one). The Next core nodes can: they
     // serve it only to the owner and the organization's readers.
@@ -15705,7 +16075,7 @@
     if (privateOption) {
       privateOption.disabled = privateBlocked;
       const privateText = core && hostedHere
-        ? "Only you and your organization's readers can see and clone it."
+        ? "Only you and your organization's readers can see and clone it. The servers can read its contents."
         : "Encrypted mirror, contents stay hidden.";
       const privateDesc = $("[data-new-repo-private-desc]");
       if (privateDesc) privateDesc.textContent = privateText;
@@ -15719,14 +16089,17 @@
     const importing = source === "remote" && core;
     $("[data-new-repo-readme-wrap]")?.classList.toggle("hidden", importing);
     $("[data-new-repo-init-wrap]")?.classList.toggle("hidden", importing);
-    if (submitLabel && empty && core) submitLabel.textContent = "Create repository";
-    if (submitLabel && importing) submitLabel.textContent = "Import & host";
+    const importOptions = $("[data-new-repo-import-options]");
+    importOptions?.classList.toggle("hidden", source !== "remote");
     if (empty) {
       if (hint) {
         hint.textContent = core
           ? "Start empty and push with git over HTTPS."
           : "Start empty and push with git. It is public and stays empty until your first push.";
       }
+    } else if (importing && importOptions) {
+      if (value) value.placeholder = "https://github.com/owner/repo";
+      if (hint) hint.innerHTML = `Paste a link to a public repository on ${escapeHtml((hostedSettings.importHosts || []).join(", "))}. ${escapeHtml(platformName())} copies it once; later changes there are not brought over. A private repository needs your own device: clone it there and add the folder in the app.`;
     } else if (importing) {
       if (value) value.placeholder = "https://github.com/owner/repo.git";
       if (hint) hint.innerHTML = `${escapeHtml(platformName())} makes a one-time copy of a public repository from ${escapeHtml((hostedSettings.importHosts || []).join(", "))} and hosts it on its core nodes. The copy is not updated when the original changes. Private repositories and other URLs need the ${escapeHtml(desktopBrand())}desktop app: see ${NEW_REPO_BACKUP_GUIDE}.`;
@@ -15740,7 +16113,10 @@
       if (value) value.placeholder = "https://github.com/owner/repo.git";
       if (hint) hint.innerHTML = NEW_REPO_CLONE_HINT;
     }
+    if (source === "remote") renderNewRepoImportChoice();
+    else if (importOptions) $("[data-new-repo-name-row]")?.parentElement?.classList.remove("hidden");
     renderNewRepoVisibilityNote();
+    renderNewRepoNameCheck();
   }
 
   function setNewRepoHint(text, cls) {
@@ -16003,6 +16379,31 @@
             ? `on ${hosting.nodes?.length || 3} core nodes and it stays empty until your first push. Run these in your project folder; git asks for the credential below.`
             : "and it stays empty until your first push. Run these in your project folder; git asks for the credential below.";
     }
+    const servers = Number(hosting?.nodes?.length || hostedSettings?.coreNodeCount || 0);
+    const where = $("[data-new-repo-push-where]");
+    if (where) {
+      const stored = hosting?.mode === "core" && servers
+        ? `Stored on ${serverCountLabel(servers)} of ${platformName()}`
+        : `Hosted by ${platformName()}`;
+      where.textContent = hosting?.importing
+        ? `${stored}. The import is running now, so clone it once it finishes.`
+        : hosting?.initialized
+          ? `${stored}, with a first commit.`
+          : `${stored}. It stays empty until your first push.`;
+    }
+    const cloneTitle = $("[data-new-repo-push-clone-title]");
+    if (cloneTitle) {
+      cloneTitle.textContent = hosting?.initialized || hosting?.importing
+        ? "Clone it" : "Run these in your project folder";
+    }
+    const copies = $("[data-new-repo-push-copies]");
+    if (copies) {
+      const warning = hosting?.mode === "core" ? newRepoCopiesWarning(servers) : "";
+      copies.innerHTML = warning;
+      copies.classList.toggle("hidden", !warning);
+    }
+    $("[data-new-repo-push-issues]")?.classList.add("hidden");
+    $$("[data-new-repo-push-copy-field]").forEach((button) => { button.textContent = "Copy"; });
     const terms = $("[data-new-repo-push-visibility]");
     if (terms) {
       terms.textContent = repository?.visibility === "private"
@@ -16020,7 +16421,8 @@
     const expiry = $("[data-new-repo-push-expiry]");
     if (expiry) {
       expiry.textContent = push?.expiresAt
-        ? new Date(Number(push.expiresAt)).toLocaleString() : "soon";
+        ? new Date(Number(push.expiresAt)).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
+        : "soon";
     }
     const link = $("[data-new-repo-push-open]");
     if (link && repository) link.href = repoLinkUrl(repository);
@@ -16073,6 +16475,7 @@
       forgetDeletedRepository(body.repository);
       renderNewRepoPush(body.repository, body.push, body.hosting);
       await loadRepositories({ fresh: true });
+      return true;
     } catch (error) {
       const code = String(error?.message || "");
       if (code === "hosted_git_unavailable") {
@@ -16084,17 +16487,61 @@
           title: "Finish creating your repository",
           subtitle: "This relay hosts no ForkMesh git node, so the repository has to come from a node you run.",
         });
-        return;
+        return false;
       }
       setNewRepoHint(newRepoHostedErrorText(code), "bad");
     } finally {
       if (submit) submit.disabled = false;
     }
+    return false;
+  }
+
+  async function startNewRepoIssuesImport(sourceUrl, providerToken) {
+    const line = $("[data-new-repo-push-issues]");
+    const say = (text) => {
+      if (!line) return;
+      line.textContent = text;
+      line.classList.remove("hidden");
+    };
+    say("Importing issues and pull requests…");
+    try {
+      const response = await fetch("/api/repository-imports/migrations", {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify({
+          sourceUrl,
+          providerToken,
+          mode: "import",
+          setupDurationMs: Math.max(0, Math.round(
+            (window.performance?.now?.() || Date.now()) - newRepoSetupStartedAt)),
+          sessionToken: state.session.sessionToken,
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body.migration) throw new Error(body.error || `HTTP ${response.status}`);
+      const finished = await advanceRepositoryMigration(body.migration, providerToken, (current) =>
+        say(`Importing issues and pull requests: ${current.processed || 0} items so far…`));
+      say(finished?.status === "completed"
+        ? "Issues and pull requests are imported. For now they are listed under External repositories."
+        : "The issues import paused at a checkpoint. Continue it from External repositories.");
+      await loadExternalRepositories({ fresh: true });
+    } catch (error) {
+      say(String(error?.message || "") === "provider_rate_limited"
+        ? "The provider's rate limit stopped the issues import. Try again later with only Issues and pull requests ticked."
+        : "The issues and pull requests could not be imported. Try again with only Issues and pull requests ticked.");
+    }
   }
 
   async function handleNewRepoSubmit() {
-    const source = newRepoSource();
+    if ($("[data-new-repo-location]") && newRepoLocation() === "node") return;
+    let source = newRepoSource();
     const sourceValue = String($("[data-new-repo-source-value]")?.value || "").trim();
+    const importChoice = source === "remote" ? newRepoImportChoice() : null;
+    if (importChoice && !importChoice.code && !importChoice.issues) {
+      setNewRepoHint("Tick Code, Issues and pull requests, or both.", "bad");
+      return;
+    }
+    if (importChoice?.issues && !importChoice.code) source = "provider";
     if (source === "provider") {
       if (!state.session?.sessionToken) {
         setNewRepoHint("Sign in to import a GitHub, GitLab, Codeberg, or Gitea repository.", "bad");
@@ -16222,13 +16669,23 @@
       $("[data-new-repo-name]")?.focus();
       return;
     }
+    const nameProblem = $("[data-new-repo-name-check]") ? newRepoNameProblem(name) : "";
+    if (nameProblem) {
+      setNewRepoHint(nameProblem, "bad");
+      $("[data-new-repo-name]")?.focus();
+      return;
+    }
     if (source === "empty") {
       await createHostedRepository({ name, visibility, description, ...hostedCreateExtras() });
       return;
     }
     if (source === "remote" && hostedImportAllowed(sourceValue)) {
       const { organization } = hostedCreateExtras();
-      await createHostedRepository({ name, visibility, description, organization, importUrl: sourceValue });
+      const providerToken = String($("[data-new-repo-provider-token]")?.value || "").trim();
+      const created = await createHostedRepository({ name, visibility, description, organization, importUrl: sourceValue });
+      const token = $("[data-new-repo-provider-token]");
+      if (token) token.value = "";
+      if (created && importChoice?.issues) void startNewRepoIssuesImport(sourceValue, providerToken);
       return;
     }
     if (!sourceValue) {
@@ -18726,8 +19183,15 @@
       }[action];
       // Approval executes code nobody has run here before; make that a
       // deliberate second step rather than a stray click.
-      if (action === "approve" && !window.confirm(
-        `Approve run ${runId} of "${run.workflow}" at ${run.commit.slice(0, 10)}? It will execute on ${view.local ? (view.host || "this server") : view.node}${run.pullNumber ? " without secrets or write access" : ""}.`)) {
+      if (action === "approve") {
+        void confirmAccountAction({
+          title: `Approve run ${runId}?`,
+          body: `Approve run ${runId} of "${run.workflow}" at ${run.commit.slice(0, 10)}? It will execute on ${view.local ? (view.host || "this server") : view.node}${run.pullNumber ? " without secrets or write access" : ""}.`,
+          confirmLabel: "Approve and run",
+          danger: false,
+        }).then((approved) => {
+          if (approved) void sendRepoActionsControl(repo, action, { runId }, label);
+        });
         return true;
       }
       void sendRepoActionsControl(repo, action, { runId }, label);
@@ -20519,7 +20983,7 @@
         Object.assign(parsed, relations);
         const draft = String(container.querySelector("[data-repo-issue-comment-body]")?.value || "");
         paintRepoIssueDetail(container, renderRepoRecordDetail(repo, "issues", number, parsed));
-        mountIssueStickyHeader(container);
+        mountRecordStickyHeader(container);
         if (draft) {
           const body = container.querySelector("[data-repo-issue-comment-body]");
           if (body) body.value = draft;
@@ -22110,6 +22574,10 @@
       && tree.pullReviews && typeof tree.pullReviews === "object"
       ? tree.pullReviews
       : null;
+    const pullPeople = config.dir === ".forkmesh/pulls"
+      && tree.pullPeople && typeof tree.pullPeople === "object"
+      ? tree.pullPeople
+      : null;
     const records = dirs.concat(branchOnlyDirs).map((entry) => {
       const number = Number(entry.name);
       const blob = blobs[recordPath(entry)];
@@ -22147,6 +22615,10 @@
         review: pullReviews && indexedNames.has(String(entry.name))
           ? pullListReviewState(pullReviews[String(entry.name)] || [], values.author || "",
             values.status || values.state || "open", pullListIsDraft(values))
+          : null,
+        people: pullPeople && indexedNames.has(String(entry.name))
+          && Array.isArray(pullPeople[String(entry.name)])
+          ? pullPeople[String(entry.name)]
           : null,
       };
     });
@@ -22216,6 +22688,20 @@
     if (!names.length) return "";
     const shown = names.map((name) => forgeIdentity(name) ? `@${forgeIdentity(name).login}` : name);
     return `<span data-repo-issue-row-commenters class="flex items-center justify-end [&>span]:-ml-1.5 [&>span]:ring-2 [&>span]:ring-[rgb(var(--dashboard-canvas-rgb))]" title="${escapeHtml(`Recent comments: ${shown.join(", ")}`)}">${names.map((name) => issueActorAvatarHtml(name, name, "h-5 w-5", false, false)).join("")}</span>`;
+  }
+
+  function renderPullRowPeople(item) {
+    const names = [];
+    const seen = new Set();
+    for (const raw of [...(Array.isArray(item.people) ? item.people : []), item.author]) {
+      const name = String(raw || "").trim();
+      if (!name || name === "unknown" || seen.has(name.toLowerCase())) continue;
+      seen.add(name.toLowerCase());
+      names.push(name);
+    }
+    if (!names.length) return "";
+    const shown = names.map((name) => forgeIdentity(name) ? `@${forgeIdentity(name).login}` : name);
+    return `<span data-repo-pull-row-people class="flex items-center justify-end [&>span]:-ml-1.5 [&>span]:ring-2 [&>span]:ring-[rgb(var(--dashboard-canvas-rgb))]" title="${escapeHtml(`Latest first: ${shown.join(", ")}`)}">${names.map((name, index) => `<span class="relative rounded-full" style="z-index:${names.length - index}">${issueActorAvatarHtml(name, name, "h-5 w-5", false, false)}</span>`).join("")}</span>`;
   }
 
   function pullStateIconHtml(stateLabel, extra = "") {
@@ -22324,6 +22810,7 @@
           </span>
           <span class="flex shrink-0 items-start pt-0.5 text-[12px] text-muted-foreground">
             ${item.wantsAgent ? '<i data-lucide="bot" class="h-4 w-4" title="Assigned to agent"></i>' : ""}
+            <span class="hidden justify-end sm:flex">${renderPullRowPeople(item)}</span>
           </span>`;
       const rowGrid = "grid-cols-[1rem_minmax(0,1fr)_auto]";
       if (item.unavailable) {
@@ -25510,6 +25997,7 @@
         parsed.pullMetadataCommit = servedCommit;
         const freshParsed = parseFrontMatter(blobText(record));
         const freshValues = freshParsed.values || {};
+        if (parsed.pullMerge?.state === "merged") freshValues.status = "merged";
         const statusChanged =
           (freshValues.status || "open") !== (values.status || "open");
         parsed.values = freshValues;
@@ -25519,6 +26007,7 @@
           const container = $("[data-repo-pulls]");
           if (container) {
             container.innerHTML = renderRepoRecordDetail(repo, "pulls", number, parsed);
+            mountRecordStickyHeader(container);
             window.lucide?.createIcons();
           }
         }
@@ -25536,13 +26025,7 @@
     parsed.pullCommits = commits;
     parsed.pullAgents = agents;
     parsed.pullTimeline = buildRepoPullTimeline(values, conversation, commits, agents);
-    const timeline = $("[data-repo-pull-conversation]");
-    if (timeline) {
-      timeline.dataset.empty = parsed.pullTimeline.length ? "false" : "true";
-      timeline.innerHTML = renderRepoPullConversation(parsed.pullTimeline);
-    }
-    const count = $("[data-repo-pull-timeline-count]");
-    if (count) count.textContent = formatCount(parsed.pullTimeline.length);
+    paintRepoPullTimeline(parsed);
     // An agent pushing to the head branch also grows the Commits tab, which
     // stays mounted (hidden) behind the conversation.
     const commitList = $("[data-repo-pull-commits]");
@@ -25577,6 +26060,26 @@
     if (!pullDetailIsCurrent(repo, number)) return;
     parsed.pullRequiredChecks = await loadRepoPullRequiredChecks(repo, values, readiness);
     if (!pullDetailIsCurrent(repo, number)) return;
+    paintRepoPullChecks(repo, parsed);
+    updateRepoPullMergePanel(repo, number, parsed);
+    void hydrateRepoPullAttention(repo, number, parsed);
+    window.lucide?.createIcons();
+    scheduleRepoPullActivityRefresh(repo, number,
+      agents.some((event) => pullAgentStatusIsActive(event.status)));
+  }
+
+  function paintRepoPullTimeline(parsed) {
+    const events = parsed.pullTimeline || [];
+    const timeline = $("[data-repo-pull-conversation]");
+    if (timeline) {
+      timeline.dataset.empty = events.length ? "false" : "true";
+      timeline.innerHTML = renderRepoPullConversation(events);
+    }
+    const count = $("[data-repo-pull-timeline-count]");
+    if (count) count.textContent = formatCount(events.length);
+  }
+
+  function paintRepoPullChecks(repo, parsed) {
     const rulesSlot = $("[data-repo-pull-rules-slot]");
     if (rulesSlot) rulesSlot.innerHTML = renderRepoPullRules(parsed.pullRules);
     const checkList = $("[data-repo-pull-checks]");
@@ -25587,11 +26090,116 @@
     if (checkCount) {
       checkCount.textContent = formatCount((parsed.pullChecks?.runs || []).length);
     }
+  }
+
+  function loadRepoPullLiveState(repo, number, values) {
+    const readiness = loadRepoPullReadiness(repo, number, values);
+    const mergeAuthorized = loadRepoPullMergeAuthorization(repo);
+    const live = Promise.all([
+      loadRepoPullAgentActivity(repo, number, values),
+      mergeAuthorized,
+      mergeAuthorized.then((authorized) => loadRepoPullUpdateAuthorization(repo, values, authorized)),
+      loadRepoPullMergeBase(repo, values),
+      readiness,
+      readiness.then((result) => loadRepoPullChecks(repo, values, result)),
+      readiness.then((result) => loadRepoPullRules(repo, number, result)),
+      readiness.then((result) => loadRepoPullRequiredChecks(repo, values, result)),
+    ]);
+    live.catch(() => {});
+    return live;
+  }
+
+  async function finishRepoPullLiveState(repo, number, parsed, live) {
+    let rows = null;
+    try {
+      rows = await live;
+    } catch (_) {
+      rows = null;
+    }
+    if (state.repoRecordDetail?.parsed !== parsed) return;
+    if (rows) {
+      const [agents, mergeAuthorized, updateAuthorized, mergeBase, readiness, checks, rules, requiredChecks] = rows;
+      parsed.pullAgents = agents;
+      parsed.pullTimeline = buildRepoPullTimeline(
+        parsed.values || {}, parsed.pullConversation || [], parsed.pullCommits || [], agents);
+      parsed.pullMergeAuthorized = mergeAuthorized;
+      parsed.pullUpdateAuthorized = updateAuthorized;
+      parsed.pullMergeBase = mergeBase;
+      parsed.pullReadiness = readiness;
+      parsed.pullChecks = checks;
+      parsed.pullRules = rules;
+      parsed.pullRequiredChecks = requiredChecks;
+    }
+    parsed.pullPending = false;
+    paintRepoPullTimeline(parsed);
+    paintRepoPullChecks(repo, parsed);
     updateRepoPullMergePanel(repo, number, parsed);
+    if (rows) storeRepoPullSnapshot(repo, number, parsed);
     void hydrateRepoPullAttention(repo, number, parsed);
+    if (state.session?.sessionToken) {
+      scheduleRepoPullActivityRefresh(repo, number, (parsed.pullAgents || []).some(
+        (event) => pullAgentStatusIsActive(event.status)));
+    }
+  }
+
+  const REPO_PULL_SNAPSHOT_STORE = "forkmesh.pullSnapshots.v1";
+  const REPO_PULL_SNAPSHOT_LIMIT = 12;
+  const REPO_PULL_SNAPSHOT_PATCH_MAX = 400000;
+  const REPO_PULL_SNAPSHOT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+  const REPO_PULL_SNAPSHOT_FIELDS = [
+    "values", "body", "pullMetadataCommit", "pullPatch", "pullConversation", "pullCommits",
+    "pullAgents", "pullChecks", "pullRules", "pullRequiredChecks", "repoCollabSettings",
+  ];
+
+  function repoPullSnapshotKey(repo, number) {
+    return `${String(repoKey(repo) || "").toLowerCase()}#${Number(number) || 0}`;
+  }
+
+  function readRepoPullSnapshots() {
+    try {
+      const rows = JSON.parse(localStorage.getItem(REPO_PULL_SNAPSHOT_STORE) || "[]");
+      return Array.isArray(rows) ? rows.filter((row) => row && typeof row.key === "string") : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function storeRepoPullSnapshot(repo, number, parsed) {
+    if (!repo || repo.isPrivate || !parsed?.values) return;
+    if (String(parsed.pullPatch?.patch || "").length > REPO_PULL_SNAPSHOT_PATCH_MAX) return;
+    const key = repoPullSnapshotKey(repo, number);
+    const snapshot = { key, at: Date.now(), parsed: {} };
+    REPO_PULL_SNAPSHOT_FIELDS.forEach((field) => {
+      if (parsed[field] !== undefined) snapshot.parsed[field] = parsed[field];
+    });
+    const rows = [snapshot, ...readRepoPullSnapshots().filter((row) => row.key !== key)];
+    for (let size = Math.min(rows.length, REPO_PULL_SNAPSHOT_LIMIT); size > 0; size = Math.floor(size / 2)) {
+      try {
+        localStorage.setItem(REPO_PULL_SNAPSHOT_STORE, JSON.stringify(rows.slice(0, size)));
+        return;
+      } catch (_) {}
+    }
+    try { localStorage.removeItem(REPO_PULL_SNAPSHOT_STORE); } catch (_) {}
+  }
+
+  function showRepoPullSnapshot(repo, number, container) {
+    if (!repo || repo.isPrivate || !container) return false;
+    const key = repoPullSnapshotKey(repo, number);
+    const entry = readRepoPullSnapshots().find((row) => row.key === key);
+    if (!entry?.parsed?.values || Date.now() - Number(entry.at || 0) > REPO_PULL_SNAPSHOT_MAX_AGE_MS) return false;
+    const parsed = { ...entry.parsed, pullPending: true, pullMergeAuthorized: false, pullUpdateAuthorized: false };
+    parsed.pullTimeline = buildRepoPullTimeline(parsed.values, parsed.pullConversation || [],
+      parsed.pullCommits || [], parsed.pullAgents || []);
+    try {
+      const html = renderRepoRecordDetail(repo, "pulls", number, parsed);
+      state.repoRecordDetail = { repo, kind: "pulls", number, parsed };
+      container.innerHTML = html;
+    } catch (_) {
+      return false;
+    }
+    mountRecordStickyHeader(container);
     window.lucide?.createIcons();
-    scheduleRepoPullActivityRefresh(repo, number,
-      agents.some((event) => pullAgentStatusIsActive(event.status)));
+    return true;
   }
 
   function scheduleRepoPullActivityRefresh(repo, number, active) {
@@ -27392,7 +28000,10 @@
       .filter((run) => pullCheckStateMeta(run.status).outcome === "passed")
       .map((run) => run.workflow));
     const missingRequired = requiredNames.filter((name) => !passedNames.has(name));
-    if (summary.tone === "bad") {
+    if (parsed?.pullPending === true) {
+      checksRow.tone = "pending";
+      checksRow.title = "Loading checks…";
+    } else if (summary.tone === "bad") {
       checksRow.tone = "bad";
       checksRow.title = "Some checks failed";
     } else if (summary.tone === "pending") {
@@ -27418,8 +28029,13 @@
     checksRow.actions.push({ kind: "actions", label: runs.length ? "Open Actions" : "Run checks" });
     rows.push(checksRow);
 
+    const pending = parsed?.pullPending === true;
     const branchRow = { id: "branch", actions: [] };
-    if (!readiness.available) {
+    if (pending) {
+      branchRow.tone = "pending";
+      branchRow.title = "Checking mergeability…";
+      branchRow.detail = "Asking an online mirror for a merge trial of this pull request.";
+    } else if (!readiness.available) {
       branchRow.tone = "muted";
       branchRow.title = "Mergeability unknown";
       branchRow.detail = "No mirror answered a merge trial for this pull request just now. It is re-tried while the page is open.";
@@ -27501,6 +28117,9 @@
     if (status !== "open" && !merged) {
       footer.tone = "muted";
       footer.text = "This pull request is closed.";
+    } else if (pending && !merged && !busy) {
+      footer.tone = "pending";
+      footer.text = "Loading merge readiness from the live mirror…";
     } else if (merged) {
       footer.tone = "good";
       footer.text = `Merged into ${baseBranch}. The merged state is pinned as current and every mirror is syncing it.`;
@@ -27540,8 +28159,9 @@
       footer.tone = "good";
       footer.text = `Ready to merge into ${baseBranch}. An online mirror lands the exact reviewed commits with a merge commit.`;
     }
-    const canAct = authorized && status === "open" && !merged && Boolean(context) && !hardBlocked;
+    const canAct = authorized && status === "open" && !merged && Boolean(context) && !hardBlocked && !pending;
     return {
+      pending,
       open: status === "open",
       authorized,
       merged,
@@ -27719,28 +28339,30 @@
 
   function patchRepoPullMutationProgress(repo, number, parsed, kind) {
     if (!pullDetailIsCurrent(repo, number)) return;
-    const slot = document.querySelector("[data-repo-pull-merge-slot]");
-    const block = slot?.querySelector?.(`[data-repo-pull-merge-progress="${kind}"]`);
-    const model = block ? repoPullMergeModel(repo, number, parsed) : null;
+    const slots = [...document.querySelectorAll("[data-repo-pull-merge-slot], [data-repo-pull-files-merge-slot]")];
+    const blocks = slots.map((slot) => slot.querySelector(`[data-repo-pull-merge-progress="${kind}"]`));
+    const model = blocks.length && blocks.every(Boolean) ? repoPullMergeModel(repo, number, parsed) : null;
     const progress = kind === "merge"
       ? model?.footer.progress
       : model?.rows.find((row) => row.id === "branch")?.progress;
-    if (!block || !progress) {
+    if (!progress) {
       updateRepoPullMergePanel(repo, number, parsed);
       return;
     }
     const scratch = document.createElement("div");
     scratch.innerHTML = renderRepoPullMutationProgress(progress);
     const fresh = scratch.firstElementChild;
-    const now = block.querySelector("[data-repo-pull-merge-now]");
     const freshNow = fresh.querySelector("[data-repo-pull-merge-now]");
-    if (now.textContent !== freshNow.textContent) now.textContent = freshNow.textContent;
-    ["data-late-after", "data-late-since", "data-late-text"].forEach((name) => {
-      if (freshNow.hasAttribute(name)) now.setAttribute(name, freshNow.getAttribute(name));
-      else now.removeAttribute(name);
+    blocks.forEach((block) => {
+      const now = block.querySelector("[data-repo-pull-merge-now]");
+      if (now.textContent !== freshNow.textContent) now.textContent = freshNow.textContent;
+      ["data-late-after", "data-late-since", "data-late-text"].forEach((name) => {
+        if (freshNow.hasAttribute(name)) now.setAttribute(name, freshNow.getAttribute(name));
+        else now.removeAttribute(name);
+      });
+      block.dataset.state = fresh.dataset.state;
+      block.querySelector("[data-repo-pull-merge-progress-body]").innerHTML = fresh.querySelector("[data-repo-pull-merge-progress-body]").innerHTML;
     });
-    block.dataset.state = fresh.dataset.state;
-    block.querySelector("[data-repo-pull-merge-progress-body]").innerHTML = fresh.querySelector("[data-repo-pull-merge-progress-body]").innerHTML;
     window.lucide?.createIcons();
     startRepoPullMutationTicker();
   }
@@ -27851,6 +28473,15 @@
           ${actions ? `<div class="fm-merge-row-actions">${actions}</div>` : ""}
         </div>`;
     }).join("");
+    return `
+      <section data-repo-pull-merge-box class="fm-merge-box" aria-label="Merge readiness">
+        ${rows}
+        ${model.open ? renderRepoPullQuickReplies(repo, number, parsed) : ""}
+        ${renderRepoPullMergeFooter(model)}
+      </section>`;
+  }
+
+  function renderRepoPullMergeFooter(model) {
     const footer = model.footer;
     const changes = footer.changes?.length
       ? `<ul class="fm-merge-changes">${footer.changes.map((change) => `<li>${escapeHtml(change)}</li>`).join("")}</ul>`
@@ -27873,14 +28504,30 @@
       ? `<button type="button" data-repo-pull-merge-override class="fm-btn fm-btn-danger"><i data-lucide="shield-alert"></i>Merge without review</button>`
       : "";
     return `
-      <section data-repo-pull-merge-box class="fm-merge-box" aria-label="Merge readiness">
-        ${rows}
-        ${model.open ? renderRepoPullQuickReplies(repo, number, parsed) : ""}
         <div data-repo-pull-merge-panel ${footer.progress ? "" : 'role="status" aria-live="polite" aria-atomic="true" '}aria-busy="${model.busy ? "true" : "false"}" class="fm-merge-footer" data-tone="${escapeHtml(footer.tone)}">
           ${footer.progress ? renderRepoPullMutationProgress(footer.progress) : `<p class="fm-merge-footer-text">${escapeHtml(footer.text)}</p>`}
           ${changes}
           ${showControls || model.merged ? `<div class="fm-merge-footer-actions">${method}<div class="fm-merge-buttons">${override}${mergeButton}</div></div>` : ""}
-        </div>
+        </div>`;
+  }
+
+  function renderRepoPullFilesMergeBar(repo, number, parsed) {
+    const model = repoPullMergeModel(repo, number, parsed);
+    if (!model.open && !model.merged) return "";
+    if (!model.authorized && !model.merged && !model.pending) return "";
+    const status = repoPullMergeStatus(model);
+    const blockers = model.merged || model.busy ? [] : model.rows.filter((row) => ["bad", "warn", "pending"].includes(row.tone));
+    const chips = blockers.length
+      ? `<ul class="fm-merge-files-blockers">${blockers.map((row) => `<li data-tone="${escapeHtml(row.tone)}"><i data-lucide="${PULL_MERGE_ROW_ICONS[row.tone] || PULL_MERGE_ROW_ICONS.muted}"${row.tone === "pending" ? ' class="animate-spin"' : ""}></i>${escapeHtml(row.title)}</li>`).join("")}</ul>`
+      : "";
+    const details = status && !model.busy
+      ? `<button type="button" data-repo-pull-merge-status class="fm-btn fm-btn-sm"><i data-lucide="list-checks"></i>Merge details</button>`
+      : "";
+    return `
+      <section data-repo-pull-files-merge class="fm-merge-box fm-merge-files" aria-label="Merge this pull request">
+        <div class="fm-merge-files-head"><span class="fm-merge-files-title"><i data-lucide="git-merge"></i>Merge this pull request</span>${details}</div>
+        ${chips}
+        ${renderRepoPullMergeFooter(model)}
       </section>`;
   }
 
@@ -27903,6 +28550,9 @@
     const detail = blocking.map((row) => row.title);
     if (model.busy) {
       return { tone: "pending", icon: "loader-circle", label: "Merging…", detail: [model.footer.text] };
+    }
+    if (model.pending) {
+      return { tone: "pending", icon: "loader-circle", label: "Checking…", detail: [model.footer.text] };
     }
     if (failing.length || model.footer.tone === "bad") {
       const first = failing[0];
@@ -27953,6 +28603,8 @@
     const banner = document.querySelector("[data-repo-pull-conflict-slot]");
     const status = document.querySelector("[data-repo-pull-merge-status-slot]");
     if (status) status.innerHTML = renderRepoPullMergeStatus(repo, number, parsed);
+    const filesSlot = document.querySelector("[data-repo-pull-files-merge-slot]");
+    if (filesSlot) filesSlot.innerHTML = renderRepoPullFilesMergeBar(repo, number, parsed);
     if (banner) {
       const html = renderRepoPullConflictBanner(repo, number, parsed);
       if (banner.dataset.rendered !== html) {
@@ -28607,7 +29259,28 @@
     }
     parsed.pullMerge = outcome;
     updateRepoPullMergePanel(repo, number, parsed);
-    if (outcome?.state === "merged") refreshRepoPullActivity(repo, number);
+    if (outcome?.state === "merged") {
+      celebrateRepoPullMerge(repo, number, parsed);
+      refreshRepoPullActivity(repo, number);
+    }
+  }
+
+  function celebrateRepoPullMerge(repo, number, parsed) {
+    if (!pullDetailIsCurrent(repo, number)) return;
+    parsed.values = { ...(parsed.values || {}), status: "merged" };
+    const article = document.querySelector('[data-repo-record-detail="pulls"]');
+    article?.querySelectorAll("[data-repo-record-state], [data-repo-record-sticky-state]").forEach((pill) => {
+      pill.classList.remove("bg-success", "bg-destructive", "bg-[#6e7681]");
+      pill.classList.add("bg-primary");
+      const size = pill.hasAttribute("data-repo-record-sticky-state") ? "h-3.5 w-3.5" : "h-4 w-4";
+      pill.innerHTML = `<i data-lucide="git-merge" class="${size}"></i>Merged`;
+    });
+    updateRepoPullMergePanel(repo, number, parsed);
+    window.lucide?.createIcons();
+    if (!commentReactionMotionOk()) return;
+    const origin = [...document.querySelectorAll("[data-repo-pull-merge-panel]")]
+      .find((panel) => panel.getClientRects().length) || article?.querySelector("[data-repo-record-state]");
+    if (origin) commentReactionConfetti(origin.getBoundingClientRect());
   }
 
   async function handleRepoPullMergeOverride(repo) {
@@ -28772,8 +29445,18 @@
   async function handleRepoPullCheckDecision(repo, action, value, button) {
     const detail = state.repoRecordDetail;
     if (!repo || detail?.kind !== "pulls" || !value) return;
-    if (action === "approve" && !window.confirm(`Run this pull request's checks on commit ${value.slice(0, 10)}? Its code runs on the runner without secrets or write access.`)) return;
-    if (action === "trust" && !window.confirm(`Always run checks for @${value} without asking? You can stop this from the Checks tab.`)) return;
+    if (action === "approve" && !await confirmAccountAction({
+      title: "Approve and run checks?",
+      body: `Run this pull request's checks on commit ${value.slice(0, 10)}? Its code runs on the runner without secrets or write access.`,
+      confirmLabel: "Approve and run",
+      danger: false,
+    })) return;
+    if (action === "trust" && !await confirmAccountAction({
+      title: `Always run checks for @${value}?`,
+      body: "Checks for this contributor's pull requests will run without asking. You can stop this from the Checks tab.",
+      confirmLabel: "Always run",
+      danger: false,
+    })) return;
     if (button) button.disabled = true;
     try {
       await orgAgentRequest("POST", `${repoApiBase(repo)}/pulls/${detail.number}/checks`,
@@ -29258,6 +29941,17 @@
       ...(parsed.discussionConversation || []).map((ev) => ev.authorName || ev.author).filter(Boolean)]));
     return `
       <article data-repo-record-detail="${escapeHtml(kind)}" class="min-w-0 bg-background">
+        ${isPulls ? `<div data-repo-record-sticky aria-hidden="true" class="pointer-events-none sticky top-0 z-20 -mx-3 mb-0 flex h-0 items-start overflow-visible sm:-mx-5">
+          <div data-repo-record-sticky-bar class="flex w-full -translate-y-full flex-col gap-1 border-b border-border bg-background/95 px-3 pt-2 opacity-0 backdrop-blur transition duration-150 sm:px-5">
+            <div class="flex min-w-0 items-center gap-2">
+              <span data-repo-record-sticky-state class="inline-flex h-6 shrink-0 items-center gap-1 rounded-full ${statePillTone} px-2 text-[12px] font-medium text-white"><i data-lucide="${stateIcon}" class="h-3.5 w-3.5"></i>${escapeHtml(stateLabel)}</span>
+              <span class="min-w-0 truncate text-[14px] font-semibold text-foreground">${escapeHtml(title)} <span class="font-normal text-muted-foreground">${recordLabel}</span></span>
+            </div>
+            <nav class="flex min-w-0 items-end overflow-x-auto" aria-label="Pull request sections">
+              ${[["conversation", "Conversation"], ["commits", "Commits"], ["checks", "Checks"], ["files", "Files changed"], ["badge", "Badge"]].map(([name, label]) => `<button type="button" data-repo-record-sticky-tab="${name}" aria-selected="${name === activeSection ? "true" : "false"}" class="-mb-px inline-flex h-8 shrink-0 items-center border-b-2 border-transparent px-3 text-[13px] text-muted-foreground hover:text-foreground aria-selected:border-[var(--dashboard-link)] aria-selected:text-foreground">${label}</button>`).join("")}
+            </nav>
+          </div>
+        </div>` : ""}
         <header data-repo-record-hero class="${isPulls ? "" : "border-b border-border pb-4"}">
           <div class="flex flex-wrap items-start justify-between gap-3">
             <h1 class="min-w-0 flex-1 text-[26px] font-normal leading-tight text-foreground [overflow-wrap:anywhere] sm:text-[32px]">${escapeHtml(title)} <span class="font-light text-muted-foreground">${recordLabel}</span></h1>
@@ -29307,7 +30001,7 @@
                   <div data-repo-pull-checks class="divide-y divide-border">${renderRepoPullChecks(parsed.pullChecks, repo)}</div>
                 </section>
               </div>
-              <div data-repo-record-panel="files" class="${recordPanelClass("files")}">${pullFilesSection}</div>
+              <div data-repo-record-panel="files" class="${recordPanelClass("files")}">${pullFilesSection}<div data-repo-pull-files-merge-slot class="min-w-0">${renderRepoPullFilesMergeBar(repo, number, parsed)}</div></div>
               <div data-repo-record-panel="badge" class="${recordPanelClass("badge")}">
                 <section class="overflow-hidden rounded-md border border-border">
                   <div class="flex items-center gap-2 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-2 text-[14px] font-semibold text-foreground"><i data-lucide="fingerprint" class="h-4 w-4 text-muted-foreground"></i>Badge</div>
@@ -29619,7 +30313,7 @@
   const PULL_SUMMARY_URL_LIMIT = 14000;
   const PULL_REVIEW_CHATGPT_MAX = 8000;
   const PULL_REVIEW_FILE_LINKS_MAX = 50;
-  const PULL_REVIEW_FILES_COLLAPSE = 5;
+  const PULL_REVIEW_FILES_SHOWN = 3;
   const PULL_REVIEW_PATH_LIMIT = 300;
   const PULL_REVIEW_LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g;
   const PULL_REVIEW_INVISIBLE = /[\u00ad\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
@@ -29766,48 +30460,34 @@ Your reply
     const title = chat.shortened
       ? "The prompt is too long for a link: ChatGPT opens with its start, and the full prompt is copied to paste instead"
       : "Open ChatGPT in a new tab with this prompt";
-    return `<a href="${href}" target="_blank" rel="noopener noreferrer"${copy} data-repo-pull-review-chatgpt aria-label="${label}" title="${title}" class="${button}"><i data-lucide="bot" class="h-3 w-3"></i><span>Review with ChatGPT</span></a>`;
+    return `<a href="${href}" target="_blank" rel="noopener noreferrer"${copy} data-repo-pull-review-chatgpt aria-label="${label}" title="${title}" class="${button}"><i data-lucide="bot" class="h-3.5 w-3.5"></i></a>`;
   }
 
   function renderPullReviewPrompt(fields, number, template = "") {
     const text = pullReviewPromptText(fields, template);
     const prompt = escapeHtml(text);
-    const files = fields.files || [];
+    const files = (fields.files || []).slice(0, PULL_REVIEW_FILES_SHOWN);
     const more = (fields.fileCount || 0) - files.length;
-    const toggle = files.length + (more > 0 ? 1 : 0) > PULL_REVIEW_FILES_COLLAPSE;
-    const boxId = `repo-pull-review-prompt-${Number(number)}`;
     const raw = fields.rawDiffUrl || "";
     const link = "font-medium text-[var(--dashboard-link)] hover:underline";
-    const button = "inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] font-medium text-foreground hover:bg-secondary";
+    const button = "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground";
     const diffLinks = raw
-      ? `
-            <span class="flex items-center gap-3"><a href="${escapeHtml(raw)}" data-repo-pull-diff-link class="${link}">Diff</a><a href="${escapeHtml(fields.patchUrl)}" data-repo-pull-patch-link class="${link}">Patch</a></span>`
+      ? `<a href="${escapeHtml(raw)}" data-repo-pull-diff-link class="${link}">Diff</a><a href="${escapeHtml(fields.patchUrl)}" data-repo-pull-patch-link class="${link}">Patch</a>`
       : "";
-    const toggleButton = toggle
-      ? `<button type="button" data-repo-pull-review-prompt-toggle aria-expanded="false" aria-controls="${boxId}" class="inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="chevron-down" class="h-3 w-3"></i><span data-repo-pull-review-prompt-toggle-label>Show all</span></button>`
-      : "";
-    let rows = files.map(([path, href]) => (href
-      ? `<li class="truncate"><a href="${escapeHtml(href)}" title="${escapeHtml(path)}" class="text-[var(--dashboard-link)] hover:underline">${escapeHtml(path)}</a></li>`
-      : `<li class="truncate" title="${escapeHtml(path)}">${escapeHtml(path)}</li>`)).join("");
-    if (more > 0) rows += `<li class="text-muted-foreground">and ${more} more</li>`;
+    let rows = files.map(([path, href]) => {
+      const name = escapeHtml(path.split("/").pop() || path);
+      return href
+        ? `<li class="truncate"><a href="${escapeHtml(href)}" title="${escapeHtml(path)}" class="text-[var(--dashboard-link)] hover:underline">${name}</a></li>`
+        : `<li class="truncate" title="${escapeHtml(path)}">${name}</li>`;
+    }).join("");
+    if (more > 0) rows += `<li><a href="${escapeHtml(fields.filesUrl)}" data-repo-record-tab="files" data-repo-pull-files-more class="font-sans text-muted-foreground hover:text-foreground hover:underline">+${more} more ${more === 1 ? "file" : "files"}</a></li>`;
     const listing = rows
       ? `
-            <ul id="${boxId}" data-repo-pull-review-files class="${toggle ? "max-h-28" : "max-h-none"} min-w-0 overflow-hidden rounded-md border border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-2 py-1 font-mono text-[11px] leading-5 text-foreground">${rows}</ul>`
+            <ul data-repo-pull-review-files class="min-w-0 font-mono text-[11px] leading-5 text-foreground">${rows}</ul>`
       : "";
-    return `<div data-repo-pull-review-prompt aria-label="Diff and files" class="grid min-w-0 gap-1.5 text-[12px]">${diffLinks}${listing}
-            <span class="flex flex-wrap items-center gap-1"><button type="button" data-dashboard-copy="${prompt}" aria-label="Copy the review prompt for this pull request" title="Copy a review prompt for your coding agent" class="copy-button ${button}"><i data-lucide="copy" class="copy-icon h-3 w-3"></i><i data-lucide="check" class="copy-check h-3 w-3"></i><span class="copy-icon">Copy review prompt</span><span class="copy-check">Copied</span></button>${renderPullReviewChatGptLink(text, fields.url, button)}<a href="${escapeHtml(pullSummaryChatGptUrl(fields))}" target="_blank" rel="noopener noreferrer" data-repo-pull-chatgpt-summary title="Open ChatGPT with a request to summarize this pull request" class="${button}"><i data-lucide="external-link" class="h-3 w-3"></i>Summarize in ChatGPT</a>${toggleButton}</span>
+    return `<div data-repo-pull-review-prompt aria-label="Diff and files" class="grid min-w-0 gap-1 text-[12px]">
+            <span class="flex min-w-0 items-center gap-3">${diffLinks}<span class="ml-auto flex items-center gap-0.5"><button type="button" data-dashboard-copy="${prompt}" aria-label="Copy the review prompt for this pull request" title="Copy a review prompt for your coding agent" class="copy-button ${button}"><i data-lucide="copy" class="copy-icon h-3.5 w-3.5"></i><i data-lucide="check" class="copy-check h-3.5 w-3.5"></i></button>${renderPullReviewChatGptLink(text, fields.url, button)}<a href="${escapeHtml(pullSummaryChatGptUrl(fields))}" target="_blank" rel="noopener noreferrer" data-repo-pull-chatgpt-summary aria-label="Summarize in ChatGPT" title="Open ChatGPT with a request to summarize this pull request" class="${button}"><i data-lucide="external-link" class="h-3.5 w-3.5"></i></a></span></span>${listing}
           </div>`;
-  }
-
-  function togglePullReviewPrompt(button) {
-    const box = document.getElementById(button.getAttribute("aria-controls") || "");
-    if (!box) return;
-    const expand = button.getAttribute("aria-expanded") !== "true";
-    button.setAttribute("aria-expanded", expand ? "true" : "false");
-    box.classList.toggle("max-h-28", !expand);
-    box.classList.toggle("max-h-none", expand);
-    const label = button.querySelector("[data-repo-pull-review-prompt-toggle-label]");
-    if (label) label.textContent = expand ? "Show less" : "Show all";
   }
 
   function renderRepoIssueDetail(repo, number, parsed) {
@@ -29901,7 +30581,7 @@ Your reply
     // Self-assignment is open to every visitor, not only issue managers
     // (issue #570): a claim moves only the caller's own name. Signed-out
     // clicks route through /login.
-    const selfAssignControl = `<button type="button" data-repo-issue-claim="${viewerAssigned ? "release" : "claim"}" class="mt-2 inline-flex items-center gap-1.5 text-[12px] text-muted-foreground hover:text-[var(--dashboard-link)]"><i data-lucide="${viewerAssigned ? "user-minus" : "user-plus"}" class="h-3.5 w-3.5"></i>${viewerAssigned ? "Unassign yourself" : "Assign yourself"}</button>`;
+    const selfAssignControl = `<button type="button" data-repo-issue-claim="${viewerAssigned ? "release" : "claim"}" class="mt-2 flex w-fit items-center gap-1.5 text-[12px] text-muted-foreground hover:text-[var(--dashboard-link)]"><i data-lucide="${viewerAssigned ? "user-minus" : "user-plus"}" class="h-3.5 w-3.5"></i>${viewerAssigned ? "Unassign yourself" : "Assign yourself"}</button>`;
     const assigneeValue = `${issueAssignees.length
       ? `<div class="grid gap-1.5">${issueAssignees.map((assignee) => {
         const row = `<span class="inline-flex min-w-0 items-center gap-2">${issueActorAvatarHtml(assignee, assignee, "h-5 w-5")}${issuePersonNameHtml(assignee, "truncate font-semibold")}</span>`;
@@ -30109,6 +30789,30 @@ Your reply
   function takeRepoFirstViewIssue(repo, number) {
     const kept = repoFirstViewIssue;
     repoFirstViewIssue = null;
+    if (!kept || !repo || kept.number !== String(number) || kept.path !== location.pathname) return null;
+    return kept.node;
+  }
+
+  let repoFirstViewPull = null;
+  function keepRepoFirstViewPull(detail) {
+    repoFirstViewPull = null;
+    const heading = detail?.querySelector?.("[data-repo-ssr] h2.fm-ssr-h1");
+    const match = /\/pulls?\/(\d+)(?:\/|$)/.exec(location.pathname);
+    if (!heading || !match) return;
+    const view = document.createElement("div");
+    view.className = "fm-ssr";
+    view.dataset.repoSsrPull = match[1];
+    for (let node = heading; node;) {
+      const next = node.nextSibling;
+      view.appendChild(node);
+      node = next;
+    }
+    repoFirstViewPull = { number: match[1], path: location.pathname, node: view };
+  }
+
+  function takeRepoFirstViewPull(repo, number) {
+    const kept = repoFirstViewPull;
+    repoFirstViewPull = null;
     if (!kept || !repo || kept.number !== String(number) || kept.path !== location.pathname) return null;
     return kept.node;
   }
@@ -30591,9 +31295,9 @@ Your reply
   }
 
   // The compact title bar slides in once the full header scrolls away.
-  function mountIssueStickyHeader(container) {
-    const hero = container?.querySelector?.('[data-repo-record-detail="issues"] [data-repo-record-hero]');
-    const bar = container?.querySelector?.("[data-repo-issue-sticky-bar]");
+  function mountRecordStickyHeader(container) {
+    const hero = container?.querySelector?.('[data-repo-record-detail="issues"] [data-repo-record-hero], [data-repo-record-detail="pulls"] [data-repo-record-hero]');
+    const bar = container?.querySelector?.("[data-repo-issue-sticky-bar], [data-repo-record-sticky-bar]");
     state.issueStickyObserver?.disconnect?.();
     if (!hero || !bar || typeof IntersectionObserver !== "function") return;
     state.issueStickyObserver = new IntersectionObserver(([entry]) => {
@@ -30977,7 +31681,7 @@ Your reply
     const html = renderRepoRecordDetail(repo, kind, number, parsed);
     if (kind === "issues") paintRepoIssueDetail(container, html);
     else container.innerHTML = html;
-    if (kind === "issues") mountIssueStickyHeader(container);
+    if (kind === "issues" || kind === "pulls") mountRecordStickyHeader(container);
     window.lucide?.createIcons();
     if (typeof loadCommentTipWallets === "function") void loadCommentTipWallets(commentReactionSubject(kind, number));
     if (typeof scheduleCommentReactionCheer === "function") scheduleCommentReactionCheer(commentReactionSubject(kind, number));
@@ -31047,8 +31751,12 @@ Your reply
     const recordPath = `${config.dir}/${number}/${recordFile}`;
     const staleMark = repoStaleReadMark();
     const reconnect = { key: viewKey, container, retry: () => loadRepoRecordDetail(repo, kind, number, preferMirror) };
-    if (!quietRefresh && !reconnecting) {
-      const firstView = kind === "issues" ? takeRepoFirstViewIssue(repo, number) : null;
+    const snapshotShown = kind === "pulls" && !quietRefresh && !reconnecting
+      && showRepoPullSnapshot(repo, number, container);
+    let pullLive = null;
+    if (!quietRefresh && !reconnecting && !snapshotShown) {
+      const firstView = kind === "issues" ? takeRepoFirstViewIssue(repo, number)
+        : kind === "pulls" ? takeRepoFirstViewPull(repo, number) : null;
       if (firstView) {
         container.replaceChildren(firstView);
       } else {
@@ -31130,30 +31838,18 @@ Your reply
       if (kind === "pulls") {
         parsed.pullMetadataCommit = pullMetadataCommit;
         const values = parsed.values || {};
-        const readiness = loadRepoPullReadiness(repo, number, values);
-        const [pullPatch, conversation, commits, agents, mergeAuthorized, mergeBase, checks, rules, requiredChecks] = await Promise.all([
+        pullLive = loadRepoPullLiveState(repo, number, values);
+        const [pullPatch, conversation, commits] = await Promise.all([
           loadRepoPullPatch(repo, number, pullMetadataCommit, values),
           loadRepoPullConversation(repo, number, pullMetadataCommit),
           loadRepoPullCommits(repo, number, pullMetadataCommit, values),
-          loadRepoPullAgentActivity(repo, number, values),
-          loadRepoPullMergeAuthorization(repo),
-          loadRepoPullMergeBase(repo, values),
-          readiness.then((result) => loadRepoPullChecks(repo, values, result)),
-          readiness.then((result) => loadRepoPullRules(repo, number, result)),
-          readiness.then((result) => loadRepoPullRequiredChecks(repo, values, result)),
         ]);
         if (pullPatch) parsed.pullPatch = pullPatch;
         parsed.pullConversation = conversation;
         parsed.pullCommits = commits;
-        parsed.pullAgents = agents;
-        parsed.pullTimeline = buildRepoPullTimeline(values, conversation, commits, agents);
-        parsed.pullMergeAuthorized = mergeAuthorized;
-        parsed.pullUpdateAuthorized = await loadRepoPullUpdateAuthorization(repo, values, mergeAuthorized);
-        parsed.pullReadiness = await readiness;
-        parsed.pullMergeBase = mergeBase;
-        parsed.pullChecks = checks;
-        parsed.pullRules = rules;
-        parsed.pullRequiredChecks = requiredChecks;
+        parsed.pullAgents = [];
+        parsed.pullTimeline = buildRepoPullTimeline(values, conversation, commits, []);
+        parsed.pullPending = true;
       }
       if (kind === "issues") {
         const [mutationAuthorized, subscription] = await issueAccess;
@@ -31176,9 +31872,9 @@ Your reply
       }
       if (optimistic) forgetOptimisticRepoRecord(repo, kind, number);
       // The reader may have left the optimistic detail while this poll ran.
-      if (quietRefresh && !repoRecordDetailOnScreen(repo, kind, number, container)) return;
+      if ((quietRefresh || snapshotShown) && !repoRecordDetailOnScreen(repo, kind, number, container)) return;
       if (quietRefresh && container.querySelector("[data-repo-issue-comment-editor]")) return;
-      const commentDraft = quietRefresh
+      const commentDraft = quietRefresh || snapshotShown
         ? String(container.querySelector("[data-repo-issue-comment-body]")?.value || "")
         : "";
       state.repoRecordDetail = { repo, kind, number, parsed };
@@ -31186,7 +31882,7 @@ Your reply
       if (kind === "issues") paintRepoIssueDetail(container, html);
       else container.innerHTML = html;
       finishRepoRead(staleMark, reconnect);
-      if (kind === "issues") mountIssueStickyHeader(container);
+      if (kind === "issues" || kind === "pulls") mountRecordStickyHeader(container);
       if (typeof loadCommentTipWallets === "function") void loadCommentTipWallets(commentReactionSubject(kind, number));
       if (typeof scheduleCommentReactionCheer === "function") scheduleCommentReactionCheer(commentReactionSubject(kind, number));
       if (kind === "issues") decorateIssueModeration(container, repo, number, parsed);
@@ -31198,14 +31894,8 @@ Your reply
       if (issueRelations) void showRepoIssueRelationsLater(repo, number, parsed, container, issueRelations);
       if (kind === "issues") recordIssueView(repo, number);
       void refreshRepoRecordDevelopment(repo, kind, number);
-      if (kind === "pulls") void hydrateRepoPullAttention(repo, number, parsed);
       if (kind === "pulls") void loadPullAiReview(repo, number);
-      // Members watch an open pull for agent activity; signed-out visitors
-      // cannot read organization sessions at all, so they get no timer.
-      if (kind === "pulls" && state.session?.sessionToken) {
-        scheduleRepoPullActivityRefresh(repo, number, (parsed.pullAgents || []).some(
-          (event) => pullAgentStatusIsActive(event.status)));
-      }
+      if (kind === "pulls") void finishRepoPullLiveState(repo, number, parsed, pullLive);
     } catch (error) {
       // The relay already accepted this numbered record. Keep its complete
       // detail visible while the mirror commit converges, then retry quietly.
@@ -47813,6 +48503,7 @@ Your reply
        </div>
       </section>` : "";
     keepRepoFirstViewIssue(detail);
+    keepRepoFirstViewPull(detail);
     const tabStripScroll = detail.querySelector("[data-repo-github-header] [role=\"tablist\"]")?.scrollLeft || 0;
     detail.innerHTML = `
       <div data-repo-layout="github-like" class="min-w-0">
@@ -48211,6 +48902,9 @@ Your reply
     article.querySelectorAll("[data-repo-record-tab]").forEach((button) => {
       const active = button.dataset.repoRecordTab === tab;
       button.setAttribute("aria-selected", active ? "true" : "false");
+    });
+    article.querySelectorAll("[data-repo-record-sticky-tab]").forEach((button) => {
+      button.setAttribute("aria-selected", button.dataset.repoRecordStickyTab === tab ? "true" : "false");
     });
     article.querySelectorAll("[data-repo-record-panel]").forEach((panel) => {
       panel.classList.toggle(
@@ -49414,7 +50108,9 @@ Your reply
   }
 
   function initHomePage() {
+    renderHomeAccount();
     renderHomeBlogPosts();
+    void loadHomeChangelog();
     // The blog card fills in from the edge-cached feed; the baked markup
     // already shows its loading state.
     void loadHomeBlogPosts();
@@ -51283,12 +51979,6 @@ Your reply
         return;
       }
 
-      const reviewPromptToggle = event.target.closest("[data-repo-pull-review-prompt-toggle]");
-      if (reviewPromptToggle) {
-        togglePullReviewPrompt(reviewPromptToggle);
-        return;
-      }
-
       const mergeStatusButton = event.target.closest("[data-repo-pull-merge-status]");
       if (mergeStatusButton) {
         showRepoPullMergeBox(mergeStatusButton.closest("[data-repo-record-detail]"));
@@ -51297,11 +51987,12 @@ Your reply
 
       // PR detail section tabs are isolated panels, matching the GitHub review
       // surface: only the selected section is visible at a time.
-      const recordTabButton = event.target.closest("[data-repo-record-tab]");
+      const recordTabButton = event.target.closest("[data-repo-record-tab], [data-repo-record-sticky-tab]");
       if (recordTabButton) {
         const article = recordTabButton.closest("[data-repo-record-detail]");
         if (article) {
-          setRepoRecordSection(recordTabButton.dataset.repoRecordTab || "", article);
+          event.preventDefault();
+          setRepoRecordSection(recordTabButton.dataset.repoRecordTab || recordTabButton.dataset.repoRecordStickyTab || "", article);
           // Sections are addressable: put the open tab in the address bar so
           // the link a reviewer copies from "Files changed" reopens there for
           // whoever they send it to (and survives a refresh).
@@ -51950,6 +52641,16 @@ Your reply
     state.homeRepositoriesExpanded = !state.homeRepositoriesExpanded;
     renderHomeRepositories();
   });
+  $("[data-home-repo-search-toggle]")?.addEventListener("click", () => {
+    const search = $("[data-home-repo-search]");
+    state.homeRepoSearchOpen = !state.homeRepoSearchOpen;
+    if (!state.homeRepoSearchOpen && search) search.value = "";
+    renderHomeRepositories();
+    if (state.homeRepoSearchOpen) search?.focus();
+  });
+  $$("[data-home-tab]").forEach((button) => {
+    button.addEventListener("click", () => setHomeTab(button.dataset.homeTab));
+  });
   document.addEventListener("click", (event) => {
     const toggle = event.target?.closest?.("[data-repo-forks-toggle]");
     if (!toggleRepositoryForks(toggle)) return;
@@ -51985,6 +52686,37 @@ Your reply
   });
   $$("[data-new-repo-visibility]").forEach((input) => {
     input.addEventListener("change", renderNewRepoVisibilityNote);
+  });
+  $$("[data-new-repo-location]").forEach((button) => {
+    button.addEventListener("click", () => setNewRepoLocation(button.dataset.newRepoLocation));
+    button.addEventListener("keydown", (event) => {
+      if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+      event.preventDefault();
+      const next = newRepoLocation() === "node" ? "hosted" : "node";
+      setNewRepoLocation(next);
+      $(`[data-new-repo-location="${next}"]`)?.focus();
+    });
+  });
+  $$("[data-new-repo-import-code], [data-new-repo-import-issues]").forEach((input) => {
+    input.addEventListener("change", renderNewRepoImportChoice);
+  });
+  $("[data-new-repo-name]")?.addEventListener("input", renderNewRepoNameCheck);
+  $("[data-new-repo-owner]")?.addEventListener("change", renderNewRepoNameCheck);
+  $$("[data-new-repo-push-copy-field]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const field = $(`[data-new-repo-push-${button.dataset.newRepoPushCopyField}]`);
+      try {
+        await navigator.clipboard.writeText(field?.textContent || "");
+        button.textContent = "Copied";
+      } catch (_) {
+        const range = document.createRange();
+        if (field) range.selectNodeContents(field);
+        window.getSelection()?.removeAllRanges();
+        window.getSelection()?.addRange(range);
+        button.textContent = "Selected";
+      }
+      window.setTimeout(() => { button.textContent = "Copy"; }, 1600);
+    });
   });
   $("[data-new-repo-form]")?.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -52053,6 +52785,9 @@ Your reply
     state.nodeNameAvailability.timer = window.setTimeout(checkNodeNameAvailability, 250);
   });
   $("[data-profile-rename-password]")?.addEventListener("input", updateRenameButton);
+  $("[data-profile-page-name-case]")?.addEventListener("input", (event) => {
+    event.target.dataset.edited = "1";
+  });
   $("[data-profile-delete-confirm]")?.addEventListener("input", () => {
     const button = $("[data-profile-delete-account]");
     if (!button) return;

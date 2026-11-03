@@ -1080,9 +1080,43 @@
       : null;
   }
 
+  const REPOSITORY_FORK_COUNTS_STORE = "forkmesh.repoForkCounts.v1";
+  const REPOSITORY_FORK_COUNTS_TTL_MS = 120000;
+
+  function loadStoredRepositoryForkCounts() {
+    const counts = new Map();
+    try {
+      const stored = JSON.parse(sessionStorage.getItem(REPOSITORY_FORK_COUNTS_STORE) || "{}");
+      if (Date.now() - Number(stored.at || 0) < REPOSITORY_FORK_COUNTS_TTL_MS) {
+        Object.entries(stored.counts || {}).forEach(([key, value]) => {
+          const found = repositoryForkCountsValue(value);
+          if (isRepoKey(key) && found) counts.set(key, found);
+        });
+        return { counts, asked: new Set((stored.asked || []).filter(isRepoKey)) };
+      }
+    } catch (_) {}
+    return { counts, asked: new Set() };
+  }
+
+  function storeRepositoryForkCounts() {
+    try {
+      const stored = JSON.parse(sessionStorage.getItem(REPOSITORY_FORK_COUNTS_STORE) || "{}");
+      const fresh = Date.now() - Number(stored.at || 0) < REPOSITORY_FORK_COUNTS_TTL_MS;
+      sessionStorage.setItem(REPOSITORY_FORK_COUNTS_STORE, JSON.stringify({
+        at: fresh ? Number(stored.at) : Date.now(),
+        counts: Object.fromEntries(state.repositoryForkCounts),
+        asked: [...state.repositoryForkCountsAsked],
+      }));
+    } catch (_) {}
+  }
+
   async function hydrateRepositoryForkCounts(root) {
+    if (!state.repositoryForkCounts) {
+      const stored = loadStoredRepositoryForkCounts();
+      state.repositoryForkCounts = stored.counts;
+      state.repositoryForkCountsAsked = stored.asked;
+    }
     const nodes = applyRepositoryForkCounts(root);
-    if (!state.repositoryForkCounts) state.repositoryForkCounts = new Map();
     if (!state.repositoryForkCountsAsked) state.repositoryForkCountsAsked = new Set();
     const wanted = [...new Set(nodes.map((node) => node.getAttribute("data-repo-fork-counts")))]
       .filter((key) => isRepoKey(key) && !state.repositoryForkCountsAsked.has(key));
@@ -1104,6 +1138,7 @@
         });
       } catch (_) {}
     }
+    storeRepositoryForkCounts();
     applyRepositoryForkCounts(document);
   }
 
@@ -1212,7 +1247,7 @@
       : [];
     const entries = [
       ...organizationRepositories.map((repo) => ({
-        repo,
+        repo: organizationEntryRepository(repo),
         key: repoHasShortAddress(repo) ? String(repo.name) : `${repo.owner}/${repo.name}`,
         href: repoPathUrl(repo),
         organization: true,
@@ -1289,12 +1324,22 @@
     loadHomeRepositoryViews(keys, signature);
   }
 
+  function organizationEntryRepository(repo) {
+    const node = String(repo?.linkedNode || "").trim().toLowerCase();
+    const name = String(repo?.name || "").trim().toLowerCase();
+    if (!node || !name) return repo;
+    return (Array.isArray(state.repositories) ? state.repositories : []).find((candidate) =>
+      String(candidate?.owner || "").toLowerCase() === node
+      && String(candidate?.name || "").toLowerCase() === name) || repo;
+  }
+
   function homeRepositoryEntries() {
     return [
       ...(Array.isArray(state.homeOrganizationRepositories)
         ? state.homeOrganizationRepositories
         : []).map((repo) => ({
-          repo,
+          repo: organizationEntryRepository(repo),
+          label: repoDisplayName(repo),
           href: repoPathUrl(repo),
           organization: true,
         })),
@@ -1305,7 +1350,8 @@
     ].map((entry) => ({ ...entry, label: entry.label || repoDisplayName(entry.repo) }))
       .filter((entry, index, values) =>
         values.findIndex((candidate) =>
-          candidate.label.toLowerCase() === entry.label.toLowerCase()) === index)
+          candidate.label.toLowerCase() === entry.label.toLowerCase()
+          || (candidate.organization && repoKey(candidate.repo).toLowerCase() === repoKey(entry.repo).toLowerCase())) === index)
       .sort((a, b) => homeRepositoryLastViewedAt(b) - homeRepositoryLastViewedAt(a));
   }
 
@@ -1320,25 +1366,25 @@
     const status = live
       ? (repoServedByMirror(repo) ? "served by mirror" : "live host")
       : "offline";
-    const statusHtml = dashboardOnInstance() ? "" : `<span data-home-repo-served-by class="inline-flex items-center gap-1.5"><span class="h-2 w-2 shrink-0 rounded-full ${live ? "bg-success" : "bg-muted-foreground/40"}"></span>${status}</span>`;
-    const logo = nativeRepositoryLogoMarkup(repo, "h-8 w-8")
-      || '<span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-border bg-secondary text-muted-foreground"><i data-lucide="book-marked" class="h-4 w-4"></i></span>';
+    const statusHtml = dashboardOnInstance() ? "" : `<span data-home-repo-served-by title="${status}" class="ml-auto h-1.5 w-1.5 shrink-0 rounded-full ${live ? "bg-success" : "bg-muted-foreground/40"}"><span class="sr-only">${status}</span></span>`;
+    const logo = nativeRepositoryLogoMarkup(repo, "h-5 w-5")
+      || '<span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border bg-secondary text-muted-foreground"><i data-lucide="book-marked" class="h-3 w-3"></i></span>';
+    const label = entry.label || repoDisplayName(repo);
     const description = String(repo.description || "").trim();
     const views = Number(homeRepositoryViewTotals(repo)?.views) || 0;
     const forks = Math.max(Number(repo.forkCount) || 0, Number(nestedForks) || 0);
-    return `<a href="${escapeHtml(entry.href)}" data-home-repo-row class="flex min-w-0 items-start gap-2.5 rounded-md px-2 py-2 text-left text-sm text-muted-foreground hover:bg-secondary hover:text-foreground">
+    const hint = [
+      label,
+      description,
+      views ? `${formatCount(views)} ${views === 1 ? "view" : "views"}` : "",
+      forks ? `${formatCount(forks)} ${forks === 1 ? "fork" : "forks"}` : "",
+    ].filter(Boolean).join(" · ");
+    return `<a href="${escapeHtml(entry.href)}" data-home-repo-row title="${escapeHtml(hint)}" class="flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-foreground hover:bg-secondary">
       ${logo}
-      <span class="min-w-0 flex-1">
-        <span class="block truncate font-medium text-foreground" title="${escapeHtml(entry.label || repoDisplayName(repo))}">${homeRepositoryLabelHtml(entry.label || repoDisplayName(repo))}</span>
-        ${description ? `<span data-user-content class="mt-0.5 block line-clamp-2 text-xs leading-5 text-muted-foreground">${escapeHtml(description)}</span>` : ""}
-        <span class="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          ${statusHtml}
-          ${entry.organization ? '<span class="shrink-0 text-[9px] uppercase text-muted-foreground">organization</span>' : ""}
-          ${views ? `<span data-home-repo-views class="inline-flex items-center gap-1"><i data-lucide="eye" class="h-3 w-3"></i>${escapeHtml(formatCount(views))} ${views === 1 ? "view" : "views"}</span>` : ""}
-          ${forks ? `<span data-home-repo-fork-count class="inline-flex items-center gap-1" title="${escapeHtml(`${formatCount(forks)} ${forks === 1 ? "fork" : "forks"}`)}"><i data-lucide="git-fork" class="h-3 w-3"></i>${escapeHtml(formatCount(forks))} ${forks === 1 ? "fork" : "forks"}</span>` : ""}
-          ${repositoryTermsBadge(repo, true)}
-        </span>
-      </span>
+      <span class="min-w-0 flex-1 truncate font-medium">${homeRepositoryLabelHtml(label)}</span>
+      ${entry.organization ? '<span class="shrink-0 text-[9px] uppercase text-muted-foreground">organization</span>' : ""}
+      ${repositoryTermsBadge(repo, true)}
+      ${statusHtml}
     </a>`;
   }
 
@@ -1370,11 +1416,15 @@
     const all = homeRepositoryEntries();
     refreshHomeRepositoryViews(all);
     const searchField = $("[data-home-repo-search-field]");
+    const searchToggle = $("[data-home-repo-search-toggle]");
     const searchable = all.length >= HOME_REPO_SEARCH_MIN_REPOSITORIES;
-    searchField?.classList.toggle("hidden", !searchable);
-    searchField?.classList.toggle("flex", searchable);
     const search = $("[data-home-repo-search]");
     if (!searchable && search?.value) search.value = "";
+    const searchOpen = searchable && (state.homeRepoSearchOpen || Boolean(search?.value));
+    searchToggle?.classList.toggle("hidden", !searchable);
+    searchToggle?.setAttribute("aria-expanded", String(searchOpen));
+    searchField?.classList.toggle("hidden", !searchOpen);
+    searchField?.classList.toggle("flex", searchOpen);
     const query = (search?.value || "").trim().toLowerCase();
     const matches = all.filter((entry) => repositoryMatchesPageFilter(entry.repo, query));
     const groups = nestRepositoryForks(matches, (entry) => homeRepositoryViewTotals(entry.repo)?.views);
@@ -1401,6 +1451,185 @@
     window.lucide?.createIcons();
     hydrateNativeRepositoryLogos(container);
     hydrateRepositoryForkCounts(container);
+    refreshHomeWork(all);
+  }
+
+  function homeGreeting(date = new Date()) {
+    const hour = date.getHours();
+    if (hour < 5 || hour >= 18) return "Good evening";
+    return hour < 12 ? "Good morning" : "Good afternoon";
+  }
+
+  function renderHomeAccount(session = state.session) {
+    const account = $("[data-home-account]");
+    if (!account) return;
+    const name = session?.nodeName ? userDisplayName(session.nodeName) : (session?.email || "");
+    const nameEl = $("[data-home-account-name]");
+    if (nameEl) nameEl.textContent = name || "Your account";
+    applyAvatar($("[data-home-account-avatar]"), session);
+    const greeting = $("[data-home-greeting]");
+    if (greeting) greeting.textContent = name ? `${homeGreeting()}, ${name}!` : `${homeGreeting()}!`;
+  }
+
+  function setHomeTab(tab) {
+    const active = tab === "feed" ? "feed" : "home";
+    $$("[data-home-tab]").forEach((button) => {
+      button.setAttribute("aria-pressed", String(button.dataset.homeTab === active));
+    });
+    $$("[data-home-tab-panel]").forEach((panel) => {
+      panel.hidden = panel.dataset.homeTabPanel !== active;
+    });
+  }
+
+  const HOME_WORK_REPO_LIMIT = 6;
+  const HOME_WORK_ROW_LIMIT = 5;
+
+  function homeWorkStamp(value) {
+    let stamp = Number(value) || Date.parse(String(value || "")) || 0;
+    if (stamp > 0 && stamp < 10_000_000_000) stamp *= 1000;
+    return Number.isFinite(stamp) ? stamp : 0;
+  }
+
+  function homeWorkRepositories(entries) {
+    const aliases = profileRepositoryAliases(state.session);
+    if (!aliases.size) return [];
+    return entries
+      .filter((entry) => entry.repo && !entry.repo.isPrivate
+        && (entry.organization || repoBelongsToProfile(entry.repo, aliases)))
+      .slice(0, HOME_WORK_REPO_LIMIT);
+  }
+
+  async function loadHomeRepositoryWork(entry) {
+    const repo = entry.repo;
+    const label = entry.label;
+    const pullCount = repoCount(repo, ["openPulls", "pullCount", "pulls", "pullsCount"]);
+    const issueCount = repoCount(repo, ["openIssues", "issueCount", "issues", "issuesCount"]);
+    const [pulls, issues] = await Promise.all([
+      pullCount === 0 ? [] : loadRepoRecordsFromMirror(repo, repoCollectionConfig.pulls).catch(() => []),
+      issueCount === 0 ? null : fetchRepoIssueIndex(repo),
+    ]);
+    return {
+      pulls: pulls
+        .filter((pull) => String(pull.state || "").toLowerCase() === "open")
+        .map((pull) => ({
+          kind: "pull",
+          number: pull.number,
+          title: pull.title,
+          author: pull.author,
+          updatedAt: homeWorkStamp(pull.updatedAtMs || pull.createdAtMs),
+          href: `${entry.href}/pull/${pull.number}`,
+          repoLabel: label,
+        })),
+      issues: (Array.isArray(issues?.issues) ? issues.issues : [])
+        .map(issueFromIndex)
+        .filter((issue) => issue.status !== "closed" && !issue.deleted && Number.isFinite(issue.number))
+        .map((issue) => ({
+          kind: "issue",
+          number: issue.number,
+          title: issue.title,
+          author: issue.author,
+          comments: Number(issue.commentCount) || 0,
+          updatedAt: homeWorkStamp(issue.dateValue),
+          href: `${entry.href}/issues/${issue.number}`,
+          repoLabel: label,
+        })),
+    };
+  }
+
+  function refreshHomeWork(entries) {
+    if (!$("[data-home-pulls]") || state.repositoriesLoading) return;
+    const repos = homeWorkRepositories(entries);
+    const signature = repos.map((entry) => entry.href).sort().join("\n");
+    if (signature === state.homeWorkSignature) return;
+    state.homeWorkSignature = signature;
+    if (!repos.length) {
+      state.homeWork = { pulls: [], issues: [] };
+      renderHomeWork();
+      return;
+    }
+    Promise.all(repos.map((entry) => loadHomeRepositoryWork(entry).catch(() => ({ pulls: [], issues: [] }))))
+      .then((results) => {
+        if (state.homeWorkSignature !== signature) return;
+        const byRecent = (a, b) => b.updatedAt - a.updatedAt;
+        state.homeWork = {
+          pulls: results.flatMap((result) => result.pulls).sort(byRecent),
+          issues: results.flatMap((result) => result.issues).sort(byRecent),
+        };
+        renderHomeWork();
+      });
+  }
+
+  function homeWorkRow(item) {
+    const icon = item.kind === "pull"
+      ? pullStateIconHtml("open")
+      : '<i data-lucide="circle-dot" class="h-4 w-4 text-[var(--dashboard-open)]"></i>';
+    const meta = [
+      `${escapeHtml(item.repoLabel)}#${escapeHtml(String(item.number))}`,
+      item.author ? `Opened by ${issuePersonNameHtml(item.author, "", { inLink: true })}` : "",
+      item.updatedAt ? `Updated ${escapeHtml(formatTimeAgo(item.updatedAt))}` : "",
+    ].filter(Boolean).join(" · ");
+    return `<a href="${escapeHtml(item.href)}" data-home-work-row="${item.kind}" class="fm-home-row">
+        <span class="fm-home-row-icon">${icon}</span>
+        <span class="min-w-0 flex-1">
+          <span class="fm-home-row-title">${escapeHtml(item.title)}</span>
+          <span class="fm-home-row-meta">${meta}</span>
+        </span>
+        ${item.comments ? `<span class="fm-home-row-end" title="${formatCount(item.comments)} comment${item.comments === 1 ? "" : "s"}"><i data-lucide="message-square" class="h-4 w-4"></i>${formatCount(item.comments)}</span>` : ""}
+      </a>`;
+  }
+
+  function renderHomeWork() {
+    const work = state.homeWork || { pulls: [], issues: [] };
+    [["pulls", work.pulls, "open pull request"], ["issues", work.issues, "open issue"]].forEach(([key, items, noun]) => {
+      const section = $(`[data-home-${key}-section]`);
+      const list = $(`[data-home-${key}]`);
+      const count = $(`[data-home-${key}-count]`);
+      if (!section || !list) return;
+      section.hidden = !items.length;
+      list.innerHTML = items.slice(0, HOME_WORK_ROW_LIMIT).map(homeWorkRow).join("");
+      if (count) count.textContent = items.length ? `${formatCount(items.length)} ${noun}${items.length === 1 ? "" : "s"}` : "";
+    });
+    window.lucide?.createIcons();
+  }
+
+  const HOME_CHANGELOG_NOTE_LIMIT = 4;
+  const HOME_CHANGELOG_URL = "/changelog.json";
+
+  function homeChangelogDate(value) {
+    const text = String(value || "");
+    const parsed = /^\d{4}-\d{2}-\d{2}$/.test(text) ? new Date(`${text}T00:00:00`) : null;
+    if (!parsed || Number.isNaN(parsed.getTime())) return text;
+    return parsed.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  }
+
+  function renderHomeChangelog() {
+    const container = $("[data-home-changelog-list]");
+    if (!container) return;
+    const notes = state.homeChangelogNotes;
+    if (notes === null) return;
+    container.innerHTML = notes.length
+      ? notes.map((note) => `<li>
+          <time datetime="${escapeHtml(note.date)}">${escapeHtml(homeChangelogDate(note.date))}</time>
+          <a href="/changelog" class="line-clamp-2">${escapeHtml(note.text)}</a>
+        </li>`).join("")
+      : '<li><p class="text-muted-foreground">The changelog is unavailable right now.</p></li>';
+  }
+
+  async function loadHomeChangelog() {
+    if (!$("[data-home-changelog-list]")) return;
+    try {
+      const response = await fetch(HOME_CHANGELOG_URL, { credentials: "omit", headers: { accept: "application/json" } });
+      if (!response.ok) throw new Error(`changelog returned ${response.status}`);
+      const data = await response.json();
+      state.homeChangelogNotes = (Array.isArray(data?.notes) ? data.notes : [])
+        .filter((note) => note && note.text && note.date)
+        .map((note) => ({ date: String(note.date), text: String(note.text) }))
+        .sort((a, b) => b.date.localeCompare(a.date))
+        .slice(0, HOME_CHANGELOG_NOTE_LIMIT);
+    } catch (_) {
+      state.homeChangelogNotes = [];
+    }
+    renderHomeChangelog();
   }
 
   const HOME_FEED_CARD_LIMIT = 8;
@@ -1450,12 +1679,12 @@
       item.repo ? escapeHtml(repoPublicKey(item.repo)) : "",
     ].filter(Boolean).join(" · ");
     return `
-      <${tag}${hrefAttr} data-home-feed-kind="activity" class="flex min-w-0 items-start gap-2.5 rounded-md border border-border bg-background px-3 py-2.5 hover:bg-secondary">
-        <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"></i>
+      <${tag}${hrefAttr} data-home-feed-kind="activity" class="fm-home-row">
+        <span class="fm-home-row-icon"><i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="text-muted-foreground"></i></span>
         <span class="min-w-0 flex-1">
-          <span class="block break-words text-sm font-medium text-foreground">${escapeHtml(repoPublicText(item.title) || `${platformName()} activity`)}</span>
-          ${item.body ? `<span class="mt-0.5 block line-clamp-2 text-xs leading-5 text-muted-foreground">${escapeHtml(repoPublicText(item.body))}</span>` : ""}
-          <span class="mt-1 block break-words text-xs text-muted-foreground">${meta}</span>
+          <span class="fm-home-row-title">${escapeHtml(repoPublicText(item.title) || `${platformName()} activity`)}</span>
+          ${item.body ? `<span class="fm-home-row-meta line-clamp-2">${escapeHtml(repoPublicText(item.body))}</span>` : ""}
+          <span class="fm-home-row-meta">${meta}</span>
         </span>
       </${tag}>
     `;
@@ -1470,13 +1699,13 @@
     container.innerHTML = cards.length
       ? cards.join("")
       : seasonActive("halloween")
-        ? `<div class="flex items-center gap-3 rounded-md border border-border bg-background px-3 py-3 text-sm text-muted-foreground">${HALLOWEEN_PUMPKIN}<span>Nothing from others yet. It's quiet in here. Too quiet.</span></div>`
-        : '<div class="rounded-md border border-border bg-background px-3 py-3 text-sm text-muted-foreground">Nothing from others yet. Mentions, pull requests and pushes by other people show up here.</div>';
+        ? `<div class="fm-home-empty flex items-center gap-3">${HALLOWEEN_PUMPKIN}<span>Nothing from others yet. It's quiet in here. Too quiet.</span></div>`
+        : '<div class="fm-home-empty">Nothing from others yet. Mentions, pull requests and pushes by other people show up here.</div>';
     window.lucide?.createIcons();
   }
 
   // Home right-rail "Latest from the blog" (adhoc #381): the newest feature
-  // posts with their artwork, read from the blog's own RSS document. The feed
+  // posts, read from the blog's own RSS document. The feed
   // is derived from the shipped blog index and edge-cached for thirty minutes
   // (see blog_feed.py), so this is one cheap same-origin read per dashboard
   // load rather than a second hand-maintained copy of the post list.
@@ -1497,30 +1726,6 @@
     }
   }
 
-  // Artwork cannot take that shortcut: the blog images live in the WWW
-  // worker's asset bundle only (build_site_assets.shared_assets deliberately
-  // skips assets/blog for App and World), so a path-only src 404s on the
-  // dashboard's own origin and every card paints a broken image. Keep the
-  // feed's absolute URL, but only for ForkMesh's own sites, so a rewritten
-  // feed can still never make the dashboard fetch a foreign host.
-  const HOME_BLOG_IMAGE_HOSTS = new Set(["forkmesh.com", "www.forkmesh.com"]);
-
-  function homeBlogImageUrl(value) {
-    const raw = String(value || "").trim();
-    if (!raw) return "";
-    try {
-      const parsed = new URL(raw, window.location.origin);
-      if (parsed.origin === window.location.origin) {
-        return parsed.pathname + parsed.search;
-      }
-      if (parsed.protocol !== "https:") return "";
-      if (!HOME_BLOG_IMAGE_HOSTS.has(parsed.hostname.toLowerCase())) return "";
-      return parsed.href;
-    } catch (_) {
-      return "";
-    }
-  }
-
   function parseHomeBlogFeed(xml) {
     const doc = new DOMParser().parseFromString(String(xml || ""), "application/xml");
     if (doc.querySelector("parsererror")) return [];
@@ -1529,22 +1734,17 @@
         title: (item.querySelector("title")?.textContent || "").trim(),
         href: homeBlogUrl(item.querySelector("link")?.textContent),
         meta: (item.querySelector("category")?.textContent || "").trim(),
-        image: homeBlogImageUrl(item.querySelector("enclosure")?.getAttribute("url")),
       }))
       .filter((post) => post.title && post.href)
       .slice(0, HOME_BLOG_POST_LIMIT);
   }
 
-  function homeBlogPostCard(post) {
-    return `
-      <a href="${escapeHtml(post.href)}"${/^https:/.test(post.href) ? ' target="_blank" rel="noopener"' : ""} class="group block overflow-hidden rounded-md border border-border hover:bg-secondary">
-        ${post.image ? `<img src="${escapeHtml(post.image)}" alt="" loading="lazy" class="block aspect-[16/9] w-full object-cover" />` : ""}
-        <span class="block px-3 py-2.5">
-          ${post.meta ? `<span class="block truncate font-mono text-[10px] uppercase text-muted-foreground">${escapeHtml(post.meta)}</span>` : ""}
-          <span class="mt-1 block text-sm font-semibold leading-5 text-foreground group-hover:text-accent">${escapeHtml(post.title)}</span>
-        </span>
-      </a>
-    `;
+  function homeBlogPostItem(post) {
+    const external = /^https:/.test(post.href) ? ' target="_blank" rel="noopener"' : "";
+    return `<li>
+        ${post.meta ? `<span class="fm-home-kicker">${escapeHtml(post.meta)}</span>` : ""}
+        <a href="${escapeHtml(post.href)}"${external} class="line-clamp-2">${escapeHtml(post.title)}</a>
+      </li>`;
   }
 
   function renderHomeBlogPosts() {
@@ -1552,32 +1752,24 @@
     if (!container) return;
     const posts = state.homeBlogPosts;
     if (posts === null) {
-      container.innerHTML = '<div class="text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading blog posts...</div>';
+      container.innerHTML = '<li><span class="text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading blog posts...</span></li>';
       return;
     }
     container.innerHTML = posts.length
-      ? posts.map(homeBlogPostCard).join("")
-      : '<div class="text-sm text-muted-foreground">Blog posts are unavailable right now.</div>';
+      ? posts.map(homeBlogPostItem).join("")
+      : '<li><p class="text-muted-foreground">Blog posts are unavailable right now.</p></li>';
   }
-
-  const HOME_DEVTO_IMAGE_HOSTS = new Set(["media2.dev.to", "dev-to-uploads.s3.amazonaws.com"]);
 
   function homeDevtoPost(article) {
     let href = "";
-    let image = "";
     try {
       const link = new URL(String(article?.url || ""));
       if (link.protocol === "https:" && link.hostname === "dev.to") href = link.href;
-    } catch (_) {}
-    try {
-      const cover = new URL(String(article?.cover_image || article?.social_image || ""));
-      if (cover.protocol === "https:" && HOME_DEVTO_IMAGE_HOSTS.has(cover.hostname)) image = cover.href;
     } catch (_) {}
     const when = Date.parse(String(article?.published_at || ""));
     return {
       title: String(article?.title || "").trim(),
       href,
-      image,
       meta: Number.isFinite(when) ? relativeTimeLabel(when) : "",
     };
   }
@@ -1585,7 +1777,7 @@
   async function loadHomeDevtoPosts(user) {
     const card = $("[data-home-blog-card]");
     card?.removeAttribute("data-instance-plugin");
-    const viewAll = card?.querySelector("a[href]");
+    const viewAll = card?.querySelector(".fm-home-more");
     if (viewAll) {
       viewAll.href = `https://dev.to/${encodeURIComponent(user)}`;
       viewAll.target = "_blank";
@@ -1674,7 +1866,18 @@
     renderHomeRepositories();
   }
 
-  const HOME_AGENT_LIMIT = 10;
+  const HOME_AGENT_LIMIT = 5;
+
+  function homeAgentStatusIcon(status) {
+    const key = String(status || "").toLowerCase();
+    if (["completed", "succeeded", "done", "merged"].includes(key)) {
+      return '<i data-lucide="check" class="text-success"></i>';
+    }
+    if (["failed", "error", "cancelled", "canceled", "stopped"].includes(key)) {
+      return '<i data-lucide="x" class="text-destructive"></i>';
+    }
+    return `<span class="h-2 w-2 rounded-full ${orgAgentStatusDotClass(status)}"></span>`;
+  }
 
   function homeAgentRow(session, account) {
     const owner = String(session.org || account || "").trim();
@@ -1688,21 +1891,20 @@
     const status = String(session.displayStatus || session.status || "unknown");
     const title = String(session.title || "").trim()
       || (session.issueNumber ? `Issue #${session.issueNumber}` : `${orgAgentProviderLabel(session)} session`);
+    const started = session.createdAt || session.updatedAt;
     const meta = [
       repoLabel,
       orgAgentProviderLabel(session),
       session.targetNode ? `on ${session.targetNode}` : "",
-      notificationTimeLabel(session.updatedAt || session.createdAt),
+      started ? `Started ${notificationTimeLabel(started)}` : "",
     ].filter(Boolean).map(escapeHtml);
+    const statusLabel = status.replace(/_/g, " ");
     return `
-      <${tag}${hrefAttr} data-home-agent="${escapeHtml(String(session.id || ""))}" class="flex min-w-0 items-start gap-3 rounded-lg border border-border bg-card px-4 py-3 hover:bg-secondary/40">
-        <span class="mt-1.5 h-2 w-2 shrink-0 rounded-full ${orgAgentStatusDotClass(session.status)}"></span>
+      <${tag}${hrefAttr} data-home-agent="${escapeHtml(String(session.id || ""))}" class="fm-home-row">
+        <span class="fm-home-row-icon">${homeAgentStatusIcon(session.status)}</span>
         <span class="min-w-0 flex-1">
-          <span class="flex min-w-0 items-start justify-between gap-3">
-            <span class="min-w-0 break-words text-sm font-medium text-foreground">${escapeHtml(title)}</span>
-            <span class="shrink-0 font-mono text-xs ${repoAgentStatusTone(session.status)}">${escapeHtml(status.replace(/_/g, " "))}</span>
-          </span>
-          <span class="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">${meta.map((part) => `<span>${part}</span>`).join("")}</span>
+          <span class="fm-home-row-title">${escapeHtml(title)}</span>
+          <span class="fm-home-row-meta">${meta.join(" · ")} · <span class="${repoAgentStatusTone(session.status)}">${escapeHtml(statusLabel.charAt(0).toUpperCase() + statusLabel.slice(1))}</span></span>
         </span>
       </${tag}>`;
   }
@@ -1718,14 +1920,15 @@
       count.textContent = data?.activeCount ? `${formatCount(data.activeCount)} running` : "";
     }
     if (data?.error) {
-      container.innerHTML = `<div class="rounded-lg border border-border bg-card px-4 py-6 text-sm text-muted-foreground">${escapeHtml(data.error)}</div>`;
+      container.innerHTML = `<div class="fm-home-empty">${escapeHtml(data.error)}</div>`;
       return;
     }
     container.innerHTML = sessions.length
       ? sessions.slice(0, HOME_AGENT_LIMIT).map((session) => homeAgentRow(session, data.account)).join("")
       : seasonActive("halloween")
-        ? `<div class="flex items-center gap-4 rounded-lg border border-border bg-card px-4 py-4 text-sm text-muted-foreground">${HALLOWEEN_PUMPKIN}<span>No agents yet. Type a prompt above and press new to summon one.</span></div>`
-        : '<div class="rounded-lg border border-border bg-card px-4 py-6 text-sm text-muted-foreground">No agents yet. Type a prompt above and press new to start one.</div>';
+        ? `<div class="fm-home-empty flex items-center gap-4">${HALLOWEEN_PUMPKIN}<span>No agent sessions.</span></div>`
+        : '<div class="fm-home-empty">No agent sessions.</div>';
+    window.lucide?.createIcons();
   }
 
   async function loadHomeAgentSessions() {
@@ -2264,16 +2467,146 @@
     fillSelect($("[data-new-repo-license]"), hostedSettings?.licenseTemplates, {
       mit: "MIT", "bsd-3-clause": "BSD 3-Clause", isc: "ISC", unlicense: "Unlicense",
     });
+    renderNewRepoQuota();
+    renderNewRepoNodeStatus();
+    setNewRepoSource(newRepoSource());
+  }
+
+  function newRepoSizeLabel(bytes) {
+    const megabytes = Math.round(Number(bytes || 0) / 1048576);
+    if (megabytes >= 1024 && megabytes % 1024 === 0) return `${megabytes / 1024} GB`;
+    return `${megabytes} MB`;
+  }
+
+  function newRepoMoveGuideUrl() {
+    const path = "/docs/hosted-repositories/#moving-to-your-own-device";
+    return dashboardOnInstance() ? `https://forkmesh.com${path}` : path;
+  }
+
+  function serverCountLabel(count) {
+    return count === 1 ? "1 server" : `${count} servers`;
+  }
+
+  function newRepoCopiesWarning(count) {
+    return count === 1
+      ? `${escapeHtml(platformName())} runs on one server, so it keeps one copy of this repository. Keep your own clone as a backup, or <a href="${escapeHtml(newRepoMoveGuideUrl())}">move it to your own device</a>.`
+      : "";
+  }
+
+  function renderNewRepoQuota() {
+    const core = hostedCoreMode();
+    const limits = hostedSettings?.limits || {};
+    const perAccount = Number(limits.repositoriesPerAccount || 0);
+    const used = Number(hostedSettings?.used || 0);
+    const size = newRepoSizeLabel(limits.repositoryBytes);
+    const servers = Number(hostedSettings?.coreNodeCount || 0);
     const quota = $("[data-new-repo-quota]");
-    if (quota) {
-      const limits = hostedSettings?.limits || {};
-      const perAccount = Number(limits.repositoriesPerAccount || 0);
-      const megabytes = Math.round(Number(limits.repositoryBytes || 0) / 1048576);
+    if (quota && quota.classList.contains("nr-meter")) {
+      if (core && perAccount) {
+        const percent = Math.min(100, Math.round((used / perAccount) * 100));
+        quota.classList.toggle("nr-meter-high", used / perAccount >= 0.8);
+        quota.innerHTML = `<div class="nr-meter-bar" role="img" aria-label="${used} of ${perAccount} repositories used"><i style="width:${percent}%"></i></div>`
+          + `<div class="nr-meter-row"><span><b>${used} of ${perAccount}</b> repositories used</span>`
+          + `<span>Each up to <b>${escapeHtml(size)}</b></span>`
+          + `<a href="${escapeHtml(newRepoMoveGuideUrl())}" class="text-accent hover:underline">Need more?</a></div>`;
+      } else {
+        quota.textContent = "";
+      }
+    } else if (quota) {
       quota.textContent = core && perAccount
-        ? `${platformName()} hosts up to ${perAccount} repositories per account (${Number(hostedSettings.used || 0)} used), ${megabytes} MB each, on every core node. Move one to your own node any time to grow past that.`
+        ? `You have used ${used} of your ${perAccount} repositories on ${platformName()}. Each one can be up to ${size}.`
         : "";
     }
-    setNewRepoSource(newRepoSource());
+    const meta = $("[data-new-repo-hosted-meta]");
+    if (meta) {
+      meta.textContent = core && perAccount
+        ? [servers ? serverCountLabel(servers) : "", `${used} of ${perAccount} used`, `up to ${size} each`].filter(Boolean).join(" · ")
+        : "";
+    }
+    const copies = $("[data-new-repo-copies]");
+    if (copies) {
+      const warning = core ? newRepoCopiesWarning(servers) : "";
+      copies.innerHTML = warning;
+      copies.classList.toggle("hidden", !warning);
+    }
+  }
+
+  function renderNewRepoNodeStatus() {
+    const status = $("[data-new-repo-node-status]");
+    if (!status) return;
+    const nodes = Array.isArray(state.session?.nodes)
+      ? [...new Set(state.session.nodes.map((node) => String(node || "").trim()).filter(Boolean))]
+      : [];
+    status.textContent = nodes.length
+      ? `Linked: ${nodes.slice(0, 2).join(", ")}${nodes.length > 2 ? ` and ${nodes.length - 2} more` : ""}`
+      : "Desktop or phone app · no device linked yet";
+  }
+
+  function newRepoLocation() {
+    return $('[data-new-repo-location][aria-checked="true"]')?.dataset.newRepoLocation || "hosted";
+  }
+
+  function setNewRepoLocation(where) {
+    const buttons = $$("[data-new-repo-location]");
+    if (!buttons.length) return;
+    buttons.forEach((button) => {
+      const active = button.dataset.newRepoLocation === where;
+      button.setAttribute("aria-checked", active ? "true" : "false");
+      button.tabIndex = active ? 0 : -1;
+    });
+    const node = where === "node";
+    $("[data-new-repo-node-guide]")?.classList.toggle("hidden", !node);
+    $("[data-new-repo-hosted-form]")?.classList.toggle("hidden", node);
+    $("[data-new-repo-submit]")?.classList.toggle("hidden", node);
+    const name = $("[data-new-repo-name]");
+    if (name) name.required = !node && newRepoSource() !== "provider";
+    setNewRepoHint("");
+  }
+
+  function initialNewRepoLocation() {
+    const requested = new URLSearchParams(location.search).get("where") || "";
+    if (requested === "node" || requested === "hosted") return requested;
+    return Array.isArray(state.session?.nodes) && state.session.nodes.length ? "node" : "hosted";
+  }
+
+  function newRepoImportChoice() {
+    const code = $("[data-new-repo-import-code]");
+    const issues = $("[data-new-repo-import-issues]");
+    if (!code && !issues) return null;
+    return { code: code?.checked !== false, issues: Boolean(issues?.checked) };
+  }
+
+  function renderNewRepoImportChoice() {
+    const choice = newRepoImportChoice();
+    if (!choice) return;
+    $("[data-new-repo-provider-token-wrap]")?.classList.toggle("hidden", !choice.issues);
+    const issuesOnly = choice.issues && !choice.code;
+    $("[data-new-repo-name-row]")?.parentElement?.classList.toggle("hidden", issuesOnly);
+    $("[data-new-repo-description-wrap]")?.classList.toggle("hidden", issuesOnly);
+    $("[data-new-repo-visibility-wrap]")?.classList.toggle("hidden", issuesOnly);
+    const name = $("[data-new-repo-name]");
+    if (name) name.required = !issuesOnly;
+    renderNewRepoNameCheck();
+  }
+
+  function newRepoNameProblem(name) {
+    if (!name) return "";
+    if (name.length > 64) return "Use at most 64 characters.";
+    if (!/^[A-Za-z0-9._-]+$/.test(name)) return "Use letters, numbers, dots, dashes, or underscores in the name.";
+    if (name.startsWith(".") || /\.git$/i.test(name)) return "A name can't start with a dot or end in .git.";
+    const owner = String($("[data-new-repo-owner]")?.value || state.session?.nodeName || "").toLowerCase();
+    const taken = (Array.isArray(state.repositories) ? state.repositories : []).some((repo) =>
+      String(repo?.name || "").toLowerCase() === name.toLowerCase()
+      && [String(repo?.owner || "").toLowerCase(), String(repoPublicOwner(repo) || "").toLowerCase()].includes(owner));
+    return taken ? `You already have a repository called ${name}.` : "";
+  }
+
+  function renderNewRepoNameCheck() {
+    const check = $("[data-new-repo-name-check]");
+    if (!check) return;
+    const field = $("[data-new-repo-name]");
+    const visible = field && !field.closest(".hidden");
+    check.textContent = visible ? newRepoNameProblem(String(field.value || "").trim()) : "";
   }
 
   function hostedImportAllowed(url) {
@@ -2306,10 +2639,15 @@
     // field visibility, hint, and submit label before the form is seen,
     // instead of waiting for the first click on a tab.
     setNewRepoSource(requestedNewRepoSource() || newRepoSource());
+    setNewRepoLocation(initialNewRepoLocation());
+    renderNewRepoNodeStatus();
     setNewRepoHint("");
     loadHostedSettings();
     $(`[data-new-repo-migration-status]`)?.classList.add("hidden");
-    window.setTimeout(() => $("[data-new-repo-name]")?.focus(), 0);
+    window.setTimeout(() => {
+      const name = $("[data-new-repo-name]");
+      if (name && !name.closest(".hidden")) name.focus();
+    }, 0);
     window.lucide?.createIcons();
   }
 
@@ -2355,7 +2693,7 @@
   // The empty source needs neither a node nor another provider, so it must
   // not repeat the desktop-handoff sentence (issue #676).
   const NEW_REPO_EMPTY_SUBTITLE =
-    `A repository holds your project's files and history. ${platformName()} keeps a copy on every core node.`;
+    "A repository holds your project's files and history.";
 
   const NEW_REPO_BACKUP_GUIDE =
     `<a href="/docs/back-up-a-github-repository/" class="text-accent hover:underline">how to back up a GitHub repository</a>`;
@@ -2377,6 +2715,7 @@
   }
 
   function newRepoSubtitleFor(source) {
+    if ($("[data-new-repo-page]")) return NEW_REPO_EMPTY_SUBTITLE;
     if (source === "provider") return NEW_REPO_PROVIDER_SUBTITLE;
     if (source === "empty") return NEW_REPO_EMPTY_SUBTITLE;
     if (source === "remote" && hostedCoreMode()) {
@@ -2458,7 +2797,7 @@
     const name = $("[data-new-repo-name]");
     if (name) name.required = !provider;
     const submitLabel = $("[data-new-repo-submit-label]");
-    if (submitLabel) submitLabel.textContent = provider ? "Start resumable import" : "Create & mirror";
+    if (submitLabel) submitLabel.textContent = source === "empty" || source === "local" ? "Create repository" : "Import repository";
     const subtitle = $("[data-new-repo-subtitle]");
     if (subtitle) subtitle.textContent = newRepoSubtitleFor(source);
     // Switching tabs starts a different flow, so a previous run's steps panel
@@ -2473,7 +2812,6 @@
     // path or URL the flow never reads (issue #676).
     const empty = source === "empty";
     if (value) value.classList.toggle("hidden", empty);
-    if (submitLabel && empty) submitLabel.textContent = "Create empty repository";
     // A single hosted write node cannot hold a private repository (only a node
     // holding the account key can seal one). The Next core nodes can: they
     // serve it only to the owner and the organization's readers.
@@ -2485,7 +2823,7 @@
     if (privateOption) {
       privateOption.disabled = privateBlocked;
       const privateText = core && hostedHere
-        ? "Only you and your organization's readers can see and clone it."
+        ? "Only you and your organization's readers can see and clone it. The servers can read its contents."
         : "Encrypted mirror, contents stay hidden.";
       const privateDesc = $("[data-new-repo-private-desc]");
       if (privateDesc) privateDesc.textContent = privateText;
@@ -2499,14 +2837,17 @@
     const importing = source === "remote" && core;
     $("[data-new-repo-readme-wrap]")?.classList.toggle("hidden", importing);
     $("[data-new-repo-init-wrap]")?.classList.toggle("hidden", importing);
-    if (submitLabel && empty && core) submitLabel.textContent = "Create repository";
-    if (submitLabel && importing) submitLabel.textContent = "Import & host";
+    const importOptions = $("[data-new-repo-import-options]");
+    importOptions?.classList.toggle("hidden", source !== "remote");
     if (empty) {
       if (hint) {
         hint.textContent = core
           ? "Start empty and push with git over HTTPS."
           : "Start empty and push with git. It is public and stays empty until your first push.";
       }
+    } else if (importing && importOptions) {
+      if (value) value.placeholder = "https://github.com/owner/repo";
+      if (hint) hint.innerHTML = `Paste a link to a public repository on ${escapeHtml((hostedSettings.importHosts || []).join(", "))}. ${escapeHtml(platformName())} copies it once; later changes there are not brought over. A private repository needs your own device: clone it there and add the folder in the app.`;
     } else if (importing) {
       if (value) value.placeholder = "https://github.com/owner/repo.git";
       if (hint) hint.innerHTML = `${escapeHtml(platformName())} makes a one-time copy of a public repository from ${escapeHtml((hostedSettings.importHosts || []).join(", "))} and hosts it on its core nodes. The copy is not updated when the original changes. Private repositories and other URLs need the ${escapeHtml(desktopBrand())}desktop app: see ${NEW_REPO_BACKUP_GUIDE}.`;
@@ -2520,7 +2861,10 @@
       if (value) value.placeholder = "https://github.com/owner/repo.git";
       if (hint) hint.innerHTML = NEW_REPO_CLONE_HINT;
     }
+    if (source === "remote") renderNewRepoImportChoice();
+    else if (importOptions) $("[data-new-repo-name-row]")?.parentElement?.classList.remove("hidden");
     renderNewRepoVisibilityNote();
+    renderNewRepoNameCheck();
   }
 
   function setNewRepoHint(text, cls) {
@@ -2783,6 +3127,31 @@
             ? `on ${hosting.nodes?.length || 3} core nodes and it stays empty until your first push. Run these in your project folder; git asks for the credential below.`
             : "and it stays empty until your first push. Run these in your project folder; git asks for the credential below.";
     }
+    const servers = Number(hosting?.nodes?.length || hostedSettings?.coreNodeCount || 0);
+    const where = $("[data-new-repo-push-where]");
+    if (where) {
+      const stored = hosting?.mode === "core" && servers
+        ? `Stored on ${serverCountLabel(servers)} of ${platformName()}`
+        : `Hosted by ${platformName()}`;
+      where.textContent = hosting?.importing
+        ? `${stored}. The import is running now, so clone it once it finishes.`
+        : hosting?.initialized
+          ? `${stored}, with a first commit.`
+          : `${stored}. It stays empty until your first push.`;
+    }
+    const cloneTitle = $("[data-new-repo-push-clone-title]");
+    if (cloneTitle) {
+      cloneTitle.textContent = hosting?.initialized || hosting?.importing
+        ? "Clone it" : "Run these in your project folder";
+    }
+    const copies = $("[data-new-repo-push-copies]");
+    if (copies) {
+      const warning = hosting?.mode === "core" ? newRepoCopiesWarning(servers) : "";
+      copies.innerHTML = warning;
+      copies.classList.toggle("hidden", !warning);
+    }
+    $("[data-new-repo-push-issues]")?.classList.add("hidden");
+    $$("[data-new-repo-push-copy-field]").forEach((button) => { button.textContent = "Copy"; });
     const terms = $("[data-new-repo-push-visibility]");
     if (terms) {
       terms.textContent = repository?.visibility === "private"
@@ -2800,7 +3169,8 @@
     const expiry = $("[data-new-repo-push-expiry]");
     if (expiry) {
       expiry.textContent = push?.expiresAt
-        ? new Date(Number(push.expiresAt)).toLocaleString() : "soon";
+        ? new Date(Number(push.expiresAt)).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
+        : "soon";
     }
     const link = $("[data-new-repo-push-open]");
     if (link && repository) link.href = repoLinkUrl(repository);
@@ -2853,6 +3223,7 @@
       forgetDeletedRepository(body.repository);
       renderNewRepoPush(body.repository, body.push, body.hosting);
       await loadRepositories({ fresh: true });
+      return true;
     } catch (error) {
       const code = String(error?.message || "");
       if (code === "hosted_git_unavailable") {
@@ -2864,17 +3235,61 @@
           title: "Finish creating your repository",
           subtitle: "This relay hosts no ForkMesh git node, so the repository has to come from a node you run.",
         });
-        return;
+        return false;
       }
       setNewRepoHint(newRepoHostedErrorText(code), "bad");
     } finally {
       if (submit) submit.disabled = false;
     }
+    return false;
+  }
+
+  async function startNewRepoIssuesImport(sourceUrl, providerToken) {
+    const line = $("[data-new-repo-push-issues]");
+    const say = (text) => {
+      if (!line) return;
+      line.textContent = text;
+      line.classList.remove("hidden");
+    };
+    say("Importing issues and pull requests…");
+    try {
+      const response = await fetch("/api/repository-imports/migrations", {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify({
+          sourceUrl,
+          providerToken,
+          mode: "import",
+          setupDurationMs: Math.max(0, Math.round(
+            (window.performance?.now?.() || Date.now()) - newRepoSetupStartedAt)),
+          sessionToken: state.session.sessionToken,
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body.migration) throw new Error(body.error || `HTTP ${response.status}`);
+      const finished = await advanceRepositoryMigration(body.migration, providerToken, (current) =>
+        say(`Importing issues and pull requests: ${current.processed || 0} items so far…`));
+      say(finished?.status === "completed"
+        ? "Issues and pull requests are imported. For now they are listed under External repositories."
+        : "The issues import paused at a checkpoint. Continue it from External repositories.");
+      await loadExternalRepositories({ fresh: true });
+    } catch (error) {
+      say(String(error?.message || "") === "provider_rate_limited"
+        ? "The provider's rate limit stopped the issues import. Try again later with only Issues and pull requests ticked."
+        : "The issues and pull requests could not be imported. Try again with only Issues and pull requests ticked.");
+    }
   }
 
   async function handleNewRepoSubmit() {
-    const source = newRepoSource();
+    if ($("[data-new-repo-location]") && newRepoLocation() === "node") return;
+    let source = newRepoSource();
     const sourceValue = String($("[data-new-repo-source-value]")?.value || "").trim();
+    const importChoice = source === "remote" ? newRepoImportChoice() : null;
+    if (importChoice && !importChoice.code && !importChoice.issues) {
+      setNewRepoHint("Tick Code, Issues and pull requests, or both.", "bad");
+      return;
+    }
+    if (importChoice?.issues && !importChoice.code) source = "provider";
     if (source === "provider") {
       if (!state.session?.sessionToken) {
         setNewRepoHint("Sign in to import a GitHub, GitLab, Codeberg, or Gitea repository.", "bad");
@@ -3002,13 +3417,23 @@
       $("[data-new-repo-name]")?.focus();
       return;
     }
+    const nameProblem = $("[data-new-repo-name-check]") ? newRepoNameProblem(name) : "";
+    if (nameProblem) {
+      setNewRepoHint(nameProblem, "bad");
+      $("[data-new-repo-name]")?.focus();
+      return;
+    }
     if (source === "empty") {
       await createHostedRepository({ name, visibility, description, ...hostedCreateExtras() });
       return;
     }
     if (source === "remote" && hostedImportAllowed(sourceValue)) {
       const { organization } = hostedCreateExtras();
-      await createHostedRepository({ name, visibility, description, organization, importUrl: sourceValue });
+      const providerToken = String($("[data-new-repo-provider-token]")?.value || "").trim();
+      const created = await createHostedRepository({ name, visibility, description, organization, importUrl: sourceValue });
+      const token = $("[data-new-repo-provider-token]");
+      if (token) token.value = "";
+      if (created && importChoice?.issues) void startNewRepoIssuesImport(sourceValue, providerToken);
       return;
     }
     if (!sourceValue) {

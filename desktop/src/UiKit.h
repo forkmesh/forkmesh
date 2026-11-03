@@ -216,6 +216,7 @@ void addPasswordReveal(QLineEdit *edit);
 inline constexpr int kCellDisplayChars = 512;
 inline constexpr int kDataTableFitRows = 100;
 QString cellDisplayText(const QString &text, int maxChars = kCellDisplayChars);
+QString elideRightToWidth(const QString &text, const QFontMetrics &metrics, int width);
 
 QPixmap shownPixels(const QWidget *widget);
 

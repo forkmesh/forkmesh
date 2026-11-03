@@ -4375,6 +4375,10 @@ def _merge_front_matter_values(raw: bytes) -> dict[str, str] | None:
     return values
 
 
+def _merge_review_account(value: Any) -> str:
+    return str(value or "").strip().lower()
+
+
 def _merge_peer_review_gate(
     config: RefreshConfig,
     request: Mapping[str, Any],
@@ -4391,6 +4395,7 @@ def _merge_peer_review_gate(
     pull_author = str((metadata or {}).get("author") or "")
     if not pull_author:
         return False
+    pull_account = _merge_review_account((metadata or {}).get("authorName"))
     prefix = ".forkmesh/pulls/%d/" % request["pullNumber"]
     try:
         _code, listing = _merge_git(
@@ -4420,10 +4425,14 @@ def _merge_peer_review_gate(
         values = _merge_front_matter_values(raw)
         if not values or values.get("type") != "review":
             continue
-        reviewer = str(values.get("author") or "")
+        key = str(values.get("author") or "")
         state = str(values.get("state") or "")
-        if not reviewer or reviewer == pull_author or not values.get("sig"):
+        if not key or key == pull_author or not values.get("sig"):
             continue
+        account = _merge_review_account(values.get("authorName"))
+        if account and account == pull_account:
+            continue
+        reviewer = "account:" + account if account else "key:" + key
         if state in ("approved", "changes_requested"):
             latest[reviewer] = state
         else:

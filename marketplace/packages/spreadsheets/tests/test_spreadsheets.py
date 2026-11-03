@@ -155,6 +155,33 @@ def test_saves_check_the_revision_so_two_devices_cannot_overwrite_each_other():
     assert forced["status"] == 200 and forced["data"]["workbook"]["revision"] == 3
 
 
+def test_a_crm_link_rides_in_the_sealed_meta_and_survives_renames():
+    runtime = Runtime()
+    link = {"kind": "crm", "org": "acme-labs", "list": "ab" * 16}
+    made = call(runtime.use("POST", body={"title": "Leads", "data": packed(BOOK), "link": link}),
+                "/api/spreadsheets/workbooks")["data"]["workbook"]
+    assert made["link"] == link
+    assert call(runtime.use("GET"), "/api/spreadsheets")["data"]["workbooks"][0]["link"] == link
+    stored = "\n".join(str(v) for row in runtime.db.execute("SELECT meta FROM spreadsheets_books") for v in tuple(row))
+    assert "acme-labs" not in stored
+    renamed = call(runtime.use("PUT", body={"title": "Leads 2", "revision": 1}),
+                   f"/api/spreadsheets/workbooks/{made['id']}")["data"]["workbook"]
+    assert renamed["title"] == "Leads 2" and renamed["link"] == link
+    unlinked = call(runtime.use("PUT", body={"link": None, "revision": 2}),
+                    f"/api/spreadsheets/workbooks/{made['id']}")["data"]["workbook"]
+    assert unlinked["title"] == "Leads 2" and "link" not in unlinked
+    for bad in ({"kind": "crm", "org": "Acme!", "list": "ab" * 16},
+                {"kind": "crm", "org": "acme", "list": "../x"},
+                {"kind": "other", "org": "acme", "list": "no-pipeline"}):
+        book = call(runtime.use("POST", body={"title": "x", "data": packed(BOOK), "link": bad}),
+                    "/api/spreadsheets/workbooks")["data"]["workbook"]
+        assert "link" not in book
+    piped = call(runtime.use("POST", body={"title": "x", "data": packed(BOOK),
+                                           "link": {"kind": "crm", "org": "acme", "list": "pipeline:grants"}}),
+                 "/api/spreadsheets/workbooks")["data"]["workbook"]
+    assert piped["link"]["list"] == "pipeline:grants"
+
+
 def test_only_gzip_base64_payloads_within_the_limits_are_stored():
     runtime = Runtime()
     for bad in ("", "not base64!", base64.b64encode(b"plain text").decode(), "H4sI" + "A" * (spreadsheets.MAX_DATA_CHARS + 4)):
@@ -284,3 +311,13 @@ def test_print_frame_cannot_run_scripts():
     source = (PACKAGE / "content" / "web" / "page.js").read_text(encoding="utf-8")
     assert 'frame.setAttribute("sandbox", "allow-same-origin allow-modals");' in source
     assert source.index('frame.setAttribute("sandbox"') < source.index("frame.srcdoc = html")
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_crm_link_diff_and_conflict_rules_hold_up_when_run():
+    result = subprocess.run(
+        [NODE, "--no-warnings", str(PACKAGE / "tests" / "crm_link_checks.js")],
+        capture_output=True, text=True, timeout=120,
+        env={"PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"), "TZ": "UTC"})
+    assert result.returncode == 0, result.stdout[-4000:] + result.stderr[-4000:]
+    assert "crm link checks passed" in result.stdout

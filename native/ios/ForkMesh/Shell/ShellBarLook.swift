@@ -315,6 +315,7 @@ struct ShellBarPreview: View {
     let iconSize: CGFloat
     let cellWidth: CGFloat
     let cellHeight: CGFloat
+    var plain: Bool = false
 
     @State private var available: CGFloat = 0
 
@@ -359,26 +360,29 @@ struct ShellBarPreview: View {
                         ShellBarCellLabel(
                             item: entry.element, iconSize: glyph, showsCounts: style.showCounts, look: style,
                             heat: style.highlightFrequent && entry.element.id == "preview-chat" ? 0.9 : 0)
-                            .frame(width: CGFloat(metrics.slot), height: side)
+                            .frame(width: plain ? nil : CGFloat(metrics.slot), height: side)
+                            .frame(maxWidth: plain ? .infinity : nil)
                             .shellBarSlotChrome(shape, style: style, selected: entry.element.selected)
                     }
                 }
             }
         }
         .padding(CGFloat(metrics.padding))
-        .frame(width: style.width == .fit ? CGFloat(metrics.width) : nil)
-        .frame(maxWidth: style.width == .fit ? nil : .infinity, alignment: .leading)
+        .frame(width: style.width == .fit && !plain ? CGFloat(metrics.width) : nil)
+        .frame(maxWidth: style.width == .fit && !plain ? nil : .infinity, alignment: .leading)
         .shellBarBacked(style, shape: ShellBarShapes.bar(style, height: side, rows: metrics.rows), interactive: false)
         .frame(maxWidth: .infinity)
         .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { (width: CGFloat) in
             available = width
         }
-        .padding(.vertical, FmSpace.x4)
-        .padding(.horizontal, FmSpace.x2)
+        .padding(.vertical, plain ? 0 : FmSpace.x4)
+        .padding(.horizontal, plain ? 0 : FmSpace.x2)
         .background {
-            LinearGradient(
-                colors: [fm.accent.opacity(fm.dark ? 0.45 : 0.3), fm.bgBase, fm.accent.opacity(fm.dark ? 0.2 : 0.12)],
-                startPoint: .topLeading, endPoint: .bottomTrailing)
+            if !plain {
+                LinearGradient(
+                    colors: [fm.accent.opacity(fm.dark ? 0.45 : 0.3), fm.bgBase, fm.accent.opacity(fm.dark ? 0.2 : 0.12)],
+                    startPoint: .topLeading, endPoint: .bottomTrailing)
+            }
         }
         .allowsHitTesting(false)
         .accessibilityElement(children: .ignore)

@@ -2881,6 +2881,7 @@ const FMSheets = (() => {
           cf: sheet.conditional, dv: sheet.validations, notes: keyed(sheet.notes), links: keyed(sheet.links), charts: sheet.charts, cells,
         };
       }),
+      ...(wb.crm ? { crm: wb.crm } : {}),
     };
   }
   const safeColor = (value) => (/^#[0-9a-f]{3}(?:[0-9a-f]{3})?$/i.test(String(value ?? "")) ? String(value) : "");
@@ -2942,6 +2943,7 @@ const FMSheets = (() => {
       return sheet;
     });
     wb.active = clampInt(data.active, 0, wb.sheets.length - 1, 0);
+    wb.crm = crmCleanLink(data.crm);
     return wb;
   }
   function clampInt(value, min, max, fallback) {
@@ -5250,6 +5252,347 @@ const FMSheets = (() => {
     }
     return { notes, sheet, selection };
   }
+  const CRM_ID_LABEL = "CRM ID";
+  const CRM_DATE_FORMAT = "yyyy-mm-dd hh:mm";
+  const CRM_VALUE_FORMAT = "#,##0";
+  const CRM_LIST_RE = /^(?:[0-9a-f]{32}|pipeline:[a-z][a-z0-9-]{0,39}|no-pipeline)$/;
+  const CRM_ORG_RE = /^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+  const CRM_ID_RE = /^[0-9a-f]{32}$/;
+  const CRM_CUSTOM = "fields.";
+  function crmKind(field) {
+    if (field === "email") return "email";
+    if (field === "stage") return "stage";
+    if (field === "value") return "number";
+    if (field === "tags") return "tags";
+    if (field === "lastContactedAt") return "date";
+    if (field === "notes" || String(field).startsWith(CRM_CUSTOM)) return "long";
+    return "text";
+  }
+  const crmCollapse = (value) => String(value ?? "").replace(/\s+/g, " ").trim();
+  function crmTags(value) {
+    const out = [];
+    for (const item of Array.isArray(value) ? value : String(value ?? "").split(/[,;]/)) {
+      const tag = crmCollapse(item).slice(0, 40).toLowerCase();
+      if (tag && !out.includes(tag)) out.push(tag);
+    }
+    return out.slice(0, 20);
+  }
+  function crmDealValue(value) {
+    if (typeof value === "boolean") return 0;
+    if (typeof value === "number") return Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0;
+    const digits = String(value ?? "").replace(/[^0-9.]/g, "").split(".")[0];
+    return digits ? Math.max(0, parseInt(digits, 10)) : 0;
+  }
+  function crmSlug(value) {
+    const slug = crmCollapse(value).slice(0, 80).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
+    return /^[a-z][a-z0-9-]{0,39}$/.test(slug) ? slug : "lead";
+  }
+  function crmBlank(field) {
+    const kind = crmKind(field);
+    return kind === "number" || kind === "date" ? 0 : kind === "tags" ? [] : "";
+  }
+  function crmNorm(field, value) {
+    switch (crmKind(field)) {
+      case "email": return crmCollapse(value).toLowerCase();
+      case "stage": return crmSlug(value);
+      case "number": return String(crmDealValue(value));
+      case "tags": return crmTags(value).join(",");
+      case "date": { const ms = Number(value) || 0; return ms > 0 ? String(Math.floor(ms / 60000)) : ""; }
+      case "long": return String(value ?? "").replace(/\r\n?/g, "\n").trim();
+      default: return crmCollapse(value);
+    }
+  }
+  const crmSame = (field, a, b) => crmNorm(field, a) === crmNorm(field, b);
+  const crmNoZone = () => 0;
+  function crmToCell(field, value, zone = crmNoZone) {
+    switch (crmKind(field)) {
+      case "date": {
+        const ms = Number(value) || 0;
+        return { v: ms > 0 ? (ms - zone(ms) * 60000 - EPOCH) / DAY_MS : undefined, fmt: CRM_DATE_FORMAT };
+      }
+      case "number": { const n = crmDealValue(value); return { v: n > 0 ? n : undefined, fmt: CRM_VALUE_FORMAT }; }
+      case "tags": return { v: crmTags(value).join(", ") || undefined, fmt: "@" };
+      default: { const text = String(value ?? ""); return { v: text || undefined, fmt: "@" }; }
+    }
+  }
+  function crmFromCell(field, value, text, zone = crmNoZone) {
+    const kind = crmKind(field);
+    if (kind === "date") {
+      if (typeof value === "number" && value > 0) {
+        const wall = value * DAY_MS + EPOCH;
+        return Math.round(wall + zone(wall) * 60000);
+      }
+      const parsed = String(text || "").trim() ? Date.parse(String(text).trim()) : NaN;
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+    }
+    if (kind === "number") return crmDealValue(typeof value === "number" ? value : text);
+    if (kind === "tags") return crmTags(text);
+    return String(text ?? "");
+  }
+  function crmValueOf(contact, field) {
+    if (!contact) return crmBlank(field);
+    if (String(field).startsWith(CRM_CUSTOM)) {
+      const fields = contact.fields && typeof contact.fields === "object" ? contact.fields : {};
+      return String(fields[field.slice(CRM_CUSTOM.length)] ?? "");
+    }
+    return contact[field] ?? crmBlank(field);
+  }
+  function crmProject(contact, fields) {
+    const out = {};
+    for (const field of fields) out[field] = crmValueOf(contact, field);
+    return out;
+  }
+  function crmCleanLink(raw) {
+    if (!raw || typeof raw !== "object" || raw.kind !== "crm") return null;
+    const org = String(raw.org || ""), list = String(raw.list || "");
+    if (!CRM_ORG_RE.test(org) || !CRM_LIST_RE.test(list)) return null;
+    const columns = (Array.isArray(raw.columns) ? raw.columns : [])
+      .filter((col) => col && typeof col.field === "string" && typeof col.label === "string" && col.label.trim())
+      .map((col) => ({ field: col.field, label: col.label.slice(0, 60) })).slice(0, 80);
+    const snapshot = {};
+    if (raw.snapshot && typeof raw.snapshot === "object") {
+      for (const [id, values] of Object.entries(raw.snapshot)) if (CRM_ID_RE.test(id) && values && typeof values === "object") snapshot[id] = values;
+    }
+    const pending = {};
+    if (raw.pending && typeof raw.pending === "object") for (const id of Object.keys(raw.pending)) if (CRM_ID_RE.test(id)) pending[id] = 1;
+    const strings = (list) => (Array.isArray(list) ? list.map(String).slice(0, 200) : []);
+    return {
+      kind: "crm", org, list, listName: String(raw.listName || "").slice(0, 120), flow: String(raw.flow || "").slice(0, 40),
+      stages: strings(raw.stages), members: strings(raw.members), canAdd: raw.canAdd !== false, canWrite: raw.canWrite !== false,
+      sheet: String(raw.sheet || "").slice(0, 100), columns, snapshot, pending,
+      pulledAt: Number(raw.pulledAt) || 0, syncedAt: Number(raw.syncedAt) || 0,
+    };
+  }
+  function crmSheetOf(wb, link) {
+    if (!link) return null;
+    return wb.sheets.find((s) => s.name === link.sheet) || wb.sheets.find((s) => s.name.toLowerCase() === String(link.sheet).toLowerCase()) || null;
+  }
+  function crmLayout(wb, sheet, calc, link) {
+    const byLabel = new Map(link.columns.map((col) => [col.label.trim().toLowerCase(), col.field]));
+    const { c2 } = extentOf(sheet);
+    const cols = [];
+    let idCol = -1;
+    for (let c = 0; c <= c2; c++) {
+      const text = String(displayText(wb, sheet, calc, 0, c)).trim().toLowerCase();
+      if (!text) continue;
+      if (text === CRM_ID_LABEL.toLowerCase()) { if (idCol < 0) idCol = c; continue; }
+      const field = byLabel.get(text);
+      if (field && !cols.some((col) => col.field === field)) cols.push({ c, field });
+    }
+    const found = new Set(cols.map((col) => col.field));
+    return { idCol, cols, missing: link.columns.map((col) => col.field).filter((field) => !found.has(field)) };
+  }
+  function crmReadRows(wb, sheet, calc, link, zone = crmNoZone) {
+    const layout = crmLayout(wb, sheet, calc, link);
+    const rows = [];
+    if (layout.idCol < 0) return { ...layout, rows };
+    const { r2 } = extentOf(sheet);
+    for (let r = 1; r <= r2; r++) {
+      const id = String(displayText(wb, sheet, calc, r, layout.idCol)).trim().toLowerCase();
+      const values = {};
+      let filled = false;
+      for (const { c, field } of layout.cols) {
+        const value = calc.cellValue(sheet, r, c);
+        const text = isErr(value) ? value.code : displayText(wb, sheet, calc, r, c, value);
+        if (String(text).trim()) filled = true;
+        values[field] = crmFromCell(field, isErr(value) ? text : value, text, zone);
+      }
+      if (!id && !filled) continue;
+      rows.push({ row: r, id, values });
+    }
+    return { ...layout, rows };
+  }
+  function crmFilled(values) {
+    const out = {};
+    for (const [field, value] of Object.entries(values)) if (!crmSame(field, value, crmBlank(field))) out[field] = value;
+    return out;
+  }
+  function crmDiff(rows, link) {
+    const snapshot = link.snapshot || {}, pending = link.pending || {};
+    const updates = [], creates = [], problems = [], seen = new Set();
+    for (const row of rows) {
+      if (!row.id) {
+        const set = crmFilled(row.values);
+        if (Object.keys(set).length) creates.push({ row: row.row, set });
+        continue;
+      }
+      if (seen.has(row.id)) { problems.push({ row: row.row, id: row.id, error: "duplicate_id" }); continue; }
+      seen.add(row.id);
+      const base = snapshot[row.id];
+      if (!base) {
+        if (pending[row.id]) creates.push({ row: row.row, requestId: row.id, set: crmFilled(row.values) });
+        else problems.push({ row: row.row, id: row.id, error: "unknown_id" });
+        continue;
+      }
+      const set = {}, expect = {};
+      for (const [field, value] of Object.entries(row.values)) {
+        const before = field in base ? base[field] : crmBlank(field);
+        if (crmSame(field, value, before)) continue;
+        set[field] = value;
+        expect[field] = before;
+      }
+      if (!Object.keys(set).length) continue;
+      if ("name" in set && "email" in set && crmNorm("name", base.name) && crmNorm("email", base.email)) {
+        problems.push({ row: row.row, id: row.id, error: "row_mismatch" });
+        continue;
+      }
+      updates.push({ row: row.row, id: row.id, set, expect });
+    }
+    const removed = Object.keys(snapshot).filter((id) => !seen.has(id));
+    return { updates, creates, problems, removed };
+  }
+  function crmThreeWay(mine, base, theirs, fields) {
+    const next = {}, pulls = [], conflicts = [];
+    for (const field of fields) {
+      const t = crmValueOf(theirs, field);
+      const b = base && field in base ? base[field] : crmBlank(field);
+      const has = !!mine && field in mine;
+      const m = has ? mine[field] : b;
+      next[field] = t;
+      if (crmSame(field, t, b)) continue;
+      if (crmSame(field, m, b)) { if (has && !crmSame(field, m, t)) pulls.push({ field, value: t }); continue; }
+      if (crmSame(field, m, t)) continue;
+      next[field] = b;
+      conflicts.push({ field, mine: m, theirs: t, base: b });
+    }
+    return { next, pulls, conflicts };
+  }
+  function crmLabel(contact, row) {
+    return crmCollapse(contact?.name) || crmCollapse(contact?.email) || `Row ${row + 1}`;
+  }
+  function crmMerge(rows, link, contacts) {
+    const fields = link.columns.map((col) => col.field);
+    const current = new Map(contacts.map((contact) => [contact.id, contact]));
+    const snapshot = {}, pulls = [], conflicts = [], gone = [], seen = new Set();
+    for (const row of rows) {
+      if (!row.id || seen.has(row.id)) continue;
+      seen.add(row.id);
+      const theirs = current.get(row.id);
+      const base = link.snapshot[row.id];
+      if (!theirs) {
+        if (!base) continue;
+        const edited = Object.entries(row.values).some(([field, value]) => !crmSame(field, value, field in base ? base[field] : crmBlank(field)));
+        if (edited) snapshot[row.id] = base;
+        gone.push({ row: row.row, id: row.id, edited });
+        continue;
+      }
+      const result = base ? crmThreeWay(row.values, base, theirs, fields) : {
+        next: crmProject(theirs, fields), conflicts: [],
+        pulls: fields.filter((field) => field in row.values && !crmSame(field, row.values[field], crmValueOf(theirs, field))).map((field) => ({ field, value: crmValueOf(theirs, field) })),
+      };
+      snapshot[row.id] = result.next;
+      for (const pull of result.pulls) pulls.push({ id: row.id, ...pull });
+      for (const conflict of result.conflicts) conflicts.push({ id: row.id, name: crmLabel(theirs, row.row), ...conflict });
+    }
+    const added = contacts.filter((contact) => !seen.has(contact.id));
+    for (const contact of added) snapshot[contact.id] = crmProject(contact, fields);
+    const pending = {};
+    for (const id of Object.keys(link.pending || {})) if (!snapshot[id] && seen.has(id)) pending[id] = 1;
+    return { pulls, conflicts, added, gone, snapshot, pending };
+  }
+  function crmApply(link, diff, results, rows) {
+    const fields = link.columns.map((col) => col.field);
+    const snapshot = { ...link.snapshot }, pending = { ...link.pending };
+    const byId = new Map(rows.filter((row) => row.id).map((row) => [row.id, row]));
+    const sent = new Map([...diff.updates.map((item) => [item.id, item]), ...diff.creates.map((item) => [item.requestId, item])]);
+    const pulls = [], conflicts = [], problems = [];
+    let updated = 0, created = 0;
+    for (const result of results) {
+      const key = result.id || result.ref;
+      const item = sent.get(key) || sent.get(result.ref);
+      if (!item) continue;
+      const row = byId.get(key) || byId.get(result.ref);
+      const where = row ? row.row : item.row;
+      if (result.status === "updated" || result.status === "unchanged" || result.status === "created" || result.status === "conflict") {
+        const base = result.status === "conflict" ? snapshot[key] : { ...(result.status === "created" ? {} : snapshot[key]), ...item.set };
+        const merged = crmThreeWay(row ? row.values : null, base, result.contact, fields);
+        snapshot[result.id || key] = merged.next;
+        for (const pull of merged.pulls) pulls.push({ id: result.id || key, ...pull });
+        for (const conflict of merged.conflicts) conflicts.push({ id: result.id || key, name: crmLabel(result.contact, where), ...conflict });
+        if (result.status === "created") { delete pending[key]; created += 1; }
+        else if (result.status === "updated") updated += 1;
+        continue;
+      }
+      problems.push({ row: where, id: key, error: result.status === "missing" ? "deleted_in_crm" : String(result.error || "error"), stages: result.stages });
+    }
+    return { snapshot, pending, pulls, conflicts, problems, updated, created };
+  }
+  function crmResolve(snapshot, conflicts, choices) {
+    const next = { ...snapshot }, pulls = [];
+    let again = false;
+    conflicts.forEach((conflict, index) => {
+      next[conflict.id] = { ...(next[conflict.id] || {}), [conflict.field]: conflict.theirs };
+      if (choices[index] === "theirs") pulls.push({ id: conflict.id, field: conflict.field, value: conflict.theirs });
+      else again = true;
+    });
+    return { snapshot: next, pulls, again };
+  }
+  function crmBatches(diff, maxRows = 500, maxBytes = 1500000) {
+    const batches = [];
+    let current = { updates: [], creates: [] }, size = 0;
+    const push = (kind, item, body) => {
+      const bytes = JSON.stringify(body).length;
+      if (current.updates.length + current.creates.length >= maxRows || (size && size + bytes > maxBytes)) { batches.push(current); current = { updates: [], creates: [] }; size = 0; }
+      current[kind].push(body);
+      size += bytes;
+    };
+    for (const item of diff.updates) push("updates", item, { id: item.id, set: item.set, expect: item.expect });
+    for (const item of diff.creates) push("creates", item, { ref: item.requestId, requestId: item.requestId, set: item.set });
+    if (current.updates.length || current.creates.length) batches.push(current);
+    return batches;
+  }
+  function crmWriteCell(tx, wb, sheet, r, c, field, value, zone) {
+    const { v, fmt } = crmToCell(field, value, zone);
+    const old = sheet.cells.get(cellKey(r, c));
+    const style = old && old.s ? wb.styles[old.s] || {} : {};
+    const styleId = style.fmt ? old.s : internStyle(wb, { ...style, fmt });
+    tx.setCell(sheet, cellKey(r, c), makeCell(v, undefined, styleId));
+  }
+  function crmWriteRow(tx, wb, sheet, layout, r, contact, zone) {
+    tx.setCell(sheet, cellKey(r, layout.idCol), makeCell(contact.id, undefined, internStyle(wb, { fmt: "@", color: "#888888" })));
+    for (const { c, field } of layout.cols) crmWriteCell(tx, wb, sheet, r, c, field, crmValueOf(contact, field), zone);
+  }
+  function crmBuildSheet(tx, wb, sheet, link, contacts, zone = crmNoZone) {
+    const header = internStyle(wb, { b: true });
+    tx.setCell(sheet, cellKey(0, 0), makeCell(CRM_ID_LABEL, undefined, header));
+    link.columns.forEach((col, index) => tx.setCell(sheet, cellKey(0, index + 1), makeCell(col.label, undefined, header)));
+    const layout = { idCol: 0, cols: link.columns.map((col, index) => ({ c: index + 1, field: col.field })) };
+    contacts.forEach((contact, index) => crmWriteRow(tx, wb, sheet, layout, index + 1, contact, zone));
+    tx.set(sheet, "rowCount", Math.max(sheet.rowCount, contacts.length + 200));
+    tx.set(sheet, "colCount", Math.max(sheet.colCount, link.columns.length + 2));
+    tx.set(sheet, "freezeRows", 1);
+    tx.set(sheet, "hiddenCols", new Set([0]));
+    const widths = new Map(sheet.colWidths);
+    link.columns.forEach((col, index) => widths.set(index + 1, crmKind(col.field) === "long" ? 240 : col.field === "email" ? 200 : crmKind(col.field) === "date" ? 130 : 140));
+    tx.set(sheet, "colWidths", widths);
+    const stageAt = link.columns.findIndex((col) => col.field === "stage");
+    const ownerAt = link.columns.findIndex((col) => col.field === "owner");
+    const rules = [];
+    const span = (c) => rangeText({ r1: 1, c1: c, r2: Math.max(1, sheet.rowCount - 1), c2: c });
+    if (stageAt >= 0 && link.stages.length) rules.push({ id: uid(), range: span(stageAt + 1), type: "list", values: link.stages.slice(0, 500), dropdown: true, strict: false });
+    if (ownerAt >= 0 && link.members.length) rules.push({ id: uid(), range: span(ownerAt + 1), type: "list", values: link.members.slice(0, 500), dropdown: true, strict: false });
+    tx.set(sheet, "validations", [...sheet.validations, ...rules]);
+    return layout;
+  }
+  function crmLinkFrom(payload, org, sheetName) {
+    return crmCleanLink({
+      kind: "crm", org, list: payload.list.id, listName: payload.list.name, flow: payload.list.flow, stages: payload.list.stages,
+      members: payload.members, canAdd: payload.list.canAdd, canWrite: payload.canWrite, sheet: sheetName,
+      columns: payload.columns, snapshot: {}, pending: {}, pulledAt: Number(payload.readAt) || 0,
+    });
+  }
+  function crmWorkbook(payload, org, zone = crmNoZone) {
+    const wb = createWorkbook();
+    const sheet = wb.sheets[0];
+    sheet.name = validSheetName(payload.list.name) ? String(payload.list.name).trim().slice(0, 100) : "CRM list";
+    const link = crmLinkFrom(payload, org, sheet.name);
+    const fields = link.columns.map((col) => col.field);
+    const tx = new Transaction(wb, "Link CRM list");
+    crmBuildSheet(tx, wb, sheet, link, payload.contacts, zone);
+    for (const contact of payload.contacts) link.snapshot[contact.id] = crmProject(contact, fields);
+    wb.crm = link;
+    return wb;
+  }
   return {
     MAX_ROWS, MAX_COLS, ERRORS, SheetError, isErr, colName, colIndex, cellKey, keyRow, keyCol, addr, parseAddr, parseRange, rangeText, normRange, inRange, rangesOverlap,
     serialFromDate, dateFromSerial, serialFromJsDate, formatValue, formatGeneral, valueToText, parseInput, isDateFormat, BUILTIN_FORMATS, PALETTE,
@@ -5261,6 +5604,11 @@ const FMSheets = (() => {
     chartData, pivotTable, serializeWorkbook, deserializeWorkbook, uid, DEFAULT_COL_WIDTH, DEFAULT_ROW_HEIGHT,
     readableExport, readZip, writeZip, parseXml, readXlsx, writeXlsx, readXls, readCfb, readSpreadsheetMl, r1c1ToA1, parseCsv, workbookFromRows, sheetToCsv, sniffFormat, importWorkbook,
     packWorkbook, unpackWorkbook, writeXls, writeCfb, compileBiffFormula, readOds, writeOds, openFormulaText, fromOpenFormula, workbookHtml, sheetHtmlTable, sheetToMarkdown, workbookJson, tablesToWorkbook, aiContext, applyAiActions, AI_ACTIONS, bytesToBase64, base64ToBytes, gzipText, gunzipText, MONTHS, DAYS,
+    crm: {
+      ID_LABEL: CRM_ID_LABEL, kind: crmKind, norm: crmNorm, same: crmSame, blank: crmBlank, toCell: crmToCell, fromCell: crmFromCell, valueOf: crmValueOf, project: crmProject,
+      cleanLink: crmCleanLink, sheetOf: crmSheetOf, layout: crmLayout, readRows: crmReadRows, diff: crmDiff, threeWay: crmThreeWay, merge: crmMerge, apply: crmApply,
+      resolve: crmResolve, batches: crmBatches, writeCell: crmWriteCell, writeRow: crmWriteRow, buildSheet: crmBuildSheet, linkFrom: crmLinkFrom, workbook: crmWorkbook,
+    },
   };
 })();
 if (typeof window === "undefined" || !window.ForkMeshDashboard) {
@@ -5369,6 +5717,7 @@ window.ForkMeshDashboard.registerPage("spreadsheets", ({ select: $, session, esc
     }
     list.innerHTML = items.map((item) => `<div class="sheets-row" data-sheets-row="${esc(item.id)}">
         <button type="button" class="sheets-row-main" data-sheets-open="${esc(item.id)}"><i data-lucide="sheet"></i><span class="sheets-row-title">${esc(item.title)}</span></button>
+        ${item.link ? `<span class="sheets-row-meta" title="Linked to a CRM list in ${esc(item.link.org)}">CRM list</span>` : ""}
         <span class="sheets-row-meta">${esc(when(item.updatedAt))}</span>
         <span class="sheets-row-meta sheets-row-size">${esc(formatBytes(Number(item.bytes || 0)))}</span>
         <button type="button" class="fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon" data-sheets-row-menu="${esc(item.id)}" aria-label="More actions for ${esc(item.title)}"><i data-lucide="ellipsis"></i></button>
@@ -5449,6 +5798,7 @@ window.ForkMeshDashboard.registerPage("spreadsheets", ({ select: $, session, esc
     draw();
     updateFormulaBar();
     updateStatus();
+    scheduleCrmCount();
   }
   function history(direction) {
     const d = doc();
@@ -5488,9 +5838,11 @@ window.ForkMeshDashboard.registerPage("spreadsheets", ({ select: $, session, esc
     try {
       const data = await S.packWorkbook(d.wb, d.calc);
       if (data.length > (state.limits.maxDataChars || 3000000)) throw new Error("this spreadsheet is too large to keep in your account; download it as .xlsx");
+      const linkChanged = d.linkChanged;
       const payload = d.id
-        ? await request(`${API}/workbooks/${encodeURIComponent(d.id)}`, "PUT", { title: d.title, data, revision: d.revision, force })
-        : await request(`${API}/workbooks`, "POST", { title: d.title, data });
+        ? await request(`${API}/workbooks/${encodeURIComponent(d.id)}`, "PUT", { title: d.title, data, revision: d.revision, force, ...(linkChanged ? { link: crmLocator(d.wb) } : {}) })
+        : await request(`${API}/workbooks`, "POST", { title: d.title, data, link: crmLocator(d.wb) });
+      if (linkChanged) d.linkChanged = false;
       d.id = payload.workbook.id;
       d.revision = Number(payload.workbook.revision || 0);
       d.conflict = false;
@@ -5576,6 +5928,9 @@ window.ForkMeshDashboard.registerPage("spreadsheets", ({ select: $, session, esc
     updateFormulaBar();
     updateStatus();
     renderSaveState();
+    Object.assign(crmState, { busy: "", pending: 0, local: [], remote: [], error: "" });
+    crmCount();
+    if (d.wb.crm && sheet() === crmSheet() && d.sel.r === 0 && d.sel.c === 0) setSelection(1, 1);
     focusGrid();
   }
   async function closeEditor() {
@@ -7670,6 +8025,7 @@ window.ForkMeshDashboard.registerPage("spreadsheets", ({ select: $, session, esc
     const d = doc();
     if (d.dirty) await save();
     const copy = S.deserializeWorkbook(S.serializeWorkbook(d.wb, d.calc));
+    copy.crm = null;
     await createWorkbook(copy, `Copy of ${d.title}`.slice(0, 120));
     toast("Made a copy");
   }
@@ -8402,6 +8758,10 @@ window.ForkMeshDashboard.registerPage("spreadsheets", ({ select: $, session, esc
     q("[data-sheets-add-sheet]").addEventListener("click", () => addSheet(false));
     q("[data-sheets-all-sheets]").addEventListener("click", (event) => openMenu(event.currentTarget.getBoundingClientRect(), doc().wb.sheets.map((s, i) => ({ label: s.name + (s.hidden ? " (hidden)" : ""), checked: i === doc().wb.active, action: () => { if (s.hidden) act("Unhide sheet", (tx) => tx.set(s, "hidden", false)); switchSheet(i, true); } }))));
     q("[data-sheets-back]").addEventListener("click", closeEditor);
+    q("[data-sheets-crm-refresh]").addEventListener("click", () => crmRefresh());
+    q("[data-sheets-crm-sync]").addEventListener("click", () => crmSync());
+    q("[data-sheets-crm-problems]").addEventListener("click", crmProblemsDialog);
+    q("[data-sheets-crm-menu]").addEventListener("click", (event) => crmMenu(event.currentTarget.getBoundingClientRect()));
     const title = q("[data-sheets-title]");
     title.addEventListener("change", () => { const d = doc(); const next = title.value.trim().slice(0, 120); if (next && next !== d.title) { d.title = next; markDirty(); } else title.value = d.title; });
     title.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); title.blur(); focusGrid(); } });
@@ -8427,13 +8787,333 @@ window.ForkMeshDashboard.registerPage("spreadsheets", ({ select: $, session, esc
     ]);
   }
 
+  const CRM_API = "/api/crm";
+  const crmZone = (ms) => new Date(ms).getTimezoneOffset();
+  const crmState = { busy: "", pending: 0, local: [], remote: [], error: "", timer: 0 };
+  const crmProblems = () => [...crmState.local, ...crmState.remote];
+  const CRM_PROBLEMS = {
+    duplicate_id: "it repeats another row's CRM ID",
+    unknown_id: "its CRM ID is not a contact on this list; clear the ID to add the row as a new contact",
+    row_mismatch: "its name and email both changed, so it may hold another contact's CRM ID; change one of them, sync, then the other",
+    deleted_in_crm: "the contact was deleted in the CRM",
+    unknown_stage: "the stage is not one of the pipeline's stages",
+    contact_email_exists: "another contact in the CRM already has this email",
+    invalid_email: "the email address is not valid",
+    name_or_email_required: "a contact needs a name or an email",
+    list_cannot_add: "new contacts cannot be added to No pipeline; add them to a pipeline list",
+    crm_full: "the CRM has reached its contact limit",
+    invalid_field: "one of its columns cannot be saved to the CRM",
+    duplicate_contact_id: "it repeats another row's CRM ID",
+    invalid_contact_id: "its CRM ID is not valid",
+  };
+  const crmLink = () => doc()?.wb.crm || null;
+  const crmLocator = (wb) => (wb.crm ? { kind: "crm", org: wb.crm.org, list: wb.crm.list } : null);
+  function crmNewId() {
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+  function crmSheet() {
+    const d = doc(), link = crmLink();
+    if (!link) return null;
+    let found = S.crm.sheetOf(d.wb, link);
+    if (!found) {
+      found = d.wb.sheets.find((s) => String(S.displayText(d.wb, s, d.calc, 0, 0)).trim().toLowerCase() === S.crm.ID_LABEL.toLowerCase()) || null;
+      if (found) link.sheet = found.name;
+    }
+    return found;
+  }
+  function crmRead() {
+    const s = crmSheet();
+    return s ? S.crm.readRows(doc().wb, s, doc().calc, crmLink(), crmZone) : null;
+  }
+  function crmRequestError(error) {
+    const code = String(error?.payload?.error || "");
+    if (error?.status === 401) return "sign in again, then retry";
+    if (code === "list_not_found") return "the list was not found, or it is not shared with you";
+    if (code === "organization_not_found") return "you are not a member of that organization";
+    if (code === "plugin_not_installed") return "the CRM is not installed for that organization";
+    if (code === "read_only_role") return "your role in the organization can read the CRM but not change it";
+    return error?.message || "the CRM did not answer";
+  }
+  function scheduleCrmCount() {
+    clearTimeout(crmState.timer);
+    if (!crmLink()) return;
+    crmState.timer = setTimeout(crmCount, 400);
+  }
+  function crmCount() {
+    const link = crmLink();
+    if (!link) { renderCrm(); return; }
+    const read = crmRead();
+    if (!read || read.idCol < 0) {
+      crmState.pending = 0;
+      crmState.error = "The CRM ID column (hidden column A of the linked sheet) is missing, so rows cannot be matched to contacts. Undo the change that removed it.";
+    } else {
+      const diff = S.crm.diff(read.rows, link);
+      crmState.pending = diff.updates.length + diff.creates.length;
+      crmState.local = diff.problems;
+      if (crmState.error.startsWith("The CRM ID column")) crmState.error = "";
+    }
+    renderCrm();
+  }
+  function renderCrm() {
+    const bar = q("[data-sheets-crm]");
+    const link = crmLink();
+    if (!bar) return;
+    bar.classList.toggle("hidden", !link);
+    if (!link) return;
+    q("[data-sheets-crm-name]").textContent = `${link.listName || "CRM list"} · ${link.org}`;
+    const parts = [];
+    if (crmState.busy) parts.push(crmState.busy);
+    else {
+      if (link.pulledAt) parts.push(`pulled ${when(link.pulledAt)}`);
+      if (link.syncedAt) parts.push(`synced ${when(link.syncedAt)}`);
+      parts.push(crmState.pending ? `${crmState.pending} row${crmState.pending === 1 ? "" : "s"} not synced` : "no changes to sync");
+    }
+    q("[data-sheets-crm-state]").textContent = parts.join(" · ");
+    const error = q("[data-sheets-crm-error]");
+    error.textContent = crmState.error;
+    error.classList.toggle("hidden", !crmState.error);
+    const problems = q("[data-sheets-crm-problems]");
+    const count = crmProblems().length;
+    problems.querySelector("span").textContent = `${count} row${count === 1 ? " needs" : "s need"} attention`;
+    problems.classList.toggle("hidden", !count);
+    const sync = q("[data-sheets-crm-sync]");
+    sync.disabled = !!crmState.busy || !link.canWrite;
+    sync.title = link.canWrite ? "Send the rows you changed or added to the CRM" : "Your role in the organization can read the CRM but not change it";
+    q("[data-sheets-crm-refresh]").disabled = !!crmState.busy;
+  }
+  function crmShow(field, value) {
+    const kind = S.crm.kind(field);
+    if (kind === "date") return Number(value) > 0 ? new Date(Number(value)).toLocaleString() : "(empty)";
+    if (kind === "tags") return (Array.isArray(value) ? value : [value]).filter(Boolean).join(", ") || "(empty)";
+    if (kind === "number") return Number(value) > 0 ? String(value) : "(empty)";
+    const text = String(value ?? "");
+    return text ? (text.length > 200 ? `${text.slice(0, 200)}…` : text) : "(empty)";
+  }
+  const crmFieldLabel = (field) => crmLink()?.columns.find((col) => col.field === field)?.label || field;
+  function crmApplyCells(tx, read, pulls, added = [], gone = []) {
+    const d = doc(), s = crmSheet();
+    const rowOf = new Map(read.rows.filter((row) => row.id).map((row) => [row.id, row.row]));
+    const colOf = new Map(read.cols.map((col) => [col.field, col.c]));
+    for (const pull of pulls) {
+      const r = rowOf.get(pull.id), c = colOf.get(pull.field);
+      if (r !== undefined && c !== undefined) S.crm.writeCell(tx, d.wb, s, r, c, pull.field, pull.value, crmZone);
+    }
+    let r = Math.max(0, ...read.rows.map((row) => row.row)) + 1;
+    if (added.length && s.rowCount < r + added.length + 1) tx.set(s, "rowCount", r + added.length + 200);
+    for (const contact of added) S.crm.writeRow(tx, d.wb, s, read, r++, contact, crmZone);
+    for (const row of [...gone].sort((a, b) => b.row - a.row)) S.deleteRows(tx, d.wb, s, row.row, 1);
+  }
+  function crmPulls(pulls, label) {
+    if (!pulls.length) return;
+    const read = crmRead();
+    if (read && read.idCol >= 0) act(label, (tx) => crmApplyCells(tx, read, pulls));
+  }
+  function crmConflicts(conflicts) {
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = (choices) => {
+        done = true;
+        const link = crmLink();
+        const picked = conflicts.map((conflict, index) => [conflict, choices[index]]).filter(([, choice]) => choice);
+        const resolved = S.crm.resolve(link.snapshot, picked.map(([conflict]) => conflict), picked.map(([, choice]) => choice));
+        link.snapshot = resolved.snapshot;
+        crmPulls(resolved.pulls, "Use the CRM's values");
+        markDirty();
+        resolve({ again: resolved.again, left: conflicts.length - picked.length });
+      };
+      const body = `<p class="text-sm text-muted-foreground">These cells were changed in the CRM after the sheet last read them, and you changed them too. Nothing is saved over the CRM until you pick. Unpicked cells stay as they are and are asked about again on the next sync.</p>
+        <div class="sheets-crm-conflicts">${conflicts.map((conflict, index) => `<fieldset class="sheets-crm-conflict">
+          <legend><strong>${esc(conflict.name)}</strong> · ${esc(crmFieldLabel(conflict.field))}</legend>
+          <label class="sheets-check"><input type="radio" name="crm-${index}" value="mine"> Keep mine: <span>${esc(crmShow(conflict.field, conflict.mine))}</span></label>
+          <label class="sheets-check"><input type="radio" name="crm-${index}" value="theirs"> Use the CRM's: <span>${esc(crmShow(conflict.field, conflict.theirs))}</span></label>
+        </fieldset>`).join("")}</div>`;
+      const pick = (dialog) => conflicts.map((_, index) => dialog.querySelector(`[name="crm-${index}"]:checked`)?.value || "");
+      const { dialog } = openDialog({
+        title: `${conflicts.length} change${conflicts.length === 1 ? "" : "s"} made in the CRM too`, body, wide: true, submit: "Apply", cancel: "Decide later",
+        extra: [
+          { label: "Keep all mine", action: (_, close) => { finish(conflicts.map(() => "mine")); close(); } },
+          { label: "Use all the CRM's", action: (_, close) => { finish(conflicts.map(() => "theirs")); close(); } },
+        ],
+        onSubmit: (dlg) => finish(pick(dlg)),
+      });
+      dialog.addEventListener("close", () => { if (!done) { done = true; resolve({ again: false, left: conflicts.length }); } });
+    });
+  }
+  function crmProblemsDialog() {
+    const link = crmLink(), s = crmSheet();
+    if (!link || !s) return;
+    const list = crmProblems();
+    const body = `<div class="sheets-fn-list">${list.map((problem, index) => `<button type="button" class="sheets-fn-item" data-crm-problem="${index}"><strong>Row ${problem.row + 1}</strong><span>${esc(CRM_PROBLEMS[problem.error] || problem.error.replaceAll("_", " "))}${problem.stages?.length ? `: ${esc(problem.stages.join(", "))}` : ""}</span></button>`).join("")}</div>`;
+    openDialog({
+      title: "Rows that were not synced", body, cancel: "Close",
+      onOpen: (dialog, close) => dialog.querySelectorAll("[data-crm-problem]").forEach((button) => button.addEventListener("click", () => {
+        const problem = list[Number(button.dataset.crmProblem)];
+        close();
+        switchSheet(doc().wb.sheets.indexOf(s), true);
+        setSelection(problem.row, 1);
+      })),
+    });
+  }
+  function crmAddColumns(columns) {
+    const d = doc(), link = crmLink(), s = crmSheet();
+    const known = new Set(link.columns.map((col) => col.field));
+    const labels = new Set(link.columns.map((col) => col.label.toLowerCase()));
+    const fresh = columns.filter((col) => !known.has(col.field) && !labels.has(String(col.label).toLowerCase()));
+    if (!fresh.length || !s) return;
+    act("Add CRM columns", (tx) => {
+      let c = S.extentOf(s).c2 + 1;
+      for (const col of fresh) {
+        tx.setCell(s, S.cellKey(0, c), S.makeCell(col.label, undefined, S.internStyle(d.wb, { b: true })));
+        c += 1;
+      }
+      if (s.colCount < c + 1) tx.set(s, "colCount", c + 1);
+    });
+    link.columns = [...link.columns, ...fresh.map((col) => ({ field: col.field, label: col.label }))];
+  }
+  async function crmRefresh() {
+    const d = doc(), link = crmLink();
+    if (!d || !link || crmState.busy) return;
+    if (d.editing) commitEdit();
+    crmState.busy = "Refreshing from the CRM…";
+    renderCrm();
+    let payload;
+    try {
+      payload = await request(`${CRM_API}/${encodeURIComponent(link.org)}/contacts/sync?list=${encodeURIComponent(link.list)}`);
+      crmState.error = "";
+    } catch (error) {
+      crmState.error = `Could not refresh from the CRM: ${crmRequestError(error)}.`;
+    } finally { crmState.busy = ""; }
+    if (doc() !== d || !payload) { renderCrm(); return; }
+    Object.assign(link, {
+      listName: String(payload.list.name || link.listName), flow: String(payload.list.flow || ""), stages: (payload.list.stages || []).map(String),
+      members: (payload.members || []).map(String), canAdd: payload.list.canAdd !== false, canWrite: payload.canWrite !== false,
+    });
+    crmAddColumns(payload.columns || []);
+    const read = crmRead();
+    if (!read || read.idCol < 0) { crmCount(); return; }
+    const merged = S.crm.merge(read.rows, link, payload.contacts || []);
+    const gone = merged.gone.filter((row) => !row.edited);
+    if (merged.pulls.length || merged.added.length || gone.length) act("Refresh from CRM", (tx) => crmApplyCells(tx, read, merged.pulls, merged.added, gone));
+    link.snapshot = merged.snapshot;
+    link.pending = merged.pending;
+    link.pulledAt = Date.now();
+    crmState.remote = [];
+    markDirty();
+    crmCount();
+    const kept = merged.gone.length - gone.length;
+    toast(`Refreshed from the CRM: ${merged.pulls.length} cell${merged.pulls.length === 1 ? "" : "s"} updated, ${merged.added.length} contact${merged.added.length === 1 ? "" : "s"} added, ${gone.length} removed${kept ? `, ${kept} edited row${kept === 1 ? "" : "s"} kept although ${kept === 1 ? "it left" : "they left"} the list` : ""}.`);
+    if (merged.conflicts.length) await crmConflicts(merged.conflicts);
+    crmCount();
+  }
+  async function crmSync(round = 0) {
+    const d = doc(), link = crmLink();
+    if (!d || !link || crmState.busy) return;
+    if (!link.canWrite) { toast("Your role in the organization can read the CRM but not change it."); return; }
+    if (d.editing) commitEdit();
+    let read = crmRead();
+    if (!read || read.idCol < 0) { crmCount(); return; }
+    const diff = S.crm.diff(read.rows, link);
+    const fresh = diff.creates.filter((item) => !item.requestId);
+    if (fresh.length) {
+      const s = crmSheet();
+      for (const item of fresh) item.requestId = crmNewId();
+      act("Add CRM IDs", (tx) => {
+        const style = S.internStyle(d.wb, { fmt: "@", color: "#888888" });
+        for (const item of fresh) tx.setCell(s, S.cellKey(item.row, read.idCol), S.makeCell(item.requestId, undefined, style));
+      });
+      link.pending = { ...link.pending, ...Object.fromEntries(fresh.map((item) => [item.requestId, 1])) };
+      await save();
+    }
+    crmState.local = diff.problems;
+    if (!diff.updates.length && !diff.creates.length) {
+      renderCrm();
+      toast(diff.problems.length ? "Nothing was sent: the changed rows need attention first." : "Nothing to sync: the sheet matches the CRM.");
+      return;
+    }
+    crmState.busy = "Syncing to the CRM…";
+    renderCrm();
+    const results = [];
+    try {
+      for (const batch of S.crm.batches(diff)) {
+        const payload = await request(`${CRM_API}/${encodeURIComponent(link.org)}/contacts/sync`, "POST", { list: link.list, ...batch });
+        results.push(...(payload.results || []));
+      }
+      crmState.error = "";
+    } catch (error) {
+      crmState.error = `${results.length ? "Part of the sync was saved; the rest" : "The sync"} did not reach the CRM: ${crmRequestError(error)}. Press Sync to CRM again to retry; new rows keep their IDs, so they are not added twice.`;
+    } finally { crmState.busy = ""; }
+    if (doc() !== d) return;
+    read = crmRead();
+    const outcome = S.crm.apply(link, diff, results, read ? read.rows : []);
+    link.snapshot = outcome.snapshot;
+    link.pending = outcome.pending;
+    if (results.length) link.syncedAt = Date.now();
+    crmPulls(outcome.pulls, "Sync to CRM");
+    crmState.remote = outcome.problems;
+    markDirty();
+    crmCount();
+    if (results.length) toast(`Synced to the CRM: ${outcome.updated} contact${outcome.updated === 1 ? "" : "s"} updated, ${outcome.created} added${outcome.problems.length ? `, ${outcome.problems.length} not saved` : ""}${outcome.conflicts.length ? `, ${outcome.conflicts.length} conflict${outcome.conflicts.length === 1 ? "" : "s"} to settle` : ""}.`);
+    if (outcome.conflicts.length) {
+      const settled = await crmConflicts(outcome.conflicts);
+      if (settled.again && round < 2) await crmSync(round + 1);
+    }
+  }
+  function crmMenu(rect) {
+    const link = crmLink();
+    if (!link) return;
+    const crmPath = /^[0-9a-f]{32}$/.test(link.list) ? `/dashboard/crm?list=${link.list}` : `/dashboard/crm?org=${encodeURIComponent(link.org)}`;
+    openMenu(rect, [
+      { label: "Open the list in the CRM", icon: "contact-round", action: () => window.open(crmPath, "_blank", "noopener") },
+      { label: "Rows that need attention…", icon: "triangle-alert", disabled: !crmProblems().length, action: crmProblemsDialog }, "-",
+      { label: "Unlink from the CRM…", icon: "unlink", danger: true, action: async () => {
+        if (!(await confirmDialog("Unlink from the CRM", "The sheet keeps its rows and stops syncing with the CRM list. Nothing in the CRM changes.", "Unlink"))) return;
+        doc().wb.crm = null;
+        doc().linkChanged = true;
+        Object.assign(crmState, { local: [], remote: [], error: "", pending: 0 });
+        markDirty();
+        renderCrm();
+      } },
+    ]);
+  }
+  function crmReplaceUrl(url) {
+    try { window.history.replaceState(null, "", url); } catch { return; }
+  }
+  async function openCrmFromUrl() {
+    const url = new URL(location.href);
+    const org = String(url.searchParams.get("crmOrg") || "").toLowerCase(), list = String(url.searchParams.get("crmList") || "");
+    if (!org && !list) return false;
+    if (!state.installed) { flash("notice", "Install Spreadsheets to open this CRM list as a spreadsheet."); return true; }
+    url.searchParams.delete("crmOrg");
+    url.searchParams.delete("crmList");
+    crmReplaceUrl(url);
+    if (!/^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(org) || !/^(?:[0-9a-f]{32}|pipeline:[a-z][a-z0-9-]{0,39}|no-pipeline)$/.test(list)) {
+      flash("error", "That CRM link is not valid.");
+      return true;
+    }
+    const linked = state.list.find((item) => item.link && item.link.org === org && item.link.list === list);
+    if (linked) {
+      await openWorkbook(linked.id);
+      if (crmLink()) await crmRefresh();
+      return true;
+    }
+    try {
+      const payload = await request(`${CRM_API}/${encodeURIComponent(org)}/contacts/sync?list=${encodeURIComponent(list)}`);
+      const wb = S.crm.workbook(payload, org, crmZone);
+      wb.crm.pulledAt = Date.now();
+      await createWorkbook(wb, `${payload.list.name || "CRM list"} (CRM)`.slice(0, 120));
+      toast(`Linked to the CRM list ${payload.list.name}: ${payload.contacts.length} contact${payload.contacts.length === 1 ? "" : "s"}.`);
+    } catch (error) { flash("error", `Could not open the CRM list: ${crmRequestError(error)}.`); }
+    return true;
+  }
   function bindPage() {
     q("[data-sheets-new]")?.addEventListener("click", () => createWorkbook(S.createWorkbook(), "Untitled spreadsheet"));
     q("[data-sheets-import]")?.addEventListener("click", () => pickFiles(false));
     q("[data-sheets-file]")?.addEventListener("change", (event) => { const files = [...event.target.files]; const into = event.target.dataset.into === "1"; event.target.value = ""; importFiles(files, into); });
     q("[data-sheets-search]")?.addEventListener("input", renderList);
     q("[data-sheets-install]")?.addEventListener("click", async () => {
-      try { await request(`${API}/install`, "POST", {}); flash("notice", "Spreadsheets is installed for your account."); await loadList(); }
+      try { await request(`${API}/install`, "POST", {}); flash("notice", "Spreadsheets is installed for your account."); await loadList(); await openCrmFromUrl(); }
       catch (error) { flash("error", `Could not install: ${error.message}`); }
     });
     q("[data-sheets-items]")?.addEventListener("click", (event) => {
@@ -8449,7 +9129,7 @@ window.ForkMeshDashboard.registerPage("spreadsheets", ({ select: $, session, esc
         { label: "Download .xlsx", icon: "download", action: () => withBook(async (wb, calc) => download(await S.writeXlsx(wb, calc), `${safeFilename(item.title)}.xlsx`, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")) },
         { label: "Download .xls", icon: "download", action: () => withBook((wb, calc) => download(S.writeXls(wb, calc), `${safeFilename(item.title)}.xls`, "application/vnd.ms-excel")) },
         { label: "Download .ods", icon: "download", action: () => withBook(async (wb, calc) => download(await S.writeOds(wb, calc), `${safeFilename(item.title)}.ods`, "application/vnd.oasis.opendocument.spreadsheet")) },
-        { label: "Make a copy", icon: "copy", action: () => withBook(async (wb) => { const payload = await request(`${API}/workbooks`, "POST", { title: `Copy of ${item.title}`.slice(0, 120), data: await S.packWorkbook(wb, null) }); state.list.unshift(payload.workbook); renderList(); }) },
+        { label: "Make a copy", icon: "copy", action: () => withBook(async (wb) => { wb.crm = null; const payload = await request(`${API}/workbooks`, "POST", { title: `Copy of ${item.title}`.slice(0, 120), data: await S.packWorkbook(wb, null) }); state.list.unshift(payload.workbook); renderList(); }) },
         { label: "Rename…", icon: "pencil", action: async () => { const title = await promptDialog("Rename spreadsheet", "Name", item.title); if (!title || !title.trim()) return; const payload = await request(`${API}/workbooks/${encodeURIComponent(item.id)}`, "PUT", { title: title.trim().slice(0, 120), revision: item.revision }); Object.assign(item, payload.workbook); renderList(); } },
         "-", { label: "Delete…", icon: "trash-2", danger: true, action: () => deleteWorkbook(item.id, item.title) },
       ]);
@@ -8500,7 +9180,8 @@ window.ForkMeshDashboard.registerPage("spreadsheets", ({ select: $, session, esc
   }
 
   bindPage();
-  loadList().then(() => {
+  loadList().then(async () => {
+    if (await openCrmFromUrl()) return;
     const id = new URL(location.href).searchParams.get("sheet");
     if (id && state.installed) openWorkbook(id);
   });

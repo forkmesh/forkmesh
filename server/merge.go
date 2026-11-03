@@ -699,6 +699,10 @@ func (e *PullMutationExecutor) reviewGateSatisfied(ctx context.Context, gitDir s
 	if meta.author == "" {
 		return false
 	}
+	pullAccount := ""
+	if meta.matter != nil {
+		pullAccount = reviewAccount(meta.matter.values["authorName"])
+	}
 	prefix := fmt.Sprintf(".forkmesh/pulls/%d/", request.number)
 	listing, code, err := e.git(ctx, gitDir, "ls-tree", "-z", "--name-only", request.ExpectedPullsOid, "--", prefix)
 	if err != nil || code != 0 {
@@ -725,10 +729,18 @@ func (e *PullMutationExecutor) reviewGateSatisfied(ctx context.Context, gitDir s
 		if !ok || matter.values["type"] != "review" {
 			continue
 		}
-		reviewer := strings.TrimSpace(matter.values["author"])
+		key := strings.TrimSpace(matter.values["author"])
 		state := strings.TrimSpace(matter.values["state"])
-		if reviewer == "" || reviewer == meta.author || strings.TrimSpace(matter.values["sig"]) == "" {
+		if key == "" || key == meta.author || strings.TrimSpace(matter.values["sig"]) == "" {
 			continue
+		}
+		account := reviewAccount(matter.values["authorName"])
+		if account != "" && account == pullAccount {
+			continue
+		}
+		reviewer := "key:" + key
+		if account != "" {
+			reviewer = "account:" + account
 		}
 		if state == "approved" || state == "changes_requested" {
 			latest[reviewer] = state
@@ -746,6 +758,10 @@ func (e *PullMutationExecutor) reviewGateSatisfied(ctx context.Context, gitDir s
 		}
 	}
 	return approved
+}
+
+func reviewAccount(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
 }
 
 // requiredChecksSatisfied applies .forkmesh/required-checks.json from the

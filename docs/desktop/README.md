@@ -760,6 +760,15 @@ measured and keep the plain branch icon.
   `PullStore` clears any `base`, `head`, `mergeBase` or `mergeHead` starting
   with `-` when it reads a record, and the range reads pass
   `--end-of-options`. Test: `desktop/tests/test_pull_store_retire.cpp`.
+- **A merge purges the pull's payload from every ref that holds it.** After a
+  merge, `purgePullPayloadHistory` rewrites `changes.patch` and `commits.mbox`
+  out of the ledger branch and the pull's metadata refs. Removing the pull's
+  metadata branch moves it aside to
+  `refs/forkmesh/trash/deleted/forkmesh/pull/<n>` (a recoverable delete), and
+  that tombstone was not rewritten, so the payload stayed reachable. The
+  rewrite now includes the tombstone when it exists; the tombstone itself is
+  kept. Test: `merging purges the stored payload` in
+  `desktop/tests/test_crypto.cpp`.
 - **A leftover `.git/rebase-apply` blocks every later `git am`.** `PullStore`
   tracks live conflict sessions; `mergePull` and `beginPullBranch` treat any
   other `rebase-apply`, or a `MERGE_HEAD` equal to the PR head being merged, as

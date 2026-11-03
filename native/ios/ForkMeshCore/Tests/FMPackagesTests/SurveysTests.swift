@@ -189,6 +189,48 @@ final class SurveysTests: XCTestCase {
         XCTAssertEqual(SurveyText.share(5, of: 2), 1)
     }
 
+    func testDetailActivityAndVisitPings() {
+        var json = detailJSON().obj("survey")
+        let old = Survey(json: json)
+        XCTAssertEqual(old.activity, PageActivity())
+        XCTAssertEqual(old.activity.summary(now: jan1), "No visits in the last 30 days")
+        XCTAssertTrue(old.settings.notifyOnVisit)
+        XCTAssertEqual(old.settings.body.optBool("notifyOnVisit"), true)
+
+        json["activity"] = [
+            "days": 30, "views": 8, "visitors": 1, "interactions": 3, "starts": 1, "submits": 1, "leaves": 0,
+            "lastActivityAt": .int(jan1 - 300_000),
+            "recent": [
+                ["kind": "submit", "detail": "", "label": "Sent the answers", "visitor": "a3f9c1", "at": .int(jan1 - 300_000)],
+                ["kind": "start", "detail": "a1b2c3d4", "label": "Started answering", "visitor": "a3f9c1", "at": .int(jan1 - 600_000)],
+                ["kind": "view", "label": "Opened the survey", "visitor": "a3f9c1", "at": .int(jan1 - 90_000_000)],
+            ],
+        ]
+        var settings = json.obj("settings")
+        settings["notifyOnVisit"] = false
+        json["settings"] = .object(settings)
+        let survey = Survey(json: json)
+        XCTAssertEqual(survey.activity.views, 8)
+        XCTAssertEqual(survey.activity.summary(now: jan1), "Last 30 days: 8 views · 1 visitor · 1 started · 1 sent · last activity 5m ago")
+        XCTAssertEqual(survey.activity.newest.map(\.label), ["Sent the answers", "Started answering", "Opened the survey"])
+        XCTAssertEqual(survey.activity.newest.map { $0.when(now: jan1) }, ["5m ago", "10m ago", "1d ago"])
+        XCTAssertEqual(survey.activity.recent[1].detail, "a1b2c3d4")
+        XCTAssertEqual(survey.activity.recent[1].type, "")
+        XCTAssertFalse(survey.settings.notifyOnVisit)
+        XCTAssertTrue(survey.settings.notifyOnResponse == false)
+
+        var draft = SurveyDraft(editing: survey)
+        XCTAssertFalse(draft.settings.notifyOnVisit)
+        XCTAssertEqual(draft.body.obj("settings").optBool("notifyOnVisit"), false)
+        draft.settings.notifyOnVisit = true
+        XCTAssertEqual(draft.body.obj("settings").optBool("notifyOnVisit"), true)
+        XCTAssertEqual(SurveyDraft().body.obj("settings").optBool("notifyOnVisit"), true)
+
+        var board = SurveyBoard(json: overview())
+        board.replace(survey)
+        XCTAssertEqual(board.survey(hexA)?.activity, PageActivity())
+    }
+
     func testQuestionDecodingIsLenient() {
         let odd = SurveyQuestion(json: ["id": "nothex", "type": "dropdown", "title": "Q", "options": ["x", "y"], "scale": 99])
         XCTAssertEqual(odd.type, .text)

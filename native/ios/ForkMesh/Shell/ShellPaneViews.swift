@@ -83,7 +83,6 @@ final class ShellDetailHost {
         pages[tab] = nil
         current.release()
     }
-
 }
 
 private struct ShellDetailDestination<Item: Hashable, Page: View>: ViewModifier {

@@ -35,8 +35,22 @@ def test_only_maintainers_get_approve_and_trust_buttons():
 def test_decisions_post_the_reviewed_head_or_the_author():
     handler = function(CONTENT, "handleRepoPullCheckDecision")
     assert 'action === "approve" ? { action, head: value } : { action, account: value }' in handler
-    assert "window.confirm" in handler
+    assert "await confirmAccountAction(" in handler
     assert "data-repo-pull-check-approve], [data-repo-pull-check-trust], [data-repo-pull-check-untrust]" in NETWORK
+
+
+def test_approve_and_run_never_depends_on_a_native_confirm_dialog():
+    handler = function(CONTENT, "handleRepoPullCheckDecision")
+    assert "window.confirm" not in handler
+    assert handler.index("confirmAccountAction(") < handler.index("orgAgentRequest(")
+    actions = function(ACTIONS, "handleRepoActionsClick")
+    approve = actions[actions.index('if (action === "approve")'):]
+    approve = approve[:approve.index("return true;")]
+    assert "window.confirm" not in approve
+    assert "confirmAccountAction(" in approve
+    assert "if (approved) void sendRepoActionsControl(repo, action, { runId }, label);" in approve
+    for script in (BUNDLE,):
+        assert 'title: "Approve and run checks?"' in script
 
 
 def test_merge_box_lists_each_check_with_status_duration_and_log():

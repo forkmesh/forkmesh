@@ -636,6 +636,20 @@ returned, so summed frame totals overstate a function's own cost.
     tables fit from `kit::kDataTableFitRows` (100) rows around the viewport; a
     smaller bound a page already set is kept, and leaving the Next design
     restores the old value. `forkmesh-ui-kit-tests` covers it.
+- **Emoji in elided lines (report #22).** Qt 6.8 caches a colour emoji glyph
+  in ARGB but looks for its advance in the mono format, so every shaping
+  pass decodes each emoji's PNG again (FreeType and libpng frames under
+  `recalcAdvances`, ~0.1 ms per emoji, no warm-up). The prompt's chat preview
+  (`ChatPreviewLabel`) elided whole agent messages on every repaint: 0.5 to
+  1 s stalls (`STALL-20261102T141900552-p876694-0003`, `-0005`).
+  `kit::elideRightToWidth` cuts a line to the characters its width can hold
+  (a third of the average character width each) before eliding, which takes
+  a 3,700-character line with 400 emoji from 45 ms to 3 ms; the label's
+  rich text is cut to `kit::kCellDisplayChars`, and `setLines` keeps the
+  painted rows when the lines did not change. Elide long message text with
+  `kit::elideRightToWidth`; the chat list previews are already capped
+  (`ChatListPreview.h`). `forkmesh-ui-kit-tests` elides a 2,000,000-character
+  line.
 - **Glue frames.** `QtRuntimeDiagnostics::noteEventTiming` (runs after every
   delivery) and `hiddenunicode::guardWidget` (runs on every `Polish`, only
   casts the widget) are glue frames, so a style-sheet polish stall names the
@@ -843,6 +857,12 @@ commits and their fsync off the GUI thread.
   saved searches after a search or alert run (`SavedSearchStore::saveLater`;
   `save()` goes through `writeNow`, so a later click never lands under an
   older queued snapshot). `AgentStore::saveSession` skips byte-identical writes.
+- The tool-efficiency ledger's 5 s debounced save copies the ledger (Qt
+  containers share their data) and builds its ~100 KB JSON in `runOffThread`;
+  `finishBackgroundSave` queues the bytes only if no later `saveLater` (Clear,
+  shutdown) ran in between, so an older snapshot never lands on top. Building
+  the JSON on the GUI thread was a 575 ms stall under memory pressure
+  (`STALL-20261102T021331143-p970989-0063`).
 
 The agent transcript writers (`AgentStore`) append through
 `forkmesh::OrderedAppendWriter` (`src/OrderedAppendWriter.h`), one ordered

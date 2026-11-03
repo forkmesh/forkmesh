@@ -26,7 +26,8 @@ Home: [Go daemon](README.md); why mirrors can take writes:
 4. Gates, in order: the pinned pull record, current base tip, current head tip
    (branch-backed pulls), the review gate (one distinct non-author signed
    approval, no outstanding request for changes; skipped only when the request
-   carries `overrideReview`, which only merges may set),
+   carries `overrideReview`, which only merges may set; see
+   [Reviewers are accounts](#reviewers-are-accounts)),
    `.forkmesh/required-checks.json` read from the reviewed base commit, and
    `.forkmesh/pull-rules.json` from the same commit (`rules_required`; see
    [pull-rules.md](pull-rules.md)). Neither of the last two can be waived.
@@ -66,6 +67,22 @@ Home: [Go daemon](README.md); why mirrors can take writes:
    pushes a `commits` event so the other mirrors converge. The event goes
    out even when the digest is not admitted, and it reaches every core
    ([core push](../operations/core-push.md), "Every core is woken at once").
+
+## Reviewers are accounts
+
+Both executors (`reviewGateSatisfied` in `server/merge.go`,
+`_merge_peer_review_gate` in `tools/headless_mirror_refresh.py`) group reviews
+by the review's `authorName`, lowercased and trimmed, not by its signing key:
+people sign from several device and browser keys, so an account that asked for
+changes with one key and approved with another would otherwise keep an open
+objection, and a pull author could approve their own pull with a second key.
+The App sets `authorName` itself (`_bind_session_author`: the signed-in
+session, or the account the signing key is bound to, refusing a mismatch),
+never from the client, matching the account-keyed ledger in
+[branch protection](../app/branch-protection.md). A review with no account
+name falls back to its key; reviews from the pull author's account under any
+key, or signed with the pull's own key, never count. Latest review wins per
+account, and a dismissal clears that account's earlier review.
 
 ## Progress
 

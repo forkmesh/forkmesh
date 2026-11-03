@@ -275,14 +275,15 @@ in sections, with counts and activity:
 - The project icon (`ShellProjectSlot`, 40 pt) opens the project drawer;
   touch and hold for 0.5 s goes to Home from any tab, closing overlays
   (`openProjectHome`).
-- The telemetry strip, centred: tiny health-coloured charts of phone metrics
+- The telemetry strip, centred, when the Diagnostics switch is on: tiny health-coloured charts of phone metrics
   and, when a desktop answers `diag.watch`, desktop memory, CPU, disk and swap,
   each a line over a 35% fill so a quiet chart still shows a band. On Dynamic
   Island iPhones in portrait it moves to the status bar (below).
 - The new agent button and the avatar (`AvatarWithDot`, rounded square). The
   connection status is a 2 pt stroke around the square (green online, amber
   away or connecting, red when diagnostics need attention, grey offline); the
-  status emoji sits off the bottom-left corner.
+  picture fills the ring with no gap, and the avatar stays still when the
+  phone tilts. The status emoji sits off the bottom-left corner.
 - No background: on a tab root (`HomeShell.floatsChrome`, empty path) the list
   scrolls under it; pushed pages start below it so Back is never covered. The
   offline strip appears only after the relay has been down
@@ -297,9 +298,12 @@ Because it hides the bar through UIKit, a page pushed straight from a
 notification into a fresh tab could inherit the hidden bar and lose Back. So
 ping detail pages (`InboxItemScreen`, `PingDetailScreen`, every entry point)
 use `shellKeepsNavigationBar()` (`Shell/ShellPageBarKeeper.swift`) and also
-draw their own back link first on the page (`ping-detail-back`: "All pings" or
-"Inbox"). Android's ping pages draw their own back button (`RoutePage`,
-`FmPanelHeader`) and the same link (`PingBackLink` in `PingDetailScreen.kt`).
+draw their own back control (`ping-detail-back`): "All pings" as a link on
+`PingDetailScreen`, a 44 pt glass circle pinned above the list on
+`InboxItemScreen`. Android's ping pages draw their own back button (`RoutePage`,
+`FmPanelHeader`), which is the same glass circle and cannot be hidden, so
+`InboxItemScreen.kt` adds nothing to it; `PingDetailScreen.kt` also has the
+"All pings" link (`PingBackLink`).
 
 **Bottom clearance.** The bar floats over pages. `HomeShell.barClearance` (bar
 height plus `barMargin`, 32 pt; zero with the keyboard up or on iPad) travels
@@ -396,12 +400,40 @@ light's bars carry the desktop's), each squeezed to the ear less 10 pt a side
 strip still leads with the desktop group, 2 pt apart with 4 pt before the
 phone's charts; notched iPhones, landscape and iPad keep it in the bar.
 
-**Agent token charts under the island.** While Diagnostics is on and the
-Agents package is installed, two charts (`ShellIslandTokenCharts`) hang from
+**Agent token tanks under the island.** While Diagnostics is on and the
+Agents package is installed, two tanks (`ShellIslandTokenCharts`) hang from
 the island's bottom edge: tokens in on the left (accent), out on the right
-(green), together spanning 126 pt, 6 pt apart, 12 pt tall. Each point is how
-much the summed agent totals grew in that second over the last 60 s
-(`AgentTokenSeries`), ticking on their own one-second clock. Totals
+(green), together spanning 126 pt, 6 pt apart, 12 pt tall, each on a faint
+track. Every second the tank pours in how much the summed agent totals grew
+in that second (`AgentTokenSeries`, on its own one-second clock) as 1 pt
+grains that rain in from the top over the next second and pile up as a
+liquid; see the tank model below.
+
+The tank (`AgentTokenTank`, `FMAgents` and Android's core `agents` package,
+the same code and constants on both) holds one grain per square point (720
+for a 60 × 12 tank; more pours spill). A second at the peak of the last 60 s
+(`AgentTokenTank.scale`: the 60 s maximum, at least 1,000 tokens in or 50
+out) pours capacity ÷ 12 grains, and the tank leaks from its lowest grain at
+its fill ÷ 12 s, so a steady flow at the peak keeps it full, a burst fills
+part of it and drains over a minute, and idle agents leave it empty. Grains
+are particles in a small position-based fluid (double density relaxation,
+2 pt radius, 60 steps a second, the steps capped at 0.1 s a frame so a
+stalled frame does not explode it), drawn on the point grid in four shades.
+Gravity is the accelerometer on the screen's axes (raw, so a shake sloshes
+too) plus a quarter of a g toward the bottom, so a phone lying flat still
+settles down, capped at 3 g; tilting pours the liquid to the low side and
+the surface stays level with the real ground. The tanks draw at 30 frames a
+second (`AgentTokenTank.framesPerSecond`; iOS
+`TimelineView(.animation(minimumInterval:))`, Android every `withFrameNanos`
+at least `FRAME_NANOS` apart), which runs the same 60 steps a second as the
+display rate would. The frame clock stops while both tanks are empty and
+nothing is owed, checked every second on iOS and every 200 ms on Android,
+and the accelerometer runs only while a tank holds or owes grains
+(`AgentTokenTanks.wantsMotion`). On iOS the fluid lives in a struct
+(`AgentTokenFluid`): on the class's stored arrays every element access paid a
+dynamic exclusivity check, and a full pair cost 127 ms of a desktop core per
+simulated second, now 33 ms, on the main thread
+([PERFORMANCE_CHECKS.md](PERFORMANCE_CHECKS.md)). Totals
 (`AgentTokenSeries.totals`): the desktop's `tokensIn` / `tokensOut` from each
 `diag.vitals` event while watching a desktop (`DesktopVitals`), else every
 desktop row's totals, plus every cloud and runner row's. Each total is keyed
@@ -528,7 +560,33 @@ The `tour` package shows the tour once after sign-in (`ShellTour.seen`,
 `fm.tour.seen.v1`) and keeps a Tour icon on Home. It looks like the screens it
 describes, moves, and offers three depths.
 
-- **Color scheme.** On iOS the sheet sets `preferredColorScheme` to the theme's
+- **Full screen.** The first run opens Essentials straight in `TourPlayer`
+  (`Navigation/TourPlayer.swift`), a full-screen cover with no picker. The Tour
+  icon opens the track list (`TourView`), and a track opens the same player.
+  The player has a close or back circle, page dots and Skip at the top, the
+  animation in the middle over a black (dark) or base (light) ground with one
+  light behind it, a short headline ending in an accent full stop
+  (`TourStop.short`, at most six words) and one line (at most twelve), then the
+  filled Next button and an optional "Show me" link. The long `message` is the
+  VoiceOver hint. A last page says "You're set." and offers the next track.
+- **Frames and objects.** Stops about a screen draw it inside a small phone
+  (`TourPhone`, a 360 × 500 screen scaled to fit). Stops about one thing draw it
+  on its own at large size (`TourObjects.swift`): agent cards, the + button and
+  composer, the Inbox title menu, the voice orb and waveform, a diff with Merge,
+  and the Market carousel. The bottom bar in the mocks is `ShellBarPreview`
+  with `plain`, spread across the width with no backdrop.
+- **Opening it once.** SwiftUI presents one sheet at a time, and a sheet asked
+  for while another presentation is up (the data folder alert at launch, a tip
+  popover) could be dropped while `showTour` stayed true. Every later sheet and
+  cover was then refused: Sign in did nothing and NEXUS left Home for Agents
+  without opening. iOS now asks for the tour cover a moment after launch, and the
+  header tips (`VoiceTip`, `PaletteTip`, `HubTip`) wait for
+  `VoiceTip.afterTour`, set when the tour closes or when it does not open
+  (the player records the first run with `ShellTour.markShown`, which leaves
+  the tips waiting).
+  `SignInCoordinator.presentSignIn` dismisses a tip or sheet over the app
+  before opening sign-in.
+- **Color scheme.** On iOS the player sets `preferredColorScheme` to the theme's
   scheme. `ForkMeshTheme` only sets the SwiftUI environment, and the tour opens
   right after the forced-dark onboarding, so on iPhone Duo the sheet and status
   bar stayed dark behind the light palette and the heading could not be read.
@@ -538,8 +596,11 @@ describes, moves, and offers three depths.
   review and merge, the command palette, search and the bottom bar) and The
   whole shebang (adds chat, projects, desktops, Notes/Tasks/Calendar, the
   Market, personal tools, notifications and widgets, and looks). Each track
-  contains the one before it, so stops keep their order. A track card shows its
-  stop count, an estimate at 20 s a stop, and its stops' symbols.
+  contains the one before it, so stops keep their order. The chooser is one
+  grouped list: each track is a row with its name, "Start here" or "Up next"
+  on the suggested one, and its stop count with an estimate at 20 s a stop. A
+  stop page is the mock, a quiet hint, the title and its text; the tips are
+  plain lines under it.
 - **The package gate decides the stops.** A stop with `needs` (Agents, Inbox,
   Repos, Chat) is left out when that tab's package is not installed. A stop
   with `offers` (Desktops, Notes and the rest, personal tools) stays, but when
@@ -569,16 +630,11 @@ describes, moves, and offers three depths.
 
 ### 2.0.3 Other pages
 
-- **Inbox** (`InboxScreen`): one centered bar of small square icons at the
-  top of the list. The filters (All, Pings, Reviews, Assigned, Mentions,
-  Approvals) carry their unread count as a badge; the actions that used to
-  sit in a ⋯ menu (mark all read, unread only, pause pings, discard unsynced
-  changes, ping settings, delete all) are squares in the same bar, so every
-  control is one tap. A phone too narrow for the bar scrolls it sideways.
-  Holding a square shows its name in a small popover (`FmHoldName`), and the
-  tap it ends with is dropped. The unread badges are drawn over the whole bar
-  (`InboxBadgeKey` anchors), because iOS 26's glass container composites the
-  squares above their own badges.
+- **Inbox** (`InboxScreen`): the "Inbox ⌄" title (`InboxTitleBar`) is the
+  filter menu, with each filter's unread count, and one glass "…" button
+  (`InboxToolbarMenu`) holds mark all read, unread only, pause pings, discard
+  unsynced changes, ping settings and delete all
+  ([SCREEN_POLISH.md](SCREEN_POLISH.md)).
 - **Market** (`MarketScreen`): one slim navigation bar line with no
   background: back, the search field (`MarketSearchField`, in the title's
   place), a sort menu and a filter menu (`MarketSortMenu`, `MarketFilterMenu`,
@@ -921,7 +977,7 @@ in or Sign out) as small side-by-side buttons; projects are switched from the
 command palette's Switch project (and the iPad sidebar).
 
 - **Diagnostics switch** (under Suggestion mode, `hub-diagnostics-strip`;
-  `diagnostics/showStrip`, on by default) shows or hides the telemetry strip and
+  `diagnostics/showStrip`, off by default) shows or hides the telemetry strip and
   the profile footer.
 - **Version row** (last row; iOS `YouHubSheet.versionRow`, one small darker
   rectangle; Android `HubVersionRow`): "Version x (build)" with a slightly
@@ -1212,9 +1268,16 @@ left, the detail on the right.
   inset (`ignoresSafeArea(.container, edges: .trailing)`), which is what fixed
   the width; `toolbarVerticalBehavior(.disabled)` alone did not. `ShellDuoListBars`
   stays so list bars are horizontal, as in Apple's split views.
-- **Inner display upright.** The `TabView` hides its tab bar and the custom
-  bottom bar shows on top of it, so this pose looks as it did. The top bar spans
-  both panes and shows Search.
+- **Native tab bar on iPhone.** The operator asked on 2026-11-02 for the system
+  tab bar everywhere, for its glass animation and because the custom bar ran the
+  full width of a wide display. `ShellDuo.nativeTabs` puts every iPhone on iOS 26
+  or later on the `TabView`; older iOS and iPad keep what they had. The system
+  counts Search as a tab and turns a sixth into More, so compact iPhones show
+  Home, Agents, Inbox, Repos and Chat, Search moves to the top bar, and Code is
+  reached through Repos. The bar's style settings and its long-press menu do not
+  apply to the system bar.
+- **Inner display upright.** The native bar shows here, sized to its tabs. The
+  top bar spans both panes and shows Search.
 - **Tabs and stacks.** Tabs follow `ShellBarPrefs.entries`, so order, limit and
   badges carry over. A bar folder is a tab that opens a list of its items,
   because a tab bar cannot hold a folder. Repos and Code share one stack, and
@@ -1234,7 +1297,9 @@ left, the detail on the right.
 - **Build.** Until the app is built with Xcode 27 (the iOS 27 SDK; the office
   Mac has Xcode 26.6), iOS runs it on the Duo in compatibility mode and the
   layout above does not show. Edge-to-edge and the system's vertical bars need
-  the iOS 27.1 SDK.
+  the iOS 27.1 SDK. Their calls in `ShellDuoColumn.swift` sit under
+  `#if compiler(>=6.4)` as well as `#available`, because Xcode 26 cannot compile
+  an API its SDK lacks.
 - **App Store sizes.** 2007 × 2853 (or 2853 × 2007) for the inner display,
   1398 × 2034 (or 2034 × 1398) for the cover screen. Xcode 26 has no Duo
   simulator; Duo-sized simulator types letterbox third-party apps on the iOS

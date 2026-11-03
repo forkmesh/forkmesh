@@ -10,6 +10,7 @@ import FMBase
 import Foundation
 import Observation
 import SwiftUI
+import UIKit
 
 /// Presents the guest sign-in sheet and the sign-in flow over the whole app,
 /// wherever they were asked for, and lets the caller await the outcome.
@@ -106,6 +107,10 @@ final class SignInCoordinator {
             chooseInstance()
             return
         }
+        if signInStart != nil {
+            signInStart = nil
+            try? await Task.sleep(for: .milliseconds(80))
+        }
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             signInWaiters.append(continuation)
             signInStart = start
@@ -114,7 +119,18 @@ final class SignInCoordinator {
 
     /// Fire-and-forget `openSignIn` for buttons.
     func presentSignIn(_ start: AuthFlowStart = .login) {
-        Task { await self.openSignIn(start) }
+        let open: () -> Void = { Task { await self.openSignIn(start) } }
+        if let root = SignInCoordinator.rootController(), root.presentedViewController != nil {
+            root.dismiss(animated: true, completion: open)
+        } else {
+            open()
+        }
+    }
+
+    private static func rootController() -> UIViewController? {
+        let scenes: [UIWindowScene] = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let scene: UIWindowScene? = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
+        return scene?.windows.first(where: { $0.isKeyWindow })?.rootViewController
     }
 
     /// The flow over the app closed.

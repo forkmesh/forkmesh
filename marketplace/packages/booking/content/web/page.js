@@ -1,4 +1,4 @@
-window.ForkMeshDashboard.registerPage("booking", ({ select: $, selectAll: $$, session, escapeHtml }) => {
+window.ForkMeshDashboard.registerPage("booking", ({ select: $, selectAll: $$, session, escapeHtml, relativeTimeLabel }) => {
   const DAYS = [["mon", "Monday"], ["tue", "Tuesday"], ["wed", "Wednesday"], ["thu", "Thursday"], ["fri", "Friday"], ["sat", "Saturday"], ["sun", "Sunday"]];
   const LOCATION_LABELS = { video: "Video call", phone: "Phone call", place: "In person", custom: "Other", none: "No location" };
   const LOCATION_HINTS = { video: "https://meet.example.com/you", phone: "Leave empty to ask the guest for their number", place: "Address", custom: "Shown after booking", none: "" };
@@ -8,7 +8,9 @@ window.ForkMeshDashboard.registerPage("booking", ({ select: $, selectAll: $$, se
     invalid_meeting_url: "A video call link must start with https://.", invalid_email: "Enter a valid email address.",
     booking_locked: "That meeting already happened or was cancelled.",
   };
-  const state = { installed: false, data: null, tab: "upcoming", cancelling: null, focus: new URLSearchParams(location.search).get("booking") || "" };
+  const TABS = ["upcoming", "past", "visits", "types", "hours", "page"];
+  const params = new URLSearchParams(location.search);
+  const state = { installed: false, data: null, tab: TABS.includes(params.get("tab")) ? params.get("tab") : "upcoming", cancelling: null, focus: params.get("booking") || "" };
   const localZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   let slugTimer = 0;
 
@@ -67,11 +69,15 @@ window.ForkMeshDashboard.registerPage("booking", ({ select: $, selectAll: $$, se
     $$(`[data-booking-requires-install]`).forEach((node) => node.classList.toggle("hidden", !state.installed));
   }
 
+  function previewLink(url) { return url ? `${url}&preview` : ""; }
+  function when(stamp) { return typeof relativeTimeLabel === "function" ? relativeTimeLabel(stamp) : new Date(stamp).toLocaleString(); }
+  function count(value, one, many = `${one}s`) { const number = Number(value || 0); return `${number.toLocaleString()} ${number === 1 ? one : many}`; }
+
   function renderLink() {
     const data = state.data;
     const link = $(`[data-booking-link]`);
-    link.href = data.link; link.textContent = data.link.replace(/^https?:\/\//, "");
-    $(`[data-booking-open]`).href = data.link;
+    link.href = previewLink(data.link); link.textContent = data.link.replace(/^https?:\/\//, "");
+    $(`[data-booking-open]`).href = previewLink(data.link);
     const status = $(`[data-booking-status]`);
     status.textContent = data.enabled ? "Live" : "Paused";
     status.className = `fm-label ${data.enabled ? "fm-label-success" : "fm-label-attention"}`;
@@ -79,15 +85,33 @@ window.ForkMeshDashboard.registerPage("booking", ({ select: $, selectAll: $$, se
     const types = data.settings.types || [];
     $(`[data-booking-type-links]`).innerHTML = types.map((type) => `<li class="flex flex-wrap items-center justify-between gap-2 px-4 py-2">
         <span class="min-w-0 text-sm text-foreground"><span class="font-medium">${escapeHtml(type.title)}</span> <span class="text-muted-foreground">· ${escapeHtml(minutesLabel(type.minutes))}${type.enabled ? "" : " · hidden"}</span></span>
-        <span class="flex items-center gap-2"><a class="truncate text-xs text-accent hover:underline" href="${escapeHtml(data.links[type.id] || "")}" target="_blank" rel="noopener">${escapeHtml(String(data.links[type.id] || "").replace(/^https?:\/\//, ""))}</a>
+        <span class="flex items-center gap-2"><a class="truncate text-xs text-accent hover:underline" href="${escapeHtml(previewLink(data.links[type.id]))}" target="_blank" rel="noopener">${escapeHtml(String(data.links[type.id] || "").replace(/^https?:\/\//, ""))}</a>
         <button type="button" class="fm-btn fm-btn-sm fm-btn-invisible" data-booking-copy-type="${escapeHtml(type.id)}" aria-label="Copy the link for ${escapeHtml(type.title)}"><i data-lucide="copy"></i></button></span></li>`).join("");
     for (const [key, value] of Object.entries(data.stats || {})) {
       const node = $(`[data-booking-stat="${key}"]`); if (node) node.textContent = Number(value || 0).toLocaleString();
     }
     const minutes = Number(data.stats?.bookedMinutes7Days || 0);
     $(`[data-booking-stat-hours]`).textContent = minutes ? `${minutesLabel(minutes)} booked` : "";
-    const count = (data.upcoming || []).length;
-    $(`[data-booking-upcoming-count]`).textContent = count ? String(count) : "";
+    const upcoming = (data.upcoming || []).length;
+    $(`[data-booking-upcoming-count]`).textContent = upcoming ? String(upcoming) : "";
+    const views = Number(data.activity?.views || 0);
+    $(`[data-booking-visits-count]`).textContent = views ? views.toLocaleString() : "";
+  }
+
+  function visitsPanel() {
+    const activity = state.data.activity || {};
+    const recent = activity.recent || [];
+    if (!activity.views && !activity.interactions && !recent.length) {
+      return `<div class="fm-blankslate"><i data-lucide="eye"></i><p class="fm-blankslate-title">No visits yet</p><p class="fm-blankslate-desc">When someone opens your link, what they click shows up here. Opening your page from this dashboard does not count.</p></div>`;
+    }
+    const facts = [count(activity.views, "view"), count(activity.visitors, "visitor"), count(activity.interactions, "interaction"),
+      `${Number(activity.starts || 0).toLocaleString()} started booking`, `${Number(activity.submits || 0).toLocaleString()} sent the form`];
+    if (activity.lastActivityAt) facts.push(`last activity ${when(activity.lastActivityAt)}`);
+    return `<p class="border-b border-border px-4 py-3 text-sm text-foreground"><span class="font-semibold">Last ${escapeHtml(String(activity.days || 30))} days:</span> ${escapeHtml(facts.join(" · "))}</p>
+      <ul class="divide-y divide-border">${recent.map((item) => `<li class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 py-2">
+        <span class="min-w-0 text-sm text-foreground">${escapeHtml(item.label || item.kind)}</span>
+        <span class="text-xs text-muted-foreground">Visitor ${escapeHtml(item.visitor || "unknown")} · ${escapeHtml(when(item.at))}</span></li>`).join("")}</ul>
+      <p class="border-t border-border px-4 py-3 text-xs text-muted-foreground">Visitors are counted by a one-way hash of their connection, never their address. ForkMesh keeps the newest 2,000 events for 90 days.</p>`;
   }
 
   function bookingRow(booking, past) {
@@ -196,7 +220,7 @@ window.ForkMeshDashboard.registerPage("booking", ({ select: $, selectAll: $$, se
     field("slotStepMinutes").innerHTML = options(opts.steps, settings.slotStepMinutes, (value) => value ? `${value} minutes` : "Meeting length");
     field("dailyLimit").value = settings.dailyLimit || "";
     for (const name of ["displayName", "headline", "welcome", "replyTo", "notifyEmail", "timeFormat"]) field(name).value = settings[name] || "";
-    for (const name of ["checkCalendar", "emailOwner", "addToCalendar"]) field(name).checked = Boolean(settings[name]);
+    for (const name of ["checkCalendar", "emailOwner", "addToCalendar", "notifyVisits"]) field(name).checked = Boolean(settings[name]);
     field("slug").value = data.slug;
     $(`[data-booking-slug-prefix]`).textContent = `${data.origin.replace(/^https?:\/\//, "")}/meet?`;
     $(`[data-booking-slug-check]`).textContent = "";
@@ -212,6 +236,7 @@ window.ForkMeshDashboard.registerPage("booking", ({ select: $, selectAll: $$, se
     renderLink();
     $(`[data-booking-upcoming]`).innerHTML = bookingList(state.data.upcoming || [], false);
     $(`[data-booking-past]`).innerHTML = bookingList(state.data.past || [], true);
+    $(`[data-booking-visits]`).innerHTML = visitsPanel();
     renderForms();
     renderTabs();
     window.lucide?.createIcons?.();
@@ -320,7 +345,10 @@ window.ForkMeshDashboard.registerPage("booking", ({ select: $, selectAll: $$, se
     $(`[data-booking-type-links]`)?.addEventListener("click", (event) => {
       const button = event.target.closest("[data-booking-copy-type]"); if (button) void copy(state.data.links[button.dataset.bookingCopyType]);
     });
-    $$(`[data-booking-tab]`).forEach((tab) => tab.addEventListener("click", () => { state.tab = tab.dataset.bookingTab; renderTabs(); }));
+    $$(`[data-booking-tab]`).forEach((tab) => tab.addEventListener("click", () => {
+      state.tab = tab.dataset.bookingTab; renderTabs();
+      const url = new URL(location.href); url.searchParams.set("tab", state.tab); history.replaceState(history.state, "", url);
+    }));
     $(`[data-booking-app]`)?.addEventListener("click", (event) => {
       const cancel = event.target.closest("[data-booking-cancel]");
       if (cancel) return openCancel(cancel.dataset.bookingCancel);
@@ -375,6 +403,7 @@ window.ForkMeshDashboard.registerPage("booking", ({ select: $, selectAll: $$, se
         accent: $(`input[name="booking-accent"]:checked`)?.value || "blue",
         replyTo: field("replyTo").value.trim(), notifyEmail: field("notifyEmail").value.trim(),
         emailOwner: field("emailOwner").checked, addToCalendar: field("addToCalendar").checked,
+        notifyVisits: field("notifyVisits").checked,
       }, "Page saved.");
     });
     $(`[data-booking-cancel-form]`)?.addEventListener("submit", confirmCancel);

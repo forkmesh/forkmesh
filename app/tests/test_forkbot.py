@@ -2401,6 +2401,36 @@ def test_forkbot_counts_issues_from_live_mirror():
     assert not any("/blobs?" in url for url in host.urls)
 
 
+def test_forkbot_gateway_returns_a_missing_folder_only_when_asked():
+    answers = {}
+
+    class _Host:
+        async def fetch(self, url):
+            status, data = answers[url.rsplit("path=", 1)[-1]]
+            response = _HostResponse(data)
+            response.status = status
+            return response
+
+    env, _calls, ns = _env_and_calls(host=_Host())
+    read = ns["_forkbot_repo_gateway_json"]
+    answers["gone"] = (404, {"error": "not_found"})
+    answers["refless"] = (404, {"error": "fatal: unknown revision"})
+    answers["broken"] = (500, {"error": "internal"})
+    answers["denied"] = (404, {"error": "repo_private"})
+    answers["listed"] = (200, {"entries": []})
+    assert asyncio.run(read(env, "o", "r", "tree?path=gone")) is None
+    assert asyncio.run(read(env, "o", "r", "tree?path=gone",
+                            allow_missing=True)) == {"error": "not_found"}
+    assert asyncio.run(read(env, "o", "r", "tree?path=refless",
+                            allow_missing=True)) == {
+        "error": "fatal: unknown revision"}
+    for path in ("broken", "denied"):
+        assert asyncio.run(read(env, "o", "r", "tree?path=" + path,
+                                allow_missing=True)) is None
+    assert asyncio.run(read(env, "o", "r", "tree?path=listed",
+                            allow_missing=True)) == {"entries": []}
+
+
 def test_forkbot_count_reports_zero_issues_and_offline_host():
     host = _FakeGateway(tree=_issue_tree([]))
     env, _calls, ns = _env_and_calls(host=host)

@@ -269,7 +269,7 @@ static void testSessionState()
     RunnerLoginSession forbidden("fmnext-n1", "codex");
     check(forbidden.applyStartReply(403, QJsonObject{{"error", "forbidden"}}) ==
                   RunnerLoginSession::Start::Failed &&
-              forbidden.error().contains("administrator"),
+              forbidden.error().contains("Only the account that added a runner"),
           "403 explains who may sign a runner in");
     RunnerLoginSession inactive("fmnext-n1", "codex");
     inactive.applyStartReply(409, QJsonObject{{"error", "runner_inactive"},

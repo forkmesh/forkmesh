@@ -365,6 +365,7 @@
        </div>
       </section>` : "";
     keepRepoFirstViewIssue(detail);
+    keepRepoFirstViewPull(detail);
     const tabStripScroll = detail.querySelector("[data-repo-github-header] [role=\"tablist\"]")?.scrollLeft || 0;
     detail.innerHTML = `
       <div data-repo-layout="github-like" class="min-w-0">
@@ -763,6 +764,9 @@
     article.querySelectorAll("[data-repo-record-tab]").forEach((button) => {
       const active = button.dataset.repoRecordTab === tab;
       button.setAttribute("aria-selected", active ? "true" : "false");
+    });
+    article.querySelectorAll("[data-repo-record-sticky-tab]").forEach((button) => {
+      button.setAttribute("aria-selected", button.dataset.repoRecordStickyTab === tab ? "true" : "false");
     });
     article.querySelectorAll("[data-repo-record-panel]").forEach((panel) => {
       panel.classList.toggle(
@@ -1966,7 +1970,9 @@
   }
 
   function initHomePage() {
+    renderHomeAccount();
     renderHomeBlogPosts();
+    void loadHomeChangelog();
     // The blog card fills in from the edge-cached feed; the baked markup
     // already shows its loading state.
     void loadHomeBlogPosts();
@@ -3835,12 +3841,6 @@
         return;
       }
 
-      const reviewPromptToggle = event.target.closest("[data-repo-pull-review-prompt-toggle]");
-      if (reviewPromptToggle) {
-        togglePullReviewPrompt(reviewPromptToggle);
-        return;
-      }
-
       const mergeStatusButton = event.target.closest("[data-repo-pull-merge-status]");
       if (mergeStatusButton) {
         showRepoPullMergeBox(mergeStatusButton.closest("[data-repo-record-detail]"));
@@ -3849,11 +3849,12 @@
 
       // PR detail section tabs are isolated panels, matching the GitHub review
       // surface: only the selected section is visible at a time.
-      const recordTabButton = event.target.closest("[data-repo-record-tab]");
+      const recordTabButton = event.target.closest("[data-repo-record-tab], [data-repo-record-sticky-tab]");
       if (recordTabButton) {
         const article = recordTabButton.closest("[data-repo-record-detail]");
         if (article) {
-          setRepoRecordSection(recordTabButton.dataset.repoRecordTab || "", article);
+          event.preventDefault();
+          setRepoRecordSection(recordTabButton.dataset.repoRecordTab || recordTabButton.dataset.repoRecordStickyTab || "", article);
           // Sections are addressable: put the open tab in the address bar so
           // the link a reviewer copies from "Files changed" reopens there for
           // whoever they send it to (and survives a refresh).
@@ -4502,6 +4503,16 @@
     state.homeRepositoriesExpanded = !state.homeRepositoriesExpanded;
     renderHomeRepositories();
   });
+  $("[data-home-repo-search-toggle]")?.addEventListener("click", () => {
+    const search = $("[data-home-repo-search]");
+    state.homeRepoSearchOpen = !state.homeRepoSearchOpen;
+    if (!state.homeRepoSearchOpen && search) search.value = "";
+    renderHomeRepositories();
+    if (state.homeRepoSearchOpen) search?.focus();
+  });
+  $$("[data-home-tab]").forEach((button) => {
+    button.addEventListener("click", () => setHomeTab(button.dataset.homeTab));
+  });
   document.addEventListener("click", (event) => {
     const toggle = event.target?.closest?.("[data-repo-forks-toggle]");
     if (!toggleRepositoryForks(toggle)) return;
@@ -4537,6 +4548,37 @@
   });
   $$("[data-new-repo-visibility]").forEach((input) => {
     input.addEventListener("change", renderNewRepoVisibilityNote);
+  });
+  $$("[data-new-repo-location]").forEach((button) => {
+    button.addEventListener("click", () => setNewRepoLocation(button.dataset.newRepoLocation));
+    button.addEventListener("keydown", (event) => {
+      if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+      event.preventDefault();
+      const next = newRepoLocation() === "node" ? "hosted" : "node";
+      setNewRepoLocation(next);
+      $(`[data-new-repo-location="${next}"]`)?.focus();
+    });
+  });
+  $$("[data-new-repo-import-code], [data-new-repo-import-issues]").forEach((input) => {
+    input.addEventListener("change", renderNewRepoImportChoice);
+  });
+  $("[data-new-repo-name]")?.addEventListener("input", renderNewRepoNameCheck);
+  $("[data-new-repo-owner]")?.addEventListener("change", renderNewRepoNameCheck);
+  $$("[data-new-repo-push-copy-field]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const field = $(`[data-new-repo-push-${button.dataset.newRepoPushCopyField}]`);
+      try {
+        await navigator.clipboard.writeText(field?.textContent || "");
+        button.textContent = "Copied";
+      } catch (_) {
+        const range = document.createRange();
+        if (field) range.selectNodeContents(field);
+        window.getSelection()?.removeAllRanges();
+        window.getSelection()?.addRange(range);
+        button.textContent = "Selected";
+      }
+      window.setTimeout(() => { button.textContent = "Copy"; }, 1600);
+    });
   });
   $("[data-new-repo-form]")?.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -4605,6 +4647,9 @@
     state.nodeNameAvailability.timer = window.setTimeout(checkNodeNameAvailability, 250);
   });
   $("[data-profile-rename-password]")?.addEventListener("input", updateRenameButton);
+  $("[data-profile-page-name-case]")?.addEventListener("input", (event) => {
+    event.target.dataset.edited = "1";
+  });
   $("[data-profile-delete-confirm]")?.addEventListener("input", () => {
     const button = $("[data-profile-delete-account]");
     if (!button) return;

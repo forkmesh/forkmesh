@@ -402,6 +402,7 @@ CACHE_BUSTED_ASSETS = (
     # Rendered documentation library pages (app/tools/docs_site.py).
     "docs-page.js",
     "docs-page.css",
+    "docs-explore.js",
     # Per-page site bundles.
     "market-package.js",
     "market-package.css",

@@ -41,6 +41,13 @@ them ([protocol](protocol/README.md)).
 
 ## No single point of failure
 
+```flow
+title: How a request reaches a core
+Browser, desktop or git -> DNS round robin -> Any healthy core -> Caddy -> Python app -> rqlite member
+Health loop, /readyz every 30 s -> DNS round robin
+rqlite member -> Raft majority across the cores
+```
+
 - **Equal cores, no leader in the request path.** Each core runs Caddy, the
   Python app, an rqlite (Raft) database member and the Go Git gateway. Any core
   answers any request. Membership, scheduled jobs and certificate renewal are

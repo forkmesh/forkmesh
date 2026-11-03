@@ -78,6 +78,7 @@
     minimize: '<path d="m6 9 6 6 6-6"/>',
     task: '<path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/>',
     add: '<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>',
+    plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
     send: '<path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/>',
     clip: '<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>',
     mic: '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/>',
@@ -672,6 +673,10 @@
             </div>
             <input type="file" data-composer-file multiple hidden tabindex="-1" />
           </div>
+        </div>
+        <div class="fmc-tray" data-composer-tray hidden>
+          <div class="fmc-tray-group" data-composer-tray-start></div>
+          <div class="fmc-tray-group fmc-tray-end" data-composer-tray-end></div>
         </div>
         <div class="fmc-output" data-composer-output hidden></div>
         <p class="fmc-setup" data-composer-setup hidden></p>
@@ -2385,6 +2390,7 @@
     composer.inline = Boolean(slot);
     if (slot) {
       composer.root.dataset.inline = "1";
+      dockInline();
       slot.hidden = false;
       slot.replaceChildren(composer.root);
     } else {
@@ -2398,6 +2404,22 @@
     const idle = !document.activeElement || document.activeElement === document.body;
     const startOpen = composer.inline || Boolean(composer.stored.open);
     setOpen(startOpen, { focus: idle && startOpen });
+  }
+
+  function dockInline() {
+    const start = $("[data-composer-tray-start]");
+    const end = $("[data-composer-tray-end]");
+    const tools = $(".fmc-tools");
+    if (!start || !end || !tools) return;
+    start.append(...["[data-composer-repo-field]", "[data-composer-cloud]", "[data-composer-pr]"]
+      .map($).filter(Boolean));
+    end.append(...["[data-composer-count]", "[data-composer-clear]", "[data-composer-expand]"]
+      .map($).filter(Boolean));
+    const pair = $(".fmc-choice-pair");
+    if (pair) tools.append(pair);
+    const attach = $("[data-composer-attach]");
+    if (attach) attach.innerHTML = icon("plus");
+    $("[data-composer-tray]").hidden = false;
   }
 
   function releaseSlot() {

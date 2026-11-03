@@ -208,7 +208,7 @@ class GenieCrawler {
     }
 }
 
-private fun screenVector(x: Float, y: Float, rotation: Int): GenieVector = when (rotation) {
+internal fun screenVector(x: Float, y: Float, rotation: Int): GenieVector = when (rotation) {
     Surface.ROTATION_90 -> GenieVector(y.toDouble(), x.toDouble())
     Surface.ROTATION_180 -> GenieVector(x.toDouble(), -y.toDouble())
     Surface.ROTATION_270 -> GenieVector(-y.toDouble(), -x.toDouble())

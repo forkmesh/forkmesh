@@ -195,6 +195,15 @@ def _record_author(values):
     return values.get("author") or "unknown"
 
 
+def pull_people(people, author):
+    names = []
+    for raw in [*(people if isinstance(people, list) else []), author]:
+        name = str(raw or "").strip()
+        if name and name.lower() not in {n.lower() for n in names}:
+            names.append(name)
+    return names
+
+
 def _record_row(number, values, body, kind):
     return {
         "number": number,
@@ -285,6 +294,8 @@ async def plan_pulls(reader, branch):
                        and is_commit(refs[name])]
         reviews = tree.get("pullReviews") if isinstance(
             tree.get("pullReviews"), dict) else None
+        people = tree.get("pullPeople") if isinstance(
+            tree.get("pullPeople"), dict) else {}
         paths = ["%s/%s/pull.md" % (PULLS_DIR, e["name"]) for e in listed]
         blobs, extra = await asyncio.gather(
             _blobs(reader, paths, commit),
@@ -302,6 +313,8 @@ async def plan_pulls(reader, branch):
                         reviews.get(str(number)) or [],
                         values.get("author", ""), row["state"],
                         _is_draft(values))
+                row["people"] = pull_people(
+                    people.get(str(number)), values.get("authorName", ""))
                 rows.append(row)
         for (name, _ref), blob in zip(branch_only, extra):
             if blob:
@@ -1292,6 +1305,14 @@ def _list(bundle, kind, rows, open_count=None, closed_count=None, link=None):
             faces = '<span class="p" data-repo-issue-row-commenters>%s</span>' % "".join(
                 avatar_html(name, name, "h-5 w-5", False, False)
                 for name in row["commenters"][:4])
+        elif row.get("people"):
+            from .repo_ssr_issue import avatar_html
+            count = len(row["people"])
+            faces = ('<span class="p" data-repo-pull-row-people title="Latest first: %s">%s</span>' % (
+                _esc(", ".join(row["people"])), "".join(
+                    '<span style="position:relative;z-index:%d;border-radius:9999px">%s</span>' % (
+                        count - index, avatar_html(name, name, "h-5 w-5", False, False))
+                    for index, name in enumerate(row["people"]))))
         items.append(
             '<div class="fm-ssr-item" data-ssr-record="%s"%s>%s<a href="%s/%s/%d">'
             '%s</a>%s<div class="m%s">%s</div></div>' % (

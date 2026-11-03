@@ -19,6 +19,8 @@ robin, and everything dynamic is proxied or redirected to the App.
 | [genie-spider.md](genie-spider.md) | The Genie spider guide on web pages |
 | [cloud-dragon.md](cloud-dragon.md) | The Cloud Dragon, a second mascot for web pages |
 | [site-crawler.md](site-crawler.md) | Crawler, the special agent that inspects the live site |
+| [docs-design.md](docs-design.md) | The docs look: one shell for the landing and library, the six pillars, interwoven navigation, theme-aware illustrations |
+| [docs-reader.md](docs-reader.md) | The docs library on phones: data views, diagrams, page map, dock, link previews and on-device suggestions |
 
 How the site fits the network: [architecture](../architecture.md) and
 [censorship resilience](../censorship-resilience.md); the App behind it:
@@ -58,6 +60,8 @@ instead of creating a second Worker.
 | `docs/` | Public documentation library (Markdown and JSON schemas); see the note at the top of [docs/README.md](../README.md) |
 | `app/tools/build_site_assets.py www` | Stages `www/dist` (the upload), rendering the docs library into it |
 | `app/tools/docs_site.py`, `docs_markdown.py`, `docs_history.py` | Render `docs/**/*.md` to `/docs/<path>/`, `/docs/library/`, `/docs/history/`, `/docs/documents/` |
+| `app/tools/docs_art.py`, `www/templates/partials/docs-art/` | Theme-aware isometric illustrations and line icons for the docs ([docs design](docs-design.md)) |
+| `app/tools/docs_figures.py`, `www/public/docs-explore.js` | Figures from code blocks, the page map, the phone dock, link previews and suggestions ([docs reader](docs-reader.md)) |
 | `www/public/robots.txt`, `sitemap.xml` (built) | Crawler rules and the sitemap they point to; see Security |
 | `www/tests/` | Python and Node tests for routing, the docs library, headers and scripts |
 | `www/deploy.sh` | Calls `app/deploy.sh www`; see Traps |
@@ -214,7 +218,9 @@ Crawlers and scrapers:
 - `sitemap.xml` is written by `build_www_sitemap` in
   `app/tools/build_site_assets.py`: each staged `.html` page at its canonical
   URL, without `404.html`, `ios-install.html`, `noindex` pages, off-site
-  canonicals and redirected paths. Blog posts carry `<lastmod>`.
+  canonicals and redirected paths. Blog posts carry `<lastmod>`. Only
+  forkmesh.com has one: `app.` and `world.forkmesh.com/sitemap.xml` 308 to it
+  (`WWW_SITE_ROUTES`) instead of answering 404 to crawlers that guess the path.
 - `stamp_canonical_links` gives every staged page without one a
   `<link rel="canonical">` on forkmesh.com, so the `www.` copy is not indexed
   as a second site.
@@ -243,6 +249,17 @@ Crawlers and scrapers:
   editing a post.
 - A blog post whose hero image is not committed breaks the website build
   (`build_www_feeds` stats every post image for the RSS enclosure).
+- Cloudflare allows 100 dynamic `_redirects` rules and counts every rule after
+  the first `:placeholder` or `*` rule as dynamic, even an exact path. Add exact
+  redirects above the first dynamic rule. `wrangler deploy --dry-run` does not
+  catch this: only the real upload fails (`code: 100324`).
+- One unshrinkable child makes a phone lay out the whole page wider than the
+  screen and zoom out. In a grid write `minmax(0, 1fr)`, never `1fr`, and give a
+  wide table its own horizontal scroll, and let long paths and code break
+  (`overflow-wrap`). Check at 320 and 390 px wide.
+- `/docs/` pins the site header and the tab strip on phones (below 768 px), and
+  the strip scrolls sideways only. The strip's tabs are exactly its height, so
+  it has nothing to scroll vertically.
 - `www/deploy.sh` (`app/deploy.sh www`) deploys `wrangler.production.toml`;
   `www/wrangler.toml` must keep no name or route.
 - Files in `SHARED_FILES` (`api-client.js`, `site-header.js`,

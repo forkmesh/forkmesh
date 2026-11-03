@@ -199,7 +199,6 @@ struct NextContact
     QString reason;
     int row = -1;
     int due = 0;
-    QStringList upcoming;
     QStringList ranked;
 };
 
@@ -314,8 +313,14 @@ private:
     void renderStageStrip();
     NextContact nextContact(NextMode mode) const;
     void renderNextContact();
-    QWidget *nextContactCard(NextMode mode);
-    QLabel *nextPostLabel(const QJsonObject &contact, bool compact) const;
+    QWidget *nextContactCard(NextMode mode, const NextContact &next);
+    QLabel *nextPostLabel(const QJsonObject &contact) const;
+    void selectNextMode(NextMode mode);
+    void showEmailPanel(const QString &contactId, const QString &mode, const QString &reason);
+    void writeEmailDraft();
+    void fillEmailDraft(const QString &subject, const QString &body, const QString &model);
+    void sendEmailPanel();
+    void closeEmailPanel();
     void queueReachMastodon(const QStringList &ranked);
     void scheduleNextRender();
     void selectFirstStage();
@@ -334,7 +339,6 @@ private:
                            const QList<QToolButton *> &mailButtons,
                            QToolButton *extensionButton, QToolButton *refreshButton);
     void applyNextStyle();
-    void syncHeaderTabs();
     void showPeople();
     void renderPeople();
     QIcon contactPicture(const ContactRow &row, int side);
@@ -639,6 +643,8 @@ private:
     bool m_grantsLoading = false;
     QComboBox *m_organization = nullptr;
     QLabel *m_status = nullptr;
+    quint64 m_statusGeneration = 0;
+    qint64 m_statusHeldUntil = 0;
     QProgressBar *m_importProgress = nullptr;
     QPlainTextEdit *m_importErrors = nullptr;
     CsvImportJob m_import;
@@ -649,6 +655,29 @@ private:
     QComboBox *m_sheet = nullptr;
     CrmStageStrip *m_stageStrip = nullptr;
     QFrame *m_nextCard = nullptr;
+    QWidget *m_nextCardHolder = nullptr;
+    QWidget *m_nextTabs = nullptr;
+    QWidget *m_nextScroll = nullptr;
+    QFrame *m_emailPanel = nullptr;
+    QLabel *m_emailTitle = nullptr;
+    QLabel *m_emailTo = nullptr;
+    QLabel *m_emailStatus = nullptr;
+    QLineEdit *m_emailSubject = nullptr;
+    QPlainTextEdit *m_emailBody = nullptr;
+    QWidget *m_emailOffers = nullptr;
+    QPushButton *m_emailSend = nullptr;
+    QPushButton *m_emailRewrite = nullptr;
+    QString m_emailContactId;
+    QString m_emailMode;
+    QString m_emailReason;
+    QString m_emailPrompt;
+    QString m_emailModel;
+    quint64 m_emailGeneration = 0;
+    QToolButton *m_reachTab = nullptr;
+    QToolButton *m_followTab = nullptr;
+    NextMode m_nextMode = NextMode::ReachOut;
+    QStringList m_nextRanked;
+    QStringList m_tableRanked;
     QHash<QString, QPointer<QLabel>> m_nextPhotos;
     QSet<QString> m_nextSkipped;
     QTableWidget *m_contactsTable = nullptr;
@@ -679,7 +708,7 @@ private:
     QWidget *m_menuHolder = nullptr;
     QToolButton *m_importMenuButton = nullptr;
     QToolButton *m_mailMenuButton = nullptr;
-    QToolButton *m_overviewTab = nullptr;
+    QToolButton *m_moreMenuButton = nullptr;
     QListWidget *m_sheetList = nullptr;
     QWidget *m_body = nullptr;
     QWidget *m_peoplePage = nullptr;

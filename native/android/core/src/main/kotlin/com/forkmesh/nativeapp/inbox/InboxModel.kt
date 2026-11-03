@@ -48,6 +48,8 @@ class InboxModel(
         private set
     var errors: List<String> = emptyList()
         private set
+    var signedOut: Boolean = false
+        private set
     var pauseUntilMs: Long = 0
         private set
     var loaded: Boolean = false
@@ -98,9 +100,11 @@ class InboxModel(
         val me = account
         if (me.isEmpty()) {
             items = localPings.items
+            signedOut = true
             errors = listOf("Sign in to see your inbox.")
             return
         }
+        signedOut = false
         val problems = ArrayList<String>()
         syncQueue.drain { send(it, me) }
         try {

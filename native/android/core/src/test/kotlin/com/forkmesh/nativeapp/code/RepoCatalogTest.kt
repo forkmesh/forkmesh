@@ -102,4 +102,17 @@ class RepoCatalogTest {
         expect(RepoCatalog.isOnline(catalog[1]))
         expect(RepoCatalog.isOnline(catalog[2]))
     }
+
+    fun testMetaLineIsOnePlainLine() {
+        val now = 10L * 60_000
+        assertEq("8 mirrors · Public · 6m ago", RepoCatalog.metaLine(catalog[1].copy(updatedMs = now - 6 * 60_000), now))
+        assertEq("1 mirror · Private", RepoCatalog.metaLine(catalog[0].copy(updatedMs = 0), now))
+    }
+
+    fun testVisibilityIsSeparateFromReach() {
+        expect(RepoCatalog.matchesVisibility(catalog[0], null))
+        expect(RepoCatalog.matchesVisibility(catalog[0], RepoFilter.Private))
+        expect(!RepoCatalog.matchesVisibility(catalog[1], RepoFilter.Private))
+        assertEq(listOf("All", "Online", "Offline"), RepoCatalog.reachFilters.map { it.label })
+    }
 }

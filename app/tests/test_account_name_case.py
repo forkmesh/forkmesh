@@ -233,3 +233,23 @@ out.after = api.userDisplayName("alicesmith");
     assert out["calls"] == ["/api/accounts/name-case?names=alicesmith%2Cbob"]
     assert out["callsAgain"] == 1
     assert out["after"] == "AliceSmith"
+
+
+def test_the_session_check_keeps_the_casing():
+    sessions = ENTRY.split("async def _account_sessions(", 1)[1]
+    sessions = sessions.split("\nasync def ", 1)[0]
+    assert '"nameCase": account_names.display_name(rec, actor),' in sessions
+    hydrate = DASHBOARD_JS.split("async function hydratePortableMirrorSession()", 1)[1]
+    hydrate = hydrate.split("\n  }\n", 1)[0]
+    assert 'nameCase: account.nameCase || storedCase || "",' in hydrate
+
+
+def test_a_typed_casing_survives_rerenders_until_saved():
+    render = DASHBOARD_JS.split("function renderProfilePage(session)", 1)[1]
+    render = render.split("\n  }\n", 1)[0]
+    assert "!nameCaseInput.dataset.edited" in render
+    assert ('$("[data-profile-page-name-case]")?.addEventListener("input", (event) => {\n'
+            '    event.target.dataset.edited = "1";') in DASHBOARD_JS
+    save = DASHBOARD_JS.split("async function savePublicProfile()", 1)[1]
+    save = save.split("\n  }\n", 1)[0]
+    assert save.index("delete nameCaseInput.dataset.edited;") < save.index('"Public profile saved."')

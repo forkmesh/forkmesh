@@ -443,6 +443,7 @@ fun FmDropdownMenuItem(
     icon: String? = null,
     enabled: Boolean = true,
     textColor: Color? = null,
+    trailing: (@Composable () -> Unit)? = null,
 ) {
     val c = Fm.colors
     val tone = textColor ?: c.textPrimary
@@ -454,6 +455,7 @@ fun FmDropdownMenuItem(
         },
         modifier = modifier.heightIn(min = 44.dp),
         leadingIcon = icon?.let { name -> { FmIcon(name, size = 20.dp, outlined = true) } },
+        trailingIcon = trailing,
         enabled = enabled,
         contentPadding = PaddingValues(horizontal = FmSpace.x4),
         colors = MenuDefaults.itemColors(

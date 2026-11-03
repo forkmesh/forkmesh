@@ -103,6 +103,21 @@ is safe because only one repository of a fork family counts. Pull requests
 are counted when opened; merges are not shown. Private-repository work never
 counts from either source.
 
+**The profile contribution panel reads it too.** `GET` on a profile's
+contributions (`_contribution_profile_payload` in `app/src/entry.py`) adds
+`member_repo_activity` pull requests, issues and reviews for the default
+rolling last-year window only (`contribution_rolling_range`), because the
+rows hold trailing-365-day totals, not days. `_contribution_forge_rows` is one
+indexed read by `user_bi`, at most `FORGE_ACTIVITY_MAX_REPOS` (50) public
+repositories whose figures are under two days old, so a projection that
+stopped refreshing does not keep reporting an old window. Its commit column
+is never used: it keys on git author names, which anyone can claim.
+`merge_forge_activity` (`app/src/contributions.py`) takes per logical project
+the larger of the signed snapshot and forge figure, as above, using the
+per-project snapshot rows `_contribution_activity_rows` adds. The rows join
+the profile revision hash so cached answers refresh, `coverage.forge` names
+the kinds and repository count, and calendar days are unchanged.
+
 ## Cost and caching
 
 - One request covers every row the reader can see: rows register with an

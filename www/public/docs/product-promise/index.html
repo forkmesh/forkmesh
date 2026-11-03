@@ -39,7 +39,7 @@
       .proof-command code { min-width: 0; flex: 1; overflow-x: auto; font-family: "ForkMesh Mono",ui-monospace,monospace; }
       .proof-command button { padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; color: var(--foreground); background: var(--card); cursor: pointer; }
       .proof-note { padding: 16px 18px; border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 10px; line-height: 1.6; }
-      @media (max-width: 700px) { .proof-grid { grid-template-columns: 1fr; } .proof-command { align-items: stretch; flex-direction: column; } }
+      @media (max-width: 700px) { .proof-grid { grid-template-columns: minmax(0, 1fr); } .proof-command { align-items: stretch; flex-direction: column; } }
     </style>
     <link rel="stylesheet" href="/site-footer.css" />
     <script src="/site-footer.js?v=${version}" defer></script>

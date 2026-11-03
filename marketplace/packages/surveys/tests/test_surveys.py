@@ -99,9 +99,9 @@ class Runtime:
     async def blind(self, value): return hashlib.sha256(value.encode()).hexdigest()
     async def seal(self, value): return "sealed:" + json.dumps(value, sort_keys=True)
     async def open(self, value): return json.loads(str(value).removeprefix("sealed:"))
-    async def notify(self, recipient, kind, title, body="", href="", dedupe="", **_):
+    async def notify(self, recipient, kind, title, body="", href="", dedupe="", push=True, **_):
         self.pings.append({"to": recipient, "kind": kind, "title": title, "body": body,
-                           "href": href, "dedupe": dedupe})
+                           "href": href, "dedupe": dedupe, "push": push})
         return True
     async def d1_all(self, sql, *args):
         return [dict(row) for row in self.db.execute(sql, args).fetchall()]
@@ -141,6 +141,17 @@ def submit(runtime, survey, answers, ip=None):
         runtime.ip = ip
     return call(runtime.use("POST", actor="", body={"answers": answers}),
                 f"/api/surveys/-/public/{token_of(survey)}")
+
+
+def track(runtime, survey, kind, **extra):
+    body = {"kind": kind, "session": "ab" * 16}
+    body.update(extra)
+    return call(runtime.use("POST", actor="", body=body),
+                f"/api/surveys/-/public/{token_of(survey)}/track")
+
+
+def detail_of(runtime, survey):
+    return call(runtime.use("GET"), f"/api/surveys/acme/items/{survey['id']}")["data"]["survey"]
 
 
 def answers_for(survey, single="Great", multiple=None, rating=4, text="Fun", paragraph=""):
@@ -543,3 +554,166 @@ def test_bad_tokens_touch_no_schema_and_readiness_is_cached():
     assert call(runtime.use("GET", actor=""), good)["status"] == 200
     assert call(runtime.use("GET"), "/api/surveys/acme")["status"] == 200
     assert seen == []
+
+
+def test_tracking_accepts_known_events_and_drops_the_rest():
+    runtime = Runtime()
+    survey = publish(runtime, create(runtime))
+    first = survey["questions"][0]["id"]
+    for kind, extra in (("view", {}), ("start", {}), ("answer", {"detail": first}),
+                        ("submit", {"junk": "x" * 5000}), ("link", {"detail": "forkmesh"}),
+                        ("leave", {"detail": "3"})):
+        assert track(runtime, survey, kind, **extra)["status"] == 202, kind
+    for kind, extra in (("click", {}), ("answer", {"detail": "deadbeef"}), ("answer", {}),
+                        ("link", {"detail": "https://evil.example"}), ("leave", {"detail": "999"}),
+                        ("view", {"detail": "hello"}), ("", {})):
+        refused = track(runtime, survey, kind, **extra)
+        assert refused["status"] == 400 and refused["data"]["error"] == "invalid_event", (kind, extra)
+    rows = [dict(row) for row in runtime.db.execute(
+        "SELECT kind,detail,visitor_key FROM survey_visits ORDER BY created_at")]
+    assert [row["kind"] for row in rows] == ["view", "start", "answer", "submit", "link", "leave"]
+    assert rows[2]["detail"] == first and rows[5]["detail"] == "3"
+    assert len({row["visitor_key"] for row in rows}) == 1 and len(rows[0]["visitor_key"]) == 32
+    assert runtime.ip not in json.dumps(rows)
+    respondent = hashlib.sha256(("survey-respondent:%s:%s" % (survey["id"], runtime.ip)).encode()).hexdigest()[:32]
+    assert rows[0]["visitor_key"] != respondent
+    draft = create(runtime)
+    hidden = call(runtime.use("POST", actor="", body={"kind": "view"}),
+                  f"/api/surveys/-/public/{draft['id']}.{'0' * 24}/track")
+    assert hidden["status"] == 404
+    assert call(runtime.use("GET", actor=""), f"/api/surveys/-/public/{token_of(survey)}/track")["status"] == 405
+    runtime.origin_ok = False
+    assert track(runtime, survey, "view")["status"] == 403
+
+
+def test_tracking_rate_limits_per_connection_and_survey():
+    runtime = Runtime()
+    survey = publish(runtime, create(runtime))
+    for _ in range(surveys.VISITOR_HOURLY_EVENTS):
+        assert track(runtime, survey, "start")["status"] == 202
+    limited = track(runtime, survey, "start")
+    assert limited["status"] == 429 and limited["data"]["error"] == "rate_limited"
+    runtime.ip = "198.51.100.8"
+    assert track(runtime, survey, "start")["status"] == 202
+    runtime.ip = "203.0.113.7"
+    runtime.clock += HOUR
+    assert track(runtime, survey, "start")["status"] == 202
+    original = surveys.SURVEY_HOURLY_EVENTS
+    surveys.SURVEY_HOURLY_EVENTS = 2
+    try:
+        runtime.ip = "192.0.2.50"
+        assert track(runtime, survey, "start")["status"] == 202
+        assert track(runtime, survey, "start", session="cd" * 16)["data"]["error"] == "rate_limited"
+    finally:
+        surveys.SURVEY_HOURLY_EVENTS = original
+
+
+def test_visit_pings_once_per_visitor_an_hour_and_upgrade_when_they_start():
+    runtime = Runtime()
+    survey = publish(runtime, create(runtime, actor="charlie"))
+    track(runtime, survey, "view")
+    track(runtime, survey, "view")
+    assert len(runtime.pings) == 1
+    ping = runtime.pings[0]
+    assert ping["to"] == "charlie" and ping["kind"] == "plugin_activity" and ping["push"] is True
+    assert ping["title"] == "👀 Someone opened your survey ‘Offsite feedback’"
+    assert ping["body"] == "0 responses so far"
+    assert ping["href"] == f"/dashboard/surveys?org=acme&survey={survey['id']}&tab=activity"
+    track(runtime, survey, "start")
+    track(runtime, survey, "answer", detail=survey["questions"][0]["id"])
+    assert len(runtime.pings) == 2
+    upgrade = runtime.pings[1]
+    assert upgrade["title"] == "✍️ Someone started your survey ‘Offsite feedback’"
+    assert upgrade["dedupe"] == ping["dedupe"] and upgrade["push"] is False
+    track(runtime, survey, "view", session="cd" * 16)
+    assert len(runtime.pings) == 2
+    runtime.ip = "198.51.100.9"
+    track(runtime, survey, "start")
+    assert len(runtime.pings) == 3 and runtime.pings[2]["push"] is True
+    assert runtime.pings[2]["title"].startswith("✍️ Someone started")
+    runtime.clock += HOUR
+    runtime.ip = "203.0.113.7"
+    track(runtime, survey, "view")
+    assert len(runtime.pings) == 4
+    for index in range(surveys.SURVEY_HOURLY_VISIT_PINGS):
+        runtime.ip = "192.0.2.%d" % (index + 1)
+        track(runtime, survey, "view")
+    assert len(runtime.pings) == 3 + surveys.SURVEY_HOURLY_VISIT_PINGS
+    runtime.clock += HOUR
+    quiet = call(runtime.use("PATCH", actor="charlie", body={"settings": {"notifyOnVisit": False}}),
+                 f"/api/surveys/acme/items/{survey['id']}")
+    assert quiet["data"]["survey"]["settings"]["notifyOnVisit"] is False
+    assert quiet["data"]["survey"]["settings"]["notifyOnResponse"] is True
+    runtime.ip = "198.51.100.30"
+    track(runtime, survey, "view")
+    assert len(runtime.pings) == 3 + surveys.SURVEY_HOURLY_VISIT_PINGS
+
+
+def test_privacy_mode_uses_the_page_session_and_never_pings_without_one():
+    runtime = Runtime()
+    survey = publish(runtime, create(runtime))
+    runtime.ip = ""
+    track(runtime, survey, "view", session="cd" * 16)
+    track(runtime, survey, "view", session="ef" * 16)
+    track(runtime, survey, "view", session="")
+    keys = [row[0] for row in runtime.db.execute("SELECT visitor_key FROM survey_visits")]
+    assert len(set(keys)) == 3 and "" in keys
+    assert len(runtime.pings) == 2
+
+
+def test_survey_detail_summarises_activity():
+    runtime = Runtime()
+    survey = publish(runtime, create(runtime))
+    assert detail_of(runtime, survey)["activity"]["views"] == 0
+    ids = [question["id"] for question in survey["questions"]]
+    track(runtime, survey, "view")
+    track(runtime, survey, "start")
+    track(runtime, survey, "answer", detail=ids[0])
+    track(runtime, survey, "submit")
+    submit(runtime, survey, answers_for(survey))
+    runtime.ip = "198.51.100.40"
+    track(runtime, survey, "view")
+    track(runtime, survey, "leave", detail="0")
+    runtime.ip = "198.51.100.41"
+    track(runtime, survey, "view")
+    track(runtime, survey, "leave", detail="2")
+    activity = detail_of(runtime, survey)["activity"]
+    assert {key: activity[key] for key in ("days", "views", "visitors", "interactions", "starts",
+                                          "submits", "leaves")} == {
+        "days": 30, "views": 3, "visitors": 3, "interactions": 3, "starts": 1, "submits": 1, "leaves": 2}
+    assert activity["lastActivityAt"] > 0
+    assert [item["label"] for item in activity["recent"]] == [
+        "Left after answering 2 questions", "Opened the survey", "Left without answering",
+        "Opened the survey", "Sent their answers", "Answered “How was the offsite?”",
+        "Started answering", "Opened the survey"]
+    overview = call(runtime.use("GET"), "/api/surveys/acme")["data"]
+    assert "activity" not in overview["surveys"][0]
+    runtime.clock += 31 * 24 * HOUR
+    later = detail_of(runtime, survey)["activity"]
+    assert later["views"] == 0 and len(later["recent"]) == 8
+
+
+def test_visits_are_pruned_and_removed_with_the_survey():
+    runtime = Runtime()
+    survey = publish(runtime, create(runtime))
+    for index in range(5):
+        runtime.ip = "192.0.2.%d" % index
+        track(runtime, survey, "view")
+    original = surveys.MAX_VISITS
+    surveys.MAX_VISITS = 3
+    try:
+        track(runtime, survey, "view")
+    finally:
+        surveys.MAX_VISITS = original
+    assert runtime.db.execute("SELECT COUNT(*) FROM survey_visits").fetchone()[0] == 3
+    runtime.clock += surveys.VISIT_RETAIN_MS + 1
+    track(runtime, survey, "view")
+    assert runtime.db.execute("SELECT COUNT(*) FROM survey_visits").fetchone()[0] == 1
+    exported = asyncio.run(surveys.export_org_data(runtime, "org:acme", "acme"))
+    assert exported["surveys"][0]["activity"]["views"] == 1
+    call(runtime.use("DELETE"), f"/api/surveys/acme/items/{survey['id']}")
+    assert runtime.db.execute("SELECT COUNT(*) FROM survey_visits").fetchone()[0] == 0
+    other = publish(runtime, create(runtime))
+    track(runtime, other, "view")
+    asyncio.run(surveys.purge_org_data(runtime, "org:acme"))
+    assert runtime.db.execute("SELECT COUNT(*) FROM survey_visits").fetchone()[0] == 0

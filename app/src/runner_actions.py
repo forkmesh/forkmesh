@@ -305,7 +305,8 @@ async def sweep(runtime, now):
     await runtime.d1_run(
         "UPDATE repo_action_jobs SET status='expired',"
         "note='No runner took this job within a day.',updated_at=? "
-        "WHERE status='queued' AND created_at<?", now, now - QUEUED_TTL_MS)
+        "WHERE status='queued' AND MAX(created_at,updated_at)<?",
+        now, now - QUEUED_TTL_MS)
     await runtime.d1_run(
         "DELETE FROM repo_action_logs WHERE job_id IN (SELECT id FROM "
         "repo_action_jobs WHERE updated_at<? AND status NOT IN "

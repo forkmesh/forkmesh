@@ -405,7 +405,7 @@ def test_a_zoho_header_with_names_only_finds_the_address_in_attributes_or_the_li
 
 def test_zoho_mail_lists_sort_by_sender_subject_or_date_in_the_page_only():
     sorter = (EXTENSION / "zoho-sort.js").read_text(encoding="utf-8")
-    script = MANIFEST["content_scripts"][-1]
+    script = next(script for script in MANIFEST["content_scripts"] if "zoho-sort.js" in script["js"])
     assert script["js"] == ["zoho-tidy.js", "zoho-sort.js"]
     assert script["matches"] == [match for match in MANIFEST["content_scripts"][0]["matches"]
                                  if "zoho" in match]
@@ -697,7 +697,7 @@ def test_the_refresh_panel_follows_the_tab_without_touching_any_channel_site():
         assert (EXTENSION / name).is_file()
     assert [script["js"] for script in MANIFEST["content_scripts"]] == [
         ["panel.js", "content.js"], ["dashboard.js"], ["x.js"], ["reddit.js"], ["x-developer.js"],
-        ["zoho-tidy.js", "zoho-sort.js"]]
+        ["zoho-tidy.js", "zoho-sort.js"], ["zoho-console.js"]]
     for gone in ("fm-bar-", "BAR_", "refresh-bar", "barMark", "fm-refresh-bar"):
         assert gone not in BACKGROUND, gone
     assert BACKGROUND.count("chrome.scripting.registerContentScripts(") == 1

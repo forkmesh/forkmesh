@@ -69,6 +69,7 @@ RELEASE_FILES = ("marketplace/catalog.json", "marketplace/manifest.schema.json",
 RELEASE_GLOBS = ("tools/next_*.py",)
 ROLL_PREFIXES = ("server/", "deploy/core/")
 ROLL_FILES = ("tools/mirror_gateway.py",)
+WEBSITE_PREFIXES = ("docs/",)
 RUNNER_ROLL_PREFIXES = ("server/",)
 RUNNER_ROLL_RETRY_SECONDS = 600
 RUNNERS_BUSY_EXIT = 3
@@ -199,10 +200,10 @@ def classify(paths) -> dict:
 
 def workflow_path_patterns(depth=PATH_DEPTH) -> list:
     patterns = []
-    for prefix in RELEASE_PREFIXES + ROLL_PREFIXES:
+    prefixes = RELEASE_PREFIXES + ROLL_PREFIXES + WEBSITE_PREFIXES
+    for prefix in prefixes:
         base = prefix.rstrip("/")
-        if any(prefix != other and prefix.startswith(other)
-               for other in RELEASE_PREFIXES + ROLL_PREFIXES):
+        if any(prefix != other and prefix.startswith(other) for other in prefixes):
             continue
         patterns += [base + "/*" * level for level in range(1, depth + 1)]
     return patterns + list(RELEASE_FILES) + list(ROLL_FILES) + [
@@ -1441,7 +1442,7 @@ class Pipeline:
             self.say("gate 1: " + result["message"])
             return result
         if not changed["release"] and self.mode == "auto":
-            result.update(ok=True, message="no served-stack change between the deployed "
+            result.update(ok=True, message="no core-node change between the deployed "
                           "%s and %s" % (base[:12], rev))
             self.say("gate 1: " + result["message"])
             return result

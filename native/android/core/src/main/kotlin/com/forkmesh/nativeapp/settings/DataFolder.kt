@@ -177,6 +177,12 @@ object DataFolder {
         return out
     }
 
+    fun withoutNestedFolders(index: Map<String, DataFolderIndexEntry>): MutableMap<String, DataFolderIndexEntry> {
+        val marker = "/$MARKER_FILE"
+        val folders = index.values.map { it.local }.filter { it.endsWith(marker) }.map { it.dropLast(marker.length) + "/" }
+        return index.filterValues { entry -> folders.none { entry.local.startsWith(it) } }.toMutableMap()
+    }
+
     fun signature(size: Long, modifiedMillis: Long): String = "$size:$modifiedMillis"
 }
 
@@ -244,7 +250,7 @@ class DataFolderStore(private val io: DataFolderIo) {
 
     fun backup(slug: String, trees: List<DataFolderTree>): DataFolderCopyReport {
         val report = DataFolderCopyReport()
-        val index = readIndex(slug)
+        val index = DataFolder.withoutNestedFolders(readIndex(slug))
         for (tree in trees) {
             for ((relative, file) in walk(tree.local, tree.skippedTopLevel)) {
                 val key = DataFolder.folderPath(tree.name, relative)
@@ -274,7 +280,7 @@ class DataFolderStore(private val io: DataFolderIo) {
     fun restore(slug: String, trees: List<DataFolderTree>): DataFolderCopyReport {
         val report = DataFolderCopyReport()
         val byName = trees.associateBy { it.name }
-        for ((key, entry) in readIndex(slug).toSortedMap()) {
+        for ((key, entry) in DataFolder.withoutNestedFolders(readIndex(slug)).toSortedMap()) {
             val parts = entry.local.split('/')
             val tree = byName[parts.first()] ?: continue
             if (parts.size < 2 || parts.any { it == ".." || it == "." || it.isEmpty() }) continue
@@ -307,6 +313,7 @@ class DataFolderStore(private val io: DataFolderIo) {
                 if (prefix.isEmpty() && child.name in skippedTopLevel) continue
                 val relative = if (prefix.isEmpty()) child.name else "$prefix/${child.name}"
                 if (java.nio.file.Files.isSymbolicLink(child.toPath())) continue
+                if (child.isDirectory && File(child, DataFolder.MARKER_FILE).isFile) continue
                 if (child.isDirectory) {
                     visit(child, relative)
                 } else if (child.isFile && !child.name.endsWith(DataFolder.PARTIAL_SUFFIX)) {

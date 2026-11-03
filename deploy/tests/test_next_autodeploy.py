@@ -110,7 +110,8 @@ def test_workflow_prefilter_is_generated_and_covers_every_served_file():
     served = [p for p in tracked if auto.release_path(p) or auto.roll_path(p)]
     assert served
     assert [p for p in served if not any(x.match(p) for x in patterns)] == []
-    assert not any(x.match("docs/guide.md") for x in patterns)
+    assert any(x.match("docs/guide.md") for x in patterns)
+    assert any(x.match("docs/native/ios/FMTools.md") for x in patterns)
     assert not any(x.match("desktop/src/main.cpp") for x in patterns)
 
 
@@ -1012,6 +1013,25 @@ def test_a_failed_roll_keeps_the_pending_roll_and_emails(tmp_path, monkeypatch):
     state = auto.record_outcome(result, notifier, print, state_dir=tmp_path / "state")
     assert state["roll"]["paths"] == ["server/main.go"] and state["roll"]["error"]
     assert notifier.sent[-1][1:] == ("node-roll-failed:%s" % ("b" * 12), True)
+
+
+def test_a_docs_only_push_updates_the_website_and_leaves_the_cores_alone(
+        repo, tmp_path, monkeypatch):
+    base = git(repo, "rev-parse", "HEAD")
+    target = commit(repo, {"docs/readme.md": "d2\n"}, "docs")
+    pipeline = auto.Pipeline(repo, auto.Log(echo=False), state_dir=tmp_path / "state",
+                             layout=SimpleNamespace(cache=tmp_path / "cache"))
+    published = []
+    monkeypatch.setattr(auto.common, "DeployLock", lambda what: _RollLock())
+    monkeypatch.setattr(auto.common, "load_manifest", lambda: {})
+    monkeypatch.setattr(pipeline, "hosts", lambda target: {"nodes": []})
+    monkeypatch.setattr(auto, "live_fleet", lambda *a, **k: ({"n1": base[:12]}, {}))
+    monkeypatch.setattr(pipeline, "website", lambda target, result: published.append(target))
+    monkeypatch.setattr(pipeline, "test_gate", lambda *a: pytest.fail("ran the core gates"))
+    result = pipeline.execute(target)
+    assert result["ok"] is True and "no core-node change" in result["message"]
+    assert not result.get("deployed") and not result.get("roll")
+    assert published == [target]
 
 
 def _failing_website(target, result):

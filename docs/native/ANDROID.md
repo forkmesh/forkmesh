@@ -597,6 +597,9 @@ How repositories reach mirrors is in [mirroring.md](../mirroring.md).
 
 iOS features Android does not have, because they need an Apple-only API:
 
+- **System tab bar on iPhone**: iOS 26 draws it as Liquid Glass with its own
+  animation, which Android has no equivalent for, so Android keeps its custom
+  glass bar.
 - **iPhone Duo's side column**: iOS moves bars under the outer camera, a system
   layout tied to that hardware. Android foldables have no camera column, so
   they keep their bottom bar and rail.
@@ -1292,13 +1295,16 @@ bottom bar.
   and 4 dp vertical padding; the 40 dp project icon (opens the project drawer;
   a long press closes hub and palette and selects Home), the chips (Glasses
   Alert, `StepsWalkChip`, `ShellMailChip`), the new-agent button and the
-  avatar (36 dp, corners 28%, as `AvatarWithDot(rounded:)`: picture or initial,
-  a 2 dp status ring 3 dp outside, the status emoji bottom-left; S014). A guest
-  sees a person icon and a "Sign in" chip. Search is on Home, not the bar. The
-  telemetry strip: 12 x 10 dp sparklines coloured by `TelemetryMetric.health`.
+  avatar (38 dp, corners 28%, as `AvatarWithDot(rounded:)`: picture or initial,
+  a 2 dp status ring touching it with no gap, the status emoji bottom-left;
+  S014). A guest
+  sees the person icon and "Sign in" in one glass capsule
+  (`GuestAccountCapsule`). Search is on Home, not the bar. The telemetry strip,
+  when the Diagnostics switch is on (off by default): 12 x 10 dp sparklines
+  coloured by `TelemetryMetric.health`.
 - **New-agent button** (`PromptButton`): a 44 dp accent gradient circle with a
-  white plus and a glow that grows with running agents; each running agent
-  adds a small static four-point star. Hold it for the voice prompt (section 30).
+  white plus and a neutral shadow ([SCREEN_POLISH.md](SCREEN_POLISH.md)); each
+  running agent adds a small static four-point star. Hold it for the voice prompt (section 30).
 - **Pushed-page header** (`FmNavBar`), the iOS 26 inline bar: page-coloured,
   52 dp, centred `titleMedium` title, a 44 dp glass Back circle, actions on the
   right. Actions get the bar width less 52 dp (at least 184 dp,
@@ -1549,16 +1555,10 @@ compile at run time, and `FmGlass.lens` then falls back to the plain blur.
 
 Most area rows now live with their area (sections 13 and 14). These remain:
 
-- **Inbox bar (S030).** `A/feature/inbox/InboxBar.kt` is iOS `InboxFilterBar`
-  and `InboxToolbarMenu`: one centred row of 28 dp glass squares (8 dp corners,
-  4 dp apart, 16 dp icons): the six filters, Mark all read, Unread only, a pause
-  menu (bedtime, or a warning-coloured bell-off while paused), Discard changes
-  that could not sync (only when a change ran out of attempts), Ping settings
-  and Delete all pings. The selected filter and an active Unread only take the
-  accent. Counts are a 14 dp badge offset 5 dp up and right, always blue
-  (`fm.count`), "99+" above 99. Holding a square shows its name; a narrow phone
-  scrolls the row. The squares draw glass without the 12 dp shadow, which
-  swamps a 28 dp shape.
+- **Inbox bar (S030).** `A/feature/inbox/InboxBar.kt` is iOS `InboxTitleBar`
+  and `InboxToolbarMenu`: the "Inbox ⌄" title opens the filter menu with unread
+  counts, and one glass "…" button holds the inbox actions
+  ([SCREEN_POLISH.md](SCREEN_POLISH.md)).
 - **Inbox instance logo (S122).** `SwipeRow` (`A/feature/inbox/InboxScreen.kt`)
   stacks the project's 16 dp `ProjectIcon` under the icon of every non-local
   ping and adds "From <project>" to its TalkBack label.
@@ -1713,10 +1713,14 @@ earlier call pieces are in section 14, "Direct calls".
   read while a desktop link is open, every 15 minutes when healthy and every 2
   when not. Charts are filled at 35 %.
 - **Token charts** (`AgentTokenChartsOverlay`, `AgentTokenCharts.kt`, S145):
-  two 12 dp charts, 126 dp together, under the status bar centred on the top
-  cutout (screen centre otherwise), shown with Diagnostics
-  (`showTelemetryStrip`) and the Agents package, ticking every second over
-  60 s, ignoring touches.
+  two 12 dp token tanks, 126 dp together, under the status bar centred on the
+  top cutout (screen centre otherwise), shown with Diagnostics
+  (`showTelemetryStrip`) and the Agents package, poured every second and
+  ignoring touches. `core/.../agents/AgentTokenTank.kt` is the same liquid as
+  iOS ([NAVIGATION.md](NAVIGATION.md), agent token tanks); the accelerometer
+  goes through Genie's `screenVector` for the display rotation and is
+  registered only while a tank holds or owes grains. The tanks advance and
+  redraw at most 30 times a second (`AgentTokenTank.FRAME_NANOS`).
 - **Several desktops (S141).** `DesktopControlHub` keeps the chosen desktop
   (`desktop/preferred-key` in project preferences), its `choices` with presence
   (Running, Not running or not reachable, Checking…), and `checkDesktops`,
@@ -1864,11 +1868,14 @@ earlier call pieces are in section 14, "Direct calls".
   New agent Quick Settings tile instead of Siri, the Live Activity and Control
   Center. Progress keeps `nav/tour.v1` and adds `nav/tour.done.v1` and
   `nav/tour.place.v1`. `TourScreen` (`A/feature/navigation/TourScreen.kt`) is
-  the chooser (three track cards, "Pick up where you left off", "Not now") and
-  the player (`HorizontalPager` of stops, Back, Show me, Next/Finish).
-  `TourStage.kt` holds the 330 dp stage, the 1.9 s autoplay a touch pauses for
-  6 s, the pulsing `tourTarget` ring and mock pieces; `TourScenes.kt` has the 18
-  scenes. With animations off the ring, ripples and sparkle stop and steps
+  the chooser (one grouped list of tracks, "Pick up where you left off", "Not
+  now") and the full-screen player (`HorizontalPager` of stops, close or back,
+  page dots, Skip, the `TourStop.short` headline and line, Next/Finish, Show
+  me). The first run (`ShellFirstRun`) opens Essentials straight in the player
+  ([NAVIGATION.md](NAVIGATION.md), the tour). `TourStage.kt` holds the stage,
+  the 1.9 s autoplay a touch pauses for 6 s, the pulsing `tourTarget` ring and
+  mock pieces; `TourScenes.kt` has the 18 scenes, drawn in a small phone or, for
+  single things, as large objects (`TourObjects.kt`). With animations off the ring, ripples and sparkle stop and steps
   still advance. Show me pops the tour and 300 ms later calls the shell or
   `NavigationFeature.open(route)`. Home's Tour icon counts tracks not done
   (`ShellTour.left`).

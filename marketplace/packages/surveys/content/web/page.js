@@ -5,13 +5,14 @@ window.ForkMeshDashboard.registerPage("surveys", ({
   const STATUS_TONES = { draft: "", open: " fm-label-success", scheduled: " fm-label-accent", closed: "" };
   const TYPE_LABELS = { single: "Pick one", multiple: "Pick any", text: "Short text", paragraph: "Long text", rating: "Rating" };
   const CHOICE_TYPES = ["single", "multiple"];
-  const DEFAULT_SETTINGS = { oneResponsePerPerson: false, opensAt: 0, closesAt: 0, maxResponses: 0, notifyOnResponse: true, shuffleOptions: false };
+  const DEFAULT_SETTINGS = { oneResponsePerPerson: false, opensAt: 0, closesAt: 0, maxResponses: 0, notifyOnResponse: true, notifyOnVisit: true, shuffleOptions: false };
+  const TABS = ["results", "responses", "activity"];
   const state = {
     organizations: [], organization: "", surveys: [], summary: {}, detailId: "", detail: null,
     responses: null, tab: "results", questions: [],
   };
   const params = new URL(location.href).searchParams;
-  const requested = { org: params.get("org") || "", survey: params.get("survey") || "" };
+  const requested = { org: params.get("org") || "", survey: params.get("survey") || "", tab: TABS.includes(params.get("tab")) ? params.get("tab") : "" };
 
   async function request(path, method = "GET", body = null) {
     const headers = { accept: "application/json" };
@@ -244,6 +245,20 @@ window.ForkMeshDashboard.registerPage("surveys", ({
       <div class="mb-2 flex items-center justify-between gap-2"><p class="text-xs text-muted-foreground">${escapeHtml(dateLabel(response.submittedAt))}</p><button type="button" data-survey-response-delete="${escapeHtml(response.id)}" aria-label="Delete response" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><i data-lucide="trash-2"></i></button></div>
       <dl class="grid gap-1">${(survey.questions || []).filter((question) => response.answers[question.id] !== undefined).map((question) => `<div><dt class="text-xs text-muted-foreground">${escapeHtml(question.title)}</dt><dd class="whitespace-pre-wrap text-sm text-foreground">${escapeHtml(answerText(questions[question.id], response.answers[question.id]))}</dd></div>`).join("") || `<p class="text-xs text-muted-foreground">Answers to removed questions only.</p>`}</dl></li>`).join("")}</ul>`;
   }
+  function activityBlock(survey) {
+    const activity = survey.activity;
+    if (!activity) return `<p class="text-xs text-muted-foreground">Loading activity…</p>`;
+    const recent = activity.recent || [];
+    if (!activity.views && !activity.interactions && !recent.length) {
+      return `<p class="text-xs text-muted-foreground">No one has opened the survey link yet. Opening it with Preview does not count.</p>`;
+    }
+    const facts = [plural(activity.views, "view"), plural(activity.visitors, "visitor"), plural(activity.interactions, "interaction"),
+      `${activity.starts || 0} started`, `${activity.submits || 0} sent`];
+    if (activity.lastActivityAt) facts.push(`last activity ${relativeTimeLabel(activity.lastActivityAt)}`);
+    return `<p class="mb-3 text-sm text-foreground"><span class="font-semibold">Last ${escapeHtml(String(activity.days || 30))} days:</span> ${escapeHtml(facts.join(" · "))}</p>
+      <ul class="divide-y divide-border border-y border-border">${recent.map((item) => `<li class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2"><span class="min-w-0 text-sm text-foreground">${escapeHtml(item.label || item.kind)}</span><span class="text-xs text-muted-foreground">Visitor ${escapeHtml(item.visitor || "unknown")} · ${escapeHtml(relativeTimeLabel(item.at))}</span></li>`).join("")}</ul>
+      <p class="mt-2 text-xs text-muted-foreground">Visitors are counted by a one-way hash of their connection, never their address. ForkMesh keeps the newest 1,000 events per survey for 90 days.</p>`;
+  }
   function renderTabs() {
     $$(`[data-survey-tab]`).forEach((tab) => {
       const active = tab.dataset.surveyTab === state.tab;
@@ -262,14 +277,15 @@ window.ForkMeshDashboard.registerPage("surveys", ({
     if (settings.oneResponsePerPerson) facts.push("one per person");
     head.innerHTML = `<h2 id="survey-detail-title" class="truncate text-sm font-semibold">${escapeHtml(survey.title)} ${statusLabel(survey)}</h2><p class="text-xs font-normal text-muted-foreground">${escapeHtml(facts.join(" · "))}</p>`;
     link.innerHTML = survey.publicUrl
-      ? `<div class="mb-3 flex flex-wrap items-center gap-2"><input readonly value="${escapeHtml(survey.publicUrl)}" aria-label="Survey link" class="h-control-sm min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-xs text-muted-foreground" /><button type="button" data-survey-copy-link class="fm-btn fm-btn-sm">Copy link</button><a href="${escapeHtml(survey.publicUrl)}" target="_blank" rel="noopener noreferrer" class="fm-btn fm-btn-sm">Preview</a></div>`
+      ? `<div class="mb-3 flex flex-wrap items-center gap-2"><input readonly value="${escapeHtml(survey.publicUrl)}" aria-label="Survey link" class="h-control-sm min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-xs text-muted-foreground" /><button type="button" data-survey-copy-link class="fm-btn fm-btn-sm">Copy link</button><a href="${escapeHtml(`${survey.publicUrl}&preview=1`)}" target="_blank" rel="noopener noreferrer" class="fm-btn fm-btn-sm">Preview</a></div>`
       : `<p class="mb-3 text-xs text-muted-foreground">Open the survey to get a link anyone can answer.</p>`;
     renderTabs();
     if (state.tab === "results") {
       body.innerHTML = survey.results
         ? (survey.results.length ? `<div class="grid gap-3">${survey.results.map(resultBlock).join("")}</div>${survey.resultsCounted < survey.responseCount ? `<p class="mt-2 text-xs text-muted-foreground">Results count the ${survey.resultsCounted} newest responses.</p>` : ""}` : `<p class="text-xs text-muted-foreground">This survey has no questions yet.</p>`)
         : `<p class="text-xs text-muted-foreground">Loading results…</p>`;
-    } else body.innerHTML = responsesBlock(survey);
+    } else if (state.tab === "activity") body.innerHTML = activityBlock(survey);
+    else body.innerHTML = responsesBlock(survey);
     const status = survey.status;
     const buttons = [];
     if (survey.canDelete) buttons.push(`<button type="button" data-survey-action="delete" class="fm-btn fm-btn-sm fm-btn-danger mr-auto">Delete</button>`);
@@ -379,7 +395,10 @@ window.ForkMeshDashboard.registerPage("surveys", ({
       state.organization = wanted.name; select.value = state.organization;
       select.addEventListener("change", () => { state.organization = select.value; setParam("org", select.value); setParam("survey", ""); void load(); });
       await load();
-      if (requested.survey && byId(requested.survey)) await openDetail(requested.survey);
+      if (requested.survey && byId(requested.survey)) {
+        await openDetail(requested.survey);
+        if (requested.tab && state.detail) { state.tab = requested.tab; renderDetail(state.detail); if (state.tab === "responses") void loadResponses(); }
+      }
     } catch (error) { return message("error", `Surveys is unavailable: ${error.message}`); }
     $(`[data-survey-install]`)?.addEventListener("click", () => void install());
     $(`[data-survey-new]`)?.addEventListener("click", () => openEditor());

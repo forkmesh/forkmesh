@@ -140,8 +140,8 @@ MAX_PREVIEW_CONFLICTS = 200
 MAX_TREE_ENTRIES = 500
 MAX_COLLABORATION_TREE_ENTRIES = 50000
 MAX_SIZES_CHILDREN = 40
-PULL_REVIEW_FILE_RE = re.compile(
-    r"\.forkmesh/pulls/([1-9][0-9]{0,8})/([0-9]{4,})-review\.md")
+PULL_PEOPLE_FILE_RE = re.compile(
+    r"\.forkmesh/pulls/([1-9][0-9]{0,8})/([0-9]{4,})-([a-z-]*(?:comment|review)[a-z-]*)\.md")
 MAX_PULL_REVIEW_FILES = 4000
 MAX_PULL_REVIEW_FILE_BYTES = 64 * 1024
 MAX_PULL_REVIEW_TOTAL_BYTES = 8 * 1024 * 1024
@@ -3332,6 +3332,60 @@ def _run_git_status(
     return completed.returncode, completed.stdout
 
 
+def _git_lines(
+    git_dir: Path,
+    arguments: Iterable[str],
+    *,
+    timeout: int = PROCESS_TIMEOUT_SECONDS,
+) -> Iterable[bytes]:
+    try:
+        process = subprocess.Popen(
+            _git_prefix(git_dir) + list(arguments),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            env=_git_environment(),
+        )
+    except OSError as exc:
+        raise GitError("git operation unavailable") from exc
+    timed_out = threading.Event()
+
+    def expire() -> None:
+        timed_out.set()
+        process.kill()
+
+    timer = threading.Timer(timeout, expire)
+    timer.daemon = True
+    timer.start()
+    assert process.stdout is not None
+    try:
+        buffer = b""
+        while True:
+            chunk = process.stdout.read1(65536)
+            if timed_out.is_set():
+                raise GitError("git operation timed out")
+            if not chunk:
+                break
+            rows = (buffer + chunk).split(b"\n")
+            buffer = rows.pop()
+            yield from rows
+        if buffer:
+            yield buffer
+        if process.wait() != 0:
+            if timed_out.is_set():
+                raise GitError("git operation timed out")
+            raise GitError("git operation failed")
+    finally:
+        timer.cancel()
+        if process.poll() is None:
+            process.kill()
+            process.wait()
+        process.stdout.close()
+
+
+def _history_week(seconds: int) -> int:
+    return (seconds - 4 * 86400) // (7 * 86400)
+
+
 def refs_canonical(git_dir: Path) -> str:
     output = _run_git(
         git_dir,
@@ -5102,11 +5156,16 @@ class GitRepository:
         self._counts_lock = threading.Lock()
         self._counts_key: tuple[str, str, str] = ("", "", "")
         self._counts_value: dict[str, int] = {}
+        self._history_lock = threading.Lock()
+        self._history_key: tuple[str, str] = ("", "")
+        self._history_counts: dict[tuple[str, str], int] = {}
+        self._history_weeks: dict[str, dict[int, int]] = {}
         self._deleted_pulls_key = ""
         self._deleted_pulls_value: dict[str, int] = {}
         self._pull_reviews_lock = threading.Lock()
         self._pull_reviews_key = ""
         self._pull_reviews_value: dict[str, list[list[str]]] | None = None
+        self._pull_people_value: dict[str, list[str]] | None = None
         self._upload_objects_lock = threading.Lock()
         self._pulse_lock = threading.Lock()
         self._pulse_numstat_lock = threading.Lock()
@@ -6210,35 +6269,39 @@ class GitRepository:
                 pulls_commit = ""
             result["pullRefs"] = self._live_independent_pull_refs(
                 pulls_commit, self._independent_pull_refs()[1])
-            reviews = self._pull_reviews(commit)
+            reviews, people = self._pull_reviews(commit)
             if reviews is not None:
                 result["pullReviews"] = reviews
+            if people is not None:
+                result["pullPeople"] = people
         return result
 
-    def _pull_reviews(self, commit: str) -> dict[str, list[list[str]]] | None:
+    def _pull_reviews(
+        self, commit: str
+    ) -> tuple[dict[str, list[list[str]]] | None, dict[str, list[str]] | None]:
         """Every committed review under .forkmesh/pulls at ``commit``, as
-        ``{"<n>": [[reviewer, state], ...]}`` in file order, read with one
-        ls-tree and one cat-file. The web list derives each pull's review
-        state from it with the merge box's latest-review-per-reviewer rule.
-        None when the reviews do not fit the bounds."""
+        ``{"<n>": [[reviewer, state], ...]}`` in file order, and everyone who
+        commented or reviewed, as ``{"<n>": [name, ...]}`` latest first, read
+        with one ls-tree and one cat-file. The web list derives each pull's
+        review state from the first and stacks the second's avatars. Either is
+        None when its files do not fit the bounds."""
         with self._pull_reviews_lock:
             if self._pull_reviews_key == commit:
-                return self._pull_reviews_value
+                return self._pull_reviews_value, self._pull_people_value
         output = _run_git(
             self.git_dir,
             ["ls-tree", "-r", "-l", "-z", commit, "--",
              ":(top,literal).forkmesh/pulls/"],
             max_output=16 * 1024 * 1024,
         )
-        files: list[tuple[int, int, str]] = []
-        total = 0
-        value: dict[str, list[list[str]]] | None = {}
+        review_files: list[tuple[int, int, str, int]] = []
+        people_files: list[tuple[int, int, str, int]] = []
         for record in output.split(b"\0"):
             metadata, separator, raw_path = record.partition(b"\t")
             fields = metadata.split()
             if not separator or len(fields) < 4 or fields[1] != b"blob":
                 continue
-            match = PULL_REVIEW_FILE_RE.fullmatch(
+            match = PULL_PEOPLE_FILE_RE.fullmatch(
                 raw_path.decode("utf-8", "replace"))
             if not match:
                 continue
@@ -6248,47 +6311,77 @@ class GitRepository:
                 continue
             if size > MAX_PULL_REVIEW_FILE_BYTES:
                 continue
-            total += size
-            files.append((int(match.group(1)), int(match.group(2)),
-                          fields[2].decode("ascii", "replace")))
-        if len(files) > MAX_PULL_REVIEW_FILES \
-                or total > MAX_PULL_REVIEW_TOTAL_BYTES:
-            value = None
-        elif files:
-            files.sort()
-            payload = _run_git(
-                self.git_dir,
-                ["cat-file", "--batch"],
-                input_bytes=b"".join(
-                    oid.encode("ascii") + b"\n" for _n, _i, oid in files),
-                max_output=total + len(files) * 160,
-            )
-            cursor = 0
-            for number, _index, _oid in files:
-                line_end = payload.find(b"\n", cursor)
-                if line_end < 0:
-                    break
-                header = payload[cursor:line_end].split()
-                cursor = line_end + 1
-                if len(header) != 3 or header[1] != b"blob":
-                    continue
-                try:
-                    size = int(header[2])
-                except ValueError:
-                    break
-                body = payload[cursor:cursor + size]
-                cursor += size + 1
-                values = _front_matter_values(body.decode("utf-8", "replace"))
-                reviewer = values.get("author", "")
-                if values.get("type") != "review" or not reviewer \
-                        or not values.get("state"):
-                    continue
-                value.setdefault(str(number), []).append(
-                    [reviewer, values["state"]])
+            entry = (int(match.group(1)), int(match.group(2)),
+                     fields[2].decode("ascii", "replace"), size)
+            people_files.append(entry)
+            if match.group(3) == "review":
+                review_files.append(entry)
+
+        def fits(files: list[tuple[int, int, str, int]]) -> bool:
+            return len(files) <= MAX_PULL_REVIEW_FILES \
+                and sum(size for *_rest, size in files) <= MAX_PULL_REVIEW_TOTAL_BYTES
+
+        reviews: dict[str, list[list[str]]] | None = None
+        people: dict[str, list[str]] | None = None
+        if fits(people_files):
+            files, people = people_files, {}
+        elif fits(review_files):
+            files = review_files
+        else:
+            files = []
+        if fits(review_files):
+            reviews = {}
+        files.sort()
+        review_keys = {(n, i, oid) for n, i, oid, _s in review_files}
+        for number, index, oid, values in self._pull_event_values(files):
+            author = values.get("author", "")
+            if reviews is not None and (number, index, oid) in review_keys \
+                    and values.get("type") == "review" and author \
+                    and values.get("state"):
+                reviews.setdefault(str(number), []).append(
+                    [author, values["state"]])
+            name = values.get("authorName", "").strip()
+            if people is not None and name:
+                names = people.setdefault(str(number), [])
+                if name in names:
+                    names.remove(name)
+                names.insert(0, name)
         with self._pull_reviews_lock:
             self._pull_reviews_key = commit
-            self._pull_reviews_value = value
-        return value
+            self._pull_reviews_value = reviews
+            self._pull_people_value = people
+        return reviews, people
+
+    def _pull_event_values(
+        self, files: list[tuple[int, int, str, int]]
+    ) -> Iterable[tuple[int, int, str, dict[str, str]]]:
+        if not files:
+            return
+        total = sum(size for *_rest, size in files)
+        payload = _run_git(
+            self.git_dir,
+            ["cat-file", "--batch"],
+            input_bytes=b"".join(
+                oid.encode("ascii") + b"\n" for _n, _i, oid, _s in files),
+            max_output=total + len(files) * 160,
+        )
+        cursor = 0
+        for number, index, oid, _size in files:
+            line_end = payload.find(b"\n", cursor)
+            if line_end < 0:
+                break
+            header = payload[cursor:line_end].split()
+            cursor = line_end + 1
+            if len(header) != 3 or header[1] != b"blob":
+                continue
+            try:
+                size = int(header[2])
+            except ValueError:
+                break
+            body = payload[cursor:cursor + size]
+            cursor += size + 1
+            yield number, index, oid, _front_matter_values(
+                body.decode("utf-8", "replace"))
 
     def _tree_entries(
         self, commit: str, paths: Iterable[str]
@@ -7122,65 +7215,29 @@ class GitRepository:
             bucket = extensions.setdefault(extension, {"bytes": 0, "files": 0})
             bucket["bytes"] += size
             bucket["files"] += 1
-        shortlog = _run_git(
-            self.git_dir,
-            ["shortlog", "-nse", commit],
-            max_output=2 * 1024 * 1024,
-        )
-        contributor_avatars = self._contributor_avatars(commit)
-        contributors = []
-        for row in shortlog.decode("utf-8", "replace").splitlines():
-            match = re.match(r"^\s*([0-9]+)\s+(.+?)(?:\s+<([^>]*)>)?\s*$", row)
-            if match:
-                name = match.group(2)
-                contributor = {
-                    "name": name,
-                    "commits": int(match.group(1)),
-                    "_identity": (
-                        (match.group(3) or name).strip().casefold()
-                    ),
-                }
-                avatar = contributor_avatars.get(name.strip().casefold(), "") \
-                    or _github_noreply_avatar(match.group(3) or "")
-                if avatar:
-                    contributor["avatarUrl"] = avatar
-                contributors.append(contributor)
-
-        # Keep the response compact while still giving the Insights table a
-        # useful, shared-scale view of recent work. Counts come from shortlog
-        # across the complete selected history; only the tiny activity graph is
-        # bounded to 52 weeks and 50k commits (the same safety ceiling as the
-        # native Insights view).
         now = datetime.now(timezone.utc)
         this_week = datetime(
             now.year, now.month, now.day, tzinfo=timezone.utc
         ) - timedelta(days=now.weekday())
         activity_start = this_week - timedelta(weeks=51)
-        activity_by_identity: dict[str, list[int]] = {}
-        activity_log = _run_git(
-            self.git_dir,
-            [
-                "log", "-n", "50000",
-                f"--since=@{int(activity_start.timestamp())}",
-                "--format=%aN%x1f%aE%x1f%ct", commit,
-            ],
-            max_output=MAX_JSON_OUTPUT,
-        )
-        for row in activity_log.decode("utf-8", "replace").splitlines():
-            fields = row.split("\x1f", 2)
-            if len(fields) != 3:
-                continue
-            identity = (fields[1] or fields[0]).strip().casefold()
-            try:
-                timestamp = int(fields[2])
-            except ValueError:
-                continue
-            bucket = int(
-                (timestamp - int(activity_start.timestamp())) // (7 * 86400)
-            )
-            if 0 <= bucket < 52:
-                series = activity_by_identity.setdefault(identity, [0] * 52)
-                series[bucket] += 1
+        first_week = _history_week(int(activity_start.timestamp()))
+        counts, weeks = self._contributor_history(commit)
+        contributor_avatars = self._contributor_avatars(commit)
+        contributors = []
+        for (name, email), number in sorted(
+            counts.items(),
+            key=lambda item: (-item[1], f"{item[0][0]} <{item[0][1]}>"),
+        ):
+            contributor = {
+                "name": name,
+                "commits": number,
+                "_identity": (email or name).strip().casefold(),
+            }
+            avatar = contributor_avatars.get(name.strip().casefold(), "") \
+                or _github_noreply_avatar(email)
+            if avatar:
+                contributor["avatarUrl"] = avatar
+            contributors.append(contributor)
 
         contributor_count = len(contributors)
         commit_count = sum(item["commits"] for item in contributors)
@@ -7189,9 +7246,10 @@ class GitRepository:
         # than risking an unbounded public JSON response.
         returned_contributors = contributors[:500]
         for contributor in returned_contributors:
-            contributor["activityWeeks"] = activity_by_identity.get(
-                contributor.pop("_identity"), [0] * 52
-            )
+            series = weeks.get(contributor.pop("_identity"), {})
+            contributor["activityWeeks"] = [
+                series.get(first_week + offset, 0) for offset in range(52)
+            ]
         return {
             "ok": True,
             "commit": commit,
@@ -7205,6 +7263,72 @@ class GitRepository:
             "activityStart": activity_start.isoformat(),
             "counts": self._root_collaboration_counts(commit),
         }
+
+    def _contributor_history(
+        self, commit: str
+    ) -> tuple[dict[tuple[str, str], int], dict[str, dict[int, int]]]:
+        code, output = _run_git_status(
+            self.git_dir,
+            ["rev-parse", "-q", "--verify", "HEAD:.mailmap"],
+            max_output=1024,
+            allowed_codes=(0, 1, 128),
+        )
+        mailmap = output.decode("ascii", "replace").strip() if code == 0 else ""
+        with self._history_lock:
+            stored, stored_mailmap = self._history_key
+            if (stored, stored_mailmap) == (commit, mailmap):
+                return self._history_counts, self._history_weeks
+            span = [commit]
+            counts: dict[tuple[str, str], int] = {}
+            weeks: dict[str, dict[int, int]] = {}
+            if stored and stored_mailmap == mailmap:
+                try:
+                    descends, _ = _run_git_status(
+                        self.git_dir,
+                        ["merge-base", "--is-ancestor", stored, commit],
+                        max_output=0,
+                        allowed_codes=(0, 1),
+                    )
+                except GitError:
+                    descends = 1
+                if descends == 0:
+                    span = [commit, "^" + stored]
+                    counts = dict(self._history_counts)
+                    weeks = {
+                        identity: dict(series)
+                        for identity, series in self._history_weeks.items()
+                    }
+            oldest_week = _history_week(int(time.time())) - 52
+            for raw in _git_lines(
+                self.git_dir,
+                ["log", "--format=%aN%x1f%aE%x1f%ct", *span, "--"],
+            ):
+                fields = raw.decode("utf-8", "replace").split("\x1f", 2)
+                if len(fields) != 3:
+                    continue
+                name, email = fields[0].strip(), fields[1].strip()
+                counts[(name, email)] = counts.get((name, email), 0) + 1
+                try:
+                    week = _history_week(int(fields[2]))
+                except ValueError:
+                    continue
+                if week >= oldest_week:
+                    series = weeks.setdefault(
+                        (email or name).casefold(), {})
+                    series[week] = series.get(week, 0) + 1
+            for identity in list(weeks):
+                series = {
+                    week: number for week, number in weeks[identity].items()
+                    if week >= oldest_week
+                }
+                if series:
+                    weeks[identity] = series
+                else:
+                    del weeks[identity]
+            self._history_key = (commit, mailmap)
+            self._history_counts = counts
+            self._history_weeks = weeks
+            return counts, weeks
 
     def _contributor_avatars(self, commit: str) -> dict[str, str]:
         avatars: dict[str, str] = {}
@@ -11994,7 +12118,7 @@ class GatewayApplication:
         ``prewarm=False`` returns as soon as the swap is complete. The live
         server uses it so the daemon's acknowledgement and every request
         waiting behind the swap are not held for the full metadata warmup
-        (stats/sizes walk every blob and shortlog walks all history, which
+        (stats/sizes walk every blob and stats walks all history once, which
         takes many seconds on a small node serving a large repository); the
         server warms the new generation in the background afterwards.
         """

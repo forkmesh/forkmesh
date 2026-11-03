@@ -127,6 +127,16 @@ def test_docs_redirects_defer_to_directory_html_handling():
     assert WRANGLER["assets"]["html_handling"] == "auto-trailing-slash"
 
 
+def test_static_redirects_come_before_the_dynamic_rule_limit():
+    dynamic = 0
+    for source, _, _ in redirect_rules():
+        if source.startswith("#"):
+            continue
+        if dynamic or ":" in source or "*" in source:
+            dynamic += 1
+    assert dynamic <= 100
+
+
 def test_docs_json_assets_are_not_redirected():
     patterns = []
     for source, _, _ in redirect_rules():
