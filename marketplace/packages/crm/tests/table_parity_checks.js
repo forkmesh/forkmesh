@@ -270,6 +270,24 @@ same(page.crmCustomColumnLabel("deal_size"), "Deal size", "the key reads back as
   same(page.crmDeleteColumnItems(page.crmListColumns().find((column) => column.field === "linked-emails")), [],
        "a computed column cannot be deleted");
 
+  view.views = [{ id: "list-a", name: "List A" }, { id: "list-b", name: "List B" }];
+  view.settings = { flows: [{ id: "press", name: "Press", stages: ["new", "pitched"] }] };
+  view.contacts = [
+    { id: "m1", name: "M1", mastodon: "a@mastodon.social", views: ["list-a"] },
+    { id: "m2", name: "M2", mastodon: "b@fosstodon.org", flow: "press", stage: "pitched" },
+    { id: "t1", name: "T1", twitter: "someone", views: ["list-b"] },
+    { id: "n1", name: "N1", mastodon: "  ", views: ["list-a"] },
+  ];
+  view.activeView = "network:mastodon";
+  same(page.crmFilteredContacts().map((contact) => contact.id).sort(), ["m1", "m2"],
+       "a network shows everyone with that profile, from every list and pipeline");
+  view.activeView = "network:twitter";
+  same(page.crmFilteredContacts().map((contact) => contact.id), ["t1"], "X (Twitter) lists its own people");
+  view.activeView = "network:myspace";
+  same(page.crmFilteredContacts(), [], "an unknown network opens nothing");
+  view.activeView = "list-a";
+  same(page.crmFilteredContacts().map((contact) => contact.id).sort(), ["m1", "n1"], "a list still shows only its members");
+
   if (failures) {
     console.error(`${failures} check(s) failed`);
     process.exit(1);

@@ -1231,6 +1231,12 @@ raising, so the caller can keep the lead.
   no step to show or while My Zoho Mail is open. Compose says which mailbox it
   sends from. Inbox groups that hold mail from your own mailbox carry **Only
   you**.
+  **Networks** (1.53.0) follows **Shared with me** with one row per social
+  network that has anyone on it (Mastodon, Bluesky, X (Twitter), LinkedIn,
+  GitHub) and its count. A row opens everyone whose profile field for that
+  network is filled in, from every list and pipeline, as a client-side tab
+  (`?list=network:<field>`) that search and the Flow, Stage, Owner and
+  Follow-up filters narrow. Desktop and phones do not have it yet.
 - **Desktop** (`CrmFeature.cpp`): columns for the lists, the table, Reach out
   / Follow up and the detail panel, spreadsheet-style editing, a People grid
   of contacts with pictures, imports, and a rail count of never-contacted
