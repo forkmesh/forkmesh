@@ -46,8 +46,29 @@ class ChatNodeBindingTest {
         assertEq(text("nsig"), bundle["nsig"])
         expect(ChatV3.verifyBundle(bundle, room, now))
         expect(ChatV3.verifyNodeBinding(bundle, room))
+    }
+
+    fun testAStrictBundleCarriesTheNodeSignatureOnlyWhenTheNodeIsTheNodeKey() {
         val strict = RoomSeal.create(room, "direct:1", SealPolicy.STRICT, acct, identityKeys(), clock = { now }, nodeKey = nodeKey())
-        expect(strict.keyFrame(now)["nsig"] == null, "strict rooms keep the v3 bundle")
+        val bundle = strict.keyFrame(now)
+        assertEq(text("node"), bundle["node"])
+        assertEq(text("nsig"), bundle["nsig"])
+        expect(ChatV3.verifyBundle(bundle, room, now))
+        expect(ChatV3.verifyNodeBinding(bundle, room))
+        val unbound = RoomSeal.create(room, "direct:1", SealPolicy.STRICT, acct, identityKeys(), clock = { now }, node = text("node"))
+        expect(unbound.keyFrame(now)["nsig"] == null, "no node key, no nsig")
+        val liar = ChatNodeKey("node-alice-phone") { nodeKey().sign(it) }
+        val named = RoomSeal.create(room, "direct:1", SealPolicy.STRICT, acct, identityKeys(), clock = { now }, nodeKey = liar)
+        assertEq("node-alice-phone", named.keyFrame(now)["node"])
+        expect(named.keyFrame(now)["nsig"] == null, "a node that is not an Ed25519 key gets no nsig")
+        val wrong = ChatNodeKey(text("node")) { ChatNodeKey.generate().sign(it) }
+        val mismatched = RoomSeal.create(room, "direct:1", SealPolicy.STRICT, acct, identityKeys(), clock = { now }, nodeKey = wrong)
+        expect(mismatched.keyFrame(now)["nsig"] == null, "a signer that is not the node key gets no nsig")
+        val broken = ChatNodeKey(text("node")) { throw IllegalStateException("no key") }
+        val failing = RoomSeal.create(room, "direct:1", SealPolicy.STRICT, acct, identityKeys(), clock = { now }, nodeKey = broken)
+        val plain = failing.keyFrame(now)
+        expect(plain["nsig"] == null, "a failing signer sends the bundle without nsig")
+        expect(ChatV3.verifyBundle(plain, room, now))
     }
 
     fun testTheVectorBindingVerifiesAndEveryRejectFails() {

@@ -1693,10 +1693,35 @@ void ChatDevice::ensureOwnRecord(const QString &scope, const QString &acct,
     record.state = TrustState::Approved;
     if (fresh)
         record.firstSeen = now();
+    TrustRecord heir;
+    const bool replaced = fresh && dropPredecessors(state, m_kid, acct, node, &heir);
+    if (replaced)
+        record.verified = heir.verified;
     state.records.insert(m_kid, record);
     saveScope(scope, false);
     if (fresh)
-        refreshSafety(scope);
+        refreshSafety(scope, replaced);
+}
+
+bool ChatDevice::dropPredecessors(Scope &state, const QString &kid, const QString &acct,
+                                  const QString &node, TrustRecord *heir)
+{
+    const TrustRecord *newest = nullptr;
+    QStringList old;
+    for (const TrustRecord &record : std::as_const(state.records)) {
+        if (record.kid == kid || record.kid == m_kid || record.acct != acct ||
+            record.node != node)
+            continue;
+        old.append(record.kid);
+        if (!newest || record.lastSeen > newest->lastSeen)
+            newest = &record;
+    }
+    if (!newest)
+        return false;
+    *heir = *newest;
+    for (const QString &stale : std::as_const(old))
+        state.records.remove(stale);
+    return true;
 }
 
 ChatDevice::BundleResult ChatDevice::acceptBundle(const QString &scope, Policy policy,
@@ -1732,7 +1757,17 @@ ChatDevice::BundleResult ChatDevice::acceptBundle(const QString &scope, Policy p
         return BundleResult::Known;
     }
     TrustState trust = TrustState::Approved;
-    if (policy == Policy::Strict && kid != m_kid) {
+    TrustRecord heir;
+    bool successor = false;
+    if (policy == Policy::Strict && kid != m_kid && verifyNodeBinding(bundle, room)) {
+        for (const TrustRecord &record : std::as_const(state.records))
+            if (record.acct == acct && record.node == node && spkTs(record.spk) >= spkTs(spk))
+                return BundleResult::Rejected;
+        successor = dropPredecessors(state, kid, acct, node, &heir);
+    }
+    if (successor) {
+        trust = heir.state;
+    } else if (policy == Policy::Strict && kid != m_kid) {
         for (const TrustRecord &record : std::as_const(state.records)) {
             if (record.acct == acct && record.state == TrustState::Approved) {
                 trust = TrustState::Pending;
@@ -1749,6 +1784,7 @@ ChatDevice::BundleResult ChatDevice::acceptBundle(const QString &scope, Policy p
     record.state = trust;
     record.firstSeen = current;
     record.lastSeen = current;
+    record.verified = successor && heir.verified;
     state.records.insert(kid, record);
     if (policy == Policy::Open && state.records.size() > kMaxOpenRecords) {
         QList<TrustRecord> ordered = state.records.values();
@@ -1766,13 +1802,15 @@ ChatDevice::BundleResult ChatDevice::acceptBundle(const QString &scope, Policy p
     if (changed)
         *changed = true;
     saveScope(scope, false);
-    if (trust == TrustState::Approved)
-        refreshSafety(scope);
+    if (trust == TrustState::Approved || successor)
+        refreshSafety(scope, successor);
     notify(trust == TrustState::Pending ? Event::DevicePending : Event::TrustChanged,
            scope, kid);
     if (trust == TrustState::Pending)
         notify(Event::TrustChanged, scope, kid);
-    return trust == TrustState::Pending ? BundleResult::Pending : BundleResult::Approved;
+    return trust == TrustState::Pending   ? BundleResult::Pending
+           : trust == TrustState::Blocked ? BundleResult::Blocked
+                                          : BundleResult::Approved;
 }
 
 void ChatDevice::touch(const QString &scope, const QString &kid)
@@ -1795,7 +1833,7 @@ void ChatDevice::setState(const QString &scope, const QString &kid, TrustState t
     notify(Event::TrustChanged, scope, kid);
 }
 
-void ChatDevice::refreshSafety(const QString &scope)
+void ChatDevice::refreshSafety(const QString &scope, bool quiet)
 {
     Scope &state = scopeState(scope);
     if (state.policy != Policy::Strict)
@@ -1812,7 +1850,7 @@ void ChatDevice::refreshSafety(const QString &scope)
         accounts.size() >= 2 ? safetyNumber(scope, idks).digits : QString();
     if (digits == state.safety)
         return;
-    const bool changed = !state.safety.isEmpty() && !digits.isEmpty();
+    const bool changed = !quiet && !state.safety.isEmpty() && !digits.isEmpty();
     state.safety = digits;
     if (changed)
         for (TrustRecord &record : state.records)
@@ -2677,10 +2715,12 @@ QJsonObject RoomSeal::keyFrame() const
                        {QStringLiteral("node"), m_node},
                        {QStringLiteral("spk"), spk},
                        {QStringLiteral("sig"), b64u(sig)}};
-    if (m_policy == Policy::Open && m_nodeSigner) {
+    if (m_nodeSigner && (m_policy == Policy::Open || isNodeKey(m_node))) {
         const QByteArray nsig = m_nodeSigner(nodeBindingMessage(m_room, kid, idk, m_acct));
         if (nsig.size() == kSignatureBytes)
             bundle.insert(QStringLiteral("nsig"), b64u(nsig));
+        if (m_policy == Policy::Strict && !verifyNodeBinding(bundle, m_room))
+            bundle.remove(QStringLiteral("nsig"));
     }
     return bundle;
 }

@@ -149,7 +149,31 @@ Clients show a system line in the conversation for every new pending device
 then approve or block.") and a banner with Approve and Block. The iPhone app
 folds every waiting device into one line and one banner ("2 new devices for
 Alex want to join this chat"), so a safety-number change that brings several
-devices at once asks once; Approve and Block act on all of them.
+devices at once asks once; Approve and Block act on all of them. The desktop
+and the web do the same (Approve all, Block all).
+
+### Same-node successor
+
+An app that comes back with a new `IK` after an update or reinstall but the
+same node key must not ask for approval again. Every client therefore also
+signs its strict (DM) bundles with the node key (`nsig`, as in
+[chat-relay-hardening.md](chat-relay-hardening.md#r1-bundles-are-bound-to-the-node-key)),
+whenever `node` is the b64u of that key. A receiver taking a strict bundle for
+an unknown `kid` whose `nsig` verifies:
+
+- drops it if any record of the scope (its own included) has the same `acct`
+  and `node` and an `spk.ts` at least as new: a replayed bundle of a replaced
+  key cannot take the trust back;
+- otherwise, if other records have the same `acct` and `node`, the new key
+  replaces them: it inherits the newest one's state and `verified`, the old
+  records are removed, and the safety number is recomputed without clearing
+  `verified` or announcing a change.
+
+A device's own record replaces its own older keys of the same `acct` and
+`node` the same way. Whoever holds the node key can therefore swap a device
+key without a prompt; that key already controls the account
+([portable-identities.md](../portable-identities.md)). Without a valid `nsig`
+the TOFU and pending rules above apply unchanged.
 
 ## Sealed frames v3
 

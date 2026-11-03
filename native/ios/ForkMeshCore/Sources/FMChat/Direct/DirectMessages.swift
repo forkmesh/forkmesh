@@ -371,14 +371,15 @@ public final class DirectMessageService {
         sleep: @escaping @Sendable (TimeInterval) async throws -> Void = { seconds in
             try await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000))
         },
-        viewOncePrefs: KeyValueStore? = nil, account: (@MainActor () -> String)? = nil
+        viewOncePrefs: KeyValueStore? = nil, account: (@MainActor () -> String)? = nil,
+        nodeIdentity: DeviceIdentity? = nil
     ) {
         self.viewOnce = ViewOnceStore(prefs: viewOncePrefs)
         self.accountName = account
         self.api = api
         self.connector = connector
         self.secureStore = secureStore
-        seals = RoomSealCache(secureStore: secureStore)
+        seals = RoomSealCache(secureStore: secureStore, nodeIdentity: nodeIdentity)
         self.origin = origin
         self.selfId = selfId
         self.displayName = displayName
