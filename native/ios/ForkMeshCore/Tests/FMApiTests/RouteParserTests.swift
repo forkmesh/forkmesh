@@ -138,6 +138,7 @@ final class RouteParserTests: XCTestCase {
         XCTAssertEqual(web("/dashboard/glasses-alert"), [.glassesAlert])
         XCTAssertEqual(web("/dashboard/phone-security"), [.phoneSecurity])
         XCTAssertEqual(web("/dashboard/eye-control"), [.eyeControl])
+        XCTAssertEqual(web("/dashboard/silent-speech"), [.silentSpeech])
         XCTAssertEqual(web("/dashboard/ember"), [.ember(nil)])
         XCTAssertEqual(web("/dashboard/strata?repo=alice/shop"), [.strata(RepoRef(owner: "alice", name: "shop"))])
         XCTAssertEqual(web("/dashboard/synapse?repo=nonsense"), [.synapse(nil)])

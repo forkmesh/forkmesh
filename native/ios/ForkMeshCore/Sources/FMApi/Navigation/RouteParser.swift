@@ -272,6 +272,7 @@ public enum RouteParser {
         case "glasses-alert": return [.glassesAlert]
         case "phone-security": return [.phoneSecurity]
         case "eye-control": return [.eyeControl]
+        case "silent-speech": return [.silentSpeech]
         case "ember": return tail.isEmpty ? [.ember(query["repo"].flatMap(RepoRef.init(slug:)))] : nil
         case "strata": return tail.isEmpty ? [.strata(query["repo"].flatMap(RepoRef.init(slug:)))] : nil
         case "synapse": return tail.isEmpty ? [.synapse(query["repo"].flatMap(RepoRef.init(slug:)))] : nil

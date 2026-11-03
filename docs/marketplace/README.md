@@ -52,6 +52,7 @@ documentation; the package format, lifecycle and publishing rules are in
 | [video-mix-dj-studio-performance.md](video-mix-dj-studio-performance.md) | The DJ studio's iOS performance checks, read by its diagnostics agent |
 | [face-changer-desktop.md](face-changer-desktop.md) | `face-changer`: the desktop virtual camera |
 | [eye-control.md](eye-control.md) | `eye-control`: gaze cursor and blink to tap on the iPhone |
+| [silent-speech.md](silent-speech.md) | `silent-speech`: words mouthed without a sound, read from earbud head motion on both phones |
 | [tour.md](tour.md) | `tour`: the first-run welcome and guided tour |
 | [people.md](people.md) | `people`: members seated around a campfire |
 | [aquarium.md](aquarium.md) | `aquarium`: agents as fish over the desktop and iPhone |

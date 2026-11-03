@@ -91,6 +91,7 @@ public enum PackageRoutes {
         case "glassesAlert": return .glassesAlert
         case "phoneSecurity": return .phoneSecurity
         case "eyeControl": return .eyeControl
+        case "silentSpeech": return .silentSpeech
         case "ember": return .ember(nil)
         case "strata": return .strata(nil)
         case "synapse": return .synapse(nil)
