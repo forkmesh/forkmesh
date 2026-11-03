@@ -635,6 +635,75 @@ int runWorkspaceSnapshots(MainWindow &window)
             check(claudeRemote, QStringLiteral("Environment shows Claude's own Remote Control "
                                                "setting (%1)")
                                     .arg(label));
+            const auto call = [](const QString &id, const QString &name, const QJsonObject &input) {
+                return QJsonObject{
+                    {QStringLiteral("type"), QStringLiteral("assistant")},
+                    {QStringLiteral("message"),
+                     QJsonObject{{QStringLiteral("content"),
+                                  QJsonArray{QJsonObject{{QStringLiteral("type"),
+                                                          QStringLiteral("tool_use")},
+                                                         {QStringLiteral("id"), id},
+                                                         {QStringLiteral("name"), name},
+                                                         {QStringLiteral("input"), input}}}}}}};
+            };
+            const auto result = [](const QString &id, const QString &text) {
+                return QJsonObject{
+                    {QStringLiteral("type"), QStringLiteral("user")},
+                    {QStringLiteral("message"),
+                     QJsonObject{{QStringLiteral("content"),
+                                  QJsonArray{QJsonObject{
+                                      {QStringLiteral("type"), QStringLiteral("tool_result")},
+                                      {QStringLiteral("tool_use_id"), id},
+                                      {QStringLiteral("content"), text}}}}}}};
+            };
+            panels.append(call(QStringLiteral("w1"), QStringLiteral("Write"),
+                               QJsonObject{{QStringLiteral("file_path"),
+                                            QStringLiteral("/repo/tools/find-key.py")},
+                                           {QStringLiteral("content"),
+                                            QStringLiteral("a\nb\nc\n")}}));
+            panels.append(result(QStringLiteral("w1"), QStringLiteral("ok")));
+            panels.append(call(QStringLiteral("a1"), QStringLiteral("Task"),
+                               QJsonObject{{QStringLiteral("description"),
+                                            QStringLiteral("Scan the scratch drive")}}));
+            panels.append(call(QStringLiteral("a2"), QStringLiteral("Task"),
+                               QJsonObject{{QStringLiteral("description"),
+                                            QStringLiteral("Explore code")}}));
+            panels.append(result(QStringLiteral("a2"), QStringLiteral("report")));
+            details.path = QStringLiteral("/repo/.worktrees/141-relink-payment-wallet-ledger");
+            details.pathFull = details.path;
+            details.files = 3;
+            details.added = 52;
+            details.removed = 4;
+            panels.setDetails(details);
+            settle(20);
+            QStringList background;
+            for (QLabel *text : panels.cardFrame(QStringLiteral("background"))
+                                    ->findChildren<QLabel *>(QStringLiteral("sessionsDetailText")))
+                if (text->isVisible())
+                    background << text->text();
+            check(background == QStringList{QStringLiteral("Scan the scratch drive"),
+                                            QStringLiteral("1 finished")},
+                  QStringLiteral("Background tasks lists running ones and counts the finished "
+                                 "(%1): %2")
+                      .arg(label, background.join(QStringLiteral(", "))));
+            bool folderRow = false;
+            bool changesRow = false;
+            for (QLabel *text : panels.findChildren<QLabel *>(QStringLiteral("sessionsDetailText"))) {
+                const QLabel *trailingLabel =
+                    text->parentWidget()->findChild<QLabel *>(QStringLiteral("sessionsDetailTrailing"));
+                if (!text->isVisible() || !trailingLabel)
+                    continue;
+                const QString trailing = trailingLabel->text();
+                folderRow |= text->text() == QStringLiteral("141-relink-payment-wallet-ledger") &&
+                             trailing == QStringLiteral("· .worktrees");
+                changesRow |= text->text() == QStringLiteral("3 files changed") &&
+                              trailing.contains(QStringLiteral("+52")) &&
+                              trailing.contains(QStringLiteral("−4"));
+            }
+            check(folderRow && changesRow,
+                  QStringLiteral("the folder row names its parent and Changes shows the line "
+                                 "counts (%1)")
+                      .arg(label));
             QDir().mkpath(dir);
             if (panels.grab().save(
                     QDir(dir).filePath(QStringLiteral("session-panels-phone.png"))))

@@ -142,7 +142,7 @@ private:
 
     Card &makeCard(const QString &key, const QString &title, const QString &hint);
     Row &addRow(Card &card);
-    Row makeRow(QWidget *parent, bool stop);
+    Row makeRow(QWidget *parent, bool stop, int height);
     void setRow(const Row &row, const Item &item);
     void fillList(Card &card, const QList<Item> &items, const QString &meta);
     bool fillFixed(Card &card, const QList<Item> &items, const QString &meta);

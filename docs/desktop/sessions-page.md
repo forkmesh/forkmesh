@@ -169,8 +169,8 @@ right column in Control Tower
 | **Sub-sessions** | Live subagents, shells and workflows with Stop ([agents-ui.md](agents-ui.md#sub-sessions)) |
 | **Outputs** | Files the agent wrote or edited, newest first, with line counts; a failed edit is taken back |
 | **Sources** | Files read, pages fetched, web searches, skills and connectors |
-| **Background** | Subagents and background shells with running/done/failed/stopped |
-| **Changes** | Files changed on the branch, uncommitted files, the pull request and conflicts |
+| **Background tasks** | Running and failed subagents and background shells; finished and stopped ones fold into one "N finished" row |
+| **Changes** | Files changed on the branch with their +/− line counts, uncommitted files, the pull request and conflicts |
 | **Tools** | Calls per tool and failures |
 
 - Outputs, Sources and Background come from `sessioninsights::Collector`
@@ -208,7 +208,14 @@ right column in Control Tower
   The new-session screen shows the column too.
 - **Flat sections.** The cards have no background or box: each
   is a titled section with a thin line under it (none under the last shown
-  one, `sessionsLast`), so they sit closer together. The column has no border
+  one, `sessionsLast`), so they sit closer together. They follow the Claude
+  desktop app's session panel: a muted section title with no chevron until the
+  card is folded, 32 px rows with a 16 px muted icon and the text in the
+  foreground colour, muted trailing figures, 24 px rows in Context, and a 4 px
+  context bar with gaps between its parts. Environment shows the folder's name
+  with its parent after a dot (`141-relink · .worktrees`); Outputs use the code
+  icon; Changes puts the coloured +/− counts on its first row and in the header
+  only while folded. The column has no border
   of its own; the splitter handle is the one line between the transcript and
   the panels, in Control Tower (`agentCodeSplit`) and on the Sessions page.
 - **Context** reads like Claude Code's context panel: "N% used"
