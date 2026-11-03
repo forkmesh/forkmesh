@@ -31,7 +31,7 @@ final class RoomSealCache {
         }
         if let pending = loading[key] { return try await pending.value }
         let store = secureStore
-        let nodeKey = policy == .open ? nodeIdentity : nil
+        let nodeKey = nodeIdentity
         let task = Task.detached(priority: .userInitiated) {
             try RoomSeal.loadOrCreate(
                 name, scope: scope, policy: policy, acct: acct, node: node, participants: participants, secureStore: store,

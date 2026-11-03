@@ -216,7 +216,7 @@ public final class RoomSeal: @unchecked Sendable {
         guard let acct, let node, let prekey = keyring.newestPrekey(),
             let frame = try? RoomSeal.bundle(
                 room: room, acct: acct, node: node, keyring: keyring, prekey: prekey,
-                nodeIdentity: policy == .open ? nodeIdentity : nil)
+                nodeIdentity: nodeIdentity?.nodeId == node ? nodeIdentity : nil)
         else { return [:] }
         _ = trust.accept(
             kid: keyring.kid, idk: keyring.idk, acct: acct, node: node, spk: prekey, policy: policy,
@@ -255,8 +255,10 @@ public final class RoomSeal: @unchecked Sendable {
         else { return nil }
         if policy == .open && !RoomSeal.verifyNodeBinding(frame, room: room) { return nil }
         if let participants, !participants.contains(acct) { return nil }
+        let nodeBound = policy == .strict && RoomSeal.verifyNodeBinding(frame, room: room)
         return trust.accept(
-            kid: kid, idk: idk, acct: acct, node: node, spk: spk, policy: policy, ownKid: keyring.kid, now: now)
+            kid: kid, idk: idk, acct: acct, node: node, spk: spk, policy: policy, ownKid: keyring.kid, now: now,
+            nodeBound: nodeBound)
     }
 
     @discardableResult

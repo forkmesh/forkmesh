@@ -59,7 +59,8 @@ struct ChatInstaller: AppServicesInstaller {
                 selfId: { relay.selfId }, displayName: { auth?.session?.nodeName ?? "" }, nodeIdentity: relay.nodeIdentity)
             let direct: DirectMessageService = DirectMessageService(
                 api: api, connector: sockets, secureStore: secure, origin: { api.url("/") },
-                selfId: { relay.selfId }, displayName: { auth?.session?.nodeName ?? "" })
+                selfId: { relay.selfId }, displayName: { auth?.session?.nodeName ?? "" },
+                nodeIdentity: relay.nodeIdentity)
             office.nodeOwners = owners
             direct.onConversations = { (records: [DirectConversation]) in
                 verifiedNames.rememberDirect(records.map { (conversation: $0.conversation, account: $0.otherUser) })

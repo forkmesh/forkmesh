@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-03", "area": "Chat", "text": "Updating or reinstalling the app no longer makes the people you message approve your device again or see a safety number change, as long as the app keeps your account key."},
   {"date": "2026-11-03", "area": "Chat", "text": "Approving a new device in a direct message now approves every device waiting at once, so you no longer click through a queue of approvals on the desktop or the web."},
   {"date": "2026-11-03", "area": "Agents", "text": "A Claude Code agent you continue in the Claude app now shows those turns in ForkMesh, and ForkMesh's next message picks up from them, so the conversation carries on in either app."},
   {"date": "2026-11-03", "area": "Desktop", "text": "Spreadsheets now opens inside the desktop and stays open while you switch pages, signed in as your account, with save dialogs for downloads and PDFs and full clipboard copy and paste."},

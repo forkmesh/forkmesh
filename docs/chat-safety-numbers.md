@@ -37,6 +37,13 @@ If nobody you know added a device, compare the number again before you share
 anything sensitive: a key nobody expected can mean someone is trying to read
 along.
 
+Updating or reinstalling an app does not count as a new device as long as it
+still has its account key (the node key). Its new chat key is signed with that
+key, so the other person's app swaps it in quietly: no approval, no "safety
+number changed" line, and a verified conversation stays verified. The digits
+themselves are recomputed, and both sides show the same new number. See
+[the protocol](app/chat-protocol-v3.md#same-node-successor).
+
 ## New devices wait for you
 
 In a direct message, the first device you see for a person is trusted. Every
