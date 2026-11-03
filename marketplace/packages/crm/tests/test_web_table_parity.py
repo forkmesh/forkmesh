@@ -196,3 +196,17 @@ def test_imports_and_the_lists_overview_live_in_the_more_menu():
     assert "<dialog data-crm-lists-dialog" in WEB_VIEW
     for heading in ("List", "File", "Contacts", "Columns", "Shared with", "Owner", "Imported"):
         assert f'font-semibold">{heading}</th>' in WEB_VIEW.split("<dialog data-crm-lists-dialog", 1)[1], heading
+
+
+def test_mastodon_network_list_offers_follow_back_like_the_desktop():
+    render = WEB_SCRIPT.split("function renderCrmContacts()", 1)[1].split("\n  // --- board layout", 1)[0]
+    assert render.count("${crmFollowBackButton(contact)}") == 2
+    assert "void loadCrmFollowBack();" in render
+    load = _function("loadCrmFollowBack")
+    assert 'crmRequest(crmOrganizationPath("/mastodon/follow-back"))' in load
+    assert "CRM_MASTODON_FRESH_MS" in load and 'crmActiveView()?.network !== "mastodon"' in load
+    follow = _function("crmFollowMastodonBack")
+    assert 'crmOrganizationPath("/mastodon/follow"), "POST", { handle: key }' in follow
+    assert "crmFollowBack.handles.delete(key)" in follow
+    click = _function("handleCrmParityClick")
+    assert "crmFollowMastodonBack(follow.dataset.crmFollowBack)" in click

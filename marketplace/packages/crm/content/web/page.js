@@ -4485,6 +4485,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     const flowFilter = $(`[data-crm-flow]`); if (flowFilter) flowFilter.hidden = Boolean(crmActiveView()?.flow);
     renderCrmSharedBanner();
     renderCrmNextContact();
+    void loadCrmFollowBack();
     const board = state.crmView.layout === "board";
     renderCrmTableViews();
     const columnsButton = $(`[data-crm-columns]`);
@@ -4533,8 +4534,8 @@ window.ForkMeshDashboard.registerPage("crm", ({
       ? `<div class="flex items-start gap-2">${photo(contact)}<div class="min-w-0 flex-1">${name(contact, column)}${crmNameMeta(contact, columns, personChip(contact))}</div></div>`
       : crmContactControl(contact, column);
     const actions = (contact, compact) => shared ? "" : compact
-      ? `<div class="mt-3 flex justify-end gap-1"><button data-crm-contact-deck="${escapeHtml(contact.id)}" class="rounded border border-border px-2 py-1 text-xs text-foreground">Deck</button><button data-crm-contact-compose="${escapeHtml(contact.id)}" class="rounded border border-border px-2 py-1 text-xs text-foreground">Email</button><button data-crm-contact-prompt="${escapeHtml(contact.id)}" class="rounded border border-border px-2 py-1 text-xs text-foreground">Copy prompt</button><button data-crm-contact-edit="${escapeHtml(contact.id)}" class="rounded border border-border px-2 py-1 text-xs text-foreground">Edit</button><button data-crm-contact-delete-row="${escapeHtml(contact.id)}" class="rounded border border-destructive px-2 py-1 text-xs text-destructive">Delete</button></div>`
-      : `<td class="px-3 py-2 align-top"><div class="crm-row-actions flex justify-end gap-1"><button data-crm-contact-deck="${escapeHtml(contact.id)}" title="Share the investor deck with a private, tracked link" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-background">Deck</button><button data-crm-contact-compose="${escapeHtml(contact.id)}" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-background">Email</button><button data-crm-contact-prompt="${escapeHtml(contact.id)}" title="Copy a prompt for an assistant to write them a toot about ForkMesh" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-background">Copy prompt</button><button data-crm-contact-edit="${escapeHtml(contact.id)}" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-background">Edit</button><button data-crm-contact-delete-row="${escapeHtml(contact.id)}" aria-label="Delete ${escapeHtml(contact.name || contact.email || "contact")}" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-destructive hover:bg-background">Delete</button></div></td><td></td>`;
+      ? `<div class="mt-3 flex justify-end gap-1">${crmFollowBackButton(contact)}<button data-crm-contact-deck="${escapeHtml(contact.id)}" class="rounded border border-border px-2 py-1 text-xs text-foreground">Deck</button><button data-crm-contact-compose="${escapeHtml(contact.id)}" class="rounded border border-border px-2 py-1 text-xs text-foreground">Email</button><button data-crm-contact-prompt="${escapeHtml(contact.id)}" class="rounded border border-border px-2 py-1 text-xs text-foreground">Copy prompt</button><button data-crm-contact-edit="${escapeHtml(contact.id)}" class="rounded border border-border px-2 py-1 text-xs text-foreground">Edit</button><button data-crm-contact-delete-row="${escapeHtml(contact.id)}" class="rounded border border-destructive px-2 py-1 text-xs text-destructive">Delete</button></div>`
+      : `<td class="px-3 py-2 align-top"><div class="crm-row-actions flex justify-end gap-1">${crmFollowBackButton(contact)}<button data-crm-contact-deck="${escapeHtml(contact.id)}" title="Share the investor deck with a private, tracked link" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-background">Deck</button><button data-crm-contact-compose="${escapeHtml(contact.id)}" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-background">Email</button><button data-crm-contact-prompt="${escapeHtml(contact.id)}" title="Copy a prompt for an assistant to write them a toot about ForkMesh" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-background">Copy prompt</button><button data-crm-contact-edit="${escapeHtml(contact.id)}" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-background">Edit</button><button data-crm-contact-delete-row="${escapeHtml(contact.id)}" aria-label="Delete ${escapeHtml(contact.name || contact.email || "contact")}" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-destructive hover:bg-background">Delete</button></div></td><td></td>`;
     const page = crmRowPageSlice(contacts);
     renderCrmRowPager(contacts.length, page, board || people);
     list.innerHTML = page.rows.map((contact) => `
@@ -6820,6 +6821,16 @@ window.ForkMeshDashboard.registerPage("crm", ({
   const CRM_NEXT_UPCOMING = 5;
   const CRM_NEXT_RENDER_DELAY_MS = 400;
   const crmMastodonLatest = { latest: new Map(), pending: new Set(), queue: [], backoff: new Map(), ids: new Map(), renderTimer: 0 };
+  const crmFollowBack = { organization: "", handles: new Set(), following: new Set(), loadedAt: 0, loading: false };
+  const CRM_MASTODON_FOLLOW_ERRORS = {
+    mastodon_not_connected: "connect the Mastodon account in CRM settings first",
+    mastodon_follow_not_allowed: "the saved Mastodon token cannot follow accounts; save one with the write:follows scope",
+    mastodon_followers_hidden: "the account hides its followers; save a token with the read:accounts scope",
+    mastodon_token_rejected: "Mastodon rejected the access token; save a new one",
+    mastodon_account_not_found: "Mastodon does not know that account",
+    mastodon_unavailable: "Mastodon could not be reached; try again later",
+    invalid_mastodon_handle: "that is not a Mastodon handle",
+  };
   const CRM_NUMERIC_SORT = new Set(["lastContactedAt", "value", "linked-emails", "linked-toots", "mastodon-latest"]);
 
   function crmSessionColumnKeys() {
@@ -6930,6 +6941,66 @@ window.ForkMeshDashboard.registerPage("crm", ({
     crmMastodonLatest.queue.push(key);
     crmPumpMastodonLatest();
     crmRepaintMastodonLatest(key);
+  }
+
+  function crmMastodonFollowError(error) {
+    return CRM_MASTODON_FOLLOW_ERRORS[error?.payload?.error] || error?.message || "unknown error";
+  }
+
+  function crmFollowBackKey(contact) {
+    if (crmActiveView()?.network !== "mastodon" || crmFollowBack.organization !== state.crmView.organization) return "";
+    const key = crmMastodonKey(contact?.mastodon).toLowerCase();
+    return crmFollowBack.handles.has(key) ? key : "";
+  }
+
+  function crmFollowBackButton(contact) {
+    const key = crmFollowBackKey(contact);
+    if (!key) return "";
+    const account = crmMastodonKey(state.crmView.settings?.mastodon?.account) || "the organization's account";
+    return `<button data-crm-follow-back="${escapeHtml(key)}" type="button" ${crmFollowBack.following.has(key) ? "disabled" : ""} title="${escapeHtml(`@${key} follows @${account}. Follow them back from @${account}.`)}" class="whitespace-nowrap rounded bg-primary px-2 py-1 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-45">Follow back</button>`;
+  }
+
+  async function loadCrmFollowBack() {
+    const organization = state.crmView.organization;
+    if (crmFollowBack.loading || !organization || crmActiveView()?.network !== "mastodon"
+        || !state.crmView.settings?.mastodon?.connected) return;
+    if (organization === crmFollowBack.organization && Date.now() - crmFollowBack.loadedAt < CRM_MASTODON_FRESH_MS) return;
+    if (organization !== crmFollowBack.organization) {
+      crmFollowBack.handles = new Set();
+      crmFollowBack.organization = organization;
+    }
+    crmFollowBack.loading = true;
+    crmFollowBack.loadedAt = Date.now();
+    try {
+      const payload = await crmRequest(crmOrganizationPath("/mastodon/follow-back"));
+      if (organization !== state.crmView.organization) { crmFollowBack.loadedAt = 0; return; }
+      crmFollowBack.handles = new Set((payload.handles || [])
+        .map((handle) => crmMastodonKey(handle).toLowerCase()).filter(Boolean));
+      renderCrmContacts();
+    } catch (error) {
+      if (organization === state.crmView.organization)
+        crmMessage("error", `Could not check which followers to follow back: ${crmMastodonFollowError(error)}`);
+    } finally {
+      crmFollowBack.loading = false;
+    }
+  }
+
+  async function crmFollowMastodonBack(key) {
+    if (!key || crmFollowBack.following.has(key)) return;
+    crmFollowBack.following.add(key);
+    renderCrmContacts();
+    crmMessage("notice", `Following @${key} back…`);
+    try {
+      const payload = await crmRequest(crmOrganizationPath("/mastodon/follow"), "POST", { handle: key });
+      crmFollowBack.handles.delete(key);
+      crmMessage("notice", payload.requested && !payload.following
+        ? `Asked to follow @${key}; they approve followers first.` : `Now following @${key}.`);
+    } catch (error) {
+      crmMessage("error", `Could not follow @${key}: ${crmMastodonFollowError(error)}`);
+    } finally {
+      crmFollowBack.following.delete(key);
+      renderCrmContacts();
+    }
   }
 
   function crmMastodonHostOf(key) {
@@ -7722,6 +7793,8 @@ window.ForkMeshDashboard.registerPage("crm", ({
     if (now) { void crmMarkContacted([now.dataset.crmContactedNow], Date.now()); return; }
     const prompt = event.target.closest("[data-crm-contact-prompt]");
     if (prompt) { void copyCrmOutreachPrompt(crmContactById(prompt.dataset.crmContactPrompt)); return; }
+    const follow = event.target.closest("[data-crm-follow-back]");
+    if (follow) { void crmFollowMastodonBack(follow.dataset.crmFollowBack); return; }
     const refresh = event.target.closest("[data-crm-mastodon-refresh]");
     if (refresh) { refreshCrmMastodonNow(refresh.dataset.crmMastodonRefresh); return; }
     const linked = event.target.closest("[data-crm-linked]");
