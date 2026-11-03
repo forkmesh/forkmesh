@@ -4503,7 +4503,7 @@
     const signedHead = parent
       ? `${repoDisplayOwner(repo) || repo.owner}:${head}`
       : head;
-    const pull = withPullAiModel(await signWebPull(repo, targetRepo, title, body, base, head, signedHead), aiModel);
+    const pull = withPullAiModel(await signWebPull(repo, targetRepo, title, body, base, head, signedHead, "", parent ? targetRepo : null), aiModel);
     const payload = { owner: targetRepo.owner, repo: targetRepo.name, pull };
     try {
       const data = await fetchRepoMutation(targetRepo, "pulls", payload);
@@ -4557,7 +4557,27 @@
     return { ...data, pull, remote };
   }
 
-  async function signWebPull(repo, signingRepo, title, body, base, head, signedHead, compareBase = "") {
+  async function pullParentBaseOid(parentRepo, base) {
+    try {
+      const branches = await fetchRepoBranches(parentRepo, { refresh: true });
+      const tip = String(branches.find((branch) => branch.name === base)?.commit || "").toLowerCase();
+      return /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(tip) ? tip : "";
+    } catch (_) {
+      return "";
+    }
+  }
+
+  async function fetchPullComparison(repo, base, head, parentRepo = null) {
+    const parentBase = parentRepo ? await pullParentBaseOid(parentRepo, base) : "";
+    if (parentBase) {
+      try {
+        return await fetchRepoJson(repoLiveUrl(repo, "compare", { base: parentBase, head, ref: "" }));
+      } catch (_) {}
+    }
+    return fetchRepoJson(repoLiveUrl(repo, "compare", { base, head, ref: "" }));
+  }
+
+  async function signWebPull(repo, signingRepo, title, body, base, head, signedHead, compareBase = "", parentRepo = null) {
     // The comparison is the first thing that can fail, and it fails BEFORE
     // anything is signed or sent - a mirror answers 404 for a branch name it
     // cannot resolve yet, which is the common case for a branch that was just
@@ -4567,11 +4587,7 @@
     // which reads as a rejected submission and invites a pointless resend.
     let comparison;
     try {
-      comparison = await fetchRepoJson(repoLiveUrl(repo, "compare", {
-        base: compareBase || base,
-        head,
-        ref: "",
-      }));
+      comparison = await fetchPullComparison(repo, compareBase || base, head, compareBase ? null : parentRepo);
     } catch (cause) {
       const error = new Error("comparison_unavailable");
       error.status = Number(cause?.status) || 0;
@@ -6379,7 +6395,7 @@
     const base = String(values.base || "");
     let comparison;
     try {
-      comparison = await fetchRepoJson(repoLiveUrl(sourceRepo, "compare", { base, head: branch, ref: "" }));
+      comparison = await fetchPullComparison(sourceRepo, base, branch, source.owner ? repo : null);
     } catch (_) {
       throw new Error("comparison_unavailable");
     }
@@ -6390,7 +6406,8 @@
     const validOid = (value) => /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(value);
     if (!validOid(baseOid) || !validOid(headOid)) throw new Error("invalid_comparison");
     if (!patch.trim()) throw new Error("no_changes");
-    if (headOid === String(values.creationHeadOid || "").toLowerCase()) throw new Error("no_new_commits");
+    if (headOid === String(values.creationHeadOid || "").toLowerCase()
+      && baseOid === String(values.creationBaseOid || "").toLowerCase()) throw new Error("no_new_commits");
     const signedHead = source.owner ? `${source.owner}:${branch}` : branch;
     const revision = await signWebPullContent(
       repo, String(values.title || ""), "", base, signedHead, patch, commits);
