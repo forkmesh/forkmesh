@@ -489,6 +489,9 @@ private:
     // thing that reads a contact's instance.
     void refreshMastodonNow(const QString &key);
     void fetchMastodonLatest(const QString &key);
+    void loadMastodonFollowBack();
+    void followMastodonBack(const QString &key);
+    void rebuildFollowBackRows(const QString &key);
     void applyMastodonLatest(const QString &key);
     void fillMastodonItem(QTableWidgetItem *item, const QString &key) const;
     // Contact pictures beside the name: queued once per load (opening the page
@@ -835,6 +838,11 @@ private:
     QStringList m_mastodonQueue;
     QHash<QString, QString> m_mastodonIds;
     QHash<QString, qint64> m_mastodonBackoff;
+    QSet<QString> m_mastodonFollowBack;
+    QSet<QString> m_mastodonFollowing;
+    QString m_mastodonFollowBackOrg;
+    qint64 m_mastodonFollowBackAt = 0;
+    bool m_mastodonFollowBackLoading = false;
     bool m_nextRenderQueued = false;
     MastodonFollowersJob m_followers;
     GithubContributorsJob m_contributors;

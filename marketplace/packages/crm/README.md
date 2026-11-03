@@ -1314,6 +1314,25 @@ raising, so the caller can keep the lead.
   (`?list=network:<field>`) that search and the Flow, Stage, Owner and
   Follow-up filters narrow. Desktop, iOS and Android show the same networks in
   the same order; `tests/test_networks.py` keeps the four lists equal.
+  <a id="follow-back"></a>**Follow back** (desktop): on the Mastodon network
+  tab, a contact who follows the organization's saved Mastodon account
+  (Settings → Mastodon toots) and whom that account does not follow gets a
+  **Follow back** button in its Actions strip. Opening the tab calls
+  `GET /mastodon/follow-back` at most once per 15 minutes per organization;
+  the worker reads the account's followers and following lists with the
+  saved token (up to 25 pages of 80 each, retrying without the token when it
+  lacks `read:accounts`, as the [followers list](#followers-list) does) and
+  returns the followers' handles it does not follow. The button calls
+  `POST /mastodon/follow {"handle"}`, which looks the handle up on the
+  account's instance and follows it there; a locked account answers
+  "requested". The token needs `write:follows` for that, else the error is
+  `mastodon_follow_not_allowed`. Any member who can write may follow back;
+  each follow is audited as `crm.mastodon.follow` and pings no one. Rows match
+  by the contact's **Mastodon** field. A follow request the account sent
+  earlier and is still waiting on is not in its following list, so that row
+  keeps the button. The web page and the phones do not have it yet. Code:
+  `_follow_back`, `_follow_handle` (worker); `loadMastodonFollowBack`,
+  `followMastodonBack` (desktop).
 - **Desktop** (`CrmFeature.cpp`): columns for the lists, the table, Reach out
   / Follow up and the detail panel, spreadsheet-style editing, a People grid
   of contacts with pictures, imports, and a rail count of never-contacted
