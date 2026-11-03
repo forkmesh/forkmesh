@@ -19,6 +19,11 @@ ClaudeImportBatch convertLines(const QList<QJsonObject> &lines, const QString &s
 
 ClaudeImportBatch convert(const QString &path, qint64 fromOffset, const QString &sessionId);
 
+QList<QJsonObject> foreignLines(const QList<QJsonObject> &lines, bool ownSeen);
+
+ClaudeImportBatch convertForeign(const QString &path, qint64 fromOffset,
+                                 const QString &sessionId);
+
 QString stagedPath(const QString &configDir, const QString &workdir, const QString &sessionId);
 
 bool stage(const QString &sourcePath, const QString &configDir, const QString &workdir,

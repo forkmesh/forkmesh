@@ -1,10 +1,15 @@
 #include "MainWindow.h"
 #include "MainWindowInternal.h"
 #include "MainWindowAgentsInternal.h"
+#include "AgentResumeIdentity.h"
 #include "ClaudeDesktopSessions.h"
+#include "ClaudeSessionImport.h"
+#include "ClaudeStreamSession.h"
 #include "ProcessReaper.h"
 
 #include <QDesktopServices>
+#include <QDir>
+#include <QFileInfo>
 #include <QProcess>
 #include <QSettings>
 #include <QTimer>
@@ -34,6 +39,47 @@ QStringList claudeAccountConfigDirs()
             dirs.append(profile.configDir);
     return dirs;
 }
+
+struct ClaudeAppAccount {
+    QString id;
+    QString configDir;
+};
+
+QList<ClaudeAppAccount> claudeAppAccounts()
+{
+    QList<ClaudeAppAccount> out;
+    for (const AgentAccountProfile &profile :
+         agentAccountProfiles(QStringLiteral("claude-code")))
+        if (!profile.configDir.trimmed().isEmpty())
+            out.append({profile.id, profile.configDir});
+    out.append({QString(), forkmesh::claudedesktop::defaultClaudeHome()});
+    return out;
+}
+
+bool underDir(const QString &path, const QString &dir)
+{
+    const QString root = QFileInfo(dir).canonicalFilePath();
+    return !root.isEmpty() && path.startsWith(root + QLatin1Char('/'));
+}
+
+struct ClaudeAppJob {
+    int sessionId = 0;
+    QString cliSessionId;
+    QString path;
+    qint64 bytes = 0;
+};
+
+struct ClaudeAppSync {
+    int sessionId = 0;
+    QString seenPath;
+    qint64 seenBytes = 0;
+    QString path;
+    qint64 fromBytes = 0;
+    bool reset = false;
+    bool missing = false;
+    QString accountId;
+    ClaudeImportBatch batch;
+};
 
 struct ClaudeDesktopLookup {
     QString cliSessionId;
@@ -213,4 +259,100 @@ void MainWindow::pumpClaudeDesktopLinks()
     }
     if (!m_claudeDesktopLinkQueue.isEmpty() && m_claudeDesktopLinkTimer)
         m_claudeDesktopLinkTimer->start(kClaudeDesktopLinkSpacingMs);
+}
+
+void MainWindow::syncClaudeAppSessions()
+{
+    if (m_claudeAppSyncInFlight || !m_agentStore)
+        return;
+    QList<ClaudeAppJob> jobs;
+    for (const AgentSession &s : std::as_const(m_agentSessions)) {
+        if (s.id <= 0 || s.claudeAppSessionId.isEmpty() || s.cloud || s.deletedAtMs > 0 ||
+            s.associationOnly || s.provider != QLatin1String("claude-code") ||
+            m_claudeAppTranscriptMissing.contains(s.id) || isExternalSession(s.id) ||
+            s.status == AgentStatus::Running ||
+            s.status == AgentStatus::Queued || s.status == AgentStatus::Waiting)
+            continue;
+        jobs << ClaudeAppJob{s.id, s.claudeAppSessionId, s.claudeAppPath, s.claudeAppBytes};
+    }
+    if (jobs.isEmpty())
+        return;
+    m_claudeAppSyncInFlight = true;
+    const QList<ClaudeAppAccount> accounts = claudeAppAccounts();
+    runOffThread<QList<ClaudeAppSync>>(
+        [jobs, accounts] {
+            QList<ClaudeAppSync> out;
+            for (const ClaudeAppJob &job : jobs) {
+                ClaudeAppSync sync;
+                sync.sessionId = job.sessionId;
+                sync.seenPath = job.path;
+                sync.seenBytes = job.bytes;
+                sync.fromBytes = job.bytes;
+                sync.path = job.path;
+                const QString fileName = job.cliSessionId.toLower() + QStringLiteral(".jsonl");
+                if (QFileInfo(sync.path).fileName() != fileName || !QFileInfo(sync.path).isFile()) {
+                    sync.path.clear();
+                    for (const ClaudeAppAccount &account : accounts) {
+                        const QString found = forkmesh::claudedesktop::findTranscript(
+                            QDir(account.configDir).filePath(QStringLiteral("projects")),
+                            job.cliSessionId);
+                        if (!found.isEmpty()) {
+                            sync.path = QFileInfo(found).canonicalFilePath();
+                            break;
+                        }
+                    }
+                    sync.reset = true;
+                    sync.fromBytes = 0;
+                    if (sync.path.isEmpty()) {
+                        sync.missing = true;
+                        out << sync;
+                        continue;
+                    }
+                }
+                const qint64 size = QFileInfo(sync.path).size();
+                if (size == sync.fromBytes && !sync.reset)
+                    continue;
+                for (const ClaudeAppAccount &account : accounts)
+                    if (underDir(sync.path, account.configDir)) {
+                        sync.accountId = account.id;
+                        break;
+                    }
+                sync.batch = ClaudeSessionImport::convertForeign(
+                    sync.path, size < sync.fromBytes ? 0 : sync.fromBytes, job.cliSessionId);
+                out << sync;
+            }
+            return out;
+        },
+        [this](QList<ClaudeAppSync> synced) {
+            m_claudeAppSyncInFlight = false;
+            for (ClaudeAppSync &sync : synced) {
+                AgentSession *s = findAgentSession(sync.sessionId);
+                if (!s || !m_agentStore)
+                    continue;
+                if (sync.missing) {
+                    m_claudeAppTranscriptMissing.insert(sync.sessionId);
+                    continue;
+                }
+                if (s->claudeAppPath != sync.seenPath || s->claudeAppBytes != sync.seenBytes ||
+                    s->status == AgentStatus::Running || s->status == AgentStatus::Waiting ||
+                    s->status == AgentStatus::Queued)
+                    continue;
+                s->claudeAppPath = sync.path;
+                s->claudeAppBytes = sync.batch.newOffset;
+                if (sync.batch.events.isEmpty()) {
+                    m_agentStore->saveSession(*s);
+                    continue;
+                }
+                if (!sync.accountId.isEmpty())
+                    for (QJsonObject &ev : sync.batch.events)
+                        if (!ev.value(QStringLiteral("session_id")).toString().isEmpty())
+                            ev.insert(forkmesh::agents::resumeAccountKey(), sync.accountId);
+                if (ClaudeStreamSession *idle = m_streamSessions.take(sync.sessionId)) {
+                    idle->disconnect(this);
+                    idle->stop();
+                    idle->deleteLater();
+                }
+                appendClaudeTranscriptEvents(sync.sessionId, sync.batch);
+            }
+        });
 }

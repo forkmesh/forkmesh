@@ -22,7 +22,11 @@ two looked and behaved differently. The landing's reference sections still use
 the static `tailwind.css` for their inner layout; that file is precompiled, so
 new landing markup uses `dh-*` classes from `docs-page.css`, never new Tailwind
 utilities. The build fills the landing's sidebar through
-`<!-- forkmesh-docs-sidebar -->`.
+`<!-- forkmesh-docs-sidebar -->`, so the checked-in landing holds none of
+its links. The Reference intro therefore links `/docs/contributions` and
+the [business model](../business-model.md) itself, as the old hand-written
+sidebar did; `app/tests/test_docs_frontend.py` and
+`app/tests/test_business_model_contract.py` read those links from the page.
 
 ## Pillars
 

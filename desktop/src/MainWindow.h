@@ -14600,6 +14600,8 @@ private:
     QHash<QString, int> m_claudeDesktopLinkOwners;
     QTimer *m_claudeDesktopLinkTimer = nullptr;
     bool m_claudeDesktopBackfillRunning = false;
+    bool m_claudeAppSyncInFlight = false;
+    QSet<int> m_claudeAppTranscriptMissing;
     QPlainTextEdit *m_agentLog = nullptr;
     QStackedWidget *m_agentOutputStack = nullptr; // log (0) | embedded terminal (1)
     TerminalWidget *m_agentTerminal = nullptr;  // Claude Code runs here
@@ -15196,6 +15198,7 @@ private:
     void backfillClaudeDesktopSessions();
     void queueClaudeDesktopLink(const QString &cliSessionId, bool front);
     void pumpClaudeDesktopLinks();
+    void syncClaudeAppSessions();
     void finishAgentCloudHandoff(int sessionId, const QString &branch,
                                  const QJsonObject &payload);
     void showAgentListContextMenu(const QPoint &viewportPos);
@@ -15379,6 +15382,7 @@ private:
                                   const ClaudeImportBatch &batch);
     void appendImportedClaudeEvents(int sessionId, const ClaudeImportBatch &batch,
                                     const QString &title);
+    void appendClaudeTranscriptEvents(int sessionId, const ClaudeImportBatch &batch);
     void syncImportedClaudeSessions();
     QHash<QString, int> importedClaudeSessionAgents() const;
     void scanExternalClaudeSessions();
