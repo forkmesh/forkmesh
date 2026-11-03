@@ -20,6 +20,10 @@
   const CLIENT_ERROR_ENDPOINT = "/api/client-errors";
   const CLIENT_ERROR_WINDOW_MS = 60_000;
   const CLIENT_ERROR_MAX_PER_WINDOW = 8;
+  const STALE_MODULE_RELOAD_KEY = "forkmesh.staleModuleReload.v1";
+  const STALE_MODULE_RELOAD_WINDOW_MS = 5 * 60_000;
+  const STALE_MODULE_LINK_ERROR =
+    /does not provide an export named|doesn't provide an export named|importing binding name .+ is not found|import not found:|ambiguous indirect export/i;
   const FORKMESH_HOSTS = new Set(["forkmesh.com", "www.forkmesh.com", "app.forkmesh.com", "world.forkmesh.com"]);
   let started = false;
   let privacyMode = false;
@@ -169,6 +173,28 @@
     );
   }
 
+  function staleModuleLinkError(error, fallbackMessage = "", source = "") {
+    if (!STALE_MODULE_LINK_ERROR.test(String(error?.message || fallbackMessage || ""))) return false;
+    try {
+      return new URL(String(source || ""), location.href).origin === location.origin;
+    } catch {
+      return false;
+    }
+  }
+
+  function reloadStaleModuleGraph() {
+    try {
+      const now = Date.now();
+      const last = Number(sessionStorage.getItem(STALE_MODULE_RELOAD_KEY) || 0);
+      if (now - last < STALE_MODULE_RELOAD_WINDOW_MS) return false;
+      sessionStorage.setItem(STALE_MODULE_RELOAD_KEY, String(now));
+    } catch {
+      return false;
+    }
+    location.reload();
+    return true;
+  }
+
   function reportClientError(kind, error, fallbackMessage = "", source = "", line = 0, column = 0) {
     if (privacyMode) return;
     // Classify before redaction, which rewrites the very URLs that say where a
@@ -227,6 +253,12 @@
       // Resource-load errors do not expose a useful exception and can reveal
       // asset paths. The operational collector is for uncaught JavaScript.
       if (event.target && event.target !== window) return;
+      if (
+        staleModuleLinkError(event.error, event.message, event.filename) &&
+        reloadStaleModuleGraph()
+      ) {
+        return;
+      }
       reportClientError(
         "error",
         event.error,
