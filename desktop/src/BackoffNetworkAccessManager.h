@@ -146,6 +146,10 @@ public:
     bool blockedByClientVersion() const { return m_clientVersionBlocked; }
 
     static bool isOnThisMachine(const QUrl &url);
+    static QString redirectRefusal(QNetworkRequest::RedirectPolicy policy, const QUrl &from,
+                                   const QUrl &to);
+    static bool firewallAnswerCoversUrl(FirewallVerdict verdict, const QString &rule,
+                                        const QUrl &url);
     QList<EndpointStats> endpointStats() const;
     // Requests grouped by destination host, busiest first, each with what the
     // firewall rules say about that host right now. The Stats page charts it
@@ -304,6 +308,9 @@ private:
     static QString endpointStatsKey(Operation op, const QUrl &url);
     static QString endpointStatsUrl(const QUrl &url);
     bool firewallAllows(const QUrl &url) const;
+    bool firewallAdmits(Operation op, const QUrl &url, bool decoration, int requestIndex);
+    void guardRedirects(QNetworkReply *reply, Operation op, const QUrl &origin,
+                        QNetworkRequest::RedirectPolicy policy, bool decoration);
     EndpointStats &endpointStatsFor(Operation op, const QUrl &url);
     int noteEndpointAttempt(Operation op, const QUrl &url,
                             const QString &requestData);

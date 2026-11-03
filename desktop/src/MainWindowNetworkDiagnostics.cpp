@@ -2894,15 +2894,13 @@ MainWindow::promptFirewallRequest(const QString &method, const QUrl &url,
         if (open->host == host) {
             if (!open->decided)
                 return BackoffNetworkAccessManager::FirewallDenyOnce;
-            if (ruleOut &&
-                (open->verdict == BackoffNetworkAccessManager::FirewallAllow ||
-                 open->verdict == BackoffNetworkAccessManager::FirewallDeny) &&
-                !open->rule.isEmpty())
-                *ruleOut = open->rule;
-            else if (ruleOut &&
-                     open->verdict == BackoffNetworkAccessManager::FirewallAllowOnce)
-                ruleOut->clear();
-            return open->verdict;
+            if (BackoffNetworkAccessManager::firewallAnswerCoversUrl(open->verdict, open->rule,
+                                                                     url)) {
+                if (ruleOut && !open->rule.isEmpty() &&
+                    open->verdict != BackoffNetworkAccessManager::FirewallDenyOnce)
+                    *ruleOut = open->rule;
+                return open->verdict;
+            }
         }
         if (manager && !BackoffNetworkAccessManager::isOnThisMachine(url)) {
             QString matched;

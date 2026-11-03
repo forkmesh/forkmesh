@@ -447,6 +447,20 @@ def test_signed_manifest_older_than_the_installer_minimum_is_refused(tmp_path):
     assert pinned.returncode == 0, pinned.stderr
 
 
+def test_installer_refuses_the_last_release_before_the_auto_update_trust_fix(tmp_path):
+    if shutil.which("openssl") is None:
+        return
+    import re
+    floor = re.search(r'^FORKMESH_MIN_RELEASE_VERSION="([0-9.]+)"$',
+                      INSTALLER.read_text(encoding="utf-8"), re.M).group(1)
+    refused = _verify_signed(tmp_path, version="1.2.8", channel="candidate-1.2.8",
+                             minimum=floor)
+    assert refused.returncode != 0
+    assert "older than this installer's minimum" in refused.stderr
+    assert _verify_signed(tmp_path, version="1.5.0", channel="candidate-1.5.0",
+                          minimum=floor).returncode == 0
+
+
 def test_installer_minimum_release_is_set_and_not_above_latest():
     import json
     import re

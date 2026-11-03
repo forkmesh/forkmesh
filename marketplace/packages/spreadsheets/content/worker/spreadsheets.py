@@ -1,7 +1,4 @@
-import base64
-import json
 import re
-import zlib
 
 
 PREFIX = "/api/spreadsheets"
@@ -13,7 +10,7 @@ MAX_DATA_CHARS = 3 * 1024 * 1024
 MAX_WORKBOOKS = 500
 MAX_ACCOUNT_CHARS = 200 * 1024 * 1024
 MAX_TITLE = 120
-MAX_EXPORT_JSON_BYTES = 64 * 1024 * 1024
+MAX_EXPORT_PAGE_CHARS = 16 * 1024 * 1024
 MAX_AI_PROMPT = 2000
 MAX_AI_CONTEXT = 12000
 MAX_AI_ACTIONS = 100
@@ -526,40 +523,31 @@ async def account_has_data(runtime, account_bi):
     return bool(row)
 
 
-def _decoded(data):
-    try:
-        raw = base64.b64decode(data, validate=True)
-        inflater = zlib.decompressobj(16 + zlib.MAX_WBITS)
-        text = inflater.decompress(raw, MAX_EXPORT_JSON_BYTES)
-        if inflater.unconsumed_tail:
-            return None
-        value = json.loads(text.decode("utf-8"))
-    except (ValueError, zlib.error, UnicodeDecodeError):
-        return None
-    return value if isinstance(value, dict) else None
-
-
-async def export_account_data(runtime, account_bi, actor):
+async def export_account_data(runtime, account_bi, actor, start=0):
     runtime = _vault(runtime)
-    rows = await runtime.d1_all(
-        "SELECT book_id,created_at,updated_at,revision,bytes,meta,data FROM spreadsheets_books "
-        "WHERE account_bi=? ORDER BY updated_at DESC", account_bi)
-    workbooks = []
-    for row in rows or []:
+    index = await runtime.d1_all(
+        "SELECT book_id,bytes FROM spreadsheets_books WHERE account_bi=? "
+        "ORDER BY created_at,book_id", account_bi) or []
+    position, used, workbooks = max(0, start), 0, []
+    while position < len(index):
+        size = _integer(index[position].get("bytes"))
+        if workbooks and used + size > MAX_EXPORT_PAGE_CHARS:
+            break
+        row = await _book_row(runtime, account_bi, index[position].get("book_id"))
+        position += 1
+        if not row:
+            continue
         item = await _project(runtime, account_bi, row, with_data=True)
-        workbook = _decoded(item["data"])
-        if workbook is not None:
-            item["workbook"] = workbook
-            item.pop("data")
-        else:
-            item["encoding"] = "base64 gzip forkmesh-sheets JSON"
+        item["encoding"] = "base64 gzip forkmesh-sheets JSON"
         workbooks.append(item)
+        used += size
     return {
         "plugin": PLUGIN_ID,
         "format": "forkmesh-spreadsheets-export-v1",
         "account": actor,
         "exportedAt": runtime.now(),
         "workbooks": workbooks,
+        "next": position if position < len(index) else 0,
     }
 
 
@@ -644,7 +632,8 @@ async def handle(runtime, path):
     if head == "export":
         return _response(runtime, {
             "ok": True, "filename": _export_filename(actor),
-            "export": await export_account_data(runtime, account_bi, actor),
+            "export": await export_account_data(
+                runtime, account_bi, actor, _integer(runtime.query_params().get("start"))),
         })
     if head == "ai":
         return await _ai(runtime, account_bi, actor, data)

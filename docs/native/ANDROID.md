@@ -498,7 +498,8 @@ How repositories reach mirrors is in [mirroring.md](../mirroring.md).
 - Destructive host and node operations use the desktop's prepare/run one-use
   token and a typed name after the screen lock (`UserPresence.confirm`).
   Approving an agent request always opens the app; only Deny works from a
-  notification.
+  notification, and only on an unlocked phone
+  ([security](ARCHITECTURE.md#security)).
   Approving waiting checks from a notification opens the pull request's
   Checks card with the approval queued for five minutes and bound to the
   notification's head; the card asks for the screen lock and then sends it

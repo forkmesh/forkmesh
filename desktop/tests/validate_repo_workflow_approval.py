@@ -14,6 +14,8 @@ def action_block(source: str, action: str) -> str:
     end = source.index("\n        if (action == QLatin1String(", start + 1)
     return source[start:end]
 PHONE = (ROOT / "src/MainWindowLocalControlWorkflows.cpp").read_text(encoding="utf-8")
+ACTIONS = (ROOT / "src/MainWindowActions.cpp").read_text(encoding="utf-8")
+RUNNER = (ROOT / "src/ActionRunner.cpp").read_text(encoding="utf-8")
 
 
 def function_body(source: str, signature: str) -> str:
@@ -88,6 +90,15 @@ def main() -> None:
     helper = function_body(WORKFLOWS, "void MainWindow::approveRepoWorkflowFileFromPhone(")
     assert "approveRepoWorkflowFile(repoIndex, path)" in helper and "logSystem(" in helper, (
         "a phone approval goes through the normal approval store and is logged")
+    scan = function_body(ACTIONS, "void MainWindow::applyWorkflowScan(")
+    assert "wf.mayStartFromEvent()" in scan and (
+        scan.index("wf.mayStartFromEvent()") < scan.index("m_actionStore->createRun(run)")), (
+        "a sandbox: false workflow must be skipped before an event creates its run")
+    rerun = function_body(ACTIONS, "int MainWindow::rerunActionRun(int runId)")
+    assert "!rerunWorkflow.sandbox && prev->pullNumber > 0" in rerun, (
+        "a rerun must not turn a pull request's sandbox: false run into a plain one")
+    assert "!m_workflow.sandbox && m_run.pullNumber > 0" in RUNNER, (
+        "the runner refuses a pull request run outside the sandbox")
     print("repo workflow approval contract passed")
 
 

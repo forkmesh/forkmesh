@@ -2529,6 +2529,28 @@ public:
     {
         return openTerminalTab(kind, command, cwd, QString());
     }
+    void testPromptAgentExternalCall(int sid, const QStringList &destinations,
+                                     const QStringList &pending, const QString &call,
+                                     std::function<void(bool, const QString &)> done)
+    {
+        promptAgentExternalCall(QStringLiteral("test:%1").arg(sid), QStringLiteral("%1:test").arg(sid),
+                                sid, QStringLiteral("Agent #%1").arg(sid), destinations, pending,
+                                call, std::move(done));
+    }
+    static QString testReadPullRangeBaseSha(const QString &dir, const QString &base,
+                                            const QString &head)
+    {
+        return readPullRangeSnapshot(dir, base, head).baseSha;
+    }
+    QJsonObject testCreateAgentFromIntake(int requesterId,
+                                          const forkmesh::agentintake::CreateRequest &request)
+    {
+        return createAgentFromIntake(requesterId, request);
+    }
+    QStringList testAgentRunDeniedPermissions(int sid) const
+    {
+        return agentRunRules(sid).deniedPermissions;
+    }
     QJsonObject testTerminalRequest(int sessionId, const QString &terminalId, const QString &method,
                                     const QJsonObject &params)
     {
@@ -15039,11 +15061,18 @@ private:
                                 const forkmesh::agentrules::Decision &decision);
     void promptAgentDestructiveCommand(const forkmesh::agentnet::Request &request,
                                        const forkmesh::agentrules::Decision &decision);
+    void promptAgentExternalCall(const QString &promptId, const QString &session, int sid,
+                                 const QString &label, const QStringList &destinations,
+                                 const QStringList &pending, const QString &call,
+                                 std::function<void(bool allowed, const QString &reason)> done);
+    void gateAgentBrowserUrl(int sid, const QUrl &url,
+                             std::function<void(const QString &refusal)> done);
     void answerAgentAccessFailure(const QString &id, const QString &context);
     void reportCodexAccessFailure(int sid, const QJsonObject &item);
     void showGlobalAgentRules();
     QHash<int, QPair<QString, QStringList>> m_teammateRunGrants;
     QPair<QString, QStringList> m_startingTeammateGrant;
+    QStringList m_startingAgentDeniedPermissions;
     bool m_startingTeammate = false;
     quint64 m_codexAccessFailureSeq = 0;
     std::unique_ptr<forkmesh::agentnet::Server> m_agentNetworkGate;
@@ -15522,7 +15551,8 @@ private:
                                    const QString &baseBranch, int prNumber,
                                    const QString &title, const QString &task,
                                    const QString &provider,
-                                   const QString &model, bool held = false);
+                                   const QString &model, bool held = false,
+                                   const QString &modeOverride = QString());
     void requestCloudflareWorkspaceName(
         const QString &prompt, const QString &model,
         std::function<void(QString)> completion);

@@ -2,6 +2,7 @@
 #include "AppArmorSystem.h"
 
 #include <QCoreApplication>
+#include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -330,15 +331,21 @@ void testInstallScript()
 
     QString script = adminInstallScript();
     script.replace(QStringLiteral("PATH=/usr/sbin:/usr/bin:/sbin:/bin"), QStringLiteral("PATH=%1:/usr/bin:/bin").arg(bin));
-    auto run = [&](const QString &src, const QString &target) {
+    auto digest = [](const QString &path) {
+        QFile file(path);
+        file.open(QIODevice::ReadOnly);
+        return QString::fromLatin1(QCryptographicHash::hash(file.readAll(), QCryptographicHash::Sha256).toHex());
+    };
+    auto runWith = [&](const QString &src, const QString &target, const QString &sum) {
         QProcess process;
         QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
         environment.insert(QStringLiteral("PARSER_LOG"), root + QStringLiteral("/parser.log"));
         process.setProcessEnvironment(environment);
-        process.start(sh, {QStringLiteral("-c"), script, QStringLiteral("sh"), src, target, backups, target});
+        process.start(sh, {QStringLiteral("-c"), script, QStringLiteral("sh"), src, target, backups, target, sum});
         process.waitForFinished(10000);
         return process.exitCode();
     };
+    auto run = [&](const QString &src, const QString &target) { return runWith(src, target, digest(src)); };
     auto read = [](const QString &path) {
         QFile file(path);
         file.open(QIODevice::ReadOnly);
@@ -356,6 +363,22 @@ void testInstallScript()
     for (const QString &name : QDir(backups).entryList(QDir::Files))
         movedAside = movedAside || name.contains(QStringLiteral(".rejected."));
     check(movedAside, QStringLiteral("rejected new file is kept in the backup folder"));
+
+    const QString guarded = root + QStringLiteral("/policy/local/guarded");
+    writeFile(root + QStringLiteral("/secret"), QStringLiteral("root only\n"));
+    QFile::link(root + QStringLiteral("/secret"), root + QStringLiteral("/swapped"));
+    check(runWith(root + QStringLiteral("/swapped"), guarded, digest(root + QStringLiteral("/secret"))) == 4 && !QFileInfo::exists(guarded),
+          QStringLiteral("a symlink source is refused even with the right hash"));
+    QDir(root).mkdir(QStringLiteral("folder"));
+    check(runWith(root + QStringLiteral("/folder"), guarded, digest(root + QStringLiteral("/good"))) == 4 && !QFileInfo::exists(guarded),
+          QStringLiteral("a source that is not a regular file is refused"));
+    check(runWith(root + QStringLiteral("/secret"), guarded, digest(root + QStringLiteral("/good"))) == 4 && !QFileInfo::exists(guarded),
+          QStringLiteral("a source whose content changed after approval is refused"));
+    check(read(dest) == QStringLiteral("new\n"), QStringLiteral("a refused install leaves the old file alone"));
+    bool leftover = false;
+    for (const QString &name : QDir(backups).entryList(QDir::Files | QDir::Hidden | QDir::NoDotAndDotDot))
+        leftover = leftover || name.startsWith(QStringLiteral(".stage."));
+    check(!leftover, QStringLiteral("no staged copy is left behind"));
 }
 
 void testAdvice()

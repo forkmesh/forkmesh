@@ -17,6 +17,8 @@ MAX_BODY_BYTES = 1024 * 1024
 MAX_TITLE = 200
 MAX_MARKDOWN = 512 * 1024
 MAX_NOTES = 500
+MAX_OWNED_NOTES = 2000
+MAX_OWNED_PAGES = 2000
 MAX_VERSIONS = 100
 BIND_CHUNK = 90
 NOTE_ID_RE = re.compile(r"^[0-9a-f]{32}$")
@@ -455,6 +457,9 @@ async def _list(runtime, account_bi, query="", actor=""):
 
 
 async def _create(runtime, account_bi, actor, data):
+    owned = await runtime.d1_first("SELECT COUNT(*) AS n FROM notes WHERE owner_bi=?", account_bi)
+    if int((owned or {}).get("n") or 0) >= MAX_OWNED_NOTES:
+        return _response(runtime, {"error": "note_limit_reached"}, status=409)
     title = _title(data.get("title")) or "Untitled note"
     markdown = _markdown(data.get("markdown"))
     visibility = "public" if data.get("visibility") == "public" else "private"
@@ -1249,6 +1254,9 @@ async def _page_unknown_notes(runtime, outline, known, account_bi):
 
 
 async def _page_create(runtime, account_bi, data):
+    owned = await runtime.d1_first("SELECT COUNT(*) AS n FROM note_pages WHERE owner_bi=?", account_bi)
+    if int((owned or {}).get("n") or 0) >= MAX_OWNED_PAGES:
+        return _response(runtime, {"error": "page_limit_reached"}, status=409)
     fields, error = _page_fields(data, {})
     if error:
         return _response(runtime, {"error": error}, status=400)

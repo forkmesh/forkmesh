@@ -69,6 +69,15 @@ Override any severity with `[ids] severity = { detector = "lockdown" }` in
 | `baseline_tampered`, `baseline_missing` | the baseline failed its HMAC check or vanished | lockdown |
 | `reboot` | boot id changed outside a window | info |
 
+The SSH detectors read only journal lines with `_UID=0`. `SYSLOG_IDENTIFIER`
+and `_COMM` are the sender's to choose, so a runner job could otherwise write
+`Accepted password for root ...` under the name `sshd` and lock its runner
+down. sshd's monitor logs logins as root. A non-root login's `Starting session`
+line runs as that user and is ignored; its `ssh_login_user` alert still fires.
+The account-tool detectors still match by name: `su` and `sudo` run by a
+non-root user log under that user's `_UID`, which is what they exist to catch,
+and their severity stops at alert.
+
 A process that exits mid-scan is marked `vanished` and skipped by the unit
 checks; a live process with no unit still alerts.
 

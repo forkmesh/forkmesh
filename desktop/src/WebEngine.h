@@ -29,6 +29,7 @@ struct ProfileOptions {
 
 struct PageOptions {
     std::function<bool(const QUrl &url, bool linkClicked, bool mainFrame)> acceptNavigation;
+    std::function<bool(const QUrl &url)> requestAllowed;
     bool newWindowsInPlace = false;
     int consoleLimit = 0;
     std::function<void(const QString &message)> onConsole;

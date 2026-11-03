@@ -41,6 +41,7 @@ import androidx.compose.ui.semantics.role
 import com.forkmesh.nativeapp.control.DesktopChoice
 import com.forkmesh.nativeapp.control.DesktopPresence
 import com.forkmesh.nativeapp.control.LocalControlService
+import com.forkmesh.nativeapp.control.LocalDesktopCopy
 import com.forkmesh.nativeapp.control.LocalControlStatus
 import com.forkmesh.nativeapp.ui.theme.FmHaptics
 import com.forkmesh.nativeapp.feature.agents.AgentsFeature
@@ -231,6 +232,8 @@ private fun DesktopDiscoveryStatus(local: LocalControlService?) {
         LocalControlStatus.Connecting -> "Connecting to ${local?.desktopName.orEmpty()}…" to ""
         LocalControlStatus.AwaitingApproval -> "Approve this phone on ${local?.desktopName.orEmpty()}" to
             "The desktop is asking whether to let this phone control it. Allow it only if it shows the same code."
+        LocalControlStatus.ConfirmingCode -> "Check the code for ${local?.desktopName.orEmpty()}" to
+            LocalDesktopCopy.confirmCode(local?.desktopName.orEmpty())
         LocalControlStatus.Failed -> "Not connected" to local?.error.orEmpty()
         LocalControlStatus.Connected -> "Connected to ${local?.desktopName.orEmpty()}" to ""
         else -> if (hosts.isEmpty()) {
@@ -245,8 +248,15 @@ private fun DesktopDiscoveryStatus(local: LocalControlService?) {
             Text(body, style = Fm.text.bodyMedium.copy(color = if (local?.status == LocalControlStatus.Failed) c.danger else c.textSecondary))
         }
         val code = local?.pairingCode.orEmpty()
-        if (local?.status == LocalControlStatus.AwaitingApproval && code.isNotEmpty()) {
+        val checking = local?.status == LocalControlStatus.ConfirmingCode
+        if ((local?.status == LocalControlStatus.AwaitingApproval || checking) && code.isNotEmpty()) {
             Text(code.chunked(3).joinToString(" "), style = Fm.text.displaySmall.copy(color = c.textPrimary, fontFamily = FmType.mono))
+        }
+        if (checking && local != null) {
+            Row(horizontalArrangement = Arrangement.spacedBy(FmSpace.x2)) {
+                FmToneButton("Confirm", onPressed = { local.confirmDesktop(local.desktopKey) }, tone = FmTone.Accent, filled = true)
+                FmToneButton("Cancel", onPressed = { local.disconnect() })
+            }
         }
     }
 }

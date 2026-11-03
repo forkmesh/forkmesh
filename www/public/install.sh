@@ -102,7 +102,7 @@ FORKMESH_TRUSTED_RELEASE_PUBLIC_KEY_FILE="${FORKMESH_TRUSTED_RELEASE_PUBLIC_KEY_
 [ -n "$FORKMESH_TRUSTED_RELEASE_PUBLIC_KEY_FILE" ] ||
   [ ! -f /etc/forkmesh/release-publisher.pem ] ||
   FORKMESH_TRUSTED_RELEASE_PUBLIC_KEY_FILE=/etc/forkmesh/release-publisher.pem
-FORKMESH_MIN_RELEASE_VERSION="1.2.8"
+FORKMESH_MIN_RELEASE_VERSION="1.5.0"
 # Direct uploads do not carry a release manifest, so the authenticated
 # controller must supply their exact digest.
 FORKMESH_LOCAL_BINARY_SHA256="${FORKMESH_LOCAL_BINARY_SHA256:-}"

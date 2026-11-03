@@ -708,6 +708,60 @@ def test_website_step_compares_the_www_tree_with_the_live_header():
     assert auto.release_path("www/wrangler.production.toml")
 
 
+def _website_commands(tmp_path, monkeypatch, npm_exit=0):
+    pipeline = auto.Pipeline(tmp_path, auto.Log(echo=False), state_dir=tmp_path / "state",
+                             layout=SimpleNamespace(cache=tmp_path / "cache"))
+    calls = []
+
+    def fake_stream(command, say, **kwargs):
+        calls.append((command, kwargs))
+        return npm_exit if len(calls) == 1 else 0
+    live = iter(["old", "wanted"])
+    monkeypatch.setattr(auto, "stream", fake_stream)
+    monkeypatch.setattr(auto, "node22_bin", lambda: Path("/node/bin"))
+    monkeypatch.setattr(auto, "website_fingerprint", lambda git, target: "wanted")
+    monkeypatch.setattr(auto, "live_website_fingerprint", lambda run=None: next(live))
+    monkeypatch.setattr(auto.common, "credential", lambda file, name: "secret-" + name)
+    monkeypatch.setattr(pipeline, "worktree", lambda target: tmp_path / "wt")
+    monkeypatch.setenv("FMNEXT_LEAK_CHECK", "must-not-reach-npm")
+    result = {"message": "deployed", "ok": True}
+    pipeline.website("a" * 40, result)
+    return calls, result
+
+
+def test_website_installs_the_locked_wrangler_without_scripts_or_credentials(
+        tmp_path, monkeypatch):
+    calls, result = _website_commands(tmp_path, monkeypatch)
+    www = tmp_path / "wt" / "www"
+    (npm, npm_args), (wrangler, wrangler_args) = calls
+    assert npm == ["/node/bin/npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"]
+    assert wrangler[:2] == [str(www / "node_modules" / ".bin" / "wrangler"), "deploy"]
+    assert npm_args["cwd"] == wrangler_args["cwd"] == str(www)
+    assert set(npm_args["env"]) == {"PATH", "HOME", "LANG", "WRANGLER_SEND_METRICS"}
+    assert set(wrangler_args["env"]) == set(npm_args["env"]) | {
+        "CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"}
+    assert npm_args["env"]["HOME"].startswith(str(tmp_path / "cache"))
+    assert result["ok"] and "forkmesh.com updated" in result["message"]
+
+
+def test_website_stops_before_the_token_when_npm_ci_fails(tmp_path, monkeypatch):
+    calls, result = _website_commands(tmp_path, monkeypatch, npm_exit=1)
+    assert len(calls) == 1
+    assert result["ok"] is False and "npm ci exited 1" in result["message"]
+
+
+def test_website_wrangler_is_pinned_by_a_committed_lockfile():
+    www = Path(auto.__file__).resolve().parents[1] / "www"
+    wanted = json.loads((www / "package.json").read_text())["dependencies"]["wrangler"]
+    assert re.fullmatch(r"\d+\.\d+\.\d+", wanted)
+    lock = json.loads((www / "package-lock.json").read_text())
+    assert lock["packages"]["node_modules/wrangler"]["version"] == wanted
+    for name, entry in lock["packages"].items():
+        if name:
+            assert entry["integrity"].startswith("sha512-"), name
+            assert entry["resolved"].startswith("https://registry.npmjs.org/"), name
+
+
 def test_node22_bin_prefers_the_newest_nvm_node(tmp_path):
     for version in ("v20.1.0", "v22.1.0", "v22.23.1"):
         bin_dir = tmp_path / ".nvm" / "versions" / "node" / version / "bin"

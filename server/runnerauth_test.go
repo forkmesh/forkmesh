@@ -368,3 +368,72 @@ func TestRunnerCredentialReadRefusesJobPlantedLinksAndFifos(t *testing.T) {
 		t.Fatal("reading a job-planted fifo blocked the runner")
 	}
 }
+
+func codexTestCredential(account, email, access, refresh string) string {
+	claims := map[string]any{"email": email, "https://api.openai.com/auth": map[string]any{"chatgpt_account_id": account}}
+	accessClaims := map[string]any{"jti": access, "https://api.openai.com/auth": map[string]any{"chatgpt_account_id": account}}
+	raw, _ := json.Marshal(map[string]any{"OPENAI_API_KEY": nil, "last_refresh": access,
+		"tokens": map[string]any{"access_token": testJWT(accessClaims), "id_token": testJWT(claims),
+			"refresh_token": refresh, "account_id": account}})
+	return string(raw)
+}
+
+func separateJobUserBox(t *testing.T) (jobSandbox, string, string) {
+	t.Helper()
+	if os.Getuid() == 0 {
+		t.Skip("needs an unprivileged test user")
+	}
+	persistent, work := t.TempDir(), t.TempDir()
+	return jobSandbox{workRoot: work, home: persistent, uid: os.Getuid(), gid: os.Getgid()}, persistent, work
+}
+
+func TestAClaudeRefreshFromAJobIsStillKept(t *testing.T) {
+	box, persistent, work := separateJobUserBox(t)
+	now := time.Now()
+	original := claudeCredential("a1", "r1", now.Add(time.Hour), time.Time{})
+	creds := writeClaudeCredential(t, persistent, original)
+	home := box.homeFor(filepath.Join(work, "sess"))
+	if err := box.openSession(home); err != nil {
+		t.Fatal(err)
+	}
+	refreshed := claudeCredential("a2", "r2", now.Add(90*24*time.Hour), time.Time{})
+	writeTestFile(t, filepath.Join(home, ".claude", ".credentials.json"), refreshed)
+	box.closeSession(home)
+	if got := readTestFile(t, creds); got != refreshed {
+		t.Fatalf("a refreshed login was lost: %s", got)
+	}
+}
+
+func TestACodexRefreshIsKeptOnlyForTheSameAccount(t *testing.T) {
+	box, persistent, work := separateJobUserBox(t)
+	stored := filepath.Join(persistent, ".codex", "auth.json")
+	original := codexTestCredential("acct-1", "one@example.test", "a1", "r1")
+	writeTestFile(t, stored, original)
+	home := box.homeFor(filepath.Join(work, "sess"))
+	copied := filepath.Join(home, ".codex", "auth.json")
+
+	if err := box.openSession(home); err != nil {
+		t.Fatal(err)
+	}
+	refused := []string{
+		codexTestCredential("acct-2", "one@example.test", "a2", "r2"),
+		codexTestCredential("acct-1", "other@example.test", "a2", "r2"),
+		`{"OPENAI_API_KEY":"sk-attacker","tokens":{"access_token":"x"}}`,
+	}
+	for _, candidate := range refused {
+		writeTestFile(t, copied, candidate)
+		box.closeSession(home)
+		if got := readTestFile(t, stored); got != original {
+			t.Fatalf("a credential of another account was kept: %s", got)
+		}
+		if err := box.openSession(home); err != nil {
+			t.Fatal(err)
+		}
+	}
+	refreshed := codexTestCredential("acct-1", "one@example.test", "a3", "r3")
+	writeTestFile(t, copied, refreshed)
+	box.closeSession(home)
+	if got := readTestFile(t, stored); got != refreshed {
+		t.Fatalf("the same account's refresh was not kept: %s", got)
+	}
+}

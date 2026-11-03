@@ -1250,16 +1250,19 @@ function forkMeshVaultClientFactory() {
     const parsed = loginUrl(String(url || ""));
     return parsed ? parsed.hostname.toLowerCase().replace(/^www\./, "") : "";
   }
+  function loginPort(url) {
+    const parsed = loginUrl(String(url || ""));
+    return parsed ? parsed.port : "";
+  }
   // The address the Open button visits: never a javascript: or data: URL.
   function loginHref(url) {
     const parsed = loginUrl(String(url || ""));
     return parsed ? parsed.href : "";
   }
-  // Exact host only. "Ends with" would hand a login saved for one tenant of a
-  // shared suffix (github.io, a co.uk) to every other tenant of it.
   function matchesPage(item, pageUrl) {
-    const saved = loginHost((item.fields || {}).url || "");
-    return Boolean(saved) && saved === loginHost(pageUrl);
+    const savedUrl = (item.fields || {}).url || "";
+    const saved = loginHost(savedUrl);
+    return Boolean(saved) && saved === loginHost(pageUrl) && loginPort(savedUrl) === loginPort(pageUrl);
   }
 
   const IMPORT_MAX_BYTES = 16 * 1024 * 1024;
@@ -1819,7 +1822,7 @@ function forkMeshVaultClientFactory() {
   }
 
   return {
-    create, VaultError, loginHost, loginHref, matchesPage, cleanFields, FIELD_LIMITS,
+    create, VaultError, loginHost, loginPort, loginHref, matchesPage, cleanFields, FIELD_LIMITS,
     parseCsv, readLoginsCsv, readLoginsFile, importFields, planImport, IMPORT_MAX_BYTES, IMPORT_SOURCES,
   };
 }

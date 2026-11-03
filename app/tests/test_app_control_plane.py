@@ -26,6 +26,7 @@ ENTRY_TEXT = (
 sys.path.insert(0, str(APP / "src"))
 import public_snapshots as snapshot_contract  # noqa: E402
 import catalog as catalog_contract  # noqa: E402
+import instance_features  # noqa: E402
 import static_routes as routing_contract  # noqa: E402
 from _maintenance_stubs import with_maintenance_off
 FINGERPRINT = "a" * 64
@@ -399,6 +400,7 @@ def _snapshot_default():
         ),
         "_websocket_direct_fetch": websocket_direct_fetch,
         "json": json,
+        "instance_features": instance_features,
         "json_response": json_response,
         "log_durable_object_abort": log_abort,
         "log_d1_unavailable": log_d1_unavailable,

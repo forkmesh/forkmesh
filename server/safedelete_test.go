@@ -164,3 +164,52 @@ func TestSafeDeleteCleanResolvesTheDeepestExistingAncestor(t *testing.T) {
 		t.Fatal("a work root under the key folder was accepted through a symlinked parent")
 	}
 }
+
+func TestRemoveJobOwnedRemovesPlantedGitButStaysInItsParent(t *testing.T) {
+	root, home, work := safeDeleteSandbox(t)
+	if err := removeTreeUnder(work, filepath.Join(work, ".git")); err == nil {
+		t.Fatal("the ordinary helper must keep refusing .git")
+	}
+	safeDeleteMkdir(t, filepath.Join(work, ".git", "objects"), filepath.Join(work, "dir", ".git"),
+		filepath.Join(work, "deep", "er"), filepath.Join(root, "outside"), filepath.Join(work, "repo.git"))
+	if err := os.WriteFile(filepath.Join(work, "deep", ".git"), []byte("gitdir: /x\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range []string{filepath.Join(work, ".git"), filepath.Join(work, "dir"), filepath.Join(work, "deep")} {
+		if err := removeJobOwnedUnder(work, target); err != nil {
+			t.Fatalf("%s: %v", target, err)
+		}
+		if _, err := os.Lstat(target); !os.IsNotExist(err) {
+			t.Fatalf("%s survived: %v", target, err)
+		}
+	}
+	safeDeleteMkdir(t, filepath.Join(work, "deep", "er"))
+	refused := []struct{ parent, target string }{
+		{work, filepath.Join(work, "deep", "er")},
+		{work, filepath.Join(root, "outside")},
+		{work, work},
+		{work, ""},
+		{"", filepath.Join(work, "deep")},
+		{filepath.Dir(home), home},
+	}
+	if err := os.Mkdir(filepath.Join(work, "repo.git", ".git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	refused = append(refused, struct{ parent, target string }{filepath.Join(work, "repo.git", ".git"),
+		filepath.Join(work, "repo.git", ".git", "objects")})
+	for _, item := range refused {
+		if item.target != "" {
+			if _, err := os.Lstat(item.target); os.IsNotExist(err) {
+				safeDeleteMkdir(t, item.target)
+			}
+		}
+		if err := removeJobOwnedUnder(item.parent, item.target); err == nil {
+			t.Fatalf("%q under %q was not refused", item.target, item.parent)
+		}
+		if item.target != "" {
+			if _, err := os.Lstat(item.target); err != nil {
+				t.Fatalf("%q was touched: %v", item.target, err)
+			}
+		}
+	}
+}

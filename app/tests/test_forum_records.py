@@ -275,6 +275,11 @@ class FakeServer:
         self.gate = (None, {})
         self.audits = []
         self.conflicts = 0
+        self.budget_keys = []
+        self.throttled = None
+        self.quota = None
+        self.default_branch = "trunk"
+        self.branches = []
 
     def bind(self, monkeypatch):
         fake = self
@@ -282,9 +287,25 @@ class FakeServer:
         async def features(env, owner, repo):
             return dict(fake.features)
 
-        async def bind_author(env, request, data, record):
-            record["authorName"] = fake.session
-            record["authorVerified"] = bool(fake.session)
+        async def session_record(env, request, data, allow_unverified=False):
+            return "", {"name": fake.session} if fake.session else None
+
+        async def bind_author(env, request, data, record, session=None):
+            record["authorName"] = session
+            record["authorVerified"] = bool(session)
+
+        async def no_budget_used(env, key, limit):
+            fake.budget_keys.append(key)
+            return fake.throttled
+
+        async def blind(env, value):
+            return value
+
+        async def under_quota(env, request, owner, repo, method):
+            return fake.quota
+
+        async def forum_branch(env, owner, repo):
+            return fake.default_branch
 
         async def verify(author, sig, message):
             try:
@@ -300,10 +321,11 @@ class FakeServer:
                 return account in fake.moderators
 
             @staticmethod
-            async def submission_gate(env, request, data, owner, repo, event):
+            async def submission_gate(env, request, data, owner, repo, event, surface="issue"):
                 return fake.gate
 
         async def read_forum(env, owner, repo, branch):
+            fake.branches.append(branch)
             return "a" * 40, fake.repo.read
 
         async def commit(env, owner, repo, branch, commit, changes, account, message):
@@ -323,6 +345,10 @@ class FakeServer:
                 return NOW
 
         for name, value in {"_repo_features_get": features, "_bind_session_author": bind_author,
+                            "_account_session_record": session_record, "signup_rate_check": no_budget_used,
+                            "blind_index": blind, "hosted_push_limit": under_quota,
+                            "core_push_default_branch": forum_branch,
+                            "clean_string": lambda value, limit: str(value or "")[:limit], "MAX_NODE_NAME": 64,
                             "ed25519_verify": verify, "_moderation": Moderation, "Date": _Date,
                             "_audit_sensitive_action": audit}.items():
             monkeypatch.setitem(records.__dict__, name, value)
@@ -376,6 +402,55 @@ def test_submit_refuses_without_the_forum_or_a_session_and_follows_the_gate(ada,
     with pytest.raises(records.RecordError) as error:
         submit(ada.event("topic", content={"title": "z", "body": "y", "category": 0}))
     assert error.value.code == "busy"
+
+
+def test_writes_go_to_the_default_branch_whatever_the_client_names(ada, monkeypatch):
+    server = FakeServer(ada).bind(monkeypatch)
+    event = ada.event("topic", content={"title": "x", "body": "y", "category": 0})
+    assert run(records.submit(None, None, "Ada", "Forum", {"branch": "pr/mallory/x", "event": event}))["ok"]
+    assert set(server.branches) == {"trunk"}
+
+
+def test_a_replay_under_a_new_id_is_a_duplicate(ada, monkeypatch):
+    FakeServer(ada).bind(monkeypatch)
+    event = ada.event("topic", content={"title": "x", "body": "y", "category": 0})
+    assert submit(event)["ok"]
+    with pytest.raises(records.RecordError) as error:
+        submit(dict(event, id="topic-replayed-under-a-new-id"))
+    assert error.value.code == "duplicate"
+
+
+def test_blocked_author_cannot_edit_or_like(ada, bob, monkeypatch):
+    server = FakeServer(bob).bind(monkeypatch)
+    server.moderators = set()
+    server.session = "bob"
+    assert submit(bob.event("topic", content={"title": "x", "body": "y", "category": 0}))["ok"]
+    server.gate = ({"error": "account_blocked"}, {})
+    for event in (bob.event("edit", "n1", "1", {"body": "changed"}), bob.event("like", "n1", "1")):
+        with pytest.raises(records.RecordError) as error:
+            submit(event)
+        assert error.value.code == "refused"
+
+
+def test_writes_spend_an_account_budget_and_respect_the_hosting_quota(bob, monkeypatch):
+    server = FakeServer(bob).bind(monkeypatch)
+    server.moderators = set()
+    server.session = "bob"
+    server.throttled = object()
+    with pytest.raises(records.RecordError) as error:
+        submit(bob.event("topic", content={"title": "x", "body": "y", "category": 0}))
+    assert error.value.status == 429 and server.budget_keys == ["forum-write\nbob"]
+    server.throttled = None
+    server.quota = object()
+    with pytest.raises(records.RecordError) as error:
+        submit(bob.event("topic", content={"title": "x", "body": "y", "category": 0}))
+    assert error.value.status == 413
+
+
+def test_forum_commits_start_no_workflow_or_ai_review():
+    source = (ROOT / "src" / "core_push.py").read_text(encoding="utf-8")
+    assert 'forum_record = credential == "forum-record"' in source
+    assert "and not forum_record" in source and "note_ai_review is not None and not forum_record" in source
 
 
 def test_operator_actions_are_audited(ada, monkeypatch):

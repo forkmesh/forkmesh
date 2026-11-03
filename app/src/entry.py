@@ -1805,6 +1805,7 @@ LOGIN_MAX_SKEW_MS = 5 * 60 * 1000
 LOGIN_MAX_FAILS = 10
 LOGIN_FAIL_WINDOW_MS = 15 * 60 * 1000
 LOGIN_LOCKOUT_MS = 15 * 60 * 1000
+LOGIN_SOURCE_HARD_FAILS = 100
 # Per-source-IP account-creation throttle: at most SIGNUP_MAX_PER_IP new accounts
 # from one IP per rolling SIGNUP_RATE_WINDOW_MS, to blunt mass signup / name
 # squatting. Login has its own lockout; catalog writes have their own cooldown.
@@ -14108,7 +14109,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "1fedcc6e32c5ad36228b7a434ebca84ce5f431fbaf6146d18d7a1e48a74137b4"
+    "57a0dddcc8a868059c8f9dcba09ec67d14ea7886b21002d334756e9cae9d0071"
 )
 
 
@@ -16962,6 +16963,7 @@ _core_push = _LazyModule("core_push")
 _deploy_approvals = _LazyModule("deploy_approvals")
 core_push_pending_tag_moves = _core_push.export("pending_tag_moves")
 record_accepted_push = _core_push.export("record_accepted_push")
+core_push_default_branch = _core_push.export("_default_branch")
 queue_runner_actions = _core_push.export("queue_runner_actions")
 core_push_tag_moves_handler = _core_push.export("tag_moves_handler")
 core_push_grant_tag_move = _core_push.export("grant_tag_move")
@@ -19481,6 +19483,80 @@ async def _move_repo_namespace(env, old_owner_bi, old_owner, new_owner_bi,
     return ""
 
 
+async def _account_name_retired(env, name_bi, account_bi=""):
+    row = await d1_first(
+        env,
+        "SELECT successor_bi FROM retired_account_names WHERE name_bi=? LIMIT 1",
+        name_bi,
+    )
+    if not row:
+        return False
+    return not (account_bi and row.get("successor_bi") == account_bi)
+
+
+async def _retire_account_name(env, name_bi, successor_bi=""):
+    await d1_run(
+        env,
+        "UPDATE retired_account_names SET successor_bi=? WHERE successor_bi=?",
+        successor_bi, name_bi,
+    )
+    await d1_run(
+        env,
+        "INSERT INTO retired_account_names (name_bi,successor_bi,retired_at) "
+        "VALUES (?,?,?) ON CONFLICT(name_bi) DO UPDATE SET "
+        "successor_bi=excluded.successor_bi,retired_at=excluded.retired_at",
+        name_bi, successor_bi, int(Date.now()),
+    )
+
+
+async def _move_account_org_grants(env, old_bi, new_bi, new_name):
+    for table in ("org_members", "org_team_members"):
+        await d1_run(
+            env,
+            "UPDATE OR IGNORE " + table + " SET member_bi=?,name=? "
+            "WHERE member_bi=?",
+            new_bi, new_name, old_bi,
+        )
+        await d1_run(
+            env, "DELETE FROM " + table + " WHERE member_bi=?", old_bi)
+    await d1_run(
+        env,
+        "UPDATE OR IGNORE org_team_collaborators SET account_bi=?,name=? "
+        "WHERE account_bi=?",
+        new_bi, new_name, old_bi,
+    )
+    await d1_run(
+        env, "DELETE FROM org_team_collaborators WHERE account_bi=?", old_bi)
+    for statement in (
+            "UPDATE org_bot_tokens SET created_by_bi=? WHERE created_by_bi=?",
+            "UPDATE chat_channels SET created_by_bi=? WHERE created_by_bi=?",
+            "UPDATE chat_channel_webhooks SET created_by_bi=? "
+            "WHERE created_by_bi=?"):
+        await d1_run(env, statement, new_bi, old_bi)
+
+
+async def _drop_account_org_grants(env, name_bi):
+    for table in ("org_team_members", "org_members"):
+        await d1_run(
+            env, "DELETE FROM " + table + " WHERE member_bi=?", name_bi)
+    await d1_run(
+        env,
+        "UPDATE chat_channels SET created_by_bi='' WHERE created_by_bi=?",
+        name_bi,
+    )
+
+
+async def _account_last_owner_org(env, name_bi):
+    return await d1_first(
+        env,
+        "SELECT m.org_bi AS org_bi FROM org_members m "
+        "WHERE m.member_bi=? AND m.role='owner' AND NOT EXISTS ("
+        "SELECT 1 FROM org_members o WHERE o.org_bi=m.org_bi "
+        "AND o.role='owner' AND o.member_bi<>m.member_bi) LIMIT 1",
+        name_bi,
+    )
+
+
 async def _rename_account_namespace(env, name_bi, rec, new_name):
     old_name = clean_string(rec.get("name", ""), MAX_NODE_NAME).lower()
     new_name = clean_string(new_name, MAX_NODE_NAME).lower()
@@ -19502,7 +19578,7 @@ async def _rename_account_namespace(env, name_bi, rec, new_name):
         "WHERE user_bi=? AND status<>'restored' LIMIT 1",
         new_name_bi,
     )
-    if quarantined:
+    if quarantined or await _account_name_retired(env, new_name_bi, name_bi):
         return name_bi, rec, "node_name_taken"
     if target and (target.get("status") == "active" or
                    target.get("donation_confirmed") or
@@ -19552,6 +19628,10 @@ async def _rename_account_namespace(env, name_bi, rec, new_name):
         env, name_bi, old_name, new_name_bi, new_name)
     await _move_chat_channel_memberships(
         env, name_bi, new_name_bi, new_name)
+    await _move_account_org_grants(env, name_bi, new_name_bi, new_name)
+    await d1_run(
+        env, "DELETE FROM retired_account_names WHERE name_bi=?", new_name_bi)
+    await _retire_account_name(env, name_bi, new_name_bi)
     await _delete_chat_channel_invites(env, name_bi)
     # A username move changes the participant blind index and pair identity.
     # Close old DM rooms instead of leaving orphaned membership or silently
@@ -19887,6 +19967,8 @@ async def _delete_account_namespace(env, name_bi, rec):
     await _contribution_retarget_linked_nodes(
         env, name_bi, name, None, "")
     await _delete_repo_namespace(env, name_bi, name)
+    await _drop_account_org_grants(env, name_bi)
+    await _retire_account_name(env, name_bi)
     await d1_run(env, "DELETE FROM repo_shares WHERE grantee_bi=?", name_bi)
     await d1_run(env, "DELETE FROM account_presence WHERE name_bi=?", name_bi)
     await d1_run(env, "DELETE FROM pending_verifications WHERE name_bi=?", name_bi)
@@ -22575,9 +22657,10 @@ async def _account_signup(env, request):
             env, "node_name_taken", 409, claim=signup_claim, name=name)
 
     name_bi, existing = await _account_row(env, name)
-    if existing and (existing.get("status") == "active" or
-                     existing.get("donation_confirmed") or
-                     _donation_in_progress(existing)):
+    if (existing and (existing.get("status") == "active" or
+                      existing.get("donation_confirmed") or
+                      _donation_in_progress(existing))) or (
+            await _account_name_retired(env, name_bi)):
         return await _signup_refused(
             env, "node_name_taken", 409, claim=signup_claim, name=name)
 
@@ -22862,7 +22945,7 @@ async def _account_reserve(env, request):
         "WHERE user_bi=? AND status<>'restored' LIMIT 1",
         name_bi,
     )
-    if quarantined:
+    if quarantined or await _account_name_retired(env, name_bi):
         return json_response({"error": "node_name_taken"}, status=409)
     if existing:
         ex_pub = existing.get("pubkey", "")
@@ -23434,6 +23517,12 @@ async def _account_profile(env, request):
         return _email_not_verified_response()
 
     if data.get("deleteAccount") or data.get("disableAccount"):
+        if await _account_last_owner_org(env, name_bi):
+            return json_response({
+                "error": "org_last_owner",
+                "message": "This account is the only owner of an organization. "
+                           "Add another owner or dissolve the organization first.",
+            }, status=409)
         await _delete_account_namespace(env, name_bi, rec)
         return json_response({"ok": True, "accountDeleted": True})
 
@@ -24325,11 +24414,29 @@ async def _login_locked_until(env, id_bi):
     return locked if locked > int(Date.now()) else 0
 
 
+async def _login_guessing_stopped(env, attempt_keys):
+    if len(attempt_keys) != 2:
+        return 0
+    source_key, pair_key = attempt_keys
+    until = await _login_locked_until(env, pair_key)
+    if until:
+        return until
+    row = await d1_first(
+        env, "SELECT fails,locked_until FROM login_attempts WHERE id_bi=?",
+        source_key)
+    try:
+        locked = int((row or {}).get("locked_until") or 0)
+        fails = int((row or {}).get("fails") or 0)
+    except (TypeError, ValueError):
+        return 0
+    return locked if fails >= LOGIN_SOURCE_HARD_FAILS and locked > int(
+        Date.now()) else 0
+
+
 async def _login_record_fail(env, id_bi):
     # Atomically increment/reset one source or source+identifier budget. The
-    # returned lock applies only to subsequent *failed* attempts; correct
-    # credentials are always verified and can clear the budget, preventing an
-    # attacker from locking a known victim out by name alone.
+    # pair budget is scoped to the source, preventing an attacker from locking
+    # a known victim out by name alone.
     now = int(Date.now())
     row = await d1_first(
         env,
@@ -24619,13 +24726,51 @@ async def _account_key_revoked(env, account_bi, pubkey):
         return True
 
 
+async def _account_revoke_other_keys(env, account_bi, rec):
+    keep = {clean_string(rec.get("pubkey", ""), 120)}
+    for node in _owned_nodes(rec):
+        _node_bi, node_rec = await _account_row(env, node)
+        keep.add(clean_string((node_rec or {}).get("pubkey", ""), 120))
+    rows = await d1_all(
+        env,
+        "SELECT device_bi,pubkey FROM account_devices "
+        "WHERE account_bi=? AND revoked_at=0",
+        account_bi,
+    )
+    now = int(Date.now())
+    for row in rows or []:
+        if clean_string(row.get("pubkey", ""), 120) in keep:
+            continue
+        await d1_run(
+            env,
+            "UPDATE account_devices SET revoked_at=?,enabled=0 "
+            "WHERE account_bi=? AND device_bi=?",
+            now, account_bi, row.get("device_bi", ""),
+        )
+    await d1_run(
+        env, "DELETE FROM account_ssh_keys WHERE account_bi=?", account_bi)
+
+
 async def _account_drop_revoked_primary(env, name, pubkeys):
     pubkeys = {key for key in pubkeys or () if key}
     if not name or not pubkeys:
         return False
     account_bi, rec = await _account_row(env, name)
-    primary = clean_string((rec or {}).get("pubkey", ""), 120)
-    if not account_bi or not rec or not primary or primary not in pubkeys:
+    if not account_bi or not rec:
+        return False
+    dropped = await _account_take_key_off_record(env, account_bi, rec, pubkeys)
+    for node in _owned_nodes(rec):
+        node_bi, node_rec = await _account_row(env, node)
+        if node_bi and node_rec and clean_string(
+                node_rec.get("owner", ""), MAX_NODE_NAME).lower() == clean_string(
+                    rec.get("name", ""), MAX_NODE_NAME).lower():
+            await _account_take_key_off_record(env, node_bi, node_rec, pubkeys)
+    return dropped
+
+
+async def _account_take_key_off_record(env, account_bi, rec, pubkeys):
+    primary = clean_string(rec.get("pubkey", ""), 120)
+    if not primary or primary not in pubkeys:
         return False
     prev_pubkeys = rec.get("prev_pubkeys")
     prev_pubkeys = list(prev_pubkeys) if isinstance(prev_pubkeys, list) else []
@@ -24826,13 +24971,21 @@ async def _account_login(env, request):
     await _ensure_local_demo_account(
         env, request, identifier, password)
 
-    # Failed attempts consume atomic source and source+identifier budgets. They
-    # never block verification of correct credentials, so an attacker cannot
+    # Failed attempts consume atomic source and source+identifier budgets. A
+    # spent pair stops guessing from that source only, so an attacker cannot
     # lock a known victim out merely by submitting their identifier.
     id_bi = await blind_index(env, identifier) if identifier else ""
     if not id_bi:
         return json_response({"error": "invalid_credentials"}, status=401)
     attempt_keys = await _login_attempt_keys(env, request, identifier)
+    stopped_until = await _login_guessing_stopped(env, attempt_keys)
+    if stopped_until:
+        retry_ms = max(1000, stopped_until - int(Date.now()))
+        return json_response(
+            {"error": "too_many_attempts", "retryAfterMs": retry_ms},
+            status=429,
+            extra_headers={"Retry-After": str(max(1, retry_ms // 1000))},
+        )
 
     rec = None
     if "@" in identifier:
@@ -35055,6 +35208,7 @@ async def _account_reset_password(env, request):
     rec["pass_hash"] = phash
     await _save_account(env, name_bi, rec)
     await _account_revoke_sessions(env, name_bi)
+    await _account_revoke_other_keys(env, name_bi, rec)
     # A successful reset also lifts any brute-force lockout so the user can log in
     # right away, whether they log in by node name or by email.
     await _login_clear(env, name_bi)
@@ -36035,7 +36189,7 @@ async def accounts_handler(env, request):
                 "WHERE user_bi=? AND status<>'restored' LIMIT 1",
                 name_bi,
             )
-            if quarantined:
+            if quarantined or await _account_name_retired(env, name_bi):
                 return json_response({
                     "ok": True, "exists": True, "available": False,
                     "name": name,

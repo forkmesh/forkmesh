@@ -197,6 +197,10 @@ public:
         m_answerHandler = std::move(handler);
     }
     void setShared(const QString &windowId, bool shared);
+    void setBrowserUrlPolicy(std::function<bool(int sessionId, const QUrl &url)> policy)
+    {
+        m_browserUrlPolicy = std::move(policy);
+    }
     void setExternalOpener(std::function<bool(const QUrl &)> opener)
     {
         m_externalOpener = std::move(opener);
@@ -230,6 +234,7 @@ private:
     QObject *m_widgetProfile = nullptr;
     std::function<void(const QString &)> m_answerHandler;
     std::function<bool(const QUrl &)> m_externalOpener;
+    std::function<bool(int sessionId, const QUrl &url)> m_browserUrlPolicy;
     std::function<bool(QWidget *)> m_browserDock;
     QHash<QString, WindowState> m_windows;
     forkmesh::agentintake::RateLimiter m_newWindows{kNewWindowLimit, kNewWindowWindowMs};

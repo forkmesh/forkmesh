@@ -49850,7 +49850,7 @@ Your reply
       return SECTION_PATHS[section] + (rest ? `?${rest}` : "");
     }
     const repo = (params.get("repo") || "").trim();
-    if (repo.includes("/")) {
+    if (/^[^/\\]+\/[^/\\]+$/.test(repo)) {
       return "/" + repo.split("/").map(encodeURIComponent).join("/");
     }
     return "";
@@ -61340,7 +61340,7 @@ Your reply
     "notes": "/dashboard-page-notes.js?v=b4c0210eaff3",
     "referrals": "/dashboard-page-referrals.js?v=9e46b4b9d5e8",
     "repo-activity": "/dashboard-page-repo-activity.js?v=38ff59fc7239",
-    "repo-forum": "/dashboard-page-repo-forum.js?v=7aa7ede1734a",
+    "repo-forum": "/dashboard-page-repo-forum.js?v=e5892a79b3e7",
     "tasks": "/dashboard-page-tasks.js?v=1a9a370415a1",
     "workflows": "/dashboard-page-workflows.js?v=e8c203201e89",
   };

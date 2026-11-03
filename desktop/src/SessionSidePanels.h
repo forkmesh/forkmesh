@@ -15,6 +15,8 @@
 
 #include <functional>
 
+#include <QUrl>
+
 class QAbstractButton;
 class QFrame;
 class QLabel;
@@ -27,6 +29,7 @@ namespace forkmesh::ui {
 class SessionSidePanels : public QScrollArea
 {
 public:
+    static QUrl openTargetUrl(const QString &target);
     struct Details {
         bool session = false;
         QString machine;

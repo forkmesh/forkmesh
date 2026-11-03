@@ -44,9 +44,9 @@ data class MastodonAccount(
                 username = username,
                 acct = json.str("acct").ifEmpty { username },
                 displayName = json.str("display_name").ifBlank { username },
-                avatar = json.firstText("avatar_static", "avatar"),
-                header = json.firstText("header_static", "header"),
-                url = json.str("url"),
+                avatar = MastodonServer.webLink(json.firstText("avatar_static", "avatar")),
+                header = MastodonServer.webLink(json.firstText("header_static", "header")),
+                url = MastodonServer.webLink(json.str("url")),
                 note = json.str("note"),
                 locked = json.bool("locked"),
                 bot = json.bool("bot"),
@@ -62,7 +62,13 @@ data class MastodonAttachment(val id: String, val type: String, val url: String,
     companion object {
         fun from(json: Map<String, Any?>): MastodonAttachment? {
             val id = json.str("id").ifEmpty { return null }
-            return MastodonAttachment(id, json.str("type"), json.str("url"), json.str("preview_url"), json.str("description"))
+            return MastodonAttachment(
+                id,
+                json.str("type"),
+                MastodonServer.webLink(json.str("url")),
+                MastodonServer.webLink(json.str("preview_url")),
+                json.str("description"),
+            )
         }
     }
 }
@@ -133,7 +139,7 @@ data class MastodonStatus(
             val account = MastodonAccount.from(json.obj("account")) ?: return null
             return MastodonStatus(
                 id = id,
-                url = json.firstText("url", "uri"),
+                url = MastodonServer.webLink(json.firstText("url", "uri")),
                 account = account,
                 contentHtml = json.str("content"),
                 spoilerText = json.str("spoiler_text"),

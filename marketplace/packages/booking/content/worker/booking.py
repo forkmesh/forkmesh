@@ -3,6 +3,7 @@ from html import escape
 from urllib.parse import quote as _quote
 from zoneinfo import ZoneInfo
 import hmac
+import ipaddress
 import re
 
 
@@ -26,6 +27,9 @@ PAGE_DAILY_BOOKINGS = 40
 VISITOR_HOURLY_BOOKINGS = 6
 VISITOR_DAILY_BOOKINGS = 20
 VISITOR_HOURLY_CHANGES = 12
+MAIL_PER_BOOKING_DAILY = 6
+MAIL_PER_GUEST_DAILY = 10
+MAIL_PER_OWNER_ADDRESS_DAILY = 100
 REMINDER_LEAD_MS = DAY_MS
 REMINDER_BATCH = 25
 MAX_VISITS = 2000
@@ -549,11 +553,10 @@ def _site_origin(runtime):
     configured = str(secret("LINK_ORIGIN") if secret else "").rstrip("/").lower()
     if ORIGIN_RE.fullmatch(configured):
         return configured
-    for source in ("request_origin", "public_origin"):
-        reader = getattr(runtime, source, None)
-        origin = str(reader() if reader else "").rstrip("/").lower()
-        if ORIGIN_RE.fullmatch(origin) and (origin.startswith("https://") or "localhost" in origin):
-            return SITE_ORIGINS.get(origin, origin)
+    reader = getattr(runtime, "public_origin", None)
+    origin = str(reader() if reader else "").rstrip("/").lower()
+    if ORIGIN_RE.fullmatch(origin) and (origin.startswith("https://") or "localhost" in origin):
+        return SITE_ORIGINS.get(origin, origin)
     return DEFAULT_ORIGIN
 
 
@@ -562,11 +565,10 @@ def _app_origin(runtime):
     configured = str(secret("APP_ORIGIN") if secret else "").rstrip("/").lower()
     if ORIGIN_RE.fullmatch(configured):
         return configured
-    for source in ("request_origin", "public_origin"):
-        reader = getattr(runtime, source, None)
-        origin = str(reader() if reader else "").rstrip("/").lower()
-        if ORIGIN_RE.fullmatch(origin) and (origin.startswith("https://") or "localhost" in origin):
-            return APP_ORIGINS.get(origin, origin)
+    reader = getattr(runtime, "public_origin", None)
+    origin = str(reader() if reader else "").rstrip("/").lower()
+    if ORIGIN_RE.fullmatch(origin) and (origin.startswith("https://") or "localhost" in origin):
+        return APP_ORIGINS.get(origin, origin)
     return APP_ORIGINS[DEFAULT_ORIGIN]
 
 
@@ -1101,10 +1103,22 @@ def _link_html(url, label=""):
     return '<a href="%s" style="color:#2563eb">%s</a>' % (escape(url, quote=True), escape(label or url))
 
 
-async def _send(runtime, account_bi, recipient, reply_to, subject, message, variables):
+async def _mail_allowed(runtime, recipient, variables, recipient_limit):
+    now = runtime.now()
+    if not await _spend(runtime, "mail-booking:%s:%s" % (
+            variables["forkmesh_booking_mail"].rsplit(":", 1)[-1], variables["forkmesh_booking_id"]),
+            DAY_MS, MAIL_PER_BOOKING_DAILY, now):
+        return False
+    return await _spend(runtime, "mail-to:" + recipient.lower(), DAY_MS, recipient_limit, now)
+
+
+async def _send(runtime, account_bi, recipient, reply_to, subject, message, variables,
+                recipient_limit=MAIL_PER_GUEST_DAILY):
     sender = getattr(runtime, "send_mailtrap", None)
     if sender is None or not recipient:
         return {"accepted": False, "error": "mail_unavailable"}
+    if not await _mail_allowed(runtime, recipient, variables, recipient_limit):
+        return {"accepted": False, "error": "mail_limited"}
     try:
         result = await sender("", {
             "from": {"email": reply_to or "", "name": ""},
@@ -1115,7 +1129,7 @@ async def _send(runtime, account_bi, recipient, reply_to, subject, message, vari
             "category": "Booking",
             "tracked": True,
             "organization": account_bi,
-            "account": account_bi,
+            "account": await runtime.blind("booking-mail:" + account_bi),
             "custom_variables": dict(variables, forkmesh_package=PLUGIN_ID),
         })
     except Exception as error:
@@ -1157,7 +1171,7 @@ def _detail_rows(booking, settings, zone_name, fmt, for_owner):
             rows.append(("Their time", guest_when["label"], None))
     else:
         rows.insert(0, ("With", settings["displayName"], None))
-    if booking["guest"]["notes"]:
+    if for_owner and booking["guest"]["notes"]:
         rows.append(("Notes", booking["guest"]["notes"], None))
     return rows
 
@@ -1166,6 +1180,11 @@ def _calendar_title(booking, settings, for_owner):
     if for_owner:
         return "%s with %s" % (booking["typeTitle"], booking["guest"]["name"])
     return "%s with %s" % (booking["typeTitle"], settings["displayName"])
+
+
+def _greeting_name(name):
+    first = str(name or "").split(" ")[0]
+    return first if re.fullmatch(r"[^\W\d_][\w'-]{0,39}", first) else "there"
 
 
 async def _email_booking(runtime, account_bi, settings, booking, kind, origin, owner_name):
@@ -1189,7 +1208,7 @@ async def _email_booking(runtime, account_bi, settings, booking, kind, origin, o
         heading = "You're booked with %s" % settings["displayName"] if kind == "confirmed" else (
             "Your meeting with %s has moved" % settings["displayName"])
         intro = "Hi %s, your %s is %s for %s." % (
-            guest["name"].split(" ")[0] or "there", booking["typeTitle"],
+            _greeting_name(guest["name"]), booking["typeTitle"],
             "confirmed" if kind == "confirmed" else "now", guest_when["label"])
         buttons = [("Add to Google Calendar", links["google"], True),
                    ("Add to Outlook", links["outlook"], False),
@@ -1212,7 +1231,7 @@ async def _email_booking(runtime, account_bi, settings, booking, kind, origin, o
         heading = "Your meeting with %s was cancelled" % settings["displayName"]
         intro = ("%s cancelled this meeting." % settings["displayName"]) if by_owner else (
             "You cancelled this meeting.")
-        if reason:
+        if reason and by_owner:
             intro += "\n\n“%s”" % reason
         buttons = [("Book a new time", page, True)] if settings.get("_slug") else []
         subject = "Cancelled: %s with %s on %s" % (booking["typeTitle"], settings["displayName"],
@@ -1253,7 +1272,7 @@ async def _email_booking(runtime, account_bi, settings, booking, kind, origin, o
         _message(accent, owner_eyebrow, owner_heading, owner_intro, owner_rows, owner_buttons,
                  owner_footer, owner_tone),
         {"forkmesh_booking_id": booking["id"], "forkmesh_booking_mail": kind + ":owner",
-         "forkmesh_sender": owner_name})
+         "forkmesh_sender": owner_name}, MAIL_PER_OWNER_ADDRESS_DAILY)
     return results
 
 
@@ -1329,10 +1348,20 @@ async def _calendar_remove(runtime, account_bi, event_id):
         return
 
 
+def _source_key(address):
+    try:
+        parsed = ipaddress.ip_address(address)
+    except ValueError:
+        return address
+    if parsed.version == 4:
+        return address
+    return str(parsed.ipv4_mapped or ipaddress.ip_network(address + "/64", strict=False))
+
+
 def _visitor_key(runtime):
     reader = getattr(runtime, "request_visitor", None)
     visitor = reader() if reader else {}
-    return str((visitor or {}).get("ip") or "")
+    return _source_key(str((visitor or {}).get("ip") or "").strip())
 
 
 async def _spend(runtime, bucket, window_ms, limit, now):

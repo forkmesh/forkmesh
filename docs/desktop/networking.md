@@ -704,6 +704,19 @@ dialog runs inside the call that wants the network
   clicked. The start and end are written to the system log
   (`firewallAllowAllChanged`). Requests let through this way show up in the
   decision history with no rule.
+- **A waiting request takes the answer only if it covers it.** An answer
+  scoped to one URL (`url:https://host/a`) used to be handed to every request
+  waiting on that host, including another port or path.
+  `firewallAnswerCoversUrl` now passes it on only when the saved rule matches
+  the waiting URL; otherwise that request asks again.
+- **Redirects are checked hop by hop.** Qt follows redirects inside the
+  reply, after `createRequest` has run, so an allowed host could send a
+  request (and, with a 307, its POST body) to a denied or unlisted one. The
+  manager now uses `UserVerifiedRedirectPolicy` and checks each hop in
+  `guardRedirects`: the firewall rules and prompt, offline mode, the version
+  gate, a hop from off this machine to on it, and the caller's own policy
+  (same origin, or no https to http). A refused hop aborts the reply. Tests:
+  the firewall block in `desktop/tests/test_crypto.cpp`.
 
 ## Traps
 

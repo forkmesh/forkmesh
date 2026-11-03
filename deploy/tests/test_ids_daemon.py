@@ -91,7 +91,7 @@ def stop(process):
 
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="linux only")
 def test_foreign_ssh_key_locks_the_node_down(tmp_path):
-    login = {"SYSLOG_IDENTIFIER": "sshd-session", "__CURSOR": "c1",
+    login = {"SYSLOG_IDENTIFIER": "sshd-session", "__CURSOR": "c1", "_UID": "0",
              "MESSAGE": "Accepted publickey for root from 203.0.113.9 port "
                         "40000 ssh2: ED25519 %s" % FOREIGN}
     config, path, env, log = setup(tmp_path, [login])

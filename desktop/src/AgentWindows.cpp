@@ -1579,6 +1579,10 @@ QWidget *Registry::buildBrowser(const QString &windowId, const WindowState &stat
             return browserUrlAllowed(url) || url.toString() == QLatin1String("about:blank");
         return url.scheme().toLower() != QLatin1String("file");
     };
+    options.requestAllowed = [this, context = QPointer<QObject>(m_context.get()),
+                              sessionId = state.sessionId](const QUrl &url) {
+        return context && (!m_browserUrlPolicy || m_browserUrlPolicy(sessionId, url));
+    };
     options.newWindowsInPlace = true;
     options.consoleLimit = kMaxConsoleMessages;
     auto *page = new QWidget(window);

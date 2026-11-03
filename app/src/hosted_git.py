@@ -231,6 +231,8 @@ async def _password_git_account(env, identifier, password, request=None):
         attempt_keys = await _login_attempt_keys(env, request, identifier)
     else:
         attempt_keys = [await blind_index(env, "login-local:" + identifier)]
+    if await _login_guessing_stopped(env, attempt_keys):
+        return ""
     _name_bi, rec, error = await _account_password_record(
         env, {"identifier": identifier, "password": password})
     if error or not rec:

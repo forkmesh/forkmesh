@@ -3,6 +3,7 @@
 #include "DesignTokens.h"
 
 #include <QComboBox>
+#include <QCryptographicHash>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
@@ -2102,7 +2103,10 @@ void AppArmorFeature::writePolicy(const QString &title, const QString &descripti
              QStringLiteral("File: %1\nOld copy kept in: %2\n%3\nChanges:\n%4")
                  .arg(dest, backupDir(), load.isEmpty() ? QStringLiteral("Not loaded (profile is disabled).") : QStringLiteral("Then load: ") + load,
                       changes),
-             adminInstallScript(), {temp->fileName(), dest, backupDir(), load}, true, temp);
+             adminInstallScript(),
+             {temp->fileName(), dest, backupDir(), load,
+              QString::fromLatin1(QCryptographicHash::hash(text.toUtf8(), QCryptographicHash::Sha256).toHex())},
+             true, temp);
 }
 
 void AppArmorFeature::runAdmin(const QString &title, const QString &description, const QString &details, const QString &script,

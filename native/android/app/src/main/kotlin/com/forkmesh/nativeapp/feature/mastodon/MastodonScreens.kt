@@ -138,7 +138,7 @@ internal class MastodonScreen : Screen() {
     @Composable
     override fun Content(navigator: Navigator) {
         val scope = rememberCoroutineScope()
-        LaunchedEffect(Unit) { MastodonState.load() }
+        LaunchedEffect(MastodonState.loaded) { MastodonState.load() }
         val session = MastodonState.session
         if (MastodonState.generation != generation) {
             generation = MastodonState.generation

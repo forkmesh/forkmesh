@@ -2729,7 +2729,7 @@ def test_worker_routes_raw_repository_blobs_through_direct_https_gateway():
     assert "stream=stream" in gateway
     assert 'kind="process"' in gateway
     assert '["cat-file", "blob", object_name]' in gateway
-    assert 'if guessed_type in active_types:' in gateway
+    assert 'if _active_media_type(guessed_type):' in gateway
     assert 'disposition = "attachment"' in gateway
 
 

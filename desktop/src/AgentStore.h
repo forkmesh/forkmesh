@@ -140,6 +140,7 @@ struct AgentSession {
     QString status = AgentStatus::Queued;
     bool held = false;
     QString heldBy;
+    QStringList deniedPermissions;
     QString branchName;
     // Explicit directory name for newer sessions whose branch and worktree use
     // one shared semantic name. Empty preserves legacy derived worktree paths.

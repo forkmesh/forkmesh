@@ -5343,4 +5343,10 @@ SCHEMA_STATEMENTS = [
         PRIMARY KEY (repo_bi, number))""",
     "CREATE INDEX IF NOT EXISTS idx_stale_pulls_age "
     "ON stale_pulls(updated_at)",
+    """CREATE TABLE IF NOT EXISTS retired_account_names (
+        name_bi TEXT PRIMARY KEY,
+        successor_bi TEXT NOT NULL DEFAULT '',
+        retired_at INTEGER NOT NULL)""",
+    "CREATE INDEX IF NOT EXISTS idx_retired_account_names_successor "
+    "ON retired_account_names(successor_bi)",
 ]

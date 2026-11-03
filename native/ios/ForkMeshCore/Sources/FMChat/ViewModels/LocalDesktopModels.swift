@@ -35,6 +35,10 @@ public enum LocalDesktopText {
                 icon: "hourglass_top", tone: .warning, title: "Approve this phone on \(control.desktopName)",
                 detail: "The desktop is asking whether to let this phone control it. Allow it only if it shows the "
                     + "same code.")
+        case .confirmingCode:
+            return LocalDesktopCard(
+                icon: "hourglass_top", tone: .warning, title: "Check the code for \(control.desktopName)",
+                detail: confirmCode(control.desktopName))
         case .connecting:
             return LocalDesktopCard(
                 icon: "sync", tone: .secondary, title: "Connecting to \(control.desktopName)…", detail: "")
@@ -48,6 +52,11 @@ public enum LocalDesktopText {
         }
     }
 
+    public static func confirmCode(_ name: String) -> String {
+        "Confirm only if \(name) showed this same code when you approved this phone. If it showed no code or a "
+            + "different one, cancel: another device on this network may be posing as it."
+    }
+
     /// "123 456".
     public static func spacedCode(_ code: String) -> String? {
         guard code.count == 6 else { return nil }
@@ -59,6 +68,7 @@ public enum LocalDesktopText {
         switch control.status {
         case .connected: return ("\(control.desktopName) · LAN", .success)
         case .awaitingApproval: return ("Approve on \(control.desktopName)", .warning)
+        case .confirmingCode: return ("Check the code for \(control.desktopName)", .warning)
         case .connecting: return ("Connecting to \(control.desktopName)…", .secondary)
         case .idle, .failed:
             let hosts = control.hosts

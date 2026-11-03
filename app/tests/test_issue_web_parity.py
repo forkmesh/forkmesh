@@ -286,7 +286,7 @@ def test_issue_manager_supports_personal_and_org_repository_owners():
     assert "await _authorize_owner_account" in authorization
     assert "await _org_row" in authorization
     assert "await _org_role" in authorization
-    assert 'role in ("owner", "admin")' in authorization
+    assert '_org_rbac.org_role_allows(role, "organization.issues.manage")' in authorization
 
 
 def test_subscription_can_be_set_and_reloaded_with_account_session():

@@ -178,12 +178,14 @@ check it compares the website fingerprint with the live
 ([auto-deploy](../operations/auto-deploy.md), "The website Worker"). By hand:
 
 ```sh
-cd www && npx --yes wrangler@4.136.2 deploy --config wrangler.production.toml \
+cd www && npm ci --ignore-scripts && node_modules/.bin/wrangler deploy \
+  --config wrangler.production.toml \
   --var DEPLOY_FINGERPRINT:$(python3 ../app/tools/deploy_targets.py fingerprint www)
 ```
 
-Wrangler 4.136 needs Node 22 or newer. To roll back: `npx wrangler rollback
---name forkmesh-www`.
+`www/package-lock.json` pins wrangler ([why](../operations/auto-deploy.md)).
+Wrangler 4.136 needs Node 22 or newer. To roll back:
+`node_modules/.bin/wrangler rollback --name forkmesh-www`.
 
 ## Security
 

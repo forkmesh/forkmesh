@@ -83,6 +83,13 @@ on by default).
 - No account needed. Per-client rate limits (client stored only as a salted
   hash) and a global concurrency cap. The host must resolve to public
   addresses only.
+- Each attempt spends a budget before the host is resolved or scanned: 20 per
+  client per hour (`MAX_PROBES_PER_HOUR`, then `429 rate_limited`) and 8 scans
+  at once per core (`MAX_PROBES_RUNNING`, then `503 busy`). A launch budget
+  alone counted only runs that found a key, so failed scans were free and
+  anyone could use a core as an SSH scanner and fill the helper's 64 tasks. A
+  probe is an `instance_launches` row with an empty `project`, removed when the
+  launch starts and after an hour otherwise, and never counts as a launch.
 - A server that does not answer on its SSH port is the visitor's to fix, so it
   is `400 ssh_unreachable` with `field: host`, like the other answers about
   what they typed, and stays out of the error log. It was a 502 until 2026-11-01

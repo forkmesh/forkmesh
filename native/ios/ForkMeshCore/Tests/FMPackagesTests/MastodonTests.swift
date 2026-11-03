@@ -5,6 +5,26 @@ import XCTest
 @testable import FMPackages
 
 final class MastodonCoreTests: XCTestCase {
+    func testLinksFromTheServerOnlyKeepWebSchemes() throws {
+        XCTAssertEqual(MastodonServer.webLink(" https://a.example/x "), "https://a.example/x")
+        XCTAssertEqual(MastodonServer.webLink("HTTP://a.example"), "HTTP://a.example")
+        for bad in ["", "https://", "https:///x", "ftp://a.example", "tel:123", "forkmesh://compose?text=x",
+                    "shortcuts://run-shortcut?name=x", "javascript:alert(1)", "https://a b.example", "https://a.example/\nx"] {
+            XCTAssertEqual(MastodonServer.webLink(bad), "", bad)
+        }
+        let status = try XCTUnwrap(MastodonStatus(JSON.parseObject(#"""
+        {"id":"1","url":"forkmesh://compose?text=x","uri":"tag:x",
+         "account":{"id":"2","username":"a","url":"tel:1","avatar_static":"file:///x","header_static":"javascript:x"},
+         "media_attachments":[{"id":"m","type":"image","url":"tel:1","preview_url":"shortcuts://x"}]}
+        """#)))
+        XCTAssertEqual(status.url, "")
+        XCTAssertEqual(status.account.url, "")
+        XCTAssertEqual(status.account.avatar, "")
+        XCTAssertEqual(status.account.header, "")
+        XCTAssertEqual(status.media.first?.url, "")
+        XCTAssertEqual(status.media.first?.previewUrl, "")
+    }
+
     func testServerNormalize() {
         XCTAssertEqual(MastodonServer.normalize("mastodon.social"), "https://mastodon.social")
         XCTAssertEqual(MastodonServer.normalize("  https://Mastodon.Social/ "), "https://mastodon.social")
@@ -280,6 +300,22 @@ final class MastodonClientTests: XCTestCase {
         XCTAssertEqual(body.str("spoiler_text"), "food")
         XCTAssertEqual(body.strings("media_ids"), ["m1"])
         XCTAssertFalse(post.headers["Idempotency-Key"]?.isEmpty ?? true)
+    }
+
+    @MainActor
+    func testAForkMeshSignOutForgetsTheMastodonSignIn() async throws {
+        let http = FakeHTTPClient()
+        http.on("POST", path: "/oauth/revoke", json: .object([:]))
+        let store = InMemorySecureStore([
+            "mastodon.session.v1": JSON.encode(MastodonSession(server: server, token: "tok", clientId: "c", clientSecret: "s").json),
+            "mastodon.pending.v1": "{}",
+        ])
+        let revoke = MastodonHub.forgetSignIn(store: store, http: http)
+        XCTAssertNil(store.read("mastodon.session.v1"))
+        XCTAssertNil(store.read("mastodon.pending.v1"))
+        await revoke?.value
+        XCTAssertEqual(http.lastRequest?.bodyText, "client_id=c&client_secret=s&token=tok")
+        XCTAssertNil(MastodonHub.forgetSignIn(store: store, http: http))
     }
 
     @MainActor

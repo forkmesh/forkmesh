@@ -2901,6 +2901,7 @@ void MainWindow::refreshPullBranchState()
                                   {QStringLiteral("rev-list"),
                                    QStringLiteral("--left-right"),
                                    QStringLiteral("--count"),
+                                   QStringLiteral("--end-of-options"),
                                    base + QStringLiteral("...") + head},
                                   &counts, nullptr)) {
                     static const QRegularExpression separator(
@@ -6586,6 +6587,8 @@ MainWindow::readPullRangeSnapshot(const QString &dir, const QString &base,
                                   const QString &head)
 {
     PullRangeSnapshot snapshot;
+    if (base.startsWith(QLatin1Char('-')) || head.startsWith(QLatin1Char('-')))
+        return snapshot;
     QByteArray refsOut;
     if (!runGitCapture(dir,
                        {QStringLiteral("rev-parse"),
@@ -6602,10 +6605,10 @@ MainWindow::readPullRangeSnapshot(const QString &dir, const QString &base,
                   {"log", "--no-merges", "--date=format:%Y-%m-%d %H:%M",
                    "--pretty=%H\x1f%h\x1f%s\x1f%an\x1f%ad\x1f%ct\x1f"
                    "%(trailers:key=ForkMesh-Agent,valueonly,separator=%x2C)",
-                   range},
+                   "--end-of-options", range},
                   &snapshot.detailedLog, nullptr);
     QByteArray shaOut;
-    if (runGitCapture(dir, {"log", "--no-merges", "--pretty=%H", range}, &shaOut,
+    if (runGitCapture(dir, {"log", "--no-merges", "--pretty=%H", "--end-of-options", range}, &shaOut,
                       nullptr))
         snapshot.shas =
             QString::fromUtf8(shaOut).split(QLatin1Char('\n'), Qt::SkipEmptyParts);

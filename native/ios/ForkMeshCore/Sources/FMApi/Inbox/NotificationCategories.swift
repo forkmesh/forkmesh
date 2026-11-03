@@ -32,7 +32,10 @@ public enum NotificationActionId: String, CaseIterable, Sendable {
         }
     }
 
-    public var requiresAuthentication: Bool { self == .approve || self == .merge || self == .approvePull || self == .approveChecks }
+    public var requiresAuthentication: Bool {
+        self == .approve || self == .merge || self == .approvePull || self == .approveChecks || self == .deny
+            || self == .continueRun || self == .retry
+    }
     public var isDestructive: Bool { self == .merge || self == .deny }
     public var opensApp: Bool { self == .open || self == .openLog || self == .sendToAgent }
     public var isTextInput: Bool { self == .reply || self == .continueRun }

@@ -126,7 +126,7 @@ func (b jobSandbox) openSession(home string) error {
 	b.pruneSessionHomes(homes, home)
 	info, err := os.Lstat(home)
 	if err == nil && (!info.IsDir() || info.Mode()&os.ModeSymlink != 0) {
-		if err := removeTreeUnder(homes, home); err != nil {
+		if err := removeJobOwnedUnder(homes, home); err != nil {
 			return err
 		}
 		err = os.ErrNotExist
@@ -140,7 +140,7 @@ func (b jobSandbox) openSession(home string) error {
 	}
 	// A fresh TMPDIR for every job; whatever the last job left is gone.
 	tmp := filepath.Join(home, "tmp")
-	if err := removeTreeUnder(home, tmp); err != nil {
+	if err := removeJobOwnedUnder(home, tmp); err != nil {
 		return err
 	}
 	if err := os.Mkdir(tmp, 0o700); err != nil {
@@ -184,7 +184,9 @@ func (b jobSandbox) closeSession(home string) {
 		b.copyCredentialBack(home, rel)
 		_ = os.Remove(filepath.Join(home, rel))
 	}
-	_ = removeTreeUnder(home, filepath.Join(home, "tmp"))
+	if err := removeJobOwnedUnder(home, filepath.Join(home, "tmp")); err != nil {
+		log.Printf("runner: %v", err)
+	}
 	b.accounts.closed(home)
 	now := time.Now()
 	_ = os.Chtimes(home, now, now)
@@ -268,7 +270,7 @@ func scrubPersistentHome(home string) error {
 					childInfo.Mode().IsRegular() {
 					continue
 				}
-				if err := removeTreeUnder(path, child); err != nil {
+				if err := removeJobOwnedUnder(path, child); err != nil {
 					failed = err
 				}
 			}
@@ -278,7 +280,7 @@ func scrubPersistentHome(home string) error {
 			trimClaudeConfig(path, info) == nil {
 			continue
 		}
-		if err := removeTreeUnder(home, path); err != nil {
+		if err := removeJobOwnedUnder(home, path); err != nil {
 			failed = err
 		}
 	}
@@ -436,24 +438,11 @@ func safeDirChain(base, rel string) bool {
 // readOwnedFile reads a regular, non-symlink file of at most limit bytes,
 // owned by uid when uid is not 0. It never blocks on a FIFO.
 func readOwnedFile(path string, uid int, limit int64) ([]byte, error) {
-	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	file, err := openOwnedFile(path, uid, limit)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
-	info, err := file.Stat()
-	if err != nil {
-		return nil, err
-	}
-	if !info.Mode().IsRegular() {
-		return nil, fmt.Errorf("%s is not a regular file", filepath.Base(path))
-	}
-	if stat, ok := info.Sys().(*syscall.Stat_t); ok && uid != 0 && int(stat.Uid) != uid {
-		return nil, fmt.Errorf("%s is not owned by the job user", filepath.Base(path))
-	}
-	if info.Size() > limit {
-		return nil, fmt.Errorf("%s is too large", filepath.Base(path))
-	}
 	data, err := io.ReadAll(io.LimitReader(file, limit+1))
 	if err != nil {
 		return nil, err
@@ -462,6 +451,53 @@ func readOwnedFile(path string, uid int, limit int64) ([]byte, error) {
 		return nil, fmt.Errorf("%s is too large", filepath.Base(path))
 	}
 	return data, nil
+}
+
+func openOwnedFile(path string, uid int, limit int64) (*os.File, error) {
+	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return nil, err
+	}
+	info, err := file.Stat()
+	if err == nil && !info.Mode().IsRegular() {
+		err = fmt.Errorf("%s is not a regular file", filepath.Base(path))
+	}
+	if err == nil {
+		if stat, ok := info.Sys().(*syscall.Stat_t); ok && uid != 0 && int(stat.Uid) != uid {
+			err = fmt.Errorf("%s is not owned by the job user", filepath.Base(path))
+		}
+	}
+	if err == nil && info.Size() > limit {
+		err = fmt.Errorf("%s is too large", filepath.Base(path))
+	}
+	if err != nil {
+		file.Close()
+		return nil, err
+	}
+	return file, nil
+}
+
+func copyOwnedFile(path, target string, uid int, limit int64) error {
+	source, err := openOwnedFile(path, uid, limit)
+	if err != nil {
+		return err
+	}
+	defer source.Close()
+	out, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_TRUNC|syscall.O_NOFOLLOW, 0o600)
+	if err != nil {
+		return err
+	}
+	written, err := io.Copy(out, io.LimitReader(source, limit+1))
+	if closeErr := out.Close(); err == nil {
+		err = closeErr
+	}
+	if err == nil && written > limit {
+		err = fmt.Errorf("%s is too large", filepath.Base(path))
+	}
+	if err != nil {
+		_ = os.Remove(target)
+	}
+	return err
 }
 
 // writeOwnedFile atomically replaces dir/name with data, mode 0600, owned
@@ -518,6 +554,39 @@ func validCredential(data []byte) bool {
 	return len(bytes.TrimSpace(data)) != 0 && json.Unmarshal(data, &value) == nil && len(value) != 0
 }
 
+func codexCredentialSubject(data []byte) string {
+	var auth codexCredentialFile
+	var tokens struct {
+		Tokens struct {
+			AccountID string `json:"account_id"`
+		} `json:"tokens"`
+	}
+	if json.Unmarshal(data, &auth) != nil || json.Unmarshal(data, &tokens) != nil ||
+		strings.TrimSpace(auth.APIKey) != "" {
+		return ""
+	}
+	account := func(token string) (string, string) {
+		claims := jwtClaims(token)
+		info, _ := claims["https://api.openai.com/auth"].(map[string]any)
+		return stringValue(info["chatgpt_account_id"]), strings.ToLower(stringValue(claims["email"]))
+	}
+	access, _ := account(auth.Tokens.AccessToken)
+	id, email := account(auth.Tokens.IDToken)
+	if access == "" || id != access || email == "" ||
+		(tokens.Tokens.AccountID != "" && tokens.Tokens.AccountID != access) {
+		return ""
+	}
+	return access + "/" + email
+}
+
+func credentialKeepsAccount(provider string, handedOut, data []byte) bool {
+	if provider != "codex" {
+		return true
+	}
+	subject := codexCredentialSubject(handedOut)
+	return subject != "" && subject == codexCredentialSubject(data)
+}
+
 // copyCredentialIn puts the persistent login rel into the session home.
 func (b jobSandbox) copyCredentialIn(home, rel string) error {
 	target := filepath.Join(home, rel)
@@ -570,6 +639,12 @@ func (b jobSandbox) copyCredentialBack(home, rel string) {
 	handedOut, known := credentialHandedOut[credentialHandOutKey(home, rel)]
 	delete(credentialHandedOut, credentialHandOutKey(home, rel))
 	if err != nil || !usableCredential(runnerAccountProvider(rel), data) || (known && bytes.Equal(handedOut, data)) {
+		return
+	}
+	if provider := runnerAccountProvider(rel); b.uid != 0 && provider == "codex" &&
+		(!known || !credentialKeepsAccount(provider, handedOut, data)) {
+		log.Printf("runner: a job changed its %s login and it could not be tied to the same account, so it was not kept",
+			provider)
 		return
 	}
 	if b.accounts.copyBackLocked(home, rel, data) {

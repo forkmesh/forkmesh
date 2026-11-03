@@ -102,7 +102,8 @@ project files on Linux so store mistakes fail in `swift test`:
   list keeps all four orientations, which iPad multitasking requires.
 - No `PrivacyInfo.xcprivacy` is named in the project file (synchronized groups
   include them). Each manifest declares every required-reason API category its
-  bundle's sources use (for example DiskSpace for `LocalModelStore`). The share,
+  bundle's sources use (for example DiskSpace for `LocalModelStore`, and
+  ActiveKeyboards with reason 54BD.1 for the note pages' emoji keyboard). The share,
   AutoFill, widget and watch extensions have their own manifests.
 - No `IntentDescription` literal contains "iphone", "ipad" or "apple watch"
   (App Store validation error 90626).

@@ -289,7 +289,8 @@ SUBJECT_QUERY_KEYS = {
 }
 YOUTUBE_VIDEO_PATHS = ("shorts", "embed", "live", "v")
 PATH_SAFE = "/:@!$&'()*+,;=-._~"
-LINK_TAG_RE = re.compile(r"<link\b[^>]*>", re.IGNORECASE)
+CANONICAL_SCAN_CHARS = 262_144
+LINK_TAG_RE = re.compile(r"<link\b[^<>]{0,4096}>", re.IGNORECASE)
 TAG_ATTR_RE = re.compile(
     r"([A-Za-z_:][-A-Za-z0-9_:.]*)\s*=\s*(?:\"([^\"]*)\"|'([^']*)'|([^\s>]+))")
 
@@ -361,7 +362,7 @@ def referral_subject_url(url):
 
 
 def page_canonical_url(page, url):
-    for tag in LINK_TAG_RE.findall(str(page or "")):
+    for tag in LINK_TAG_RE.findall(str(page or "")[:CANONICAL_SCAN_CHARS]):
         attributes = {}
         for match in TAG_ATTR_RE.finditer(tag[5:]):
             value = next((item for item in match.groups()[1:]

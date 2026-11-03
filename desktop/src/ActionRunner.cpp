@@ -742,6 +742,12 @@ void ActionRunner::start(const ActionRun &run, const ActionWorkflow &workflow,
         return;
     }
 
+    if (!m_workflow.sandbox && m_run.pullNumber > 0) {
+        complete(false, QStringLiteral(
+                            "A pull request run may not use sandbox: false; "
+                            "nothing was run."));
+        return;
+    }
     QString sandboxReason;
     if (m_workflow.sandbox && !sandboxAvailable(&sandboxReason)) {
         complete(false, QStringLiteral("Actions isolation unavailable: %1.")

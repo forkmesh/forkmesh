@@ -116,7 +116,10 @@ same key in `desktop/src/ReleaseTrust.cpp`;
   `install.sh`, an empty or malformed value refuses every manifest, and it must
   never be newer than the tag in `latest`
   (`test_installer_minimum_release_is_set_and_not_above_latest`). Raise it when
-  a release must not be rolled back. A controller that pins a manifest SHA-256
+  a release must not be rolled back. It is 1.5.0, the first signed release with
+  the auto-update trust check (S-62): the signed v1.2.8 lacks it, so a core
+  replaying that manifest could otherwise hand a new install a client that takes
+  unsigned updates. A controller that pins a manifest SHA-256
   or an exact build commit has already chosen the exact release, so neither
   check applies there.
 - **Desktop auto-update** (`maybeAutoUpdate`, `tryPrebuiltAutoUpdate`):

@@ -50,6 +50,7 @@ public final class AuthService {
     @ObservationIgnored private let identity: DeviceIdentity?
     @ObservationIgnored private let prefs: KeyValueStore
     @ObservationIgnored private let secure: SecureStore
+    @ObservationIgnored public var onLocalSessionCleared: (@MainActor () -> Void)?
     @ObservationIgnored private let http: HTTPClient
     @ObservationIgnored private let performanceMonitor: PerformanceMonitorService?
     @ObservationIgnored private let deviceLabelProvider: () async throws -> String
@@ -497,6 +498,7 @@ public final class AuthService {
         notifyListeners()
         secure.delete(key)
         prefs.remove(AuthService.sessionKey)
+        onLocalSessionCleared?()
     }
 
     private func readSession(_ relayId: String) -> AuthSession? {

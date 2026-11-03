@@ -38,6 +38,7 @@ class Runtime:
         self.actor = "alice"
         self.method_value = "GET"
         self.body = {}
+        self.query = {}
         self.clock = 1_789_561_860_000
         self.ids = 0
         self.secrets = 0
@@ -51,11 +52,13 @@ class Runtime:
             assert response["status"] == 200, response
         self.use("GET")
 
-    def use(self, method, actor="alice", body=None):
+    def use(self, method, actor="alice", body=None, query=None):
         self.method_value, self.actor, self.body = method, actor, body or {}
+        self.query = query or {}
         return self
 
     def method(self): return self.method_value
+    def query_params(self): return dict(self.query)
     def same_origin(self): return True
     def now(self): self.clock += 1; return self.clock
     def new_id(self): self.ids += 1; return f"{self.ids:032x}"
@@ -201,7 +204,8 @@ def test_delete_export_and_uninstall_purge_everything():
     exported = call(runtime.use("GET"), "/api/spreadsheets/export")["data"]
     assert exported["filename"] == "forkmesh-spreadsheets-alice.json"
     books = exported["export"]["workbooks"]
-    assert [b["title"] for b in books] == ["Keep"] and books[0]["workbook"] == BOOK and books[0]["id"] == keep["id"]
+    assert [b["title"] for b in books] == ["Keep"] and books[0]["id"] == keep["id"]
+    assert json.loads(gzip.decompress(base64.b64decode(books[0]["data"]))) == BOOK
     result = call(runtime.use("POST"), "/api/spreadsheets/uninstall")["data"]
     assert result["uninstalled"] is True and result["hadData"] is True
     for table in ("spreadsheets_books", "spreadsheets_profiles", "spreadsheets_keys"):
@@ -270,6 +274,43 @@ def test_the_engine_formulas_formats_and_file_round_trips_hold_up_when_run():
         env={"PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"), "TZ": "UTC"})
     assert result.returncode == 0, result.stdout[-4000:] + result.stderr[-4000:]
     assert "engine checks passed" in result.stdout
+
+
+def test_export_returns_stored_base64_and_never_inflates(monkeypatch):
+    runtime = Runtime()
+    bomb = base64.b64encode(gzip.compress(b'{"a":[' + b"[]," * 2_000_000 + b"[]]}")).decode()
+    if len(bomb) % 4:
+        bomb += "=" * (4 - len(bomb) % 4)
+    made = call(runtime.use("POST", body={"title": "Bomb", "data": bomb}), "/api/spreadsheets/workbooks")
+    assert made["status"] == 201
+    exported = call(runtime.use("GET"), "/api/spreadsheets/export")["data"]["export"]
+    assert exported["workbooks"][0]["data"] == bomb
+    assert exported["workbooks"][0]["encoding"] == "base64 gzip forkmesh-sheets JSON"
+    assert "workbook" not in exported["workbooks"][0]
+    source = (PACKAGE / "content" / "worker" / "spreadsheets.py").read_text(encoding="utf-8")
+    assert "zlib" not in source and "gzip" not in source.replace("base64 gzip forkmesh-sheets JSON", "")
+
+
+def test_export_pages_by_size(monkeypatch):
+    runtime = Runtime()
+    ids = [create(runtime, title=f"Book {index}")["id"] for index in range(3)]
+    size = len(packed(BOOK))
+    monkeypatch.setattr(spreadsheets, "MAX_EXPORT_PAGE_CHARS", size * 2)
+    seen, start = [], 0
+    while True:
+        page = call(runtime.use("GET", query={"start": start}), "/api/spreadsheets/export")["data"]["export"]
+        assert sum(len(item["data"]) for item in page["workbooks"]) <= size * 2
+        seen += [item["id"] for item in page["workbooks"]]
+        start = page["next"]
+        if not start:
+            break
+    assert seen == ids
+
+
+def test_print_frame_cannot_run_scripts():
+    source = (PACKAGE / "content" / "web" / "page.js").read_text(encoding="utf-8")
+    assert 'frame.setAttribute("sandbox", "allow-same-origin allow-modals");' in source
+    assert source.index('frame.setAttribute("sandbox"') < source.index("frame.srcdoc = html")
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")

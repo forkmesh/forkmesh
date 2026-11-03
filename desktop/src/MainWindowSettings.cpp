@@ -1648,6 +1648,7 @@ void MainWindow::wireSettingsVmActions(SettingsSectionParts &parts)
         notice->setWordWrap(true);
         layout->addWidget(notice);
         auto *terminal = new TerminalWidget(dialog);
+        terminal->setOpensSignInLinks(true);
         layout->addWidget(terminal, 1);
         auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, dialog);
         connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::close);

@@ -30,6 +30,7 @@ QUESTIONS = [
 
 class Runtime:
     def __init__(self, installed=True):
+        surveys._SCHEMA_READY = False
         self.db = sqlite3.connect(":memory:")
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA foreign_keys=ON")
@@ -465,6 +466,94 @@ def test_package_owns_dashboard_and_public_page_contracts():
     assert "/api/surveys/-/public/" in public
     assert "innerHTML" not in public
     assert "http://" not in page + public
+
+
+def writes_of(runtime):
+    seen = []
+    original = runtime.d1_run
+    async def counted(sql, *args):
+        seen.append(sql)
+        return await original(sql, *args)
+    runtime.d1_run = counted
+    return seen
+
+
+def test_foreign_origin_never_reaches_the_survey_link():
+    runtime = Runtime()
+    runtime.request_origin = lambda: "https://evil.example"
+    survey = publish(runtime, create(runtime))
+    assert survey["publicUrl"].startswith("https://app.forkmesh.com/survey?t=")
+
+
+def test_org_budget_refuses_answers_until_space_is_freed(monkeypatch):
+    runtime = Runtime()
+    survey = publish(runtime, create(runtime))
+    assert submit(runtime, survey, answers_for(survey))["status"] == 201
+    used = runtime.db.execute("SELECT chars FROM survey_usage WHERE org_bi='org:acme'").fetchone()[0]
+    stored = runtime.db.execute("SELECT LENGTH(data) FROM survey_responses").fetchone()[0]
+    assert used == stored
+    monkeypatch.setattr(surveys, "MAX_ORG_RESPONSE_CHARS", stored + 10)
+    other = publish(runtime, create(runtime))
+    full = submit(runtime, other, answers_for(other), ip="198.51.100.2")
+    assert full["status"] == 409 and full["data"]["error"] == "survey_storage_full"
+    response_id = runtime.db.execute("SELECT response_id FROM survey_responses").fetchone()[0]
+    assert call(runtime.use("DELETE"), f"/api/surveys/acme/items/{survey['id']}/responses/{response_id}")["status"] == 200
+    assert runtime.db.execute("SELECT chars FROM survey_usage").fetchone()[0] == 0
+    assert submit(runtime, other, answers_for(other))["status"] == 201
+    assert call(runtime.use("DELETE"), f"/api/surveys/acme/items/{other['id']}")["status"] == 200
+    assert runtime.db.execute("SELECT chars FROM survey_usage").fetchone()[0] == 0
+
+
+def test_source_budget_spans_surveys_and_counts_an_ipv6_64_once(monkeypatch):
+    monkeypatch.setattr(surveys, "SOURCE_HOURLY_RESPONSES", 2)
+    runtime = Runtime()
+    first, second, third = (publish(runtime, create(runtime)) for _ in range(3))
+    assert submit(runtime, first, answers_for(first), ip="2001:db8:1:2::1")["status"] == 201
+    assert submit(runtime, second, answers_for(second), ip="2001:db8:1:2::2")["status"] == 201
+    limited = submit(runtime, third, answers_for(third), ip="2001:db8:1:2::3")
+    assert limited["status"] == 429 and limited["data"]["error"] == "too_many_responses"
+    assert submit(runtime, third, answers_for(third), ip="2001:db8:1:3::1")["status"] == 201
+    runtime.clock += HOUR
+    assert submit(runtime, third, answers_for(third), ip="2001:db8:1:2::3")["status"] == 201
+
+
+def test_source_budget_counts_characters(monkeypatch):
+    monkeypatch.setattr(surveys, "SOURCE_HOURLY_CHARS", 200)
+    runtime = Runtime()
+    survey = publish(runtime, create(runtime))
+    big = answers_for(survey, paragraph="x" * 150)
+    assert submit(runtime, survey, big)["status"] == 201
+    assert submit(runtime, survey, big)["data"]["error"] == "too_many_responses"
+
+
+def test_auditors_read_but_cannot_write():
+    runtime = Runtime()
+    survey = publish(runtime, create(runtime))
+    assert submit(runtime, survey, answers_for(survey))["status"] == 201
+    runtime.db.execute("UPDATE org_members SET role='auditor' WHERE member_bi='bi:dana'")
+    response_id = runtime.db.execute("SELECT response_id FROM survey_responses").fetchone()[0]
+    item = f"/api/surveys/acme/items/{survey['id']}"
+    assert call(runtime.use("GET", actor="dana"), item)["status"] == 200
+    for method, path in (("POST", "/api/surveys/acme/items"), ("PATCH", item), ("POST", item + "/close"),
+                         ("POST", item + "/duplicate"), ("DELETE", item),
+                         ("DELETE", item + "/responses/" + response_id)):
+        answer = call(runtime.use(method, actor="dana", body={"title": "x"}), path)
+        assert answer["status"] == 403 and answer["data"]["error"] == "read_only_role", (method, path)
+    assert runtime.db.execute("SELECT COUNT(*) FROM survey_responses").fetchone()[0] == 1
+
+
+def test_bad_tokens_touch_no_schema_and_readiness_is_cached():
+    runtime = Runtime()
+    seen = writes_of(runtime)
+    bad = "/api/surveys/-/public/" + "0" * 32 + "." + "0" * 24
+    assert call(runtime.use("GET", actor=""), bad)["status"] == 404
+    assert seen == []
+    survey = publish(runtime, create(runtime))
+    good = f"/api/surveys/-/public/{token_of(survey)}"
+    seen.clear()
+    assert call(runtime.use("GET", actor=""), good)["status"] == 200
+    assert call(runtime.use("GET"), "/api/surveys/acme")["status"] == 200
+    assert seen == []
 
 
 def test_tracking_accepts_known_events_and_drops_the_rest():

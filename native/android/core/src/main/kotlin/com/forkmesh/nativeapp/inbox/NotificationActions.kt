@@ -20,9 +20,11 @@ enum class NotificationActionId(val id: String, val title: String) {
     ApprovePull("fm.approvePull", "Approve PR"),
     OpenLog("fm.openLog", "Open log");
 
-    val requiresAuthentication: Boolean get() = this == Approve || this == Merge || this == ApprovePull
+    val requiresAuthentication: Boolean get() =
+        this == Approve || this == Merge || this == ApprovePull || this == Deny || this == ContinueRun || this == Retry
     val isDestructive: Boolean get() = this == Merge || this == Deny
-    val opensApp: Boolean get() = this == Open || this == OpenLog || this == SendToAgent || requiresAuthentication
+    val opensApp: Boolean get() =
+        this == Open || this == OpenLog || this == SendToAgent || this == Approve || this == Merge || this == ApprovePull
     val isTextInput: Boolean get() = this == Reply || this == ContinueRun
 
     companion object {

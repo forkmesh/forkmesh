@@ -19085,6 +19085,24 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
                            privateRead.value(QStringLiteral("error")).toString(),
                            userClose.value(QStringLiteral("error")).toString()));
 
+            AgentSession lockedAgent = planAgent;
+            lockedAgent.id = 943511;
+            lockedAgent.mode = QStringLiteral("Auto");
+            lockedAgent.issueTitle = QStringLiteral("terminal locked auto agent");
+            window.testAddAgentSession(lockedAgent);
+            const QJsonObject lockedOpen = window.testTerminalRequest(
+                lockedAgent.id, QString(), QStringLiteral("terminals.open"), {});
+            const QJsonObject lockedType = window.testTerminalRequest(
+                lockedAgent.id, QString(), QStringLiteral("terminals.input"),
+                {{QStringLiteral("terminal"), terminalId}, {QStringLiteral("text"), QStringLiteral("x")}});
+            check(lockedOpen.value(QStringLiteral("error")).toString() == QStringLiteral("rules_gated") &&
+                      lockedType.value(QStringLiteral("error")).toString() ==
+                          QStringLiteral("rules_gated"),
+                  QString("an Auto agent under the default rules (folders locked, calls "
+                          "checked) cannot open or type into terminals (open=%1 type=%2)")
+                      .arg(lockedOpen.value(QStringLiteral("error")).toString(),
+                           lockedType.value(QStringLiteral("error")).toString()));
+
             QPushButton *chromeTerminal = nullptr;
             for (QPushButton *button : window.findChildren<QPushButton *>())
                 if (button->property("terminalLauncherButton").toBool() ||

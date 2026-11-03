@@ -50,6 +50,11 @@ def main() -> None:
         assert count <= OWN_TEXT_LINKS.get(path.name, 0), (
             f"{path.name} opens links itself; route text that is not ours through "
             "ChatLinkText::externalLinkUrl, or list a label that only holds our own links here")
+    panels = (ROOT / "src/SessionSidePanels.cpp").read_text(encoding="utf-8")
+    assert "QUrl(target)" not in panels and "ChatLinkText::externalLinkUrl(target)" in panels, (
+        "a Sessions panel row opens only http(s) and mailto links through the scheme filter")
+    assert "info.absolutePath()" in panels, (
+        "a Sessions panel row shows a local file's folder instead of running its handler")
     print("body link scheme contract passed")
 
 

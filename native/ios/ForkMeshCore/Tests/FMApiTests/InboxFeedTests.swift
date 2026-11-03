@@ -373,6 +373,12 @@ final class InboxFeedTests: XCTestCase {
         XCTAssertEqual(NotificationCategoryId.forPing(kind: "agent_approval"), .agentApproval)
         XCTAssertEqual(NotificationCategoryId.forPing(kind: "x", topic: "direct-messages"), .dm)
         XCTAssertTrue(NotificationActionId.approve.requiresAuthentication)
+        for action in [NotificationActionId.deny, .retry, .continueRun] {
+            XCTAssertTrue(action.requiresAuthentication)
+            XCTAssertFalse(action.opensApp)
+        }
+        XCTAssertFalse(NotificationActionId.markRead.requiresAuthentication)
+        XCTAssertFalse(NotificationActionId.reply.requiresAuthentication)
         XCTAssertTrue(NotificationActionId.merge.isDestructive)
         XCTAssertTrue(NotificationActionId.reply.isTextInput)
 

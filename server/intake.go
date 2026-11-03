@@ -197,6 +197,9 @@ func materializeDirectCollaboration(ctx context.Context, repo Repository,
 		if len(item.Event) == 0 {
 			return 0, errors.New("issue event is required")
 		}
+		for _, key := range relayOnlyIssueMeta {
+			delete(item.Meta, key)
+		}
 		branch := gitValue(ctx, repo.GitDir, "symbolic-ref", "--short", "HEAD")
 		if branch == "" {
 			branch = "HEAD"
@@ -1039,10 +1042,15 @@ func applyIssueClaim(current any, event map[string]any) []any {
 	return kept
 }
 
+var issueAttachmentNamePattern = regexp.MustCompile(`^[0-9a-f]{8}\.(?:png|jpg|jpeg|gif|webp|bmp|svg|mp4|webm|mov|bin)$`)
+
+var relayOnlyIssueMeta = []string{"reporter", "rewardId", "rewardRecipient", "rewardEstimateLamports",
+	"rewardCondition", "rewardStatus"}
+
 func writeIssueAttachments(dir string, item collaborationItem) error {
 	for _, attachment := range item.AttachmentData {
-		name := filepath.Base(stringValue(attachment["name"]))
-		if name == "." || name == "" || name != stringValue(attachment["name"]) {
+		name := stringValue(attachment["name"])
+		if !issueAttachmentNamePattern.MatchString(name) {
 			continue
 		}
 		data, err := decodeBase64(stringValue(attachment["data"]))

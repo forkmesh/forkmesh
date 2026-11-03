@@ -186,7 +186,13 @@ right column in Control Tower
   `sessions/panelHidden` and `sessions/panelCollapsed`, shared by every
   place the stack shows. `normalizedCardOrder` keeps a saved order valid when
   a card is added: a new card goes after its default neighbour.
-- Clicking an output or a read file opens it; a page opens in the browser.
+- Clicking an output or a read file shows it in the file manager (its folder,
+  or the folder itself), never through the file's own handler, so an agent
+  cannot plant a script and have a click run it. A page opens in the browser
+  only through `ChatLinkText::externalLinkUrl`, so a tool call's
+  `smb://` or `file://` URL is dropped instead of handed to the system
+  (`SessionSidePanels::openTargetUrl`; checked by
+  `desktop/tests/validate_body_link_schemes.py`).
 - The column opens whenever a session starts: **New session**, sending the
   first prompt, and every local launch (`startAgentRunner` calls
   `NextAccess::sessionStarted`) set `panelOpen` again even if it was hidden.

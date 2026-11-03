@@ -403,3 +403,18 @@ echo '{"type":"result","result":"Added a line.","session_id":"sess-1","is_error"
 		t.Fatalf("job tmp left behind: %v", err)
 	}
 }
+
+func TestAPlantedGitFolderSurvivesNoSweep(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("needs an unprivileged test user")
+	}
+	shared := t.TempDir()
+	writeTestFile(t, filepath.Join(shared, ".git", "config"), "[core]\n\tfsmonitor = /tmp/x\n")
+	writeTestFile(t, filepath.Join(shared, "kept", ".git", "HEAD"), "ref: refs/heads/main\n")
+	writeTestFile(t, filepath.Join(shared, "linked", ".git"), "gitdir: /x\n")
+	box := jobSandbox{uid: os.Getuid(), sharedTmp: []string{shared}, active: &jobActivity{}}
+	box.sweepIdle()
+	if entries, _ := os.ReadDir(shared); len(entries) != 0 {
+		t.Fatalf("the sweep kept %v", entries)
+	}
+}
