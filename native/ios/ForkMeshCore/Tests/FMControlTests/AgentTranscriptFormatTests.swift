@@ -264,6 +264,20 @@ final class AgentTranscriptFormatTests: XCTestCase {
             [.code(language: "", text: "streaming")])
     }
 
+    func testLongTextSplitsIntoPiecesSmallEnoughToDraw() async {
+        XCTAssertEqual(AgentTranscriptFormat.pieces("", lines: 2, chars: 100, width: 100), [""])
+        XCTAssertEqual(AgentTranscriptFormat.pieces("a\nb", lines: 2, chars: 100, width: 100), ["a\nb"])
+        XCTAssertEqual(AgentTranscriptFormat.pieces("a\nb\nc\n\ne", lines: 2, chars: 100, width: 100), ["a\nb", "c\n", "e"])
+        XCTAssertEqual(AgentTranscriptFormat.pieces("abcd\nefgh\nij", lines: 10, chars: 8, width: 100), ["abcd\nefgh", "ij"])
+        XCTAssertEqual(AgentTranscriptFormat.pieces("one two three", lines: 10, chars: 100, width: 8), ["one two \nthree"])
+        XCTAssertEqual(AgentTranscriptFormat.pieces("abcdefghij", lines: 2, chars: 100, width: 4), ["abcd\nefgh", "ij"])
+        let log = (1...500).map { "12:50:\($0) loop 1 ms events 1800/s" }.joined(separator: "\n")
+        let pieces = AgentTranscriptFormat.pieces(log, lines: 40, chars: 1500, width: 1500)
+        XCTAssertGreaterThan(pieces.count, 12)
+        XCTAssertTrue(pieces.allSatisfy { $0.split(separator: "\n").count <= 40 && $0.count <= 1500 + 40 })
+        XCTAssertEqual(pieces.joined(separator: "\n"), log)
+    }
+
     func testInlineBoldCodeAndLinks() async {
         XCTAssertEqual(
             AgentTranscriptFormat.inline("Run `make` then **ship** it, see [docs](https://forkmesh.com/docs) or [x](file)."),
