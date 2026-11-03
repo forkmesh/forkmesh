@@ -309,6 +309,36 @@ public enum AgentTranscriptFormat {
         return parser.out
     }
 
+    public static func pieces(_ text: String, lines: Int, chars: Int, width: Int) -> [String] {
+        let lines = max(lines, 1)
+        let width = max(width, 1)
+        var segments: [Substring] = []
+        for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            var rest = line[...]
+            while rest.count > width {
+                let window = rest.prefix(width)
+                let cut = window.lastIndex(of: " ").map { rest.index(after: $0) } ?? window.endIndex
+                segments.append(rest[..<cut])
+                rest = rest[cut...]
+            }
+            segments.append(rest)
+        }
+        var out: [String] = []
+        var piece: [Substring] = []
+        var size = 0
+        for segment in segments {
+            if !piece.isEmpty, piece.count >= lines || size + segment.count > chars {
+                out.append(piece.joined(separator: "\n"))
+                piece = []
+                size = 0
+            }
+            piece.append(segment)
+            size += segment.count
+        }
+        out.append(piece.joined(separator: "\n"))
+        return out
+    }
+
     public static func inline(_ text: String) -> [TranscriptInline] {
         let chars = Array(text)
         var out: [TranscriptInline] = []

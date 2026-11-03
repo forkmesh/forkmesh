@@ -42,9 +42,8 @@ struct TranscriptBlockRow: View {
         case .error(let text):
             HStack(alignment: .firstTextBaseline, spacing: FmSpace.x2) {
                 FmIcon("error_outline", size: 14, color: fm.danger)
-                Text(text)
+                TranscriptProse(text: text, inline: false)
                     .fmText(.bodySmall, color: fm.danger)
-                    .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .fmMessageTools(text)
             }
@@ -87,10 +86,42 @@ struct TranscriptBlockRow: View {
         case .rule:
             Divider()
         case .text(let text):
-            transcriptInline(text, fm, referenceRepo)
+            TranscriptProse(text: text)
                 .fmText(.bodyMedium)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+private struct TranscriptProse: View {
+    @Environment(\.fmPalette) private var fm
+    @Environment(\.referenceRepo) private var referenceRepo
+    let text: String
+    var inline = true
+
+    var body: some View {
+        let pieces = AgentTranscriptFormat.pieces(text, lines: 40, chars: 1500, width: 1500)
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(pieces.indices, id: \.self) { (index: Int) in
+                (inline ? transcriptInline(pieces[index], fm, referenceRepo) : Text(pieces[index]))
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
+private struct TranscriptMono: View {
+    let text: String
+    let wraps: Bool
+
+    var body: some View {
+        let pieces = AgentTranscriptFormat.pieces(text, lines: 60, chars: 2000, width: 300)
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(pieces.indices, id: \.self) { (index: Int) in
+                Text(pieces[index])
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: !wraps, vertical: true)
+            }
         }
     }
 }
@@ -105,10 +136,8 @@ private struct TranscriptYouBubble: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label)
                 .fmText(.labelSmall, color: fm.accent, weight: FmType.emphasis)
-            transcriptInline(text, fm, referenceRepo)
+            TranscriptProse(text: text)
                 .fmText(.bodyMedium)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, FmSpace.x2)
@@ -131,10 +160,8 @@ private struct TranscriptPeerBubble: View {
                 Text("From \(from)")
                     .fmText(.labelSmall, color: fm.textSecondary, weight: FmType.emphasis)
             }
-            transcriptInline(text, fm, referenceRepo)
+            TranscriptProse(text: text)
                 .fmText(.bodyMedium)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, FmSpace.x2)
@@ -243,10 +270,8 @@ private struct TranscriptToolChip: View {
                 }
             }
             if open {
-                Text(TranscriptJson.readable(call.detail) ?? call.detail)
+                TranscriptMono(text: TranscriptJson.readable(call.detail) ?? call.detail, wraps: true)
                     .fmMono(color: fm.textSecondary)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.leading, 22)
             }
         }
@@ -272,10 +297,8 @@ private struct TranscriptCodeBox: View {
                     .padding(.top, 6)
             }
             ScrollView(.horizontal, showsIndicators: false) {
-                Text(text)
+                TranscriptMono(text: text, wraps: false)
                     .fmMono(color: fm.textPrimary)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: true, vertical: true)
                     .padding(.horizontal, 10)
                     .padding(.vertical, FmSpace.x2)
             }
@@ -312,10 +335,8 @@ private struct TranscriptJsonBox: View {
             .contentShape(Rectangle())
             .onTapGesture { if folds { open.toggle() } }
             VStack(alignment: .leading) {
-                Text(!folds || open ? readable : lines.prefix(8).joined(separator: "\n") + "\n  …")
+                TranscriptMono(text: !folds || open ? readable : lines.prefix(8).joined(separator: "\n") + "\n  …", wraps: true)
                     .fmMono(color: fm.textPrimary)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 10)
                     .padding(.vertical, FmSpace.x2)
             }

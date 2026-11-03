@@ -890,6 +890,16 @@ code boxes, headings, lists, rules and paragraphs. Inline: bold, italic, code,
 (iOS `AgentTranscriptBlocksView`, Android `AgentTranscriptBlocks.kt`); iOS
 scrolls to the last row by id on the next main-queue turn.
 
+iOS draws a SwiftUI `Text` into one layer, and a layer taller or wider than the
+GPU's texture limit comes out blank: a long fenced log showed as an empty gray
+code box. So paragraphs, bubbles, errors, code, JSON and opened tool details
+are drawn as a stack of pieces from `AgentTranscriptFormat.pieces` (iOS only):
+prose in pieces of at most 40 lines and 1,500 characters, monospaced text in
+pieces of 60 lines and 2,000 characters with lines over 300 characters broken
+(at the last space when there is one). Selection works within one piece.
+Android's Compose text is recorded into the display list, not a texture, so it
+needs no split.
+
 Shared fixture: `conformance/agent-transcript/v1/` (`session.jsonl`,
 `transcript.txt`, `blocks.txt`), checked by the desktop and both phones.
 
