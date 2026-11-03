@@ -77,12 +77,13 @@ public struct InboxItem: Equatable, Hashable, Sendable, Identifiable {
     public var approvalId: String
     public var desktopPingId: String
     public var desktopNode: String
+    public var meta: JSONObject
 
     public init(
         id: String, source: InboxSource, category: InboxCategory, kind: String, title: String, body: String = "",
         repo: String = "", actor: String = "", href: String = "", ts: Int = 0, unread: Bool = true,
         sync: InboxSyncState = .synced, route: Route? = nil, remoteId: String = "", sessionId: String = "",
-        approvalId: String = "", desktopPingId: String = "", desktopNode: String = ""
+        approvalId: String = "", desktopPingId: String = "", desktopNode: String = "", meta: JSONObject = JSONObject()
     ) {
         self.id = id
         self.source = source
@@ -102,6 +103,7 @@ public struct InboxItem: Equatable, Hashable, Sendable, Identifiable {
         self.approvalId = approvalId
         self.desktopPingId = desktopPingId
         self.desktopNode = desktopNode
+        self.meta = meta
     }
 
     public init(ping: ForkNotification) {
@@ -113,7 +115,7 @@ public struct InboxItem: Equatable, Hashable, Sendable, Identifiable {
             repo: ping.repo, actor: ping.actor, href: ping.href, ts: ping.ts, unread: ping.isUnread,
             route: InboxRoutes.route(kind: ping.kind, href: ping.href, meta: ping.meta, repo: ping.repo),
             remoteId: ping.id, sessionId: sessionId, approvalId: approvalId,
-            desktopPingId: ping.meta.str("pingId"), desktopNode: ping.meta.str("node"))
+            desktopPingId: ping.meta.str("pingId"), desktopNode: ping.meta.str("node"), meta: ping.meta)
     }
 
     public var fromDesktop: Bool { source == .ping && kind == "desktop_ping" }
@@ -124,7 +126,7 @@ public struct InboxItem: Equatable, Hashable, Sendable, Identifiable {
         case .local:
             if kind == LocalPingLog.chatKind { return "chat_bubble_outline" }
             return kind == "local_notice" ? "info_outline" : "error_outline"
-        case .ping: return category == .approval ? "verified_user_outlined" : notificationIconForKind(kind)
+        case .ping: return category == .approval ? "verified_user_outlined" : notificationIcon(kind: kind, meta: meta)
         }
     }
 
@@ -137,7 +139,7 @@ public struct InboxItem: Equatable, Hashable, Sendable, Identifiable {
         case (_, .approval): return .warning
         case (_, .review): return .accent
         case (_, .mention): return .info
-        default: return notificationToneForKind(kind)
+        default: return notificationTone(kind: kind, meta: meta)
         }
     }
 
@@ -149,7 +151,7 @@ public struct InboxItem: Equatable, Hashable, Sendable, Identifiable {
         case (_, .review): return "Review"
         case (_, .assigned): return "Assigned"
         case (_, .mention): return "Mention"
-        case (_, .ping): return ForkNotification(id: "", kind: kind, title: "").kindLabel
+        case (_, .ping): return ForkNotification(id: "", kind: kind, title: "", meta: meta).kindLabel
         }
     }
 }

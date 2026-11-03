@@ -6589,7 +6589,7 @@ void MainWindow::refreshNotificationsTable()
         const bool recovery = kind == QLatin1String("operational_alert") &&
                               webPingIsRecovery(alert);
         NotificationRow data;
-        data.type = recovery ? QStringLiteral("System recovered")
+        data.type = recovery ? QStringLiteral("Good news")
                              : webPingKindLabel(kind);
         data.kind = kind;
         data.title = (unread ? QString::fromUtf8("\xE2\x97\x8F ") : QString()) +

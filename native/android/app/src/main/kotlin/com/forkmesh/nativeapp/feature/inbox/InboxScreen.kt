@@ -41,6 +41,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.forkmesh.nativeapp.account.PingTone
 import com.forkmesh.nativeapp.account.notificationTimeLabel
 import com.forkmesh.nativeapp.feature.navigation.NavigationFeature
 import com.forkmesh.nativeapp.feature.navigation.RoutePage
@@ -328,7 +329,16 @@ private fun SwipeRow(item: InboxItem, onShow: () -> Unit, onOpen: () -> Unit, on
                     verticalAlignment = Alignment.Top,
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(FmSpace.x1)) {
-                        FmIcon(item.icon, size = 22.dp, tint = c.textSecondary)
+                        FmIcon(
+                            item.icon,
+                            size = 22.dp,
+                            tint = when (item.tone) {
+                                PingTone.Danger -> c.danger
+                                PingTone.Success -> c.success
+                                PingTone.Warning -> c.warning
+                                else -> c.textSecondary
+                            },
+                        )
                         if (instance != null) {
                             Box(Modifier.testTag("inbox-row-instance-logo")) { ProjectIcon(instance, size = 16.dp) }
                         }

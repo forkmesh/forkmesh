@@ -4,6 +4,7 @@ PUSH_DIRECT_MESSAGE_ICON = "\U0001F4E8"
 PUSH_DIRECT_START_ICON = "\U0001F44B"
 PUSH_CALL_ICON = "\U0001F4DE"
 PUSH_PULL_CONFLICT_ICON = "\u26A0\uFE0F"
+PUSH_GOOD_NEWS_ICON = "\u2705"
 PUSH_KIND_ICONS = {
     "mention": "\U0001F4E3",
     "hackathon_squad": "\U0001F3C1",
@@ -55,6 +56,7 @@ PUSH_KIND_ICONS = {
 PUSH_DESKTOP_CATEGORY_ICONS = {
     "agent-finished": "\U0001F916",
     "agent-failed": "\u26A0\uFE0F",
+    "ci-failed": "\u274C",
 }
 PUSH_DESKTOP_ALARM_ICONS = {
     "power": "\U0001FAAB",
@@ -66,6 +68,8 @@ def alert_icon(kind="", meta=None):
     kind = str(kind or "").strip()
     if kind == "pull_attention" and meta.get("reason") == "conflict":
         return PUSH_PULL_CONFLICT_ICON
+    if kind == "operational_alert" and meta.get("state") == "up":
+        return PUSH_GOOD_NEWS_ICON
     if kind == "desktop_ping":
         alarm = str(meta.get("alarm") or "").strip()
         if alarm in PUSH_DESKTOP_ALARM_ICONS:

@@ -93,7 +93,7 @@ def test_the_page_reuses_the_ping_renderer_and_the_live_load():
     assert "notificationRowHtml(item, {" in render
     assert "notificationRowHtml" not in PINGS_JS.replace("notificationRowHtml(item, {", "", 1)
     row = function_source(NETWORK_JS, "notificationRowHtml")
-    for helper in ("notificationLead(item)", "notificationIcon", "notificationAvatarHtml(item, lead)",
+    for helper in ("notificationLead(item)", "notificationItemIcon(item)", "notificationAvatarHtml(item, lead)",
                    "notificationInstanceLogoHtml()", "notificationTimeLabel(item.ts)",
                    "pingSettingsHref(item.kind)", "notificationDetailHtml(item)",
                    "notificationTargetHref(item)"):
@@ -165,3 +165,10 @@ def test_page_uses_theme_roles_and_existing_controls():
     assert "fm-blankslate" in PINGS_JS
     assert "Sign in to see your pings" in PINGS_JS
     assert "/login?next=" in PINGS_JS
+
+
+def test_good_news_pings_show_a_green_check():
+    good = function_source(NETWORK_JS, "pingIsGoodNews")
+    assert '=== "operational_alert"' in good and '=== "up"' in good
+    assert '"circle-check"' in function_source(NETWORK_JS, "notificationItemIcon")
+    assert '"text-success"' in function_source(NETWORK_JS, "notificationItemIconTone")

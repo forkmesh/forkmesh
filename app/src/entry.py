@@ -47584,7 +47584,7 @@ async def _enqueue_install_celebration_pings(env, fields, now):
             href="/world/", source="installer",
             dedupe="install-celebration:" + run,
             ts=now,
-            meta={"platform": platform},
+            meta={"platform": platform, "state": "up"},
         )
 
 
