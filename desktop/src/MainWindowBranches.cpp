@@ -697,10 +697,12 @@ static void applyDiffHealthMetric(QLabel *label,
                           "&nbsp;<span style='color:%1;font-weight:700'>%4</span>")
             .arg(accent, foreground, metric.label.toHtmlEscaped())
             .arg(metric.score));
-    label->setStyleSheet(Theme::remapSheet(
+    const QString sheet = Theme::remapSheet(
         QStringLiteral("QLabel{background:%1;border:1px solid %2;"
                        "border-radius:8px;padding:1px 6px;}")
-            .arg(background, border)));
+            .arg(background, border));
+    if (label->styleSheet() != sheet)
+        label->setStyleSheet(sheet);
     label->setProperty("metricKey", metric.key);
     label->setProperty("healthScore", metric.score);
     label->setProperty("healthTone", tone);

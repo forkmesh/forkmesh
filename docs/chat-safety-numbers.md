@@ -37,6 +37,13 @@ If nobody you know added a device, compare the number again before you share
 anything sensitive: a key nobody expected can mean someone is trying to read
 along.
 
+Updating or reinstalling an app does not count as a new device as long as it
+still has its account key (the node key). Its new chat key is signed with that
+key, so the other person's app swaps it in quietly: no approval, no "safety
+number changed" line, and a verified conversation stays verified. The digits
+themselves are recomputed, and both sides show the same new number. See
+[the protocol](app/chat-protocol-v3.md#same-node-successor).
+
 ## New devices wait for you
 
 In a direct message, the first device you see for a person is trusted. Every
@@ -53,10 +60,11 @@ Check the safety number, then approve or block." and a banner with
   older history.
 
 When several devices are waiting at once, for example after someone signs in
-on a new phone and a new browser, the iPhone shows one banner for all of them
-("2 new devices for Alex want to join this chat"), and Approve and Block act
-on all of them. The web shows one device at a time and says how many are
-waiting. On Android the single banner is still being ported.
+on a new phone and a new browser, every app shows one banner for all of them
+("2 new devices for Alex want to join this chat"), and **Approve all** and **Block all** act on all of them at once,
+so there is no queue of approvals to click through. The desktop's details
+dialog lists each device's state with one Approve and Block for the waiting
+ones.
 
 ## Reinstalling on iPhone
 

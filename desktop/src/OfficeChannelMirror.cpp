@@ -496,6 +496,10 @@ const RoomSeal &OfficeChannelMirror::directSealFor(Room &room)
         room.directSeal = RoomSeal(room.room, QStringLiteral("direct:") + room.id,
                                    RoomSeal::Policy::Strict, selfDirectAcct(), m_selfId,
                                    m_device);
+    if (m_signer && !room.directSeal.hasNodeSigner())
+        room.directSeal.setNodeSigner([signer = m_signer](const QByteArray &message) {
+            return forkmesh::chatv3::fromB64u(signer(message));
+        });
     room.directSeal.setParticipants(room.members);
     return room.directSeal;
 }

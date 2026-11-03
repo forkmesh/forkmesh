@@ -177,6 +177,42 @@ into an update) instead of a `500`. A shared sheet's add still answers
   `list_cannot_add`). New contacts join the list (and its pipeline); a stage
   must be one of the contact's pipeline stages. It never deletes a contact.
 
+### List cleanup
+
+**List cleanup** (web: under More, `?section=cleanup`; desktop: `⋯` > List
+cleanup, a window) lists the people who show on more than one list, so each
+can be kept on one. A person is the
+records that share a `personKeys` key (see
+[One person, several records](#one-person-several-records)), and their lists
+are the saved lists any of those records shows on (`crmContactInView`, the
+desktop's `contactInSheet`).
+Someone counts when they have several records on two or more lists, or one
+record on two or more plain lists. One record on a plain list and on its own
+pipeline's list does not count: every contact is in a pipeline, so that is
+the normal shape of an imported list.
+
+- Columns are Name, Email, Lists, Records, Last contacted and Last edit; a
+  header click sorts, again reverses. Lists sorts by the list names, so people
+  on the same lists sit together. A search narrows by name or email, the list
+  picker narrows to one list's people, and at most 500 rows are drawn.
+- Clicking a list on a row keeps the person on that list only, after a
+  confirm. The record already on that list (the newest edit when several are)
+  is kept and every other record is merged into it through
+  `POST /contacts/merge`, so their fields, tags, notes, email history and deck
+  links move over. Then one `POST /contacts/bulk` edit sets its lists
+  (`setViews`): a pipeline list also sets the pipeline (the stage carries over
+  when the pipeline has it, else the first); a plain list keeps the pipeline
+  list the record was put on, because the contact stays in its pipeline.
+- With a list picked, **Keep N on <list>** does the same for every person
+  shown (at most the 500 drawn), one after the other, with one confirm.
+- Moves wait until every contact has loaded (paging), so a person's records
+  are all known. A failure stops the run, reports how many finished and reads
+  the organization again.
+- The desktop window redraws whenever the contacts change. A list button's
+  click is queued, because the redraw that follows a move deletes the button.
+- It differs from **Possible duplicates**, which also matches names and
+  GitHub profiles and merges one pair at a time from the table.
+
 ## Importing
 
 - **CSV import**: up to 2000 rows per file; contacts are matched by email, so
@@ -223,7 +259,11 @@ into an update) instead of a `500`. A shared sheet's add still answers
   directory (`GET /api/accounts/users`), newest first, as the list **ForkMesh
   users**; **Refresh** re-imports and never removes. The same read supplies
   profile pictures for contacts whose address belongs to a ForkMesh user.
-- **Mastodon followers** (desktop).
+- **Mastodon followers** (desktop): **Import Mastodon followers…** reads an
+  account's public followers into the list **Followers of @user@host**
+  (`Name,Mastodon,Notes`). Once the organization's Mastodon account is saved
+  (Settings → Mastodon toots), its followers list keeps itself up to date:
+  see [Followers list](#followers-list).
 
 ## Sharing
 
@@ -746,6 +786,28 @@ marker with the rest. Tests: `tests/test_contact_made_marks_contacted.py`.
     the CRM" otherwise; owners and admins get "Mastodon post linked in the
     CRM". Switch it off with **Add people I mention on Mastodon** in the
     extension's popup.
+- <a id="followers-list"></a>**Followers list** (1.52.0): every toots check
+  that runs (not one skipped inside the ten minutes) first reads the saved
+  account's followers, newest first (`/api/v1/accounts/<id>/followers`, 80 a
+  page, following the `Link` header through `outbound_text`, at most 25 pages)
+  and puts each one not yet on the list **Followers of @user@host** on it: a
+  follower the CRM already knows by handle (`_contact_handles`) only joins the
+  list, so nothing it holds is overwritten; anyone else becomes a contact with
+  **Name**, **Mastodon** and a **Bio** column (source `mastodon`). The list is
+  the one saved as `followersList` in the Mastodon settings, else a list with
+  that name (so a desktop or CSV import of the same account is reused), else a
+  new one. Reading stops at the first page with nobody new, so a usual check
+  costs one request. The token is sent so an account that hides its followers
+  still sees its own; a token without `read:accounts` is answered 403, and the
+  read is retried without it, which works while the list is public. An empty
+  read from an account with followers is `mastodon_followers_hidden` in the
+  response's `followers` (with `followersError` in the settings); a follower
+  error never fails the toots check. New people ping the team ("N new Mastodon
+  followers added to the CRM"), add a `contacts.imported` entry to the list's
+  history and audit `crm.followers.sync`. Unfollowing removes no one. The sync
+  runs before the toots are matched, so a toot to a brand-new follower is
+  linked in the same check. Changing the saved account forgets `followersList`.
+  Code: `_sync_followers`, `_mastodon_page`, `_followers_view`.
 - **Unsent drafts**: a note paragraph starting `DRAFT, not sent.` (optional
   `Subject:` line). **Drafts (N)** lists them; sending or confirming a
   Mastodon reply rewrites the marker to `DRAFT, sent <date> by <name>.`.
@@ -1190,9 +1252,10 @@ raising, so the caller can keep the lead.
   list and pipeline (icon, name, share count, contact count, `⋯` menu;
   right-click, double-click to rename and drag to reorder as before), then
   **Shared with me**, then **More**: Inbox (Zoho boxes and email activity),
-  Outreach, Team leaderboard, **My Zoho Mail**, People with pictures, Import
-  CSV list and CRM settings. The open page fills the right; `?section=` is one
-  of `contacts`, `inbox`, `outreach`, `team`, `zoho`, and opening a list
+  Outreach, Team leaderboard, [List cleanup](#list-cleanup), **My Zoho Mail**,
+  People with pictures, Import CSV list and CRM settings. The open page fills
+  the right; `?section=` is one of `contacts`, `inbox`, `outreach`, `team`,
+  `cleanup`, `zoho`, and opening a list
   switches back to its contacts. Arrow keys move along the More pages. The
   column stacks above the page on phones. Controls use the compact sizes, the
   header's **Add contact** is the page's one `cta` button, and **Hide
@@ -1210,8 +1273,8 @@ raising, so the caller can keep the lead.
   of contacts with pictures, imports, and a rail count of never-contacted
   contacts. Each list is one line: icon, name, `<not contacted>/<total>` and
   who can open it. The header holds only the title, the organization, Import,
-  Mail, `⋯` (People, Pipelines, History, Extension), Settings, Refresh and
-  Add contact; a status message other than an error fades after six seconds. Data is read when the
+  Mail, `⋯` (People, Pipelines, History, List cleanup, Extension), Settings,
+  Refresh and Add contact; a status message other than an error fades after six seconds. Data is read when the
   CRM opens and on **Refresh**; nothing re-reads itself. Sorting and list
   membership are computed off the GUI thread.
 - **iPhone layout**: a section bar under the title holds **Home** (greeting,
@@ -1234,8 +1297,8 @@ raising, so the caller can keep the lead.
 - **iOS and Android**: under Business in the You hub; read `GET /api/crm` and
   `GET /api/crm/<org>?since=<revision>&tz=<minutes>` and offer the same
   editing, sharing, email, outreach, deck, drafts and Zoho Self Client
-  connection. GitHub, Mastodon and ForkMesh-user imports and Recent updates
-  are desktop/web only.
+  connection. GitHub, Mastodon and ForkMesh-user imports, Recent updates and
+  List cleanup are desktop/web only.
 - **Browser extension** (`marketplace/packages/browser-extension`): links Gmail,
   Zoho Mail and Mastodon conversations to contacts. This package pins the
   oldest compatible extension build (`CRM_EXTENSION_MINIMUM` in
