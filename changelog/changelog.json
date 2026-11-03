@@ -12,6 +12,7 @@
  ],
  "notes": [
   {"date": "2026-11-03", "area": "Highlights", "text": "Notes have a Live mode that edits the formatted note directly, a Follow option that keeps a collaborator's place in view as they edit, and a Chat tab beside Comments for talking with everyone in the note."},
+  {"date": "2026-11-03", "area": "Market", "text": "The CRM's Follow and Follow back buttons now use the account you signed in to in the Mastodon plugin when the organization has no Mastodon token saved, instead of asking you to log in again."},
   {"date": "2026-11-03", "area": "Market", "text": "Silent Speech, a new phone plugin: teach it a few words, mouth them without a sound, and your AirPods or head-tracking earbuds let the phone write or say them."},
   {"date": "2026-11-03", "area": "Market", "text": "On the CRM's Mastodon list, every contact the organization's Mastodon account does not follow yet now gets a Follow button (Follow back for followers), and a warning at the top says to log in to Mastodon when no account is connected."},
   {"date": "2026-11-03", "area": "Other improvements", "text": "Recovery and other good-news pings, such as a check passing again or a finished deploy, now show a green check labelled Good news instead of a red Alert, and failed runs show in red."},

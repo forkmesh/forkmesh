@@ -13,7 +13,8 @@ const exported = [
   "crmPictureFor", "crmPictureCache", "crmPictures", "crmWithContactEdit", "crmPatchContacts",
   "crmMarkContacted", "crmSelection", "crmSelectContact", "crmMenuSelection", "crmSort", "crmFilteredContacts",
   "crmVisibleColumns", "crmColumnLabel", "crmDeleteColumnItems", "crmListColumns",
-  "crmFollowBack", "crmFollowBackButton",
+  "crmFollowBack", "crmFollowBackButton", "crmFollowAccount", "crmMastodonPluginFollowBack",
+  "crmMastodonPluginFollow",
 ];
 const page = new Function(
   "$", "$$", "session", "escapeHtml", "relativeTimeLabel",
@@ -324,6 +325,39 @@ same(page.crmCustomColumnLabel("deal_size"), "Deal size", "the key reads back as
   check(loggedOut.includes(`type="button" disabled`) && loggedOut.includes(">Follow</button>"),
         "without a logged-in Mastodon account the button shows but is disabled");
   check(loggedOut.includes("Log in first"), "its tooltip says to log in first");
+
+  const stored = new Map();
+  globalThis.sessionStorage = { getItem: (key) => stored.get(key) ?? null };
+  stored.set("forkmesh.mastodon.session.v1", JSON.stringify({ instance: "https://hachyderm.io", token: "t0k" }));
+  const calls = [];
+  const reply = (body, link = "") => ({ ok: true, status: 200, json: async () => body,
+                                        headers: { get: (name) => (name === "link" ? link : null) } });
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, method: options.method, auth: options.headers.authorization });
+    if (url.endsWith("/verify_credentials")) return reply({ id: "7", acct: "Me", followers_count: 3 });
+    if (url.endsWith("/followers?limit=80")) return reply([{ acct: "grace@fosstodon.org" }, { acct: "local" }],
+                                                          '<https://hachyderm.io/api/v1/accounts/7/followers?max_id=2>; rel="next"');
+    if (url.includes("/followers?max_id=2")) return reply([{ acct: "ada@mastodon.social" }]);
+    if (url.endsWith("/following?limit=80")) return reply([{ acct: "ada@mastodon.social" }]);
+    if (url.includes("/api/v2/search?")) return reply({ accounts: [{ id: "42", acct: "grace@fosstodon.org" }] });
+    if (url.endsWith("/accounts/42/follow")) return reply({ following: true });
+    return { ok: false, status: 404, json: async () => ({}), headers: { get: () => null } };
+  };
+  const plugin = page.crmFollowAccount();
+  check(plugin.connected && plugin.plugin, "the Mastodon plugin's sign-in logs the list in when the organization has none");
+  check(!page.crmFollowBackButton(follower).includes(`type="button" disabled`),
+        "so Follow is enabled without an organization token");
+  const lists = await page.crmMastodonPluginFollowBack(plugin.session);
+  same(lists.account, "me@hachyderm.io", "it reads the plugin's own account");
+  same(lists.handles.sort(), ["grace@fosstodon.org", "local@hachyderm.io"], "followers it does not follow, across pages");
+  same(lists.following, ["ada@mastodon.social"], "and the accounts it follows");
+  check(calls.every((call) => call.url.startsWith("https://hachyderm.io/") && call.auth === "Bearer t0k"),
+        "every call goes to the plugin's instance with its token");
+  same(await page.crmMastodonPluginFollow(plugin.session, "grace@fosstodon.org"), { following: true, requested: false },
+       "Follow resolves the handle on the plugin's instance and follows it");
+  same(calls.at(-1).method, "POST", "the follow is a POST");
+  view.settings = { ...view.settings, mastodon: { account: "forkmesh@mastodon.social", connected: true } };
+  check(!page.crmFollowAccount().plugin, "an organization token still wins over the plugin's sign-in");
 
   if (failures) {
     console.error(`${failures} check(s) failed`);

@@ -6822,7 +6822,14 @@ window.ForkMeshDashboard.registerPage("crm", ({
   const CRM_NEXT_UPCOMING = 5;
   const CRM_NEXT_RENDER_DELAY_MS = 400;
   const crmMastodonLatest = { latest: new Map(), pending: new Set(), queue: [], backoff: new Map(), ids: new Map(), renderTimer: 0 };
-  const crmFollowBack = { organization: "", account: "", handles: new Set(), followed: new Set(), following: new Set(), error: "", loadedAt: 0, loading: false };
+  const crmFollowBack = { organization: "", account: "", pluginAccount: "", handles: new Set(), followed: new Set(), following: new Set(), error: "", loadedAt: 0, loading: false };
+  const CRM_MASTODON_SESSION = "forkmesh.mastodon.session.v1";
+  const CRM_MASTODON_FOLLOW_PAGES = 25;
+  const CRM_MASTODON_PLUGIN_ERRORS = {
+    mastodon_token_rejected: "Mastodon rejected the Mastodon plugin's sign-in; sign in there again",
+    mastodon_follow_not_allowed: "the Mastodon plugin's sign-in cannot follow accounts; sign in there again",
+    mastodon_followers_hidden: "Mastodon did not list the account's followers",
+  };
   const CRM_MASTODON_FOLLOW_ERRORS = {
     mastodon_not_connected: "connect the Mastodon account in CRM settings first",
     mastodon_follow_not_allowed: "the saved Mastodon token cannot follow accounts; save one with the write:follows scope",
@@ -6945,13 +6952,91 @@ window.ForkMeshDashboard.registerPage("crm", ({
   }
 
   function crmMastodonFollowError(error) {
-    return CRM_MASTODON_FOLLOW_ERRORS[error?.payload?.error] || error?.message || "unknown error";
+    const code = error?.payload?.error;
+    return (crmMastodonPluginSession() && CRM_MASTODON_PLUGIN_ERRORS[code]) || CRM_MASTODON_FOLLOW_ERRORS[code] || error?.message || "unknown error";
+  }
+
+  function crmMastodonPluginSession() {
+    if (state.crmView.settings?.mastodon?.connected) return null;
+    let session = null;
+    try { session = JSON.parse(sessionStorage.getItem(CRM_MASTODON_SESSION) || "null"); } catch (_) { return null; }
+    let instance = "";
+    try { const url = new URL(String(session?.instance || "")); instance = url.protocol === "https:" && url.pathname === "/" && !url.username ? url.origin : ""; } catch (_) { return null; }
+    return instance && typeof session?.token === "string" && session.token ? { instance, token: session.token } : null;
+  }
+
+  function crmFollowAccount() {
+    const mastodon = state.crmView.settings?.mastodon || {};
+    if (mastodon.connected) return { connected: true, plugin: false, account: crmMastodonKey(mastodon.account).toLowerCase() };
+    const session = crmMastodonPluginSession();
+    const known = session && crmFollowBack.account === `plugin:${session.instance}` ? crmFollowBack.pluginAccount : "";
+    return session ? { connected: true, plugin: true, session, account: known } : { connected: false, plugin: false, account: crmMastodonKey(mastodon.account).toLowerCase() };
+  }
+
+  async function crmMastodonPluginCall(session, url, method = "GET", forbidden = "mastodon_token_rejected") {
+    let response;
+    try {
+      response = await fetch(url, { method, headers: { authorization: `Bearer ${session.token}`, accept: "application/json" } });
+    } catch (_) {
+      throw Object.assign(new Error("Mastodon could not be reached"), { payload: { error: "mastodon_unavailable" } });
+    }
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error = response.status === 401 ? "mastodon_token_rejected" : response.status === 403 ? forbidden : "mastodon_unavailable";
+      throw Object.assign(new Error(`Mastodon returned ${response.status}`), { payload: { error } });
+    }
+    return { payload, next: crmMastodonNext(response.headers.get("link"), new URL(session.instance).host) };
+  }
+
+  function crmMastodonAcctKey(acct, home) {
+    const value = String(acct || "");
+    return value ? crmMastodonKey(value.includes("@") ? value : `${value}@${home}`).toLowerCase() : "";
+  }
+
+  async function crmMastodonPluginHandles(session, url) {
+    const home = new URL(session.instance).host;
+    const found = new Set();
+    for (let page = 0; url && page < CRM_MASTODON_FOLLOW_PAGES; page += 1) {
+      const { payload, next } = await crmMastodonPluginCall(session, url);
+      for (const item of Array.isArray(payload) ? payload : []) {
+        const key = crmMastodonAcctKey(item?.acct, home);
+        if (key) found.add(key);
+      }
+      url = next;
+    }
+    return found;
+  }
+
+  async function crmMastodonPluginFollowBack(session) {
+    const { payload: self } = await crmMastodonPluginCall(session, `${session.instance}/api/v1/accounts/verify_credentials`);
+    const id = String(self?.id || "");
+    const account = crmMastodonAcctKey(self?.acct, new URL(session.instance).host);
+    if (!id || !account) throw Object.assign(new Error("Mastodon did not name the account"), { payload: { error: "mastodon_unavailable" } });
+    const base = `${session.instance}/api/v1/accounts/${encodeURIComponent(id)}`;
+    const followers = await crmMastodonPluginHandles(session, `${base}/followers?limit=80`);
+    const following = await crmMastodonPluginHandles(session, `${base}/following?limit=80`);
+    return {
+      account,
+      handles: [...followers].filter((handle) => handle !== account && !following.has(handle)),
+      following: [...following],
+      warning: !followers.size && Number(self?.followers_count) > 0 ? "mastodon_followers_hidden" : "",
+    };
+  }
+
+  async function crmMastodonPluginFollow(session, key) {
+    const query = new URLSearchParams({ q: `@${key}`, type: "accounts", resolve: "true", limit: "5" });
+    const { payload } = await crmMastodonPluginCall(session, `${session.instance}/api/v2/search?${query}`);
+    const home = new URL(session.instance).host;
+    const target = (payload?.accounts || []).find((item) => crmMastodonAcctKey(item?.acct, home) === key);
+    if (!target?.id) throw Object.assign(new Error("Mastodon does not know that account"), { payload: { error: "mastodon_account_not_found" } });
+    const { payload: relationship } = await crmMastodonPluginCall(session, `${session.instance}/api/v1/accounts/${encodeURIComponent(target.id)}/follow`, "POST", "mastodon_follow_not_allowed");
+    return { following: Boolean(relationship?.following), requested: Boolean(relationship?.requested) };
   }
 
   function crmFollowBackKey(contact) {
     if (crmActiveView()?.network !== "mastodon") return "";
     const key = crmMastodonKey(contact?.mastodon).toLowerCase();
-    const own = crmMastodonKey(state.crmView.settings?.mastodon?.account).toLowerCase();
+    const own = crmFollowAccount().account;
     const known = crmFollowBack.organization === state.crmView.organization;
     return key && key !== own && !(known && crmFollowBack.followed.has(key)) ? key : "";
   }
@@ -6959,40 +7044,43 @@ window.ForkMeshDashboard.registerPage("crm", ({
   function crmFollowBackButton(contact) {
     const key = crmFollowBackKey(contact);
     if (!key) return "";
-    const connected = Boolean(state.crmView.settings?.mastodon?.connected);
+    const follower = crmFollowAccount();
+    const connected = follower.connected;
     const back = connected && crmFollowBack.organization === state.crmView.organization && crmFollowBack.handles.has(key);
-    const account = crmMastodonKey(state.crmView.settings?.mastodon?.account) || "the organization's account";
-    const title = !connected ? `Log in first: connect the organization's Mastodon account in CRM settings to follow @${key} from it.`
-      : back ? `@${key} follows @${account}. Follow them back from @${account}.` : `Follow @${key} from @${account}.`;
+    const account = follower.account ? `@${follower.account}` : follower.plugin ? "your Mastodon plugin account" : "the organization's account";
+    const title = !connected ? `Log in first: sign in in the Mastodon plugin, or connect the organization's Mastodon account in CRM settings, to follow @${key}.`
+      : back ? `@${key} follows ${account}. Follow them back from ${account}.` : `Follow @${key} from ${account}.`;
     return `<button data-crm-follow-back="${escapeHtml(key)}" type="button" ${!connected || crmFollowBack.following.has(key) ? "disabled" : ""} title="${escapeHtml(title)}" class="whitespace-nowrap rounded bg-primary px-2 py-1 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-45">${back ? "Follow back" : "Follow"}</button>`;
   }
 
   function renderCrmMastodonBanner() {
     const banner = $(`[data-crm-mastodon-banner]`); if (!banner) return;
-    const mastodon = state.crmView.settings?.mastodon || {};
+    const follower = crmFollowAccount();
     const error = crmFollowBack.organization === state.crmView.organization ? crmFollowBack.error : "";
-    const show = crmActiveView()?.network === "mastodon" && (!mastodon.connected || Boolean(error));
+    const show = crmActiveView()?.network === "mastodon" && (!follower.connected || Boolean(error));
     banner.hidden = !show;
     if (!show) return;
     const manages = Boolean(state.crmView.canManageSettings);
-    const account = crmMastodonKey(mastodon.account);
-    const retry = Boolean(mastodon.connected) && !["mastodon_follow_not_allowed", "mastodon_token_rejected", "mastodon_followers_hidden"].includes(error);
-    $(`[data-crm-mastodon-banner-title]`).textContent = !mastodon.connected ? "Mastodon: not logged in"
+    const account = follower.account || (follower.plugin ? "your Mastodon plugin account" : "");
+    const retry = follower.connected && !["mastodon_follow_not_allowed", "mastodon_token_rejected", "mastodon_followers_hidden"].includes(error);
+    $(`[data-crm-mastodon-banner-title]`).textContent = !follower.connected ? "Mastodon: not logged in"
       : error === "mastodon_followers_hidden" ? "Mastodon: followers hidden, so Follow back cannot be shown"
-      : `Mastodon: could not check who @${account} follows`;
-    $(`[data-crm-mastodon-banner-text]`).textContent = mastodon.connected
-      ? CRM_MASTODON_FOLLOW_ERRORS[error] || error
-      : `Log in to follow people from this list: ${account ? `@${account} has no access token saved; save one` : "save the organization's Mastodon account and an access token"} with the read:accounts and write:follows scopes in CRM settings.${manages ? "" : " Ask an owner or admin of the organization to do it."}`;
+      : `Mastodon: could not check who ${follower.account ? `@${account}` : account} follows`;
+    $(`[data-crm-mastodon-banner-text]`).textContent = follower.connected
+      ? (follower.plugin && CRM_MASTODON_PLUGIN_ERRORS[error]) || CRM_MASTODON_FOLLOW_ERRORS[error] || error
+      : `Log in to follow people from this list: sign in in the Mastodon plugin, or ${account ? `save an access token for @${account}` : "save the organization's Mastodon account and an access token"} with the read:accounts and write:follows scopes in CRM settings.${manages ? "" : " Only an owner or admin of the organization can change CRM settings."}`;
     const action = $(`[data-crm-mastodon-banner-action]`);
     action.dataset.retry = retry ? "1" : "";
-    action.textContent = retry ? "Try again" : mastodon.connected ? "Open CRM settings" : "Log in to Mastodon";
-    action.hidden = !retry && !manages;
+    action.textContent = retry ? "Try again" : follower.connected ? "Open CRM settings" : "Log in to Mastodon";
+    action.hidden = !retry && (!manages || follower.plugin);
   }
 
   async function loadCrmFollowBack() {
     const organization = state.crmView.organization;
-    const account = state.crmView.settings?.mastodon?.connected ? crmMastodonKey(state.crmView.settings.mastodon.account) : "";
+    const follower = crmFollowAccount();
+    const account = follower.plugin ? `plugin:${follower.session.instance}` : follower.connected ? follower.account : "";
     if (!crmFollowBack.loading && (organization !== crmFollowBack.organization || account !== crmFollowBack.account)) {
+      crmFollowBack.pluginAccount = "";
       crmFollowBack.handles = new Set();
       crmFollowBack.followed = new Set();
       crmFollowBack.error = "";
@@ -7005,8 +7093,10 @@ window.ForkMeshDashboard.registerPage("crm", ({
     crmFollowBack.loading = true;
     crmFollowBack.loadedAt = Date.now();
     try {
-      const payload = await crmRequest(crmOrganizationPath("/mastodon/follow-back"));
-      if (organization !== state.crmView.organization) { crmFollowBack.loadedAt = 0; return; }
+      const payload = follower.plugin ? await crmMastodonPluginFollowBack(follower.session)
+        : await crmRequest(crmOrganizationPath("/mastodon/follow-back"));
+      if (organization !== state.crmView.organization || account !== crmFollowBack.account) { crmFollowBack.loadedAt = 0; return; }
+      if (follower.plugin) crmFollowBack.pluginAccount = payload.account;
       const keys = (list) => new Set((list || []).map((handle) => crmMastodonKey(handle).toLowerCase()).filter(Boolean));
       crmFollowBack.handles = keys(payload.handles);
       crmFollowBack.followed = keys(payload.following);
@@ -7030,7 +7120,9 @@ window.ForkMeshDashboard.registerPage("crm", ({
     renderCrmContacts();
     crmMessage("notice", `Following @${key} back…`);
     try {
-      const payload = await crmRequest(crmOrganizationPath("/mastodon/follow"), "POST", { handle: key });
+      const follower = crmFollowAccount();
+      const payload = follower.plugin ? await crmMastodonPluginFollow(follower.session, key)
+        : await crmRequest(crmOrganizationPath("/mastodon/follow"), "POST", { handle: key });
       crmFollowBack.handles.delete(key);
       crmFollowBack.followed.add(key);
       crmMessage("notice", payload.requested && !payload.following
