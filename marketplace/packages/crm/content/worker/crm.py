@@ -1299,7 +1299,7 @@ def _route(path):
         r"(?:/(contacts|emails|mail|settings|views|outreach|decks|zoho|boxes)"
         r"(?:/([0-9a-f]{32}|import|grants|export|send|auto|rate|lookup|link|copy|order|team|bulk|merge|sync"
         r"|move"
-        r"|toots|toot"
+        r"|toots|toot|pixel"
         r"|duplicates|evidence|activity|note"
         r"|connect|exchange"
         r"|delete-column"
@@ -5935,7 +5935,12 @@ def _link_details(data):
     return details
 
 
-async def _lookup_contact(runtime, org_bi, data):
+async def _link_lists(runtime, org_bi, account_bi, actor, role):
+    return [{"id": view["id"], "name": view["name"], "flow": view["flow"]}
+            for view in await _views(runtime, org_bi, account_bi, actor, role)]
+
+
+async def _lookup_contact(runtime, org_bi, data, account_bi="", actor="", role=""):
     """The box behind an address or a fediverse handle, with the messages
     already tied to it. A POST so neither lands in a URL or a log line. The
     name and details on the message find a box that has neither yet."""
@@ -5946,17 +5951,18 @@ async def _lookup_contact(runtime, org_bi, data):
     # The organization's pipelines ride along so the extension can offer
     # "add to pipeline" without a second round trip.
     flows = (await _settings(runtime, org_bi))["flows"]
+    lists = await _link_lists(runtime, org_bi, account_bi, actor, role)
     row, matched_by = await _matching_box(runtime, org_bi, {
         **_link_details(data), "email": email, "handle": handle,
         "name": data.get("name")})
     if not row:
         return _response(runtime, {"ok": True, "contact": None, "emails": [],
-                                   "flows": flows})
+                                   "flows": flows, "lists": lists})
     contact = await _contact_project(runtime, row)
     return _response(runtime, {
         "ok": True, "contact": contact, "matchedBy": matched_by,
         "emails": await _contact_emails(runtime, org_bi, contact["id"]),
-        "flows": flows,
+        "flows": flows, "lists": lists,
     })
 
 
@@ -6000,8 +6006,67 @@ def _pipeline_choice(flows, data, contact_data):
     return flow_id, stage, ""
 
 
+async def _email_pixel(runtime):
+    token = await _track_token(runtime, runtime.new_id())
+    return _response(runtime, {
+        "ok": True, "token": token,
+        "url": "%s/api/crm/-/t/o/%s.png" % (_track_origin(runtime), token)})
+
+
+async def _sender_net(runtime):
+    visitor = getattr(runtime, "request_visitor", None)
+    ip = _public_ip((visitor() if visitor else {}).get("ip"))
+    if not ip:
+        return ""
+    prefix = 64 if ipaddress.ip_address(ip).version == 6 else 32
+    network = ipaddress.ip_network("%s/%d" % (ip, prefix), strict=False)
+    return (await runtime.blind("crm-sender-net:%s" % network))[:24]
+
+
+async def _adopted_track_id(runtime, token):
+    send_id = str(token or "").partition(".")[0]
+    if not CONTACT_ID_RE.fullmatch(send_id) or not hmac.compare_digest(
+            await _track_token(runtime, send_id), str(token)):
+        return ""
+    taken = await runtime.d1_first(
+        "SELECT send_id FROM crm_email_sends WHERE send_id=?", send_id)
+    return "" if taken else send_id
+
+
+async def _record_unknown_send(runtime, org_bi, org_name, account_bi, actor, data):
+    send_id = await _adopted_track_id(runtime, data.get("trackToken"))
+    recipient = _email(data.get("contactEmail"))
+    message_id = _clean(data.get("messageId"), 200)
+    if not send_id or not recipient or not message_id:
+        return None
+    existing, envelope = await _linked_email_row(
+        runtime, org_bi, _email_provider(data.get("provider")), message_id)
+    if existing:
+        return None
+    link = {**_email_link_fields(data, envelope), "direction": "outbound"}
+    now = runtime.now()
+    sent_at = max(0, _integer(data.get("sentAt"), now)) or now
+    envelope = {
+        "to": recipient, "fromEmail": link["mailbox"], "fromName": "",
+        "subject": _clean(data.get("subject"), 300), "text": "", "html": "",
+        "providerUrl": _https(data.get("providerUrl")), "error": "",
+        "tracked": True, "senderNet": await _sender_net(runtime), **link,
+    }
+    await runtime.d1_run(
+        "INSERT INTO crm_email_sends(send_id,org_bi,org_name,contact_id,"
+        "sender_bi,sender_name,transport,status,external_id,created_at,"
+        "sent_at,status_at,data) VALUES(?,?,?,NULL,?,?,?,?,?,?,?,?,?)",
+        send_id, org_bi, org_name, account_bi, actor, "external", "external",
+        message_id, now, sent_at, now, await runtime.seal(envelope))
+    await runtime.audit(actor, "crm.email.track", "crm_email_send", send_id,
+                        details={"contact": False})
+    return {"ok": True, "contactCreated": False, "matchedBy": "", "relinked": False,
+            "contact": None, "emails": [],
+            "email": await _email_project(runtime, await _email_row(runtime, org_bi, send_id))}
+
+
 async def _link_message(runtime, org_bi, org_name, account_bi, actor, data,
-                        quiet=False):
+                        quiet=False, list_id=""):
     """Tie one open message to a contact: a Gmail or Zoho Mail email, or a
     Mastodon conversation, which names its people by handle instead of by
     address. The contact is matched by the other party's address or handle and
@@ -6020,6 +6085,7 @@ async def _link_message(runtime, org_bi, org_name, account_bi, actor, data,
         provider_url = _gmail_url(message_id, data.get("accountIndex"))
     existing, envelope = await _linked_email_row(runtime, org_bi, provider,
                                                  message_id)
+    track_id = "" if existing else await _adopted_track_id(runtime, data.get("trackToken"))
     link = _email_link_fields(data, envelope)
     counterpart = _email(data.get("contactEmail"))
     if data.get("contactEmail") and not counterpart:
@@ -6070,6 +6136,7 @@ async def _link_message(runtime, org_bi, org_name, account_bi, actor, data,
             "source": ("mastodon conversation" if provider == "mastodon"
                        else provider + " email"),
             **({"flow": flow_id, "stage": stage} if flow_id else {}),
+            **({"views": [list_id]} if list_id else {}),
         })
         contact_id = runtime.new_id()
         if not await _insert_contact(
@@ -6119,6 +6186,7 @@ async def _link_message(runtime, org_bi, org_name, account_bi, actor, data,
         "html": "",
         "providerUrl": provider_url or str(envelope.get("providerUrl") or ""),
         "error": "",
+        **({"tracked": True, "senderNet": await _sender_net(runtime)} if track_id else {}),
         **link,
     })
     if existing:
@@ -6129,7 +6197,7 @@ async def _link_message(runtime, org_bi, org_name, account_bi, actor, data,
             contact_id, sent_at, now, await runtime.seal(envelope), org_bi, send_id,
         )
     else:
-        send_id = runtime.new_id()
+        send_id = track_id or runtime.new_id()
         await runtime.d1_run(
             "INSERT INTO crm_email_sends(send_id,org_bi,org_name,contact_id,"
             "sender_bi,sender_name,transport,status,external_id,created_at,"
@@ -6153,6 +6221,9 @@ async def _link_message(runtime, org_bi, org_name, account_bi, actor, data,
     if flow_id and (contact_data.get("flow"), contact_data.get("stage")) != (flow_id, stage):
         contact_data["flow"], contact_data["stage"] = flow_id, stage
         changed = True
+    listed = bool(list_id) and list_id not in _view_ids(contact_data.get("views"))
+    if listed:
+        contact_data["views"], changed = _view_ids([list_id], contact_data.get("views")), True
     advanced = "" if flow_id or link["direction"] != "outbound" else _contacted_stage(
         contact_data, flows)
     if advanced:
@@ -6168,14 +6239,14 @@ async def _link_message(runtime, org_bi, org_name, account_bi, actor, data,
         await runtime.d1_run(
             "UPDATE crm_contacts SET email_bi=? WHERE org_bi=? AND contact_id=?",
             await _unique_email_bi(runtime, org_bi, counterpart), org_bi, contact_id)
-    if advanced:
+    if advanced or listed:
         await _record_contact_changes(runtime, org_bi, account_bi, actor,
                                       [(before, contact_data)])
     await runtime.audit(
         actor, "crm.email.link", "crm_email_send", send_id,
         details={"provider": provider, "contactCreated": contact_created,
                  "relinked": bool(existing), "pipeline": bool(flow_id),
-                 "stageAdvanced": bool(advanced)},
+                 "list": bool(list_id), "stageAdvanced": bool(advanced)},
     )
     if not existing and not quiet:
         await _celebrate_tracked_email(runtime, actor, send_id,
@@ -6196,9 +6267,26 @@ async def _link_message(runtime, org_bi, org_name, account_bi, actor, data,
     }, 200 if existing else 201)
 
 
-async def _link_email(runtime, org_bi, org_name, account_bi, actor, data):
+async def _link_email(runtime, org_bi, org_name, account_bi, actor, data, role=""):
+    lists = await _link_lists(runtime, org_bi, account_bi, actor, role)
+    list_id = _clean(data.get("list"), 64).lower()
+    chosen = next((item for item in lists if item["id"] == list_id), None) if list_id else None
+    if list_id and not chosen:
+        return _response(runtime, {"error": "list_not_found"}, 404)
+    if chosen:
+        flows = (await _settings(runtime, org_bi))["flows"]
+        data = {key: value for key, value in data.items() if key not in ("flow", "stage")}
+        if any(flow["id"] == chosen["flow"] for flow in flows):
+            data["flow"] = chosen["flow"]
     payload, status = await _link_message(
-        runtime, org_bi, org_name, account_bi, actor, data)
+        runtime, org_bi, org_name, account_bi, actor, data,
+        list_id=chosen["id"] if chosen else "")
+    if payload.get("error") == "contact_not_found" and data.get("keepWithoutContact"):
+        recorded = await _record_unknown_send(runtime, org_bi, org_name, account_bi, actor, data)
+        if recorded:
+            payload, status = recorded, 201
+    if payload.get("ok"):
+        payload["lists"] = lists
     return _response(runtime, payload, status)
 
 
@@ -8318,6 +8406,12 @@ def _track_miss(runtime, action):
     return _response(runtime, {"error": "link_not_found"}, 404)
 
 
+async def _sender_view(runtime, row):
+    data = await runtime.open(row.get("data"))
+    stored = str((data if isinstance(data, dict) else {}).get("senderNet") or "")
+    return bool(stored) and hmac.compare_digest(stored, await _sender_net(runtime))
+
+
 async def _track(runtime, action, token):
     send_id, _, rest = token.partition(".")
     signature, _, mark = rest.partition(".")
@@ -8343,7 +8437,7 @@ async def _track(runtime, action, token):
         "SELECT org_bi,contact_id,sender_name,sent_at,data FROM crm_email_sends "
         "WHERE send_id=?", send_id)
     now = runtime.now()
-    if row and now - _integer(row.get("sent_at")) >= TRACK_QUIET_MS:
+    if row and now - _integer(row.get("sent_at")) >= TRACK_QUIET_MS and not await _sender_view(runtime, row):
         visitor = getattr(runtime, "request_visitor", None)
         await _record_track(runtime, row, send_id, "open" if action == "o" else "click", now,
                             visitor() if visitor else {})
@@ -9201,6 +9295,8 @@ async def handle(runtime, path):
         allowed = ("GET", "POST")
     elif resource == "emails" and item in ("send", "link", "toot", "toots"):
         allowed = ("POST",)
+    elif resource == "emails" and item == "pixel":
+        allowed = ("POST",)
     elif resource == "mail" and item == "import":
         allowed = ("POST",)
     elif resource == "zoho":
@@ -9441,7 +9537,7 @@ async def _organization_resource(runtime, method, org_bi, org_name, role, accoun
             return await _record_account_evidence(
                 runtime, org_bi, org_name, account_bi, actor, role, data)
         if item == "lookup":
-            return await _lookup_contact(runtime, org_bi, data)
+            return await _lookup_contact(runtime, org_bi, data, account_bi, actor, role)
         if item == "note":
             return await _add_contact_note(
                 runtime, org_bi, org_name, account_bi, actor, data)
@@ -9510,7 +9606,9 @@ async def _organization_resource(runtime, method, org_bi, org_name, role, accoun
         return await _send_mailtrap(runtime, org_bi, org_name, account_bi, actor, data,
                                     manager=role in MANAGER_ROLES, role=role)
     if item == "link":
-        return await _link_email(runtime, org_bi, org_name, account_bi, actor, data)
+        return await _link_email(runtime, org_bi, org_name, account_bi, actor, data, role)
+    if item == "pixel":
+        return await _email_pixel(runtime)
     if item == "toot":
         return await _log_toot(runtime, org_bi, org_name, account_bi, actor, data)
     if item == "toots":

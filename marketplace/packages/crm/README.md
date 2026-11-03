@@ -30,7 +30,8 @@ generic package sockets and generated registries.
   that pipeline and the list is the first of the pipeline's lists (in the
   organization's order) among the lists it was put on; a contact on none of
   them shows on the pipeline's first list. The worker (`_contact_in_view`),
-  the web page (`crmContactInView`) and the desktop (`contactInSheet`) apply
+  the web page (`crmContactInView`), the desktop (`contactInSheet`) and the
+  browser extension's panel (`contactLists`) apply
   the same rule. Renaming a pipeline never moves contacts; removing one leaves
   its contacts without a pipeline.
 - **Pipeline types** (`FLOW_ICONS`, drawn by `CRM_FLOW_ICONS` on the web and
@@ -683,6 +684,24 @@ marker with the rest. Tests: `tests/test_contact_made_marks_contacted.py`.
   bounce, open and click events update `crm_email_sends`
   (`mailtrap_webhook_event`), and a status never moves backwards. Mail ends
   with a small tracked footer image.
+- The extension saves a contact to a list rather than a pipeline (1.50.0):
+  `POST /contacts/lookup` and `POST /emails/link` answer with `lists` (the
+  sheets the account can read: `id`, `name`, `flow`), and a link carrying
+  `list` adds the contact to that sheet (`views`, logged as a list change);
+  a sheet bound to a pipeline also sets the contact's `flow`, keeping a stage
+  that pipeline has. Any `flow` and `stage` on the same request are ignored.
+  A list the account cannot read answers `404 list_not_found`.
+- **Open tracking for extension sends** (1.50.0): `POST /emails/pixel` returns
+  a signed open-image address (`token` = `<id>.<blind sig>`, `url` under
+  `/api/crm/-/t/o/`), storing nothing. A link carrying that `trackToken` uses
+  its id as the email's id (once; a forged or used token is ignored) and marks
+  the email `tracked`, so the existing open route records it and pings the
+  sender on the first open. With `keepWithoutContact` and a valid token, a send
+  whose recipient has no record is kept with no contact (the ping names the
+  address). The link also stores a blinded network of the sender
+  (`senderNet`: the /32 or /64 of the linking request); opens from it are the
+  sender viewing their own copy and are not counted. Teammates on the same
+  network as the sender are missed too; that trade is deliberate.
 - Emails linked by the browser extension (`POST /api/crm/<org>/emails/link`),
   recorded by hand (`POST /emails`) or sent (`POST /emails/send`) update the
   contact's last-contacted date. A newly tracked email files a

@@ -225,7 +225,7 @@
     if (embedded) element.classList.add("embedded");
     const ui = {
       open: embedded, busy: false, looking: false, status: null, message: null, contact: null,
-      emails: [], flows: [], flow: "", stage: "", detailsOpen: false,
+      emails: [], flows: [], lists: [], list: "", detailsOpen: false,
       error: "", notice: "",
       directory: null, choosing: false, query: "", picked: null,
       // How the CRM found the contact's record when it was not by this very
@@ -266,21 +266,28 @@
       return messageId ? ui.emails.find((email) => email.externalId === messageId && email.provider === provider) || null : null;
     }
 
-    // The pipeline and stage the selects show: what was picked, else the
-    // contact's own, else the first. A pick sticks across emails of new
-    // contacts so a batch of outreach lands in one stage.
-    function pipelineChoice() {
-      const flows = ui.flows || [];
-      const flow = flows.find((item) => item.id === ui.flow) || flows[0];
-      if (!flow) return null;
-      const stages = flow.stages || [];
-      return { flow, stage: stages.includes(ui.stage) ? ui.stage : stages[0] || "" };
+    // The list the select shows: what was picked, else the contact's own,
+    // else the first. A pick sticks across emails of new contacts so a batch
+    // of outreach lands on one list.
+    function listChoice() {
+      const lists = ui.lists || [];
+      return lists.find((item) => item.id === ui.list) || lists[0] || null;
+    }
+
+    function contactLists(contact) {
+      const lists = ui.lists || [];
+      const views = contact?.views || [];
+      return lists.filter((list) => {
+        if (!list.flow) return views.includes(list.id);
+        if (contact?.flow !== list.flow) return false;
+        const same = lists.filter((item) => item.flow === list.flow).map((item) => item.id);
+        return (same.find((id) => views.includes(id)) || same[0]) === list.id;
+      });
     }
 
     function followContact(contact) {
-      if (!contact) return;
-      ui.flow = contact.flow || ui.flow;
-      ui.stage = contact.stage || ui.stage;
+      const on = contactLists(contact)[0];
+      if (on) ui.list = on.id;
     }
 
     function contactLabel(contact) {
@@ -364,24 +371,22 @@
         body = `<p class="muted">Open an email in Gmail or Zoho Mail, or a conversation in Mastodon, and this panel will read it.</p>
           <div class="actions"><button class="secondary" data-act="refresh" type="button">Read again</button></div>`;
       } else {
-        const choice = pipelineChoice();
+        const choice = listChoice();
         const contact = ui.contact;
         const target = ui.picked || contact;
-        const sameFlow = Boolean(target && choice && target.flow === choice.flow.id);
+        const onList = Boolean(target && choice && contactLists(target).some((list) => list.id === choice.id));
         const when = Number.isFinite(message.sentAt) && message.sentAt > 0
           ? ` · ${esc(new Date(message.sentAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }))}` : "";
         const details = message.contact || {};
         const found = DETAIL_FIELDS.filter(([key]) => details[key]).length;
-        const pipelineLabel = !choice ? "Add to pipeline"
-          : sameFlow ? (target.stage === choice.stage ? "Save to pipeline" : `Move to ${titleCase(choice.stage)}`)
-          : "Add to pipeline";
+        const listLabel = onList ? "Save to list" : "Add to list";
         const last = contact ? lastEmailAt(contact, ui.emails, ui.message) : 0;
         body = `
           ${embedded ? "" : `<p class="muted">Signed in as <strong>${esc(status.account)}</strong> · CRM of <strong>${esc(status.organization)}</strong></p>`}
           <div class="row">
             ${isThread() ? `<div class="subject" title="${esc(message.subject)}">${esc(message.subject || "No subject")}</div>`
               : `<label>Subject<input class="subject" data-field="subject" value="${esc(message.subject)}" placeholder="No subject" /></label>`}
-            <div class="muted">${esc(providerLabel())} · ${message.direction === "outbound" ? (isThread() ? "posted by you" : "sent by you") : (isThread() ? "posted by the contact" : "received")}${message.mailbox || message.account ? ` · ${esc(message.mailbox || `@${message.account}`)}` : ""}${when}</div>
+            <div class="muted">${esc(providerLabel())} · ${message.compose ? "new email" : message.direction === "outbound" ? (isThread() ? "posted by you" : "sent by you") : (isThread() ? "posted by the contact" : "received")}${message.mailbox || message.account ? ` · ${esc(message.mailbox || `@${message.account}`)}` : ""}${when}</div>
             <div class="mono muted">id ${esc(message.messageId)}</div>
             ${(message.participants || []).length > 1 ? `<label>Contact on this ${isThread() ? "conversation" : "email"}<select data-participant>${message.participants.map((person) => {
               const key = participantKey(person);
@@ -406,25 +411,21 @@
               : ui.looking ? `<div class="muted">Looking up ${esc(message.contactEmail)}…</div>`
               : ui.picked ? pickedHtml()
               : contact
-              ? `<div><strong>${esc(contact.name || contact.email)}</strong> <span class="muted">· ${esc(flowName(contact.flow))} · ${esc(titleCase(contact.stage || "lead"))}${contact.company ? ` · ${esc(contact.company)}` : ""}</span></div>
+              ? `<div><strong>${esc(contact.name || contact.email)}</strong> <span class="muted">· ${esc(contactLists(contact).map((list) => list.name).join(", ") || "on no list")} · ${esc(flowName(contact.flow))} · ${esc(titleCase(contact.stage || "lead"))}${contact.company ? ` · ${esc(contact.company)}` : ""}</span></div>
                  <div class="muted">Owner ${esc(contact.owner || "unassigned")}</div>
                  ${LOOSE_MATCHES[ui.matchedBy] ? `<div class="muted">Found by ${LOOSE_MATCHES[ui.matchedBy]}.${isThread() ? "" : " Linking adds this address to the record."}</div>` : ""}
                  <div class="muted">${ui.emails.length} linked ${ui.emails.length === 1 ? "message" : "messages"} on this record${linked ? " · this one is linked" : ""}</div>
+                 ${message.compose && !linked ? `<div class="muted">${message.linkOnSend ? "Sending this email links it to this contact." : "Track emails I send is off, so sending this email does not link it."}</div>` : ""}
                  <div class="dated"><label>Last contacted<input data-contact="lastContactedAt" type="date" value="${esc(dateValue(contact.lastContactedAt))}" /></label><button class="secondary" data-act="contacted-now" type="button" title="Record now as the last time you were in touch"${ui.busy ? " disabled" : ""}>Now</button></div>`
               : `<div class="muted">${identity() ? `No contact for ${esc(identity())} yet; linking creates one.` : `Enter the contact's ${isThread() ? "handle" : "email address"}.`}</div>`}
             ${ui.stale || ui.looking || ui.picked ? "" : chooserHtml(contact)}
           </div>
           ${choice ? `<div class="row">
-            <div class="rowhead">Pipeline</div>
-            <div class="split">
-              <label>Pipeline<select data-pipeline="flow">${ui.flows.map((flow) =>
-                `<option value="${esc(flow.id)}"${flow.id === choice.flow.id ? " selected" : ""}>${esc(flow.name)}</option>`).join("")}</select></label>
-              <label>Stage<select data-pipeline="stage">${(choice.flow.stages || []).map((stage) =>
-                `<option value="${esc(stage)}"${stage === choice.stage ? " selected" : ""}>${esc(titleCase(stage))}</option>`).join("")}</select></label>
-            </div>
-          </div>` : ""}
+            <label>List<select data-list>${ui.lists.map((list) =>
+              `<option value="${esc(list.id)}"${list.id === choice.id ? " selected" : ""}>${esc(list.name)}</option>`).join("")}</select></label>
+          </div>` : ui.stale || ui.looking ? "" : `<div class="row muted">The CRM has no lists yet: Link only files the ${isThread() ? "conversation" : "email"} under the contact.</div>`}
           <div class="actions footer">
-            <button class="primary" data-act="pipeline" type="button"${ui.busy || !identity() || !choice ? " disabled" : ""}>${esc(pipelineLabel)}</button>
+            <button class="primary" data-act="list" type="button"${ui.busy || !identity() || !choice ? " disabled" : ""}>${esc(listLabel)}</button>
             <button class="secondary" data-act="link" type="button"${ui.busy || !identity() ? " disabled" : ""}>${ui.picked ? `Link to ${esc(String(ui.picked.name || "contact").split(/\s+/)[0])}` : linked ? "Update link" : "Link only"}</button>
             ${linked ? `<button class="danger" data-act="unlink" type="button"${ui.busy ? " disabled" : ""}>Unlink</button>` : ""}
             ${embedded ? "" : `<button class="secondary" data-act="open" type="button">Open CRM</button>`}
@@ -461,6 +462,7 @@
         ui.contact = found.contact; ui.emails = found.emails || [];
         ui.matchedBy = found.matchedBy || "";
         if (found.flows?.length) ui.flows = found.flows;
+        if (found.lists) ui.lists = found.lists;
         followContact(found.contact);
       } else ui.error = found?.message || "Lookup failed";
       render();
@@ -509,17 +511,17 @@
       if (failure && !ui.error) { ui.error = failure; render(); }
     }
 
-    async function linkCurrent({ pipeline = false } = {}) {
+    async function linkCurrent({ list = false } = {}) {
       if (!identity()) return;
-      const choice = pipeline ? pipelineChoice() : null;
-      if (pipeline && !choice) return;
+      const choice = list ? listChoice() : null;
+      if (list && !choice) return;
       const mine = ++generation;
       ui.busy = true; ui.error = ""; ui.notice = ""; render();
       const picked = ui.picked;
       const message = {
         ...ui.message,
         ...(picked ? { contactId: picked.id } : {}),
-        ...(choice ? { flow: choice.flow.id, stage: choice.stage } : {}),
+        ...(choice ? { list: choice.id } : {}),
       };
       const result = await request({ type: "fm-link", message });
       ui.busy = false;
@@ -530,18 +532,19 @@
         ui.picked = null; ui.choosing = false; ui.query = "";
         if (result.contactCreated) ui.directory = null;
         if (result.flows?.length) ui.flows = result.flows;
+        if (result.lists) ui.lists = result.lists;
         followContact(result.contact);
         const who = result.contact?.name || result.contact?.email || "the contact";
         ui.notice = picked && !choice ? `Linked to ${who}.`
           : choice
-          ? `${result.contactCreated ? "Created" : "Moved"} ${who} in ${choice.flow.name} · ${titleCase(result.contact?.stage || choice.stage)}; email linked.`
+          ? `${result.contactCreated ? "Created" : "Saved"} ${who} on ${choice.name}; ${ui.message?.compose ? "linked" : "email linked"}.`
           : result.contactCreated ? `Linked and created ${who} in the CRM.`
             : result.relinked ? "Link updated." : `Linked to ${who}.`;
         onLinked();
       } else {
         ui.error = result?.error === "not_signed_in"
           ? "Signed out. Sign in again from the toolbar icon."
-          : `Could not ${choice ? "add to the pipeline" : "link"}: ${result?.message || "unknown error"}`;
+          : `Could not ${choice ? "add to the list" : "link"}: ${result?.message || "unknown error"}`;
         if (result?.error === "not_signed_in") ui.status = await request({ type: "fm-status" });
       }
       render();
@@ -622,7 +625,7 @@
       if (act === "close") { ui.open = false; render(); }
       else if (act === "refresh") void refresh();
       else if (act === "lookup") void lookupContact();
-      else if (act === "pipeline") void linkCurrent({ pipeline: true });
+      else if (act === "list") void linkCurrent({ list: true });
       else if (act === "link") void linkCurrent();
       else if (act === "unlink") void unlinkCurrent();
       else if (act === "choose") void choose();
@@ -642,13 +645,8 @@
       }
       const dated = event.target.closest('[data-contact="lastContactedAt"]');
       if (dated) { void setLastContacted(dated.value); return; }
-      const pipeline = event.target.closest("[data-pipeline]");
-      if (pipeline) {
-        if (pipeline.dataset.pipeline === "flow") { ui.flow = pipeline.value; ui.stage = ""; }
-        else ui.stage = pipeline.value;
-        render();
-        return;
-      }
+      const list = event.target.closest("[data-list]");
+      if (list) { ui.list = list.value; render(); return; }
       const field = event.target.closest("[data-field]");
       if (!field) return;
       // Either half of the contact's identity can be typed in; the other one
@@ -697,7 +695,7 @@
 
     return {
       ui, render, load, present, lookup: lookupContact, refresh, linkedEmail,
-      flowName, isThread, choose,
+      flowName, isThread, choose, contactLists,
     };
   }
 
@@ -752,22 +750,28 @@
     if (ui.looking) return toggle + who + note("Looking up…");
     if (!contact) {
       return toggle + who + note(ui.error || "Not in the CRM yet")
-        + `<button class="add" data-strip="toggle" type="button">Add to pipeline</button>`
+        + `<button class="add" data-strip="toggle" type="button">Add to list</button>`
         + `<button class="add" data-strip="choose" type="button" title="File this ${what} under a contact the CRM already has">Link to contact</button>`;
     }
     const chip = (label, value, kind = "", title = "") =>
       `<span class="chip${kind ? ` ${kind}` : ""}" title="${esc(title || `${label}: ${value}`)}"><b>${esc(label)}</b><span>${esc(value)}</span></span>`;
     const last = lastEmailAt(contact, ui.emails, ui.message);
     const linked = panel.linkedEmail();
+    const lists = panel.contactLists(contact).map((list) => list.name).join(", ");
+    const sending = message.compose && !linked;
     const parts = [
       toggle, who,
+      chip("List", lists || "None"),
       chip("Pipeline", panel.flowName(contact.flow)),
       chip("Stage", titleCase(contact.stage || "lead"), "stage"),
       chip("Owner", contact.owner || "Unassigned"),
       chip(thread ? "Last contact" : "Last email", last ? shortDate(last) : "None", "",
         last ? `Last message: ${new Date(last).toLocaleString([], { dateStyle: "full", timeStyle: "short" })}` : "Nothing on the record yet"),
-      chip("Linked", `${ui.emails.length}${linked ? " · this one" : ""}`, linked ? "linked" : "",
-        linked ? `This ${what} is linked to the contact` : "Emails and conversations linked to the contact"),
+      sending
+        ? chip("On send", message.linkOnSend ? "Links here" : "Not linked", message.linkOnSend ? "linked" : "",
+          message.linkOnSend ? "Sending this email links it to the contact" : "Track emails I send is off in the toolbar popup")
+        : chip("Linked", `${ui.emails.length}${linked ? " · this one" : ""}`, linked ? "linked" : "",
+          linked ? `This ${what} is linked to the contact` : "Emails and conversations linked to the contact"),
     ];
     if (thread && contact.mastodon) parts.push(chip("Mastodon", contact.mastodon));
     for (const [key, label] of EXTRA_CHIPS) {

@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import sqlite3
 import sys
+import re
 from urllib.parse import parse_qs, urlparse
 
 
@@ -1312,6 +1313,105 @@ def test_an_import_follows_the_confirmed_mapping_and_needs_no_email():
     assert any(item["name"] == "Katherine Johnson" for item in contacts)
     dorothy = next(item for item in contacts if item["name"] == "Dorothy")
     assert (dorothy["owner"], dorothy["fields"]) == ("", {"owner_region": "APAC"})
+
+
+def test_the_extension_saves_a_mail_contact_to_a_list():
+    runtime = Runtime()
+    plain = call(runtime.use("POST", body={"name": "Engines leads"}),
+                 "/api/crm/acme/views")["data"]["view"]
+    partners = call(runtime.use("POST", body={"name": "Partner deals", "flow": "partnerships"}),
+                    "/api/crm/acme/views")["data"]["view"]
+    looked = call(runtime.use("POST", body={"email": "ada@example.com"}),
+                  "/api/crm/acme/contacts/lookup")["data"]
+    assert looked["contact"] is None
+    assert [item["id"] for item in looked["lists"]] == [plain["id"], partners["id"]]
+    assert looked["lists"][1]["flow"] == "partnerships"
+    message = {"provider": "zoho", "direction": "outbound", "contactEmail": "ada@example.com",
+               "contactName": "Ada Lovelace", "mailbox": "me@acme.example"}
+    linked = call(runtime.use("POST", body={**message, "messageId": "fm-compose-1", "list": plain["id"]}),
+                  "/api/crm/acme/emails/link")
+    assert linked["status"] == 201 and linked["data"]["contactCreated"] is True
+    assert linked["data"]["contact"]["views"] == [plain["id"]]
+    assert [item["id"] for item in linked["data"]["lists"]] == [plain["id"], partners["id"]]
+    moved = call(runtime.use("POST", body={**message, "messageId": "fm-compose-2", "list": partners["id"],
+                                           "flow": "customers", "stage": "won"}),
+                 "/api/crm/acme/emails/link")["data"]["contact"]
+    assert moved["views"] == [plain["id"], partners["id"]]
+    assert moved["flow"] == "partnerships"
+    assert call(runtime.use("POST", body={"email": "ada@example.com"}),
+                "/api/crm/acme/contacts/lookup")["data"]["contact"]["id"] == moved["id"]
+    missing = call(runtime.use("POST", body={**message, "messageId": "fm-compose-3", "list": "c" * 32}),
+                   "/api/crm/acme/emails/link")
+    assert (missing["status"], missing["data"]["error"]) == (404, "list_not_found")
+
+
+def test_an_email_sent_from_the_extension_reports_its_first_open():
+    runtime = Runtime()
+    call(runtime.use("POST", body={"name": "Ada Lovelace", "email": "ada@example.com"}),
+         "/api/crm/acme/contacts")
+    pixel = call(runtime.use("POST"), "/api/crm/acme/emails/pixel")["data"]
+    token = pixel["token"]
+    assert re.fullmatch(r"[0-9a-f]{32}\.[0-9a-f]{24}", token)
+    assert pixel["url"] == f"https://app.forkmesh.com/api/crm/-/t/o/{token}.png"
+    sent = {"provider": "zoho", "direction": "outbound", "contactEmail": "ada@example.com",
+            "mailbox": "me@acme.example", "subject": "Engines", "createContact": False}
+    linked = call(runtime.use("POST", body={**sent, "messageId": "fm-sent-1", "trackToken": token}),
+                  "/api/crm/acme/emails/link")["data"]
+    assert linked["email"]["id"] == token.split(".")[0]
+    runtime.pings.clear()
+    runtime.clock += crm.TRACK_QUIET_MS
+    call(runtime.use("GET", "nobody"), f"/api/crm/-/t/o/{token}.png")
+    call(runtime.use("GET", "nobody"), f"/api/crm/-/t/o/{token}.png")
+    assert [ping["title"] for ping in runtime.pings if ping["recipient"] == "alice"] == [
+        "📬 Ada Lovelace opened your email"]
+    email = call(runtime.use("GET"), f"/api/crm/acme/emails/{linked['email']['id']}")["data"]["email"]
+    assert (email["opens"], email["status"]) == (2, "open")
+    reused = call(runtime.use("POST", body={**sent, "messageId": "fm-sent-2", "trackToken": token}),
+                  "/api/crm/acme/emails/link")["data"]["email"]["id"]
+    forged = call(runtime.use("POST", body={**sent, "messageId": "fm-sent-3",
+                                            "trackToken": token[:33] + "0" * 24}),
+                  "/api/crm/acme/emails/link")["data"]["email"]["id"]
+    assert token.split(".")[0] not in (reused, forged)
+    stranger = call(runtime.use("POST"), "/api/crm/acme/emails/pixel")["data"]["token"]
+    unknown = {**sent, "contactEmail": "bob@else.example", "messageId": "fm-sent-4",
+               "trackToken": stranger}
+    missing = call(runtime.use("POST", body=unknown), "/api/crm/acme/emails/link")
+    assert (missing["status"], missing["data"]["error"]) == (404, "contact_not_found")
+    kept = call(runtime.use("POST", body={**unknown, "keepWithoutContact": True}),
+                "/api/crm/acme/emails/link")
+    assert kept["status"] == 201 and kept["data"]["contact"] is None
+    assert kept["data"]["email"]["id"] == stranger.split(".")[0]
+    runtime.pings.clear()
+    runtime.clock += crm.TRACK_QUIET_MS
+    call(runtime.use("GET", "nobody"), f"/api/crm/-/t/o/{stranger}.png")
+    assert [ping["title"] for ping in runtime.pings if ping["recipient"] == "alice"] == [
+        "📬 bob@else.example opened your email"]
+
+
+class SenderRuntime(Runtime):
+    ip = "203.0.113.7"
+
+    def request_visitor(self):
+        return {"ip": self.ip, "agent": ""}
+
+
+def test_the_sender_viewing_their_own_tracked_email_is_not_an_open():
+    runtime = SenderRuntime()
+    runtime.ip = "8.8.4.4"
+    call(runtime.use("POST", body={"name": "Ada Lovelace", "email": "ada@example.com"}),
+         "/api/crm/acme/contacts")
+    token = call(runtime.use("POST"), "/api/crm/acme/emails/pixel")["data"]["token"]
+    call(runtime.use("POST", body={
+        "provider": "gmail", "direction": "outbound", "contactEmail": "ada@example.com",
+        "messageId": "18f3b2c4d5e6f7a8", "createContact": False, "trackToken": token,
+    }), "/api/crm/acme/emails/link")
+    runtime.pings.clear()
+    runtime.clock += crm.TRACK_QUIET_MS
+    call(runtime.use("GET", "nobody"), f"/api/crm/-/t/o/{token}.png")
+    assert runtime.pings == []
+    runtime.ip = "1.1.1.1"
+    call(runtime.use("GET", "nobody"), f"/api/crm/-/t/o/{token}.png")
+    assert [ping["title"] for ping in runtime.pings] == ["📬 Ada Lovelace opened your email"]
 
 
 def test_a_mail_message_is_tied_to_a_contact_and_reopens_in_its_mailbox():

@@ -11,6 +11,9 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-03", "area": "Market", "text": "The browser extension adds a tiny open-tracking image to the emails you send from Gmail and Zoho Mail and pings you the first time each one is opened; turn it off in the toolbar popup."},
+  {"date": "2026-11-03", "area": "Market", "text": "The browser extension's CRM panel now saves a contact to one of your CRM lists instead of a pipeline."},
+  {"date": "2026-11-03", "area": "Market", "text": "The browser extension follows the To address while you write a new email in Zoho Mail, looks the person up straight away, and links the email to them when you send it."},
   {"date": "2026-11-03", "area": "Desktop", "text": "A repository's file list, a survey's results and the app's startup no longer pause the window while they fill in."},
   {"date": "2026-11-03", "area": "Desktop", "text": "Fixed two crashes: one when closing the window with the Mastodon page open, and one when the app exits while a network request is finishing."},
   {"date": "2026-11-03", "area": "Desktop", "text": "The light theme's selection highlight is a darker blue, so the selected row is easy to see."},
