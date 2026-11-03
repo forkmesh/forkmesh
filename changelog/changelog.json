@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-03", "area": "Desktop", "text": "Creating a payment wallet in the app now asks you to back up its key right away, since the app holds the only copy."},
   {"date": "2026-11-03", "area": "Desktop", "text": "The Ledger now says when your payment wallet's key file has gone missing and offers to relink it, instead of showing it as never linked."},
   {"date": "2026-11-03", "area": "Market", "text": "The browser extension now looks up the email you open in Gmail or Zoho Mail with a loading spinner, links it to the contact that has its address on its own, and shows the address, other recipients and a Retry button in its header."},
   {"date": "2026-11-03", "area": "Server", "text": "A network that an administrator is signed in from is no longer blocked as a scanner, and a block already placed on it is lifted within five minutes."},

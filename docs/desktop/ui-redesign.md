@@ -1592,6 +1592,12 @@ totals, wallets, the payout plan), so it is unchanged. The page carries the
       profile's wallet section says the same. Re-importing the key is the only
       fix, so the hourly box backup (`forkmesh-backup-minimal.sh`) now
       includes `data/core/tips/`.
+    - **Back up a generated wallet.** The lost wallet had been generated in
+      the app, so the vault held its only copy and the passphrase alone could
+      not rebuild it. Linking a key made with "Generate" now ends in a "Back
+      up the new wallet now" prompt whose default opens the existing export
+      (`exportTipWalletSecret`); an imported key keeps the old notice, since
+      it already exists elsewhere.
   - **QR popover** (`#ledgerWalletQrMenu`): the existing `QrCode` encoder
     draws the real `solana:<address>` code on a white rounded tile
     (`ledgerQrTile`). Under it are the short mono address (the full one in

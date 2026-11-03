@@ -1210,6 +1210,7 @@ void MainWindow::linkTipWallet()
     });
 
     const int outcome = dialog.exec();
+    const bool generatedHere = !generated->isHidden();
     QByteArray material = keyEdit->text().trimmed().toUtf8();
     QString passphrase = passEdit->text();
     scrubTipEdit(keyEdit);
@@ -1242,6 +1243,27 @@ void MainWindow::linkTipWallet()
                              "this machine only.")
                   .arg(address));
     refreshTipWalletControls();
+    if (generatedHere) {
+        QMessageBox ask(this);
+        ask.setIcon(QMessageBox::Warning);
+        ask.setWindowTitle(QStringLiteral("Back up the new wallet now"));
+        ask.setText(
+            QStringLiteral(
+                "%1 was created on this machine, so its key exists nowhere "
+                "else.\n\nIf this machine's data is lost, the wallet and "
+                "everything in it are lost too: the passphrase alone cannot "
+                "rebuild it. Save a copy of the key somewhere offline before "
+                "you fund it.")
+                .arg(address));
+        QPushButton *backUp = ask.addButton(QStringLiteral("Back up now"),
+                                            QMessageBox::AcceptRole);
+        ask.addButton(QStringLiteral("Later"), QMessageBox::RejectRole);
+        ask.setDefaultButton(backUp);
+        ask.exec();
+        if (ask.clickedButton() == backUp)
+            exportTipWalletSecret();
+        return;
+    }
     QMessageBox::information(
         this, QStringLiteral("Tip wallet linked"),
         QStringLiteral(
