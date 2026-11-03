@@ -266,6 +266,7 @@
                   <button data-crm-section-tab="inbox" id="crm-section-tab-inbox" type="button" role="tab" aria-controls="crm-section-inbox" aria-selected="false" tabindex="-1" class="crm-side-item"><i data-lucide="inbox"></i><span class="crm-side-label">Inbox</span><span data-crm-section-count="inbox" class="crm-side-count">0</span></button>
                   <button data-crm-section-tab="outreach" id="crm-section-tab-outreach" type="button" role="tab" aria-controls="crm-section-outreach" aria-selected="false" tabindex="-1" class="crm-side-item"><i data-lucide="send"></i><span class="crm-side-label">Outreach</span></button>
                   <button data-crm-section-tab="team" id="crm-section-tab-team" type="button" role="tab" aria-controls="crm-section-team" aria-selected="false" tabindex="-1" class="crm-side-item"><i data-lucide="chart-column"></i><span class="crm-side-label">Team leaderboard</span></button>
+                  <button data-crm-section-tab="cleanup" id="crm-section-tab-cleanup" type="button" role="tab" aria-controls="crm-section-cleanup" aria-selected="false" tabindex="-1" title="People on more than one list: keep each on one list, with every record merged" class="crm-side-item"><i data-lucide="list-checks"></i><span class="crm-side-label">List cleanup</span></button>
                   <button data-crm-section-tab="zoho" id="crm-section-tab-zoho" type="button" role="tab" aria-controls="crm-section-zoho" aria-selected="false" tabindex="-1" class="crm-side-item"><i data-lucide="at-sign"></i><span class="crm-side-label">My Zoho Mail</span><span data-crm-my-zoho-dot class="crm-side-dot"></span></button>
                 </div>
                 <button data-crm-side-people type="button" aria-pressed="false" title="Everyone whose picture loaded, as a grid" class="crm-side-item"><i data-lucide="contact"></i><span class="crm-side-label">People with pictures</span></button>
@@ -430,6 +431,26 @@
                     <div data-crm-team-table class="hidden max-h-80 overflow-y-auto"></div>
                   </div>
                 </div>
+              </section>
+              </div>
+
+              <div data-crm-section="cleanup" id="crm-section-cleanup" role="tabpanel" aria-labelledby="crm-section-tab-cleanup" hidden>
+              <section data-crm-cleanup class="overflow-hidden rounded-lg border border-border bg-card">
+                <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border p-3">
+                  <div class="min-w-0 flex-1"><h2 class="text-sm font-semibold text-foreground">List cleanup</h2><p data-crm-cleanup-note class="text-xs text-muted-foreground">People who show on more than one list, as one record or as several records of the same person (a shared email address or X account). Click a list to keep them there only: their records merge into one with every field, tag, note and email, and they leave the other lists.</p></div>
+                  <div class="flex flex-wrap items-center gap-2">
+                    <input data-crm-cleanup-search type="search" placeholder="Search name or email" aria-label="Search the people on more than one list" class="h-control rounded-md border border-border bg-background px-2 text-control text-foreground outline-none focus:ring-1 focus:ring-ring" />
+                    <select data-crm-cleanup-list aria-label="Only people on this list" class="h-control rounded-md border border-border bg-background px-2 text-control text-foreground"></select>
+                    <button data-crm-cleanup-keep-all type="button" hidden class="fm-btn fm-btn-sm"></button>
+                  </div>
+                </div>
+                <div class="overflow-x-auto">
+                  <table class="w-full text-left text-sm">
+                    <thead data-crm-cleanup-head class="border-b border-border bg-secondary text-xs text-muted-foreground"></thead>
+                    <tbody data-crm-cleanup-rows class="divide-y divide-border"></tbody>
+                  </table>
+                </div>
+                <p data-crm-cleanup-empty hidden class="p-6 text-center text-xs text-muted-foreground"></p>
               </section>
               </div>
 
