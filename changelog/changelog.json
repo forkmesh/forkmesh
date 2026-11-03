@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-03", "area": "Market", "text": "The browser extension now looks up the email you open in Gmail or Zoho Mail with a loading spinner, links it to the contact that has its address on its own, and shows the address, other recipients and a Retry button in its header."},
   {"date": "2026-11-03", "area": "Agents", "text": "Session side panels now hide empty sections, put Environment and Context first while keeping any order you set, show Claude Code's own Remote Control setting, and Raw opens the raw output in a window beside the transcript."},
   {"date": "2026-11-03", "area": "Desktop", "text": "The Claude app no longer opens by itself when a Claude Code agent finishes; adding agents to it is now an opt-in setting in Settings > Agents."},
   {"date": "2026-11-03", "area": "Market", "text": "Browser extension 2.31.0 and CRM 1.51.0 are out, so saving a Zoho Mail or Gmail contact to a CRM list and linking sent emails now work."},

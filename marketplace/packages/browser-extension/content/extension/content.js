@@ -442,9 +442,9 @@
   // Gmail and Zoho are single-page apps that redraw the reading pane at will:
   // put the header back above the newest message whenever it moves, and show
   // the new message in the header when the message or its contact changes.
-  // Reading the page is free; the CRM record behind it is only read when the
-  // header's "Look up" button is pressed, so clicking through an inbox sends
-  // nothing to ForkMesh. `asked` carries the one exception: a link or a
+  // Reading the page is free; the CRM record behind it is read when the
+  // message opens with "Look up and link emails I open" on, else only when
+  // the header's "Look up" button is pressed. `asked` carries a link or a
   // sign-in change made in the toolbar popup, which reads the record again.
   let shown = "";
   let asked = false;
@@ -460,6 +460,13 @@
     shown = key;
     if (message.compose) { asked = false; void loadCompose(message, key); }
     else if (asked) { asked = false; void panel.load(message); }
+    else void showMessage(message, key);
+  }
+
+  async function showMessage(message, key) {
+    const settings = await crm.send({ type: "fm-sent-settings" });
+    if (key !== shown) return;
+    if (settings?.ok && settings.autoLink) void panel.load(message, { autoLink: true });
     else void panel.present(message);
   }
 
