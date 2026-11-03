@@ -1,7 +1,18 @@
 {
   "schemaVersion": 1,
   "sources": [
-    "SpreadsheetsLink.cpp"
+    "SpreadsheetsWeb.h",
+    "SpreadsheetsWeb.cpp",
+    "SpreadsheetsPage.h",
+    "SpreadsheetsPage.cpp"
   ],
-  "mocHeaders": []
+  "mocHeaders": [],
+  "testSources": [
+    "tests/test_spreadsheets_desktop.cpp",
+    "SpreadsheetsWeb.h",
+    "SpreadsheetsWeb.cpp"
+  ],
+  "testLibraries": [
+    "Qt6::Core"
+  ]
 }
