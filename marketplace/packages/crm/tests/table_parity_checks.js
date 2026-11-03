@@ -303,12 +303,27 @@ same(page.crmCustomColumnLabel("deal_size"), "Deal size", "the key reads back as
   page.crmFollowBack.following.add("grace@fosstodon.org");
   check(page.crmFollowBackButton(follower).includes(`type="button" disabled`), "it is disabled while the follow is sent");
   page.crmFollowBack.following.clear();
+  const stranger = page.crmFollowBackButton({ id: "m1", mastodon: "a@mastodon.social" });
+  check(stranger.includes('data-crm-follow-back="a@mastodon.social"') && stranger.includes(">Follow</button>"),
+        "a contact the account does not follow yet gets Follow");
+  check(stranger.includes("Follow @a@mastodon.social from @forkmesh@mastodon.social."), "its tooltip names the account that follows");
+  page.crmFollowBack.followed = new Set(["a@mastodon.social"]);
   same(page.crmFollowBackButton({ id: "m1", mastodon: "a@mastodon.social" }), "", "an account already followed gets no button");
+  same(page.crmFollowBackButton({ id: "me", mastodon: "@forkmesh@mastodon.social" }), "", "the organization's own account gets no button");
+  same(page.crmFollowBackButton({ id: "n", name: "No handle" }), "", "a contact without a Mastodon handle gets no button");
   view.activeView = "list-a";
   same(page.crmFollowBackButton(follower), "", "other lists do not show it");
   view.activeView = "network:mastodon";
   view.organization = "other";
-  same(page.crmFollowBackButton(follower), "", "another organization's answer is not used");
+  check(page.crmFollowBackButton(follower).includes(">Follow</button>"), "another organization's answer is not used");
+  check(page.crmFollowBackButton({ id: "m1", mastodon: "a@mastodon.social" }).includes(">Follow</button>"),
+        "nor its list of accounts already followed");
+  view.organization = "acme";
+  view.settings = { ...view.settings, mastodon: { account: "forkmesh@mastodon.social", connected: false } };
+  const loggedOut = page.crmFollowBackButton(follower);
+  check(loggedOut.includes(`type="button" disabled`) && loggedOut.includes(">Follow</button>"),
+        "without a logged-in Mastodon account the button shows but is disabled");
+  check(loggedOut.includes("Log in first"), "its tooltip says to log in first");
 
   if (failures) {
     console.error(`${failures} check(s) failed`);

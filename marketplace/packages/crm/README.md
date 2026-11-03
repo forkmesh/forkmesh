@@ -1314,28 +1314,40 @@ raising, so the caller can keep the lead.
   (`?list=network:<field>`) that search and the Flow, Stage, Owner and
   Follow-up filters narrow. Desktop, iOS and Android show the same networks in
   the same order; `tests/test_networks.py` keeps the four lists equal.
-  <a id="follow-back"></a>**Follow back** (desktop and web): on the Mastodon
-  network tab, a contact who follows the organization's saved Mastodon account
-  (Settings → Mastodon toots) and whom that account does not follow gets a
-  **Follow back** button in its Actions strip. Opening the tab calls
-  `GET /mastodon/follow-back` at most once per 15 minutes per organization;
-  the worker reads the account's followers and following lists with the
-  saved token (up to 25 pages of 80 each, retrying without the token when it
-  lacks `read:accounts`, as the [followers list](#followers-list) does) and
-  returns the followers' handles it does not follow. The button calls
+  <a id="follow-back"></a>**Follow and Follow back** (desktop and web): on
+  the Mastodon network tab every contact with a **Mastodon** handle that the
+  organization's saved Mastodon account (Settings → Mastodon toots) does not
+  follow yet gets a button first in its Actions strip: **Follow back** when the
+  contact follows the account, **Follow** otherwise. Contacts the account
+  already follows, and the account itself, get none. Opening the tab calls
+  `GET /mastodon/follow-back` at most once per 15 minutes per organization
+  (again at once when the saved account changes); the worker reads the
+  account's followers and following lists with the saved token (up to 25 pages
+  of 80 each, retrying without the token when it lacks `read:accounts`, as the
+  [followers list](#followers-list) does) and returns `handles` (followers it
+  does not follow) and `following`. A hidden followers list is no longer an
+  error: the answer carries `warning: "mastodon_followers_hidden"` and the
+  following list, so Follow still works. The button calls
   `POST /mastodon/follow {"handle"}`, which looks the handle up on the
   account's instance and follows it there; a locked account answers
   "requested". The token needs `write:follows` for that, else the error is
-  `mastodon_follow_not_allowed`. Any member who can write may follow back;
-  each follow is audited as `crm.mastodon.follow` and pings no one. Rows match
-  by the contact's **Mastodon** field. A follow request the account sent
-  earlier and is still waiting on is not in its following list, so that row
-  keeps the button. The web list puts the button first in the row's actions
-  (and on the narrow-screen cards), reads the list on the same 15-minute
-  schedule, and shows its errors above the list. The phones do not have it
-  yet. Code: `_follow_back`, `_follow_handle` (worker); `loadMastodonFollowBack`,
-  `followMastodonBack` (desktop); `loadCrmFollowBack`, `crmFollowMastodonBack`
-  (web).
+  `mastodon_follow_not_allowed`. Any member who can write may follow; each
+  follow is audited as `crm.mastodon.follow` and pings no one. A follow
+  request the account sent earlier and is still waiting on is not in its
+  following list, so that row gets the button again after a reload.
+
+  <a id="mastodon-login-warning"></a>Before Follow can work the organization
+  must be logged in to Mastodon, that is have an account and access token
+  saved. Without one the buttons still show, disabled, and a warning at the
+  top of the Mastodon tab says to log in, with **Log in to Mastodon** opening
+  CRM settings (members who cannot change settings are told to ask an owner
+  or admin). The same warning names a failed check or follow (token rejected,
+  no `write:follows`, followers hidden, Mastodon unreachable) with **Open CRM
+  settings** or **Try again**. The web list also shows the button on the
+  narrow-screen cards. The phones do not have it yet. Code: `_follow_back`,
+  `_follow_handle` (worker); `loadMastodonFollowBack`, `followMastodonBack`,
+  `updateMastodonBar` (desktop); `loadCrmFollowBack`, `crmFollowMastodonBack`,
+  `renderCrmMastodonBanner` (web).
 - **Desktop** (`CrmFeature.cpp`): columns for the lists, the table, Reach out
   / Follow up and the detail panel, spreadsheet-style editing, a People grid
   of contacts with pictures, imports, and a rail count of never-contacted
