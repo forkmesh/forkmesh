@@ -31,6 +31,7 @@ protected:
 private:
     QUrl pageUrl(const QString &path) const;
     void sync(bool create);
+    void requestSession();
     void build(const QUrl &origin, const QString &account, const QString &token,
                const QByteArray &session);
     void drop();
@@ -55,6 +56,7 @@ private:
     QUrl m_origin;
     QByteArray m_session;
     QString m_pending;
+    bool m_sessionPending = false;
 };
 
 }

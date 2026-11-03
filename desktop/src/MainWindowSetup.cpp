@@ -5052,8 +5052,10 @@ bool MainWindow::ensureNodeAccount(const QString &accountName, const QString &so
 // run on launch without prompting. Returns false (quietly) when it can't confirm.
 bool MainWindow::authenticateSilently(const QString &accountName)
 {
-    if (hasOwnerSigningCapability(accountName))
+    if (hasOwnerSigningCapability(accountName)) {
+        QTimer::singleShot(0, this, [this] { ensureAccountSession(); });
         return true;
+    }
     if (!isValidNodeName(accountName))
         return false;
     m_accountEmail.clear();
@@ -5094,6 +5096,7 @@ bool MainWindow::authenticateSilently(const QString &accountName)
         updateChatIdentity();
         if (m_settingsNameEdit && m_settingsNameEdit->text().trimmed().isEmpty())
             m_settingsNameEdit->setText(m_accountName);
+        QTimer::singleShot(0, this, [this] { ensureAccountSession(); });
         return true;
     }
     // The relay says the account is active but bound to another desktop key
@@ -5126,6 +5129,7 @@ bool MainWindow::authenticateSilently(const QString &accountName)
         m_accountSolanaVerified = true;
         m_accountEmail.clear();
         refreshSettingsEmailVerifiedBadge();
+        QTimer::singleShot(0, this, [this] { ensureAccountSession(); });
         return true;
     }
     if (status == 200)
