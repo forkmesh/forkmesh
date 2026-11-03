@@ -12,6 +12,7 @@
  ],
  "notes": [
   {"date": "2026-11-03", "area": "iPhone", "text": "Long logs and code in an agent's transcript now show their text instead of an empty gray box."},
+  {"date": "2026-11-03", "area": "Desktop", "text": "The desktop CRM opens and switches lists much faster with thousands of contacts, and no longer freezes the window while contact pictures load."},
   {"date": "2026-11-03", "area": "Market", "text": "CRM 1.53.0: a new Networks group on the web, desktop, iPhone and Android opens everyone on Mastodon, Bluesky, X (Twitter), LinkedIn or GitHub, across all your lists and pipelines."},
   {"date": "2026-11-03", "area": "Desktop", "text": "The session side panel's Changes card has a Commit changes button, and running background tasks show how long they have been running."},
   {"date": "2026-11-03", "area": "Desktop", "text": "The session side panels now look like the Claude app's: muted section titles, roomier rows, a slimmer context bar, line counts on the Changes row and finished background tasks folded into one row."},

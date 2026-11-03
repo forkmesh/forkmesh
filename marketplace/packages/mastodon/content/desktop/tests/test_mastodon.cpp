@@ -184,8 +184,13 @@ protected:
         const auto handler = m_routes.constFind(recorded.method + ' ' + recorded.url.path().toUtf8());
         if (handler != m_routes.constEnd())
             canned = handler.value()(recorded);
-        return new FakeReply(request, operation, canned, this);
+        auto *reply = new FakeReply(request, operation, canned, this);
+        replies.append(reply);
+        return reply;
     }
+
+public:
+    QList<QPointer<QNetworkReply>> replies;
 
 private:
     QHash<QByteArray, Handler> m_routes;
@@ -391,6 +396,28 @@ void testClientOutlivesNetwork()
     check(waitFor([&] { return lateAnswered; }), "a request after the network went away still answers");
     check(!late.ok && !late.error.isEmpty() && firstAnswers == 0,
           "requests cancelled with the network report nothing and later ones fail cleanly", late.error);
+}
+
+void testCancelKeepsOtherObservers()
+{
+    FakeServer server;
+    server.json("GET", QStringLiteral("/api/v1/timelines/home"), QJsonArray());
+    Client client(&server);
+    client.setAccount(QStringLiteral("https://social.example"), QStringLiteral("tok"));
+    int answers = 0;
+    client.get(QStringLiteral("/api/v1/timelines/home"), {}, [&answers](const Result &) { ++answers; });
+    check(server.replies.size() == 1 && server.replies.first(), "the request is in flight");
+    QNetworkReply *reply = server.replies.first();
+    QObject observer;
+    bool finished = false;
+    bool destroyed = false;
+    QObject::connect(reply, &QNetworkReply::finished, &observer, [&finished] { finished = true; });
+    QObject::connect(reply, &QObject::destroyed, &observer, [&destroyed] { destroyed = true; });
+    client.cancelAll();
+    check(waitFor([&] { return finished; }), "a cancelled reply still finishes");
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    check(destroyed && answers == 0,
+          "cancelling drops the client's own handlers but keeps the network manager's observers");
 }
 
 void testFeature()
@@ -752,6 +779,7 @@ int main(int argc, char **argv)
     testHelpers();
     testBodies();
     testClientOutlivesNetwork();
+    testCancelKeepsOtherObservers();
     testFeature();
 
     std::printf("%s: %d failure(s)\n", failures ? "FAILED" : "OK", failures);

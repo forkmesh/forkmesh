@@ -133,6 +133,14 @@ closes the manager is destroyed before the page, so `cancelAll()` from
 `Client::cancelAll`, report #23). `testClientOutlivesNetwork` deletes the
 manager with requests in flight and then cancels.
 
+`cancelAll()` disconnects a reply only from the client's own context, and
+touches no reply once the manager is gone. A bare `reply->disconnect()` also
+cut the network manager's `finished` and `destroyed` handlers, which close the
+reply's `net` ticket in the footer, so every cancelled read stayed listed as
+running, and it walked receivers the client does not own while the window was
+being torn down (report #24). `testCancelKeepsOtherObservers` checks that an
+outside observer still sees the reply finish and be deleted.
+
 ### What the page covers
 
 - Timelines: Home (with a compose prompt), Local, Federated, Bookmarks,
