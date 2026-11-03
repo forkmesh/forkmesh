@@ -1055,6 +1055,14 @@ void MainWindow::fetchContributorRewardsRequest(bool automated)
         }
         return;
     }
+    if (automated &&
+        waitForAccountSession(
+            endpoint, [this] { fetchContributorRewardsRequest(true); },
+            [this](const QString &error) {
+                finishContributorPayoutTransfer(
+                    false, QString(), 0, QStringLiteral("Stopped: %1").arg(error));
+            }))
+        return;
     QString sessionToken;
     if (automated) {
         if (m_contributorPayoutRepository.isEmpty()) {
