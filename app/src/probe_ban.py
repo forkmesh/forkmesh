@@ -109,6 +109,9 @@ _SCRIPT_ROOTS = frozenset({
     "mysqladmin", "pma", "adminer", "boaform", "hnap1", "_ignition",
     "_profiler"})
 _ENV_NAME_RE = re.compile(r"^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$")
+_BUILD_NAME_RE = re.compile(
+    r"^(?:build|git|release|commit|version)_(?:[a-z0-9]+_)*"
+    r"(?:rev|revision|sha|hash|commit|id|number|version|tag|ref|date)$")
 _PATH_SIGNATURES = (
     (re.compile(
         r"^(?:latest/(?:meta-data|user-data|dynamic|api/token)|"
@@ -247,7 +250,8 @@ def _file_kinds(segment, first, last):
         found.add("config")
     if segment in _CONFIG_DIRS or segment.startswith("swagger"):
         found.add("config")
-    if first and (segment in _RECON_ROOTS or _RECON_FILE_RE.search(segment)):
+    if first and (segment in _RECON_ROOTS or _RECON_FILE_RE.search(segment)
+                  or _BUILD_NAME_RE.match(segment)):
         found.add("recon")
     if last and (segment in _CONFIG_NAMES or _CONFIG_EXT_RE.search(segment)
                  or (dotted and _CONFIG_STEM_RE.search(segment))):
@@ -279,7 +283,8 @@ def classify(path):
             len(segments) > 1 and segments[1] in _API_SKIP)):
         segments = []
     if "secret" in found or (segments and len(raw) != 2
-                             and _ENV_NAME_RE.match(raw[-1])):
+                             and _ENV_NAME_RE.match(raw[-1])
+                             and not _BUILD_NAME_RE.match(segments[-1])):
         return "secret"
     for index, segment in enumerate(segments):
         found |= _file_kinds(segment, index == 0, index == len(segments) - 1)

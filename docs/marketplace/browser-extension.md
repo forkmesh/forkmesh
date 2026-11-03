@@ -127,6 +127,11 @@ The pytest wrappers run the harnesses with Node and stand up
 ```
 
 - Bump the version in all four places, then rebuild the catalog.
+- A version is out only once the **Deploy nodes** run for its merge passes
+  ([auto-deploy](../operations/auto-deploy.md)): the zip and the CRM endpoints
+  it calls ship together. 2.30.0 and CRM 1.50.0 sat on `main` unserved because
+  every deploy failed its test gate, so the panel found no lists; 2.31.0 also
+  takes in the open-tracking changes merged after 2.30.0 without a bump.
 - Other packages must not pin this one's exact version. The CRM page keeps
   only the oldest build it works with (`CRM_EXTENSION_MINIMUM`) and links to
   `/dashboard/extension`.

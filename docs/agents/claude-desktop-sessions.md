@@ -92,14 +92,17 @@ private, unversioned state and it holds them in memory.
   menus registers the agent if needed and switches the Claude app to it.
   External (terminal) Claude rows work too.
 - **Setting.** Settings > Agents > "Add Claude Code agents to the Claude
-  app" (`agents/claudeDesktopSessions`, on by default) stops automatic
-  registration; the menu action still works.
+  app" (`agents/claudeDesktopSessions`) turns automatic registration and the
+  backfill on. It is **off by default** (since 2026-11-03): every deep link
+  launches or raises the Claude app, so with it on the Claude window opened by
+  itself whenever an agent finished, which looked like ForkMesh starting the
+  app at random. The menu action works either way.
 
 ## Limits
 
 - The Claude app switches to every session the deep link adds; there is no
   quiet import. A burst of finishing agents moves the Claude window through
-  them, two seconds apart. Turn the setting off to avoid that.
+  them, two seconds apart. That is why the setting is off by default.
 - ForkMesh keeps a Claude Code process alive between turns. If you send a
   message to the same agent in the Claude app while ForkMesh also continues
   it, both append to one transcript. Continue an agent in one place at a
