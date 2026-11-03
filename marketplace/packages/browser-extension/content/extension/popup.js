@@ -101,9 +101,11 @@ async function renderSent() {
   const result = await send({ type: "fm-sent-settings" });
   if (!result.ok) return note("[data-sent-status]", humanError(result));
   $("[data-track-sent]").checked = Boolean(result.track);
+  $("[data-track-pixel]").checked = Boolean(result.pixel);
+  $("[data-track-pixel]").disabled = !result.track;
   const last = result.last;
   const intro = result.track
-    ? "Mail you send from Gmail or Zoho Mail to someone in the CRM is linked to their record."
+    ? `Mail you send from Gmail or Zoho Mail to someone in the CRM is linked to their record.${result.pixel ? " A 1-pixel image in each email pings you when it is first opened." : ""}`
     : "Sent mail is not linked on its own; use the panel on the message instead.";
   const recent = !last ? "" : last.error
     ? ` Last send not tracked (${ago(last.at)}): ${last.error}.`
@@ -993,6 +995,10 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   $("[data-track-sent]").addEventListener("change", async (event) => {
     await send({ type: "fm-sent-set-track", track: event.target.checked });
+    await renderSent();
+  });
+  $("[data-track-pixel]").addEventListener("change", async (event) => {
+    await send({ type: "fm-sent-set-track", pixel: event.target.checked });
     await renderSent();
   });
   $("[data-track-toots]").addEventListener("change", async (event) => {

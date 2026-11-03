@@ -17016,6 +17016,96 @@ void checkGitCompactLayout(MainWindow &window)
     settle();
 }
 
+void checkPromptPlacementAtLaunch()
+{
+    const QRect detachGeometry(40, 60, 900, 180);
+    QSettings placement;
+    placement.setValue(QStringLiteral("prompt/floating"), true);
+    placement.setValue(QStringLiteral("prompt/floatPos"), QPoint(24, 48));
+    placement.setValue(QStringLiteral("prompt/floatSize"), QSize(320, 200));
+    placement.setValue(QStringLiteral("prompt/detached"), false);
+    placement.setValue(QStringLiteral("prompt/detachGeometry"), detachGeometry);
+    placement.sync();
+    const auto staleKeysGone = [&placement] {
+        for (const char *key : {"prompt/floating", "prompt/floatPos", "prompt/floatSize",
+                                "prompt/detached"}) {
+            if (placement.contains(QLatin1String(key)))
+                return false;
+        }
+        return true;
+    };
+    {
+        MainWindow restarted;
+        restarted.resize(1200, 720);
+        restarted.show();
+        QElapsedTimer timer;
+        timer.start();
+        while (!staleKeysGone() && timer.elapsed() < 4000)
+            QApplication::processEvents(QEventLoop::AllEvents, 20);
+        check(restarted.testPromptOverlayPlacement() == QStringLiteral("anchored") &&
+                  staleKeysGone() &&
+                  placement.value(QStringLiteral("prompt/detachGeometry")).toRect() == detachGeometry,
+              QStringLiteral("a launch docks the prompt, drops the floating keys it never reads and "
+                             "keeps the detached window's geometry (placement %1)")
+                  .arg(restarted.testPromptOverlayPlacement()));
+        restarted.close();
+        QApplication::processEvents();
+        stopChildProcesses(restarted);
+    }
+    check(staleKeysGone() &&
+              placement.value(QStringLiteral("prompt/detachGeometry")).toRect() == detachGeometry,
+          QStringLiteral("closing the window stores only the detached prompt's geometry"));
+}
+
+void checkOverviewCommitRefresh(MainWindow &window)
+{
+    auto *overview = window.findChild<QTreeWidget *>(QStringLiteral("overviewList"));
+    QTreeWidgetItem *readme = nullptr;
+    QElapsedTimer timer;
+    timer.start();
+    while (overview && (!readme || readme->text(1) != QLatin1String("readme")) &&
+           timer.elapsed() < 5000) {
+        QApplication::processEvents(QEventLoop::AllEvents, 20);
+        readme = nullptr;
+        for (int at = 0; at < overview->topLevelItemCount(); ++at) {
+            QTreeWidgetItem *item = overview->topLevelItem(at);
+            if (item->data(0, Qt::UserRole).toString() == QLatin1String("readme.txt") &&
+                overview->itemWidget(item, 0))
+                readme = item;
+        }
+    }
+    check(readme != nullptr && readme->text(1) == QLatin1String("readme"),
+          QStringLiteral("the overview lists readme.txt with its name cell and last commit"));
+    if (!readme)
+        return;
+    QWidget *cell = overview->itemWidget(readme, 0);
+    const int tracks = cell->findChildren<QWidget *>(QStringLiteral("overviewMetricTracks")).size();
+    const int oldTracks = cell->findChildren<QWidget *>(QStringLiteral("overviewMetricTrack")).size() +
+                          cell->findChildren<QWidget *>(QStringLiteral("overviewMetricFill")).size();
+    check(tracks == 1 && oldTracks == 0 && cell->findChildren<QWidget *>().size() <= 4,
+          QStringLiteral("an overview row's metric strip is one painted widget (%1 strips, %2 old bars, %3 children)")
+              .arg(tracks)
+              .arg(oldTracks)
+              .arg(cell->findChildren<QWidget *>().size()));
+    const QPointer<QWidget> before = cell;
+    window.testMergeOverviewEntryCommits(
+        {{QStringLiteral("readme.txt"), QByteArray("1700000000\x1f" "3 days ago\x1f" "Tune the readme")}});
+    QApplication::processEvents();
+    QTreeWidgetItem *after = nullptr;
+    for (int at = 0; at < overview->topLevelItemCount(); ++at) {
+        QTreeWidgetItem *item = overview->topLevelItem(at);
+        if (item->data(0, Qt::UserRole).toString() == QLatin1String("readme.txt"))
+            after = item;
+    }
+    check(after && after->text(1) == QLatin1String("Tune the readme") &&
+              after->toolTip(0).contains(QLatin1String("Updated: 3 days ago")),
+          QStringLiteral("commit info for an overview entry shows its subject and age (%1)")
+              .arg(after ? after->text(1) : QStringLiteral("row gone")));
+    check(before && after && overview->itemWidget(after, 0) == before.data(),
+          QStringLiteral("commit info arriving patches the overview rows in place instead of "
+                         "rebuilding every cell widget"));
+}
+
 void runGitLayoutOnly(MainWindow &window)
 {
     window.resize(1400, 900);
@@ -17037,6 +17127,7 @@ void runGitLayoutOnly(MainWindow &window)
     const int index = window.testAddLocalRepository("me", "gitlayout", repo.path());
     window.testOpenRepository(index);
     QApplication::processEvents();
+    checkOverviewCommitRefresh(window);
     window.testClickRailGitButton();
     QElapsedTimer timer;
     timer.start();
@@ -23718,6 +23809,7 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
         window.show();
         QApplication::processEvents();
         checkFooterOverlayGeometry(window);
+        checkPromptPlacementAtLaunch();
         return failures == 0 ? 0 : 1;
     }
 
@@ -36794,8 +36886,8 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
                               restartedDock->rect().center().x() &&
                           restartedPrompt->geometry().bottom() ==
                               restartedDock->rect().bottom() &&
-                          !placement.value(QStringLiteral("prompt/floating"))
-                               .toBool(),
+                          !placement.contains(QStringLiteral("prompt/floating")) &&
+                          !placement.contains(QStringLiteral("prompt/floatPos")),
                       QString("a launch pins the prompt to the lower-right corner "
                               "however it was left (placement %1)")
                           .arg(restarted.testPromptOverlayPlacement()));

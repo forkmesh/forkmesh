@@ -105,11 +105,12 @@ def test_extension_talks_to_forkmesh_with_a_bearer_and_never_cookies():
                 "providerUrl"):
         assert key + ":" in body
     assert "text:" not in body and "html:" not in body
-    # "Add to pipeline" rides the same link call: a flow, a stage, and the
-    # contact details read off the email, never the body itself.
-    for key in ("flow", "stage", "contact"):
+    # "Add to list" rides the same link call: a list, and the contact
+    # details read off the email, never the body itself.
+    for key in ("list", "flow", "stage", "contact"):
         assert key + ":" in body
     assert "flows: payload.flows || []" in BACKGROUND
+    assert "lists: payload.lists || []" in BACKGROUND
     assert "password" not in BACKGROUND.split("async function signIn", 1)[0]
 
 
@@ -124,9 +125,9 @@ def test_content_script_reads_gmail_and_zoho_and_exposes_the_message_to_the_popu
     assert 'const ZOHO_SENT_FOLDERS = new Set(["sent", "outbox", "drafts"]);' in CONTENT
     assert "function greetingName(lines)" in CONTENT
     assert "function signatureDetails(lines)" in CONTENT
-    assert 'data-act="pipeline"' in PANEL
-    assert 'data-pipeline="flow"' in PANEL and 'data-pipeline="stage"' in PANEL
-    assert "...(choice ? { flow: choice.flow.id, stage: choice.stage } : {})," in PANEL
+    assert 'data-act="list"' in PANEL and "<select data-list>" in PANEL
+    assert "...(choice ? { list: choice.id } : {})," in PANEL
+    assert 'data-act="pipeline"' not in PANEL
     assert '{ type: "fm-read-message" }' in POPUP
     assert "chrome.permissions.request" in POPUP
     assert 'type="password"' in POPUP_HTML
@@ -378,6 +379,60 @@ def test_your_own_mastodon_post_adds_contacts_and_pings_through_the_crm_worker()
     result = subprocess.run(
         [shutil.which("node"), "--no-warnings",
          str(PACKAGE / "tests" / "background_mastodon_toot_harness.js")],
+        capture_output=True, text=True, timeout=300,
+        env={"PATH": "/usr/local/bin:/usr/bin:/bin", "PYTHON": sys.executable})
+    assert result.returncode == 0, result.stdout[-3000:] + result.stderr[-2000:]
+    assert "checks passed" in result.stdout
+
+
+def _headless_chrome():
+    for name in ("chrome-headless-shell", "chromium", "chromium-browser", "google-chrome"):
+        if shutil.which(name):
+            return shutil.which(name)
+    found = sorted(Path.home().glob(
+        ".cache/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell"))
+    return str(found[-1]) if found else None
+
+
+def _compose_harness(mode, tmp_path):
+    result = subprocess.run(
+        [_headless_chrome(), "--headless", "--no-sandbox", "--allow-file-access-from-files",
+         f"--user-data-dir={tmp_path}", "--virtual-time-budget=30000", "--dump-dom",
+         (PACKAGE / "tests" / "zoho_compose_harness.html").as_uri() + f"?mode={mode}"],
+        capture_output=True, text=True, timeout=180)
+    found = re.search(r"(RESULT|ERROR) (.*)</pre>", result.stdout, re.S)
+    assert found and found.group(1) == "RESULT", result.stdout[-3000:] + result.stderr[-2000:]
+    return json.loads(found.group(2))
+
+
+@pytest.mark.skipif(_headless_chrome() is None, reason="no headless Chrome")
+def test_a_new_zoho_email_looks_up_its_to_address_and_links_to_it_when_sent(tmp_path):
+    out = _compose_harness("send", tmp_path)
+    assert out["lookups"] == ["ada@engines.example"]
+    assert out["compose"] == {"contactEmail": "ada@engines.example", "direction": "outbound",
+                              "participants": ["ada@engines.example", "cc@other.example"]}
+    assert "ListEngines leads" in out["strip"] and "On sendLinks here" in out["strip"]
+    assert out["sent"] == {"sameId": True, "contactId": "a" * 32, "pixel": True,
+                           "recipients": ["ada@engines.example", "cc@other.example"]}
+    assert out["pixels"] == ["https://pixel.invalid/api/crm/-/t/o/" + "c" * 32 + "." + "d" * 24 + ".png"]
+    assert out["reading"] == "wrong@sender.example"
+    assert "Look up" in out["readingStrip"]
+
+
+@pytest.mark.skipif(_headless_chrome() is None, reason="no headless Chrome")
+def test_a_new_contact_on_a_zoho_email_is_added_to_a_list(tmp_path):
+    out = _compose_harness("add", tmp_path)
+    assert out["lookups"] == ["ada@engines.example"]
+    assert "Not in the CRM yet" in out["strip"] and "Add to list" in out["strip"]
+    assert out["button"] == "Add to list"
+    assert out["link"] == {"list": "b" * 32, "contactEmail": "ada@engines.example", "flow": "", "pixel": True}
+    assert out["notice"] == "Created Ada Lovelace on Engines leads; linked."
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_a_sent_email_carries_an_open_pixel_and_its_first_open_pings_the_sender():
+    result = subprocess.run(
+        [shutil.which("node"), "--no-warnings", str(PACKAGE / "tests" / "background_sent_pixel_harness.js")],
         capture_output=True, text=True, timeout=300,
         env={"PATH": "/usr/local/bin:/usr/bin:/bin", "PYTHON": sys.executable})
     assert result.returncode == 0, result.stdout[-3000:] + result.stderr[-2000:]

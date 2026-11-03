@@ -12,6 +12,8 @@
 #include <QObject>
 #include <QTimer>
 
+#include <utility>
+
 namespace forkmesh::mastodon {
 
 namespace {
@@ -83,9 +85,10 @@ void Client::cancelAll()
     m_context = new QObject;
     m_retired.append(old);
     old->deleteLater();
-    const QSet<QNetworkReply *> replies = m_replies;
-    m_replies.clear();
-    for (QNetworkReply *reply : replies) {
+    const QList<QPointer<QNetworkReply>> replies = std::exchange(m_replies, {});
+    for (const QPointer<QNetworkReply> &reply : replies) {
+        if (!reply)
+            continue;
         reply->disconnect();
         reply->abort();
         reply->deleteLater();
@@ -121,12 +124,13 @@ QNetworkRequest Client::request(const QUrl &url, bool authorized) const
 
 void Client::track(QNetworkReply *reply, Handler done, bool authorized)
 {
-    m_replies.insert(reply);
+    m_replies.removeIf([](const QPointer<QNetworkReply> &tracked) { return tracked.isNull(); });
+    m_replies.append(reply);
     const quint64 epoch = m_epoch;
     QObject::connect(reply, &QNetworkReply::finished, m_context, [this, reply, done = std::move(done), authorized, epoch] {
         if (epoch != m_epoch)
             return;
-        m_replies.remove(reply);
+        m_replies.removeAll(reply);
         reply->deleteLater();
         Result result;
         result.status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
@@ -262,7 +266,8 @@ void Client::image(const QString &url, ImageHandler done)
     if (!m_imageHosts.contains(target.host().toLower()))
         markFaviconProbe(req);
     QNetworkReply *reply = m_network->get(req);
-    m_replies.insert(reply);
+    m_replies.removeIf([](const QPointer<QNetworkReply> &tracked) { return tracked.isNull(); });
+    m_replies.append(reply);
     QObject::connect(reply, &QNetworkReply::downloadProgress, m_context, [reply](qint64 received, qint64) {
         if (received > kMaxImageBytes)
             reply->abort();
@@ -271,7 +276,7 @@ void Client::image(const QString &url, ImageHandler done)
     QObject::connect(reply, &QNetworkReply::finished, m_context, [this, reply, url, epoch] {
         if (epoch != m_epoch)
             return;
-        m_replies.remove(reply);
+        m_replies.removeAll(reply);
         reply->deleteLater();
         QImage image;
         if (reply->error() == QNetworkReply::NoError)

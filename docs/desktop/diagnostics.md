@@ -781,6 +781,33 @@ returned, so summed frame totals overstate a function's own cost.
   pixmap painting while the process is swapped out, and any stall sampled
   while the load average is far above the CPU count.
 
+### Rules from report #23 (2026-11-03)
+
+- **Patch rows, do not rebuild them.** The repository overview builds a cell
+  widget per row, and each one is polished under the application stylesheet
+  (the most frequent stall, x102). When the last-commit subjects arrive,
+  `mergeOverviewEntryCommits` updates the existing items through
+  `refreshOverviewRowCommits`/`applyOverviewRowCommit`. It rebuilds only when
+  the sort is by "updated" or "subject", or the rows no longer match.
+- **Paint small decorations.** An overview row's size/lines/files strip is
+  one painted `OverviewMetricTracks` widget, not a container with three
+  tracks and three fills. That takes a "next" row from 10 widgets to 4. Its
+  colours repeat the stylesheet's (`#overviewMetricTrack`/`Fill` in
+  `Theme.h`, the track remapped through `nextPalette` and the fill
+  `FgMuted` in the next design).
+- **Build tabs when they are shown.** `QTabWidget::heightForWidth` asks every
+  page through `QStackedLayout`, so a word-wrapped label on a hidden tab still
+  gets laid out. Surveys builds only the shown detail tab
+  ([../marketplace/surveys.md](../marketplace/surveys.md)).
+- **Start web engines on first show.** Face Changer creates its
+  `QWebEngineView` in `showEvent`, not in the page constructor that runs during
+  `buildNextNativePackagePage`
+  ([../marketplace/face-changer-desktop.md](../marketplace/face-changer-desktop.md)).
+- **Do not persist what launch throws away.** A launch always docks the
+  prompt, so only `prompt/detachGeometry` is stored. The floating and detached
+  keys are dropped once, and the startup no longer rewrites and fsyncs
+  `ForkMesh.conf` after every session that ended with the prompt floating.
+
 ### Startup: installed package pages after first paint
 
 Building every installed package's page inside `buildChatPage` costs seconds
@@ -990,6 +1017,16 @@ Crash-safety rules:
   the crash and fails on any direct connection under `desktop/src` or
   `marketplace/packages`.
 - `glib` `SIGTRAP` crashes have come from file-descriptor exhaustion.
+- Process-wide registries that a `destroyed` handler, a deferred delete or a
+  worker can reach are never destroyed: `BackgroundActivity`'s ticket bus and
+  `ActionTelemetry`'s writer are leaked on purpose. An `exit()` from inside a
+  library (an X11 IO error in an offscreen instance) runs static destructors
+  and then flushes posted events, and a `QNetworkReply` deleted then closed its
+  ticket in the destroyed hash (SIGSEGV in `QHashPrivate::Data::detached`,
+  report #23). The writer still flushes `actions.jsonl` from an `atexit`
+  handler registered when it is created; records that arrive after that are
+  dropped. `forkmesh-background-activity-exit-tests` closes a ticket from an
+  exit handler registered before the bus existed.
 
 ## What is reported to the relay
 

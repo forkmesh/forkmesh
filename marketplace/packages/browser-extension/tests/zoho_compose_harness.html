@@ -1,0 +1,99 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Zoho Mail</title></head>
+<body>
+<div class="zmUserEmail" title="me@mine.example">me@mine.example</div>
+<div class="zmPV" data-msgid="1234567890123">
+  <div class="zmPVHeader"><span title="wrong@sender.example">Wrong Sender</span> <span title="me@mine.example">Me</span></div>
+  <div class="zmMailContent">Hi there
+Thanks
+Wrong Sender</div>
+</div>
+<div class="zmComposeTab" id="compose">
+  <div class="row"><span>From</span> <span title="Me Mine &lt;me@mine.example&gt;">Me Mine</span></div>
+  <div class="row"><span>Cc</span> <span class="chip" data-email="cc@other.example">Carl Copy</span><input aria-label="Cc" value=""></div>
+  <div class="row" id="to"><span>To</span> <span class="chip" title="Ada Lovelace &lt;ada@engines.example&gt;">Ada Lovelace</span><input aria-label="To" value=""></div>
+  <div class="row"><input placeholder="Subject" value="Engines quote"></div>
+  <iframe style="width:400px;height:100px"></iframe>
+  <button type="button" id="send">Send</button>
+</div>
+<pre id="out"></pre>
+<script>
+  history.replaceState(null, "", "#mail/folder/inbox/p/1234567890123");
+  const MODE = new URLSearchParams(location.search).get("mode") || "send";
+  const CONTACT = "a".repeat(32), LIST = "b".repeat(32);
+  const ADA = { id: CONTACT, name: "Ada Lovelace", email: "ada@engines.example", flow: "customers", stage: "lead", views: [LIST] };
+  const LISTS = [{ id: LIST, name: "Engines leads", flow: "" }];
+  const PIXEL = { token: "c".repeat(32) + "." + "d".repeat(24), url: "https://pixel.invalid/api/crm/-/t/o/" + "c".repeat(32) + "." + "d".repeat(24) + ".png" };
+  document.querySelector("iframe").contentDocument.designMode = "on";
+  const FLOWS = [{ id: "customers", name: "Customers", stages: ["lead"] }];
+  if (MODE === "add") {
+    const to = document.getElementById("to");
+    to.querySelector(".chip").remove();
+    to.querySelector("input").value = "Ada Lovelace <ada@engines.example>";
+  }
+  window.calls = [];
+  function respond(msg) {
+    if (msg.type === "fm-status") return { ok: true, connected: true, account: "me", organization: "org" };
+    if (msg.type === "fm-sent-settings") return { ok: true, track: true };
+    if (msg.type === "fm-lookup") {
+      return MODE === "add"
+        ? { ok: true, matchedBy: "", emails: [], contact: null, flows: FLOWS, lists: LISTS }
+        : { ok: true, matchedBy: "email", emails: [], contact: ADA, flows: FLOWS, lists: LISTS };
+    }
+    if (msg.type === "fm-link") return { ok: true, contactCreated: true, emails: [], contact: ADA, flows: FLOWS, lists: LISTS };
+    if (msg.type === "fm-track-sent") return { ok: true, tracked: true };
+    if (msg.type === "fm-track-pixel") return { ok: true, pixel: PIXEL };
+    return { ok: true };
+  }
+  window.chrome = { runtime: {
+    lastError: null,
+    sendMessage(msg, cb) { calls.push(JSON.parse(JSON.stringify(msg))); const r = respond(msg); setTimeout(() => cb && cb(r), 0); },
+    onMessage: { addListener(fn) { window.listener = fn; } },
+  } };
+</script>
+<script src="../content/extension/panel.js"></script>
+<script src="../content/extension/content.js"></script>
+<script>
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const root = () => document.querySelector("#forkmesh-crm-host")?.shadowRoot;
+  const strip = () => root()?.querySelector(".strip")?.textContent || "";
+  const read = () => new Promise((resolve) => window.listener({ type: "fm-read-message" }, null, (r) => resolve(r.message)));
+  async function send(out) {
+    const compose = await read();
+    out.compose = { contactEmail: compose.contactEmail, participants: compose.participants.map((p) => p.email), direction: compose.direction };
+    document.getElementById("send").dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    document.getElementById("send").click();
+    out.pixels = [...document.querySelector("iframe").contentDocument.body.querySelectorAll("img")].map((img) => img.getAttribute("src"));
+    await wait(11000);
+    const sent = calls.find((c) => c.type === "fm-track-sent");
+    out.sent = sent && {
+      sameId: sent.message.messageId === compose.messageId, contactId: sent.message.contactId,
+      pixel: sent.message.trackToken === PIXEL.token,
+      recipients: sent.message.recipients.map((r) => r.email),
+    };
+    document.getElementById("compose").remove();
+    await wait(1500);
+    out.reading = (await read()).contactEmail;
+    out.readingStrip = strip();
+  }
+  async function add(out) {
+    root().querySelector('[data-strip="toggle"]').click();
+    await wait(100);
+    out.button = root().querySelector('[data-act="list"]').textContent;
+    root().querySelector('[data-act="list"]').click();
+    await wait(500);
+    const link = calls.find((c) => c.type === "fm-link");
+    out.link = link && { list: link.message.list, contactEmail: link.message.contactEmail, flow: link.message.flow || "",
+      pixel: link.message.trackToken === PIXEL.token };
+    out.notice = root().querySelector(".ok")?.textContent;
+  }
+  (async () => {
+    const out = {};
+    await wait(1500);
+    out.lookups = calls.filter((c) => c.type === "fm-lookup").map((c) => c.email);
+    out.strip = strip();
+    await (MODE === "add" ? add(out) : send(out));
+    document.getElementById("out").textContent = "RESULT " + JSON.stringify(out);
+  })().catch((error) => { document.getElementById("out").textContent = "ERROR " + error.stack; });
+</script>
+</body></html>

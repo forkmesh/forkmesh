@@ -3437,6 +3437,10 @@ public:
         return m_repoBranch;
     }
     QString testBrowsedBranch() const { return m_repoBranch; }
+    void testMergeOverviewEntryCommits(const QHash<QString, QByteArray> &records)
+    {
+        mergeOverviewEntryCommits(QString(), records);
+    }
     void testSwitchToAgentBranch(int sessionId) { switchToAgentBranch(sessionId); }
     int testCommitWorkspacePage() const;
     void testApplyGitLayout() { applyGitLayout(); }
@@ -7862,6 +7866,8 @@ private:
                            const QString &path, const QString &dir,
                            const QString &keyPrefix, OverviewLoad load);
     QString overviewRequestFor(const QString &path) const;
+    void mergeOverviewEntryCommits(const QString &treeKey,
+                                   const QHash<QString, QByteArray> &records);
     void fillOverviewEntryCommits(const QString &dir, const QString &ref,
                                   const QString &treeKey,
                                   const QString &loadedKey,
@@ -13739,6 +13745,9 @@ private:
     QString m_overviewSortKey = QStringLiteral("name");
     bool m_overviewSortDesc = false;
     void populateOverviewTree(); // (re)fill m_overviewList from m_overviewRows
+    void applyOverviewRowCommit(QTreeWidgetItem *item, const OverviewRow &row, bool next,
+                                int rowHeight);
+    bool refreshOverviewRowCommits();
     void showOverviewLoadingPlaceholders();
     QTextBrowser *m_readmeView = nullptr;
     QTreeWidget *m_repoFileTree = nullptr;

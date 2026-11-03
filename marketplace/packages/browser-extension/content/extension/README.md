@@ -73,14 +73,18 @@ Safety properties:
 
 Open an email. A compact **CRM header** above the message names the other
 party and offers **Look up**; nothing is requested from ForkMesh until you press
-it. **Look up** shows the record (name, pipeline, stage, owner, last email,
-linked emails, company, title, deal value, next step, tags). The **FM** button
+it. **Look up** shows the record (name, lists, pipeline, stage, owner, last
+email, linked emails, company, title, deal value, next step, tags). The **FM** button
 (or the toolbar popup) opens the panel, prefilled from the message (contact,
 name, company, website, signature details, date and subject, all editable):
 
-- **Add to pipeline** picks a flow and stage, creates the contact if needed
-  and links the email.
-- **Link only** records the message without changing the pipeline.
+- **Add to list** (2.30.0; was **Add to pipeline**) picks one of the CRM's
+  lists, creates the contact if needed, puts them on the list and links the
+  email. A list bound to a pipeline also moves the contact into that pipeline,
+  keeping their stage when they are already in it. The header's **List** chip
+  names the lists the contact is on, by the CRM's membership rule
+  ([CRM README](../../../crm/README.md#data-model)).
+- **Link only** records the message without changing any list.
 - **Link to an existing contact…** files the message under another record
   (searching by name, address or company); the address joins that record so
   the next message is found automatically.
@@ -101,6 +105,23 @@ the open message's row in the list (found by the message id from the URL,
 else the selected row). The list row gives the sender of received mail and
 the recipient of sent mail.
 
+**A new email in Zoho Mail** (2.30.0): while a compose tab is open, the header
+reads the compose form instead of the message left open behind it, which
+before showed that message's sender. The contact is the first **To**
+recipient (people outside your domain first, then Cc, then Bcc), read from the
+recipient chips (`data-email` and similar attributes, or a `title` holding the
+address) and from a To field's typed text once it loses focus. A chip belongs
+to the field whose row starts with its label ("To", "Cc") or that holds only
+that field's input. Addressing an email is asking for its contact, so the To
+address is looked up at once, with no **Look up** press. When the CRM finds
+the record, the header shows **On send · Links here**: sending links the email
+to that very record (its id rides with the send, so a later recipient with a
+record cannot take it), and a link made from the panel before sending is
+updated rather than doubled, since the compose and the send share one message
+id. With **Track emails I send** off the chip says **Not linked**. The compose
+is found by a visible subject field and the nearest container holding it and
+a **Send** button, so it does not depend on Zoho's class names.
+
 **Mastodon**: add each instance in the popup (**Mastodon instances**), or
 press **Record this toot in the CRM** on an instance not added yet; Chrome asks
 for that host once. Conversations are linked by `@name@instance`.
@@ -119,8 +140,25 @@ popup shows who was logged last. Timelines, profiles and other people's posts
 send nothing.
 
 **Mail you send** (on by default, **Track emails I send**): sends from Gmail or
-Zoho Mail are linked to the first recipient that already has a record (people
-outside your domain first) and move **Last contacted**. Gmail sends are linked
+Zoho Mail are linked to the first recipient that already has a record (To
+before Cc and Bcc, people outside your domain first) and move **Last
+contacted**.
+
+**Open tracking** (2.30.0, on by default under **Track emails I send**: **Tell
+me when they are opened**): for every compose it sees (a Zoho compose tab, a
+Gmail editor), the page asks the background for a pixel (`fm-track-pixel`),
+which returns nothing when either switch is off or no one is signed in, else
+the CRM's signed image address (`POST /emails/pixel`). The image is appended to
+the editor (Zoho's editor frame body, Gmail's `g_editable` body) on the mouse
+press on **Send**, so it is not loading while you write, and again on the click
+or Ctrl+Enter if it is missing. Its token rides with the send; the link adopts
+it as the email's id, so the CRM's existing open pixel records the open and
+pings the sender on the first one. A send to nobody with a record is still
+recorded, contactless, so the open can be reported. A link made from the panel
+during the compose carries the token too. Known limits: a Zoho Ctrl+Enter
+inside the editor frame gets no image (its key events never reach the page),
+the Gmail side is checked only against the selectors the send tracking already
+used, and Gmail and Apple Mail fetch images through their own proxies. Gmail sends are linked
 after the 10-second undo window or when the tab closes. No contact is created
 for a send to unknown recipients.
 

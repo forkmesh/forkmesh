@@ -1,6 +1,6 @@
 #include "SurveysModel.h"
 
-#include <QCoreApplication>
+#include <QApplication>
 #include <QDateTime>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -9,6 +9,8 @@
 #include <cstdio>
 
 using namespace forkmesh::surveys;
+
+int surveysPageFailures();
 
 namespace {
 
@@ -43,7 +45,9 @@ Question question(const QString &type, const QString &title, const QStringList &
 
 int main(int argc, char **argv)
 {
-    QCoreApplication app(argc, argv);
+    if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM"))
+        qputenv("QT_QPA_PLATFORM", "offscreen");
+    QApplication app(argc, argv);
     const QString dot = QString::fromUtf8(" \xC2\xB7 ");
     const QString dash = QString::fromUtf8("\xE2\x80\x94");
     const QTimeZone utc = QTimeZone::utc();
@@ -399,6 +403,7 @@ int main(int argc, char **argv)
               readableError(QStringLiteral("something_else")) == QStringLiteral("something else"),
           "worker errors read as sentences");
 
+    failures += surveysPageFailures();
     std::printf("%s: %d failure(s)\n", failures ? "FAILED" : "OK", failures);
     return failures ? 1 : 0;
 }
