@@ -293,6 +293,66 @@ void testErrorsAndTimes()
     check(commentTimeLabel(0, now).isEmpty(), "no time gives no label");
 }
 
+void testFollowAndChat()
+{
+    const QJsonArray raw{
+        QJsonObject{{QStringLiteral("clientId"), QStringLiteral("c1")},
+                    {QStringLiteral("name"), QStringLiteral("ana")},
+                    {QStringLiteral("state"), QStringLiteral("viewing")},
+                    {QStringLiteral("line"), 4},
+                    {QStringLiteral("column"), 2}},
+        QJsonObject{{QStringLiteral("clientId"), QStringLiteral("c2")},
+                    {QStringLiteral("name"), QStringLiteral("ana")},
+                    {QStringLiteral("state"), QStringLiteral("editing")},
+                    {QStringLiteral("line"), 9}},
+        QJsonObject{{QStringLiteral("clientId"), QStringLiteral("c3")},
+                    {QStringLiteral("name"), QStringLiteral("bo")},
+                    {QStringLiteral("state"), QStringLiteral("viewing")},
+                    {QStringLiteral("line"), -3}},
+    };
+    const QList<NotePeer> peers = notePeers(raw);
+    check(peers.value(0).line == 9 && peers.value(0).column == 0,
+          "a peer keeps its cursor line and column");
+    check(noteFollowedPeer(peers, QStringLiteral("ana")).clientId == QStringLiteral("c2"),
+          "following prefers the client that is editing");
+    check(noteFollowedPeer(peers, QStringLiteral("bo")).clientId.isEmpty(),
+          "a peer without a line cannot be followed yet");
+    check(notePeerHere(peers, QStringLiteral("bo")) &&
+              !notePeerHere(peers, QStringLiteral("cy")),
+          "a followed person is here until they leave");
+
+    const QJsonArray rawMessages{
+        QJsonObject{{QStringLiteral("id"), QStringLiteral("m1")},
+                    {QStringLiteral("author"), QStringLiteral("ana")},
+                    {QStringLiteral("body"), QStringLiteral("Hi")},
+                    {QStringLiteral("createdAt"), 100.0}},
+        QJsonObject{{QStringLiteral("id"), QStringLiteral("m2")},
+                    {QStringLiteral("author"), QStringLiteral("Me")},
+                    {QStringLiteral("body"), QStringLiteral("Hello")},
+                    {QStringLiteral("createdAt"), 200.0}},
+        QJsonObject{{QStringLiteral("author"), QStringLiteral("x")}},
+        QJsonObject{{QStringLiteral("id"), QStringLiteral("m3")},
+                    {QStringLiteral("body"), QStringLiteral("?")},
+                    {QStringLiteral("createdAt"), 300.0}},
+    };
+    const QList<NoteChatMessage> messages = noteChatMessages(rawMessages);
+    check(messages.size() == 3, "a message without an id is dropped");
+    check(messages.value(2).author == QStringLiteral("Someone"),
+          "a message without an author is from Someone");
+    check(noteChatUnread(messages, QStringLiteral("me"), 0) == 2,
+          "my own messages are never unread");
+    check(noteChatUnread(messages, QStringLiteral("me"), 100) == 1,
+          "messages up to the last one seen are read");
+    check(noteChatButtonLabel(0) == QStringLiteral("Chat") &&
+              noteChatButtonLabel(3) == QStringLiteral("Chat (3)") &&
+              noteChatButtonLabel(120) == QStringLiteral("Chat (99+)"),
+          "the chat button counts unread messages");
+    check(notePresencePollMs(true, true) == kPresenceFollowMs &&
+              notePresencePollMs(false, true) == kPresenceChatMs &&
+              notePresencePollMs(false, false) == kPresencePollMs,
+          "presence polls faster while following or chatting");
+}
+
 void testPresence()
 {
     const QJsonArray raw{
@@ -389,6 +449,7 @@ int main(int argc, char **argv)
     testMentions();
     testErrorsAndTimes();
     testPresence();
+    testFollowAndChat();
     if (failures == 0)
         std::puts("note comments: all checks passed");
     return failures == 0 ? 0 : 1;

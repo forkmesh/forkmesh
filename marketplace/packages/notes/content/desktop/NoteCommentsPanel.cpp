@@ -18,7 +18,10 @@
 #include <QPushButton>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QSettings>
+#include <QShowEvent>
 #include <QSignalBlocker>
+#include <QStackedWidget>
 #include <QTextBlock>
 #include <QTimer>
 #include <QToolButton>
@@ -177,6 +180,33 @@ private:
     int m_anchor = -1;
 };
 
+class EnterSends : public QObject
+{
+public:
+    EnterSends(QPlainTextEdit *box, std::function<void()> send)
+        : QObject(box), m_send(std::move(send))
+    {
+        box->installEventFilter(this);
+    }
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (event->type() == QEvent::KeyPress) {
+            auto *key = static_cast<QKeyEvent *>(event);
+            if ((key->key() == Qt::Key_Return || key->key() == Qt::Key_Enter) &&
+                !(key->modifiers() & Qt::ShiftModifier)) {
+                m_send();
+                return true;
+            }
+        }
+        return QObject::eventFilter(watched, event);
+    }
+
+private:
+    std::function<void()> m_send;
+};
+
 QString elided(const QString &text, int chars)
 {
     const QString flat = text.simplified();
@@ -233,11 +263,24 @@ NoteCommentsPanel::NoteCommentsPanel(Hooks hooks, QWidget *parent)
 
     auto *header = new QHBoxLayout;
     header->setSpacing(4);
-    auto *title = new QLabel(QStringLiteral("Comments"));
-    title->setStyleSheet(Theme::remapSheet(QStringLiteral("font-weight:600;")));
-    header->addWidget(title);
+    m_commentsTabButton = textButton(QStringLiteral("Comments"), "markdownTab");
+    m_chatTabButton = textButton(QStringLiteral("Chat"), "markdownTab");
+    m_chatTabButton->setToolTip(
+        QStringLiteral("Chat with everyone who can open this note"));
+    for (QPushButton *tab : {m_commentsTabButton, m_chatTabButton}) {
+        tab->setCheckable(true);
+        header->addWidget(tab);
+    }
+    m_commentsTabButton->setChecked(true);
+    connect(m_commentsTabButton, &QPushButton::clicked, this,
+            [this] { showTab(false); });
+    connect(m_chatTabButton, &QPushButton::clicked, this, [this] {
+        showTab(true);
+        focusChat();
+    });
     header->addStretch();
     auto *add = textButton(QStringLiteral("New"), "ghostButton");
+    m_newButton = add;
     forkmesh::ui::setOcticon(add, QStringLiteral("comment"), 14);
     add->setToolTip(QStringLiteral(
         "Comment on the selected text, or on the whole note when nothing is "
@@ -247,7 +290,7 @@ NoteCommentsPanel::NoteCommentsPanel(Hooks hooks, QWidget *parent)
             m_hooks.newComment();
     });
     header->addWidget(add);
-    auto *close = iconButton(QStringLiteral("x"), QStringLiteral("Close comments"));
+    auto *close = iconButton(QStringLiteral("x"), QStringLiteral("Close the panel"));
     connect(close, &QToolButton::clicked, this, [this] {
         hide();
         if (m_hooks.closed)
@@ -256,9 +299,17 @@ NoteCommentsPanel::NoteCommentsPanel(Hooks hooks, QWidget *parent)
     header->addWidget(close);
     layout->addLayout(header);
 
+    m_pages = new QStackedWidget;
+    auto *commentsPage = new QWidget;
+    auto *commentsLayout = new QVBoxLayout(commentsPage);
+    commentsLayout->setContentsMargins(0, 0, 0, 0);
+    commentsLayout->setSpacing(8);
+    m_pages->addWidget(commentsPage);
+    layout->addWidget(m_pages, 1);
+
     m_status = mutedLabel();
     m_status->hide();
-    layout->addWidget(m_status);
+    commentsLayout->addWidget(m_status);
 
     m_composer = new QWidget;
     m_composer->setObjectName(QStringLiteral("noteCommentComposer"));
@@ -296,7 +347,7 @@ NoteCommentsPanel::NoteCommentsPanel(Hooks hooks, QWidget *parent)
     composeButtons->addWidget(m_composeSend);
     composerLayout->addLayout(composeButtons);
     m_composer->hide();
-    layout->addWidget(m_composer);
+    commentsLayout->addWidget(m_composer);
 
     m_scroll = new QScrollArea;
     m_scroll->setObjectName(QStringLiteral("noteCommentsScroll"));
@@ -309,7 +360,47 @@ NoteCommentsPanel::NoteCommentsPanel(Hooks hooks, QWidget *parent)
     m_listLayout->setContentsMargins(0, 0, 4, 0);
     m_listLayout->setSpacing(8);
     m_scroll->setWidget(m_list);
-    layout->addWidget(m_scroll, 1);
+    commentsLayout->addWidget(m_scroll, 1);
+
+    auto *chatPage = new QWidget;
+    chatPage->setObjectName(QStringLiteral("noteChatPage"));
+    auto *chatLayout = new QVBoxLayout(chatPage);
+    chatLayout->setContentsMargins(0, 0, 0, 0);
+    chatLayout->setSpacing(6);
+    m_chatStatus = mutedLabel();
+    m_chatStatus->hide();
+    chatLayout->addWidget(m_chatStatus);
+    m_chatScroll = new QScrollArea;
+    m_chatScroll->setObjectName(QStringLiteral("noteChatScroll"));
+    m_chatScroll->setWidgetResizable(true);
+    m_chatScroll->setFrameShape(QFrame::NoFrame);
+    m_chatScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_chatList = new QWidget;
+    m_chatList->setObjectName(QStringLiteral("noteChatList"));
+    m_chatListLayout = new QVBoxLayout(m_chatList);
+    m_chatListLayout->setContentsMargins(0, 0, 4, 0);
+    m_chatListLayout->setSpacing(8);
+    m_chatScroll->setWidget(m_chatList);
+    chatLayout->addWidget(m_chatScroll, 1);
+    m_chatBox = new QPlainTextEdit;
+    m_chatBox->setObjectName(QStringLiteral("noteChatBox"));
+    m_chatBox->setPlaceholderText(QStringLiteral(
+        "Message everyone in this note. Enter sends, Shift+Enter adds a line."));
+    m_chatBox->setTabChangesFocus(true);
+    m_chatBox->setFixedHeight(m_chatBox->fontMetrics().lineSpacing() * kBoxLines + 12);
+    new EnterSends(m_chatBox, [this] { sendChat(); });
+    new CommentBoxHelper(
+        m_chatBox, [this] { return m_people; },
+        [this] { return m_hooks.me ? m_hooks.me() : QString(); },
+        [this] { sendChat(); });
+    chatLayout->addWidget(m_chatBox);
+    auto *chatButtons = new QHBoxLayout;
+    chatButtons->addStretch();
+    m_chatSend = textButton(QStringLiteral("Send"), "primaryButton");
+    connect(m_chatSend, &QPushButton::clicked, this, [this] { sendChat(); });
+    chatButtons->addWidget(m_chatSend);
+    chatLayout->addLayout(chatButtons);
+    m_pages->addWidget(chatPage);
 
     m_anchorTimer = new QTimer(this);
     m_anchorTimer->setSingleShot(true);
@@ -358,6 +449,226 @@ void NoteCommentsPanel::setNote(const QString &noteId)
     if (m_hooks.countChanged)
         m_hooks.countChanged();
     reload();
+    ++m_chatSequence;
+    m_chat.clear();
+    m_chatLoaded = false;
+    m_chatModerate = false;
+    m_chatBusy = false;
+    m_chatUnread = 0;
+    m_chatBox->clear();
+    setChatStatus(QString());
+    renderChat();
+    if (m_hooks.chatChanged)
+        m_hooks.chatChanged();
+    reloadChat();
+}
+
+QString NoteCommentsPanel::chatPath(const QString &messageId) const
+{
+    QString path = QStringLiteral("/api/notes/%1/chat").arg(m_noteId);
+    if (!messageId.isEmpty())
+        path += QLatin1Char('/') + messageId;
+    return path;
+}
+
+void NoteCommentsPanel::showTab(bool chat)
+{
+    m_chatTab = chat;
+    m_pages->setCurrentIndex(chat ? 1 : 0);
+    m_commentsTabButton->setChecked(!chat);
+    m_chatTabButton->setChecked(chat);
+    m_newButton->setVisible(!chat);
+    if (chat && isVisible())
+        markChatSeen();
+    if (chat)
+        QTimer::singleShot(0, this, [this] {
+            m_chatScroll->verticalScrollBar()->setValue(
+                m_chatScroll->verticalScrollBar()->maximum());
+        });
+}
+
+void NoteCommentsPanel::focusChat()
+{
+    if (m_chatTab)
+        m_chatBox->setFocus();
+}
+
+void NoteCommentsPanel::showEvent(QShowEvent *event)
+{
+    QWidget::showEvent(event);
+    if (m_chatTab)
+        markChatSeen();
+}
+
+void NoteCommentsPanel::reloadChat()
+{
+    if (m_noteId.isEmpty() || !m_hooks.request)
+        return;
+    const int sequence = ++m_chatSequence;
+    const QString noteId = m_noteId;
+    QPointer<NoteCommentsPanel> guard(this);
+    m_hooks.request(QByteArrayLiteral("GET"), chatPath(), {},
+                    [guard, sequence, noteId](bool ok, const QJsonObject &payload,
+                                              const QString &error) {
+        if (!guard || guard->m_chatSequence != sequence || guard->m_noteId != noteId)
+            return;
+        if (!ok) {
+            if (!guard->m_chatLoaded)
+                guard->setChatStatus(
+                    QStringLiteral("Chat is unavailable: %1").arg(error));
+            return;
+        }
+        guard->applyChat(payload);
+    });
+}
+
+void NoteCommentsPanel::applyChat(const QJsonObject &payload)
+{
+    m_chat = noteChatMessages(payload.value(QStringLiteral("messages")).toArray());
+    m_chatModerate = payload.value(QStringLiteral("canModerate")).toBool();
+    m_chatLoaded = true;
+    setChatStatus(QString());
+    const QSettings settings;
+    m_chatUnread = noteChatUnread(
+        m_chat, m_hooks.me ? m_hooks.me() : QString(),
+        settings.value(QStringLiteral("notes/chatSeen/") + m_noteId).toLongLong());
+    if (m_chatTab && isVisible())
+        markChatSeen();
+    renderChat();
+    if (m_hooks.chatChanged)
+        m_hooks.chatChanged();
+}
+
+void NoteCommentsPanel::markChatSeen()
+{
+    if (m_noteId.isEmpty() || m_chat.isEmpty()) {
+        m_chatUnread = 0;
+        return;
+    }
+    QSettings settings;
+    const QString key = QStringLiteral("notes/chatSeen/") + m_noteId;
+    if (settings.value(key).toLongLong() < m_chat.constLast().createdAt)
+        settings.setValue(key, m_chat.constLast().createdAt);
+    if (std::exchange(m_chatUnread, 0) && m_hooks.chatChanged)
+        m_hooks.chatChanged();
+}
+
+void NoteCommentsPanel::setChatStatus(const QString &text)
+{
+    m_chatStatus->setText(text);
+    m_chatStatus->setVisible(!text.isEmpty());
+}
+
+void NoteCommentsPanel::renderChat()
+{
+    QScrollBar *bar = m_chatScroll->verticalScrollBar();
+    const bool atBottom = bar->value() >= bar->maximum() - 40;
+    while (QLayoutItem *item = m_chatListLayout->takeAt(0)) {
+        delete item->widget();
+        delete item;
+    }
+    const QString me = m_hooks.me ? m_hooks.me() : QString();
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (m_chat.isEmpty()) {
+        m_chatListLayout->addWidget(mutedLabel(
+            m_chatLoaded ? QStringLiteral("No messages yet. Say hello to everyone in this note.")
+                         : QStringLiteral("Loading chat…")));
+    }
+    for (const NoteChatMessage &message : std::as_const(m_chat)) {
+        const bool mine = sameAccount(message.author, me);
+        auto *row = new QWidget;
+        row->setObjectName(QStringLiteral("noteChatMessage"));
+        auto *rowLayout = new QVBoxLayout(row);
+        rowLayout->setContentsMargins(0, 0, 0, 0);
+        rowLayout->setSpacing(2);
+        auto *header = new QHBoxLayout;
+        header->setSpacing(6);
+        auto *who = new QLabel(mine ? QStringLiteral("You")
+                                    : QStringLiteral("@") + message.author);
+        who->setStyleSheet(Theme::remapSheet(
+            QStringLiteral("font-weight:600; background:transparent;")));
+        header->addWidget(who);
+        auto *time = new QLabel(commentTimeLabel(message.createdAt, now));
+        time->setObjectName(QStringLiteral("mutedLabel"));
+        time->setToolTip(QDateTime::fromMSecsSinceEpoch(message.createdAt)
+                             .toLocalTime()
+                             .toString(QStringLiteral("yyyy-MM-dd HH:mm")));
+        header->addWidget(time);
+        header->addStretch();
+        if (mine || m_chatModerate) {
+            auto *remove = iconButton(QStringLiteral("trash"), QStringLiteral("Delete message"));
+            const QString id = message.id;
+            connect(remove, &QToolButton::clicked, this, [this, id] { deleteChat(id); });
+            header->addWidget(remove);
+        }
+        rowLayout->addLayout(header);
+        auto *body = new QLabel(message.body);
+        body->setTextFormat(Qt::PlainText);
+        body->setWordWrap(true);
+        body->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        body->setStyleSheet(Theme::remapSheet(QStringLiteral("background:transparent;")));
+        rowLayout->addWidget(body);
+        m_chatListLayout->addWidget(row);
+    }
+    m_chatListLayout->addStretch();
+    if (atBottom || m_chatTab)
+        QTimer::singleShot(0, this, [this] {
+            m_chatScroll->verticalScrollBar()->setValue(
+                m_chatScroll->verticalScrollBar()->maximum());
+        });
+}
+
+void NoteCommentsPanel::sendChat()
+{
+    const QString body = m_chatBox->toPlainText().trimmed();
+    if (body.isEmpty() || m_chatBusy || m_noteId.isEmpty() || !m_hooks.request)
+        return;
+    if (body.size() > kMaxChatBody) {
+        setChatStatus(QStringLiteral("A message can be up to %1 characters.").arg(kMaxChatBody));
+        return;
+    }
+    m_chatBusy = true;
+    m_chatSend->setEnabled(false);
+    const QString noteId = m_noteId;
+    QPointer<NoteCommentsPanel> guard(this);
+    m_hooks.request(QByteArrayLiteral("POST"), chatPath(),
+                    QJsonObject{{QStringLiteral("body"), body}},
+                    [guard, noteId](bool ok, const QJsonObject &payload,
+                                    const QString &error) {
+        if (!guard || guard->m_noteId != noteId)
+            return;
+        guard->m_chatBusy = false;
+        guard->m_chatSend->setEnabled(true);
+        if (!ok) {
+            guard->setChatStatus(QStringLiteral("Not sent: %1").arg(error));
+            return;
+        }
+        guard->m_chatBox->clear();
+        ++guard->m_chatSequence;
+        guard->applyChat(payload);
+    });
+}
+
+void NoteCommentsPanel::deleteChat(const QString &messageId)
+{
+    if (QMessageBox::question(this, QStringLiteral("Delete message"),
+                              QStringLiteral("Delete this message for everyone?"))
+        != QMessageBox::Yes)
+        return;
+    const QString noteId = m_noteId;
+    QPointer<NoteCommentsPanel> guard(this);
+    m_hooks.request(QByteArrayLiteral("DELETE"), chatPath(messageId), {},
+                    [guard, noteId](bool ok, const QJsonObject &payload,
+                                    const QString &error) {
+        if (!guard || guard->m_noteId != noteId)
+            return;
+        if (!ok) {
+            guard->setChatStatus(QStringLiteral("Not deleted: %1").arg(error));
+            return;
+        }
+        ++guard->m_chatSequence;
+        guard->applyChat(payload);
+    });
 }
 
 void NoteCommentsPanel::reload()

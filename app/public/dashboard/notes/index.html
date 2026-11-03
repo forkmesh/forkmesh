@@ -4329,8 +4329,44 @@
             [data-view="notes"] .fm-flash { align-items: center; }
             .notes-body { position: relative; display: flex; flex: 1; min-height: 0; }
             .notes-work { display: grid; min-width: 0; flex: 1; min-height: 0; grid-template-columns: 1fr 1fr; }
-            .notes-work[data-mode="write"], .notes-work[data-mode="preview"] { grid-template-columns: 1fr; }
-            .notes-work[data-mode="write"] [data-note-preview-pane], .notes-work[data-mode="preview"] [data-note-write-pane] { display: none; }
+            .notes-work[data-mode="write"], .notes-work[data-mode="preview"], .notes-work[data-mode="live"] { grid-template-columns: 1fr; }
+            .notes-work[data-mode="write"] [data-note-preview-pane], .notes-work[data-mode="preview"] [data-note-write-pane], .notes-work[data-mode="live"] [data-note-write-pane] { display: none; }
+            .notes-work[data-mode="live"] .notes-preview { flex: 1; cursor: text; }
+            .notes-work[data-mode="live"] [data-note-preview-title][contenteditable] { outline: none; cursor: text; }
+            .notes-work[data-mode="live"] [data-note-preview-title]:empty::before { content: "Untitled note"; color: var(--nt-faint); }
+            .notes-live-block { position: relative; margin: 0 -.5rem; border-radius: .375rem; padding: 0 .5rem; }
+            .notes-live-block > :first-child { margin-top: 0; }
+            .notes-live-block > :last-child { margin-bottom: 0; }
+            .notes-live-block + .notes-live-block { margin-top: .85rem; }
+            .notes-live-block:hover { background: var(--nt-hover); }
+            .notes-live-block[data-editing="true"] { background: transparent; box-shadow: inset 0 0 0 1px var(--nt-primary); }
+            .notes-live-input { display: block; width: 100%; overflow: hidden; resize: none; border: 0; background: transparent; padding: .25rem 0; font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; font-size: .84rem; line-height: 1.75; color: rgb(var(--dashboard-foreground-rgb)); outline: none; }
+            .notes-live-empty { color: var(--nt-faint); font-style: italic; }
+            [data-follow-name] { box-shadow: inset 3px 0 0 var(--follow-color, var(--nt-primary)); }
+            .notes-follow-tag { position: absolute; z-index: 14; border-radius: .25rem; padding: 0 .35rem; font-size: .66rem; font-weight: 600; line-height: 1.2rem; color: #fff; pointer-events: none; }
+            .notes-follow { display: inline-flex; align-items: center; gap: .4rem; color: var(--nt-accent); }
+            .notes-follow button { border-radius: .25rem; padding: 0 .3rem; color: var(--nt-muted); }
+            .notes-follow button:hover { color: rgb(var(--dashboard-foreground-rgb)); }
+            .notes-panel-tabs { display: flex; flex: 1; gap: 2px; }
+            .notes-panel-tabs button { display: inline-flex; align-items: center; gap: .3rem; height: var(--dashboard-control-height-sm); border-radius: var(--dashboard-control-radius); padding: 0 .55rem; font-size: 13px; font-weight: 600; color: var(--nt-muted); }
+            .notes-panel-tabs button:hover { color: rgb(var(--dashboard-foreground-rgb)); }
+            .notes-panel-tabs button[aria-selected="true"] { background: var(--nt-selected); color: rgb(var(--dashboard-foreground-rgb)); box-shadow: inset 0 -2px 0 var(--nt-primary); }
+            .notes-panel-body { display: flex; flex: 1; min-height: 0; flex-direction: column; }
+            .notes-panel-body[hidden] { display: none; }
+            .notes-unread { display: inline-grid; min-width: 1rem; height: 1rem; place-items: center; border-radius: 999px; background: var(--nt-primary); padding: 0 .25rem; font-size: .62rem; font-weight: 600; line-height: 1; color: #fff; font-variant-numeric: tabular-nums; }
+            .notes-unread[hidden] { display: none; }
+            .notes-chat-list { display: flex; flex: 1; min-height: 0; flex-direction: column; gap: .55rem; margin: 0; overflow-y: auto; padding: .4rem .75rem .75rem; list-style: none; }
+            .notes-chat-msg { display: grid; grid-template-columns: 1.25rem minmax(0, 1fr); gap: .1rem .45rem; font-size: .78rem; }
+            .notes-chat-msg .notes-avatar { width: 1.25rem; height: 1.25rem; font-size: .5rem; }
+            .notes-chat-head { display: flex; align-items: center; gap: .4rem; min-width: 0; }
+            .notes-chat-msg[data-follow-up="true"] .notes-avatar, .notes-chat-msg[data-follow-up="true"] .notes-chat-head { visibility: hidden; height: 0; }
+            .notes-chat-msg[data-follow-up="true"] { margin-top: -.4rem; }
+            .notes-chat-body { grid-column: 2; overflow-wrap: anywhere; white-space: pre-wrap; line-height: 1.45; }
+            .notes-chat-msg .notes-comment-tools .notes-icon-btn { width: 1.3rem; height: 1.3rem; }
+            .notes-chat-msg:hover .notes-comment-tools, .notes-chat-msg .notes-comment-tools:focus-within { opacity: 1; }
+            .notes-chat-form { display: flex; align-items: flex-end; gap: .35rem; border-top: 1px solid var(--nt-soft); padding: .5rem .6rem; }
+            .notes-chat-form textarea { width: 100%; min-height: 2.1rem; max-height: 8rem; resize: none; border: 1px solid var(--nt-border); border-radius: .375rem; background: rgb(var(--dashboard-background-rgb)); padding: .35rem .5rem; font-size: .78rem; line-height: 1.4; outline: none; }
+            .notes-chat-form textarea:focus { border-color: var(--nt-primary); box-shadow: inset 0 0 0 1px var(--nt-primary); }
             .notes-pane { min-height: 0; overflow-y: auto; }
             .notes-work[data-mode="split"] [data-note-write-pane] { border-right: 1px solid var(--nt-soft); }
             .notes-doc { display: flex; min-height: 100%; width: 100%; max-width: 48rem; flex-direction: column; margin: 0 auto; padding: 1.75rem 2rem 3rem; }
@@ -4409,11 +4445,14 @@
             .notes-menu { top: 2.9rem; right: .75rem; width: 14rem; padding: 4px; }
             .notes-people-pop { top: 2.9rem; right: .75rem; width: 16rem; padding: .4rem; }
             .notes-people-pop h2 { margin: .2rem .4rem .4rem; font-size: 13px; }
-            .notes-here { display: grid; grid-template-columns: 1.5rem minmax(0, 1fr) auto; align-items: center; gap: .5rem; border-radius: .375rem; padding: .3rem .4rem; font-size: .78rem; }
+            .notes-here { display: grid; grid-template-columns: 1.5rem minmax(0, 1fr) auto auto; align-items: center; gap: .5rem; border-radius: .375rem; padding: .3rem .4rem; font-size: .78rem; }
             .notes-here .notes-avatar { width: 1.5rem; height: 1.5rem; font-size: .55rem; }
             .notes-here-state { display: inline-flex; align-items: center; gap: .25rem; font-size: .7rem; color: var(--nt-muted); }
             .notes-here-state[data-state="editing"] { color: var(--nt-accent); }
             [data-view="notes"] .notes-here-state svg.lucide { width: .75rem; height: .75rem; }
+            .notes-here-follow { border-radius: .25rem; padding: 0 .35rem; font-size: .7rem; font-weight: 500; color: var(--nt-accent); }
+            .notes-here-follow:hover { background: var(--nt-hover); }
+            .notes-here-follow[aria-pressed="true"] { background: var(--nt-selected); }
             .notes-comment-float { position: absolute; z-index: 15; box-shadow: 0 4px 12px rgb(1 4 9 / .3); }
             .notes-thread-list { display: grid; flex: 1; min-height: 0; align-content: start; gap: .5rem; margin: 0; overflow-y: auto; padding: .15rem .6rem 1rem; list-style: none; }
             .notes-thread { border: 1px solid var(--nt-soft); border-radius: .5rem; padding: .55rem .6rem; background: rgb(var(--dashboard-card-rgb)); }
@@ -4648,8 +4687,10 @@
                     <button type="button" data-note-mode="write" aria-pressed="false">Write</button>
                     <button type="button" data-note-mode="split" aria-pressed="true">Split</button>
                     <button type="button" data-note-mode="preview" aria-pressed="false">Preview</button>
+                    <button type="button" data-note-mode="live" aria-pressed="false" title="Edit the formatted note">Live</button>
                   </div>
                   <button data-note-comments-toggle type="button" class="notes-btn" title="Comments" aria-label="Show comments" aria-pressed="false" aria-controls="note-comments"><i data-lucide="message-square"></i><span data-note-comments-count class="notes-count">Comments</span></button>
+                  <button data-note-chat-toggle type="button" class="notes-btn" title="Chat" aria-label="Show chat" aria-pressed="false" aria-controls="note-comments"><i data-lucide="messages-square"></i>Chat<span data-note-chat-badge class="notes-unread" hidden></span></button>
                   <button data-note-share-open type="button" class="notes-btn" aria-haspopup="dialog" aria-expanded="false"><i data-lucide="user-plus"></i>Share</button>
                   <button data-note-activity-toggle type="button" class="notes-icon-btn" title="Activity" aria-label="Show activity" aria-pressed="false" aria-controls="note-activity"><i data-lucide="activity"></i></button>
                   <button data-note-menu-open type="button" class="notes-icon-btn" aria-label="More actions" aria-haspopup="menu" aria-expanded="false"><i data-lucide="ellipsis"></i></button>
@@ -4709,26 +4750,41 @@
                   <button data-note-activity-history type="button" class="notes-activity-link" hidden>Open version history</button>
                   <ol data-note-activity-list class="notes-act-list" aria-live="polite"></ol>
                 </aside>
-                <aside data-note-comments id="note-comments" class="notes-activity" aria-label="Comments" hidden>
+                <aside data-note-comments id="note-comments" class="notes-activity" aria-label="Comments and chat" hidden>
                   <div class="notes-activity-head">
-                    <h2>Comments</h2>
+                    <div class="notes-panel-tabs" role="tablist" aria-label="Comments and chat">
+                      <button type="button" role="tab" data-note-panel-tab="comments" aria-selected="true" aria-controls="note-panel-comments">Comments</button>
+                      <button type="button" role="tab" data-note-panel-tab="chat" aria-selected="false" aria-controls="note-panel-chat">Chat<span data-note-chat-unread class="notes-unread" hidden></span></button>
+                    </div>
                     <button data-note-comment-general type="button" class="notes-icon-btn" title="Comment on the whole note" aria-label="Comment on the whole note"><i data-lucide="message-square-plus"></i></button>
-                    <button data-note-comments-close type="button" class="notes-icon-btn" aria-label="Close comments"><i data-lucide="x"></i></button>
+                    <button data-note-comments-close type="button" class="notes-icon-btn" aria-label="Close panel"><i data-lucide="x"></i></button>
                   </div>
-                  <p data-note-notice="comments" class="notes-notice" role="status" hidden></p>
-                  <div data-note-comment-composer></div>
-                  <ol data-note-comment-list class="notes-thread-list" aria-live="polite"></ol>
-                  <details data-note-comment-resolved class="notes-resolved" hidden>
-                    <summary data-note-comment-resolved-label></summary>
-                    <ol data-note-comment-resolved-list class="notes-thread-list"></ol>
-                  </details>
+                  <div data-note-panel="comments" id="note-panel-comments" class="notes-panel-body" role="tabpanel">
+                    <p data-note-notice="comments" class="notes-notice" role="status" hidden></p>
+                    <div data-note-comment-composer></div>
+                    <ol data-note-comment-list class="notes-thread-list" aria-live="polite"></ol>
+                    <details data-note-comment-resolved class="notes-resolved" hidden>
+                      <summary data-note-comment-resolved-label></summary>
+                      <ol data-note-comment-resolved-list class="notes-thread-list"></ol>
+                    </details>
+                  </div>
+                  <div data-note-panel="chat" id="note-panel-chat" class="notes-panel-body" role="tabpanel" hidden>
+                    <p data-note-notice="chat" class="notes-notice" role="status" hidden></p>
+                    <ol data-note-chat-list class="notes-chat-list" aria-live="polite"></ol>
+                    <form data-note-chat-form class="notes-chat-form">
+                      <textarea data-note-chat-input rows="2" maxlength="2000" placeholder="Message everyone in this note" aria-label="Chat message"></textarea>
+                      <button type="submit" class="notes-btn" aria-label="Send message"><i data-lucide="send"></i></button>
+                    </form>
+                  </div>
                   <div data-note-mention-list class="notes-suggest notes-mention-list" role="listbox" aria-label="People to mention" hidden></div>
                 </aside>
                 <button data-note-comment-float type="button" class="notes-btn notes-comment-float" hidden><i data-lucide="message-square-plus"></i>Comment</button>
+                <span data-note-follow-tag class="notes-follow-tag" hidden></span>
                 </div>
 
                 <footer class="notes-status">
                   <button data-note-live type="button" aria-haspopup="dialog">Offline</button>
+                  <span data-note-follow class="notes-follow" hidden><span data-note-follow-label></span><button data-note-follow-stop type="button">Stop following</button></span>
                   <span data-note-counts></span>
                 </footer>
 
