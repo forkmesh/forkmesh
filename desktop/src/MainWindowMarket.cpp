@@ -4839,6 +4839,8 @@ forkmesh::market::NativePackageHost MainWindow::nativePackageHost(
         openNetworkShareLocation(url, guest);
     };
     host.openWebPage = [this](const QString &path) {
+        if (openNativePackageWebPage(path))
+            return;
         const QUrl url = forkmesh::market::nativePackageWebPageUrl(
             catalogApiUrl(), path);
         if (!url.isValid()) {
@@ -5277,6 +5279,22 @@ void MainWindow::openNativePackageLink(const QString &id)
         return;
     }
     QDesktopServices::openUrl(url);
+}
+
+bool MainWindow::openNativePackageWebPage(const QString &path)
+{
+    const QString command = QStringLiteral("webPage.open");
+    const QJsonObject args{{QStringLiteral("path"), path}};
+    QList<QPointer<forkmesh::market::NativePackageWidget>> widgets;
+    for (const NativePackagePage &page : std::as_const(m_nativePackagePages))
+        widgets.append(page.widget);
+    for (const QPointer<forkmesh::market::NativePackageWidget> &widget :
+         std::as_const(widgets)) {
+        if (widget && widget->acceptsHostCommand(command) &&
+            widget->hostCommand(command, args))
+            return true;
+    }
+    return false;
 }
 
 // The top search box answers from each package's loaded records, and a page

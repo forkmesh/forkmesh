@@ -55,6 +55,26 @@ Linux the app does not link it ([empty shell](package-modules.md#the-empty-shell
   WebEngine is not mapped after start, is mapped after the first profile, and
   a page loads and runs a script.
 
+### Pages that embed a ForkMesh web page
+
+A package page can run one of the host's own web pages through the same
+interface ([Spreadsheets](../marketplace/spreadsheets.md#on-the-desktop) is
+the first). The engine gives it what a desktop app needs and the Browser tab
+does not use:
+
+- `web::setCookie` puts a cookie for one origin into a profile (the
+  Spreadsheets page signs its memory-only profile in with it);
+- `ProfileOptions::downloadPath` asks for a full path per download (a save
+  dialog) instead of a fixed folder, and `downloadFinished` reports the result;
+- `PageOptions::printPath` turns `window.print()`, from the page or from a
+  frame (Qt 6.8), into a PDF saved at the returned path, reported through
+  `printFinished`;
+- `PageOptions::clipboard` lets scripts read and write the clipboard
+  (`JavascriptCanAccessClipboard`, `JavascriptCanPaste` and, on Qt 6.8, the
+  clipboard permission);
+- `PageOptions::onNewWindow` receives the address of a `window.open` or a
+  `target="_blank"` link, so the page can send it to the system browser.
+
 ## Build
 
 `FORKMESH_BROWSER_PANE` is `ON` by default. When CMake finds Qt
