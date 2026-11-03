@@ -1268,13 +1268,21 @@ raising, so the caller can keep the lead.
   no step to show or while My Zoho Mail is open. Compose says which mailbox it
   sends from. Inbox groups that hold mail from your own mailbox carry **Only
   you**.
+  **Networks** (1.53.0) follows **Shared with me** with one row per social
+  network that has anyone on it (Mastodon, Bluesky, X (Twitter), LinkedIn,
+  GitHub) and its count. A row opens everyone whose profile field for that
+  network is filled in, from every list and pipeline, as a client-side tab
+  (`?list=network:<field>`) that search and the Flow, Stage, Owner and
+  Follow-up filters narrow. Desktop, iOS and Android show the same networks in
+  the same order; `tests/test_networks.py` keeps the four lists equal.
 - **Desktop** (`CrmFeature.cpp`): columns for the lists, the table, Reach out
   / Follow up and the detail panel, spreadsheet-style editing, a People grid
   of contacts with pictures, imports, and a rail count of never-contacted
   contacts. Each list is one line: icon, name, `<not contacted>/<total>` and
   who can open it. The header holds only the title, the organization, Import,
   Mail, `⋯` (People, Pipelines, History, List cleanup, Extension), Settings,
-  Refresh and Add contact; a status message other than an error fades after six seconds. Data is read when the
+  Refresh and Add contact; **Networks** follows the lists, with a globe icon
+  per network, as client-side tabs with no list menu, rename or sharing; a status message other than an error fades after six seconds. Data is read when the
   CRM opens and on **Refresh**; nothing re-reads itself. Sorting and list
   membership are computed off the GUI thread.
 - **iPhone layout**: a section bar under the title holds **Home** (greeting,
@@ -1294,6 +1302,9 @@ raising, so the caller can keep the lead.
   The contact page is a short header, four quick actions and Overview /
   Activity / Notes tabs; the add form keeps name, email, company, title,
   phone and the pipeline in view and folds the rest under **More details**.
+  The Contacts chips end with a **Networks** heading and one chip per network
+  that has anyone on it (iOS `CrmNetwork`, Android `CrmNetwork`), which opens
+  everyone on it from every list and pipeline, with no list actions.
 - **iOS and Android**: under Business in the You hub; read `GET /api/crm` and
   `GET /api/crm/<org>?since=<revision>&tz=<minutes>` and offer the same
   editing, sharing, email, outreach, deck, drafts and Zoho Self Client

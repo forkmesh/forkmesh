@@ -49,6 +49,12 @@ window.ForkMeshDashboard.registerPage("crm", ({
   const CRM_MAX_FLOWS = 12;
   const CRM_PIPELINE_TAB_PREFIX = "pipeline:";
   const CRM_NO_PIPELINE_TAB = "no-pipeline";
+  const CRM_NETWORK_TAB_PREFIX = "network:";
+  const CRM_NETWORKS = [
+    { id: "mastodon", name: "Mastodon" }, { id: "bluesky", name: "Bluesky" },
+    { id: "twitter", name: "X (Twitter)" }, { id: "linkedin", name: "LinkedIn" },
+    { id: "github", name: "GitHub" },
+  ];
   const CRM_STAGE_SHAPE = /^[a-z][a-z0-9-]*$/;
   const CRM_SHARE_SHOWN = 15;
   const CRM_STAGE_PALETTE = ["#58a6ff", "#e3b341", "#bc8cff", "#39c5cf", "#db61a2", "#3fb950", "#db6d28", "#f85149"];
@@ -739,7 +745,19 @@ window.ForkMeshDashboard.registerPage("crm", ({
   // creates one named after the file, ordered like the file.
 
   function crmActiveView() {
-    return crmTabViews().find((view) => view.id === state.crmView.activeView) || null;
+    return crmNetworkView(state.crmView.activeView)
+      || crmTabViews().find((view) => view.id === state.crmView.activeView) || null;
+  }
+
+  function crmNetworkView(id) {
+    const value = String(id || "");
+    if (!value.startsWith(CRM_NETWORK_TAB_PREFIX)) return null;
+    const network = CRM_NETWORKS.find((item) => item.id === value.slice(CRM_NETWORK_TAB_PREFIX.length));
+    return network ? { id: value, name: network.name, network: network.id, virtual: true } : null;
+  }
+
+  function crmOnNetwork(contact, network) {
+    return Boolean(String(contact?.[network] || "").trim());
   }
 
   function crmVirtualViews() {
@@ -758,6 +776,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
   }
 
   function crmContactOnTab(contact, view, pipelines = crmPipelineIds()) {
+    if (view.network) return crmOnNetwork(contact, view.network);
     return view.id === CRM_NO_PIPELINE_TAB
       ? !pipelines.has(String(contact.flow || "")) : crmContactInView(contact, view);
   }
@@ -771,14 +790,14 @@ window.ForkMeshDashboard.registerPage("crm", ({
 
   function crmTabView(id) {
     return id === CRM_NO_PIPELINE_TAB ? crmNoPipelineView()
-      : crmTabViews().find((view) => view.id === id) || null;
+      : crmNetworkView(id) || crmTabViews().find((view) => view.id === id) || null;
   }
 
   function crmSyncActiveTab() {
     if (state.crmView.activeShared || state.crmView.sharedOnly) return;
     const tabs = crmTabViews();
     const previous = state.crmView.activeView;
-    if (!tabs.some((view) => view.id === previous)) {
+    if (!crmNetworkView(previous) && !tabs.some((view) => view.id === previous)) {
       state.crmView.activeView = tabs[0]?.id || "";
       if (previous && new URL(location.href).searchParams.get("list") === previous) crmSetListParam("");
     }
@@ -792,6 +811,11 @@ window.ForkMeshDashboard.registerPage("crm", ({
   function selectCrmFirstStage() {
     const view = crmActiveView();
     if (!view || view.id === state.crmView.stageTab) return;
+    if (view.network) {
+      state.crmView.stageTab = view.id;
+      const stage = $(`[data-crm-stage]`); if (stage) stage.value = "";
+      return;
+    }
     const { stages } = crmStripStages(view, view.flow ? "" : String($(`[data-crm-flow]`)?.value || ""));
     if (!stages.length) return;
     state.crmView.stageTab = view.id;
@@ -2925,7 +2949,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
   function openCrmListFromUrl() {
     const id = new URL(location.href).searchParams.get("list") || "";
     if (!id || !state.crmView.installed) return;
-    if (crmTabViews().some((view) => view.id === id)) { selectCrmSheet(id); return; }
+    if (crmNetworkView(id) || crmTabViews().some((view) => view.id === id)) { selectCrmSheet(id); return; }
     if (state.crmView.sharedViews.some((view) => view.id === id)) { void selectCrmSharedSheet(id); return; }
     crmSetListParam("");
     crmMessage("error", `That link points to a list you cannot open in ${state.crmView.organization}. It may be private, deleted, or in an organization you are not in.`);
@@ -4346,12 +4370,27 @@ window.ForkMeshDashboard.registerPage("crm", ({
         ${state.crmView.sharedOnly ? "" : `<button data-crm-tab-shared-menu="${escapeHtml(view.id)}" type="button" aria-label="Options for ${escapeHtml(view.name)}" class="crm-side-menu">⋯</button>`}
       </div>`;
     };
+    const networkIcon = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M2 8h12M8 2c1.7 1.8 2.5 3.8 2.5 6S9.7 12.2 8 14M8 2C6.3 3.8 5.5 5.8 5.5 8S6.3 12.2 8 14"/></svg>`;
+    const networks = CRM_NETWORKS.map((network) => ({
+      ...network, count: state.crmView.contacts.filter((contact) => crmOnNetwork(contact, network.id)).length,
+    })).filter((network) => network.count);
+    const networkTab = (network) => {
+      const id = `${CRM_NETWORK_TAB_PREFIX}${network.id}`;
+      const active = onContacts && state.crmView.activeView === id;
+      return `<div data-crm-tab-row="${escapeHtml(id)}" class="crm-side-row${active ? " crm-side-current" : ""}">
+        <button data-crm-network-tab="${escapeHtml(id)}" type="button" role="tab" aria-selected="${active}" title="Every contact with a ${escapeHtml(network.name)} profile, from every list and pipeline" class="crm-side-item">${networkIcon}<span class="crm-side-label">${escapeHtml(network.name)}</span><span class="crm-side-count">${network.count}</span></button>
+      </div>`;
+    };
     const shared = state.crmView.sharedViews;
     host.innerHTML = tabs.map((view) =>
       tab(view.id, view.name, counts.get(view.id) || 0, view)).join("")
       + (shared.length
         ? `<p class="crm-side-heading crm-side-heading-more" title="Lists other ForkMesh users shared with you">Shared with me</p>`
           + shared.map(sharedTab).join("")
+        : "")
+      + (networks.length
+        ? `<p class="crm-side-heading crm-side-heading-more" title="Everyone on one social network, across every list">Networks</p>`
+          + networks.map(networkTab).join("")
         : "");
   }
 
@@ -8110,6 +8149,8 @@ window.ForkMeshDashboard.registerPage("crm", ({
       if (sharedOptions) { openCrmSharedMenu(event, sharedOptions.dataset.crmTabSharedMenu); return; }
       const sharedTab = event.target.closest("[data-crm-tab-shared]");
       if (sharedTab) { void selectCrmSharedSheet(sharedTab.dataset.crmTabShared); return; }
+      const network = event.target.closest("[data-crm-network-tab]");
+      if (network) { selectCrmSheet(network.dataset.crmNetworkTab); return; }
       const options = event.target.closest("[data-crm-tab-menu]");
       if (options) { openCrmSheetMenu(event, options.dataset.crmTabMenu); return; }
       const tab = event.target.closest("[data-crm-tab]");

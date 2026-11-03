@@ -60,17 +60,37 @@ struct CrmSectionBar: View {
 struct CrmTabChips: View {
     @Bindable var model: CrmModel
     let items: [CrmTabItem]
+    var networks: [CrmTabItem] = []
 
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
                     ForEach(items) { item in chip(item) }
+                    if !networks.isEmpty {
+                        networksHeading
+                        ForEach(networks) { item in chip(item) }
+                    }
                 }
                 .padding(.horizontal)
             }
             .onAppear { proxy.scrollTo(model.activeTab.id, anchor: .center) }
         }
+    }
+
+    private var networksHeading: some View {
+        HStack(spacing: 6) {
+            Divider().frame(height: 18)
+            Text("Networks")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .padding(.leading, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+        .accessibilityHint("Everyone on one social network, across every list")
+        .accessibilityIdentifier("crm-networks")
     }
 
     private func chip(_ item: CrmTabItem) -> some View {

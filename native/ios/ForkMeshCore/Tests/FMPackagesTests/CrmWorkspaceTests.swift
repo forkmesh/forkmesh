@@ -17,13 +17,27 @@ extension FakePackagesTransport {
 
 final class CrmWorkspaceTests: XCTestCase {
     func contact(_ id: String, _ name: String, flow: String, stage: String, views: [String] = [], value: Int64 = 0,
-                 owner: String = "", tags: [String] = [], updated: Int64 = 0) -> JSONValue {
-        .object([
+                 owner: String = "", tags: [String] = [], updated: Int64 = 0, socials: [String: String] = [:]) -> JSONValue {
+        var object: JSONObject = [
             "id": .string(id), "organization": "acme", "name": .string(name), "email": .string(name.lowercased() + "@x.test"),
             "flow": .string(flow), "stage": .string(stage), "views": .array(views.map { .string($0) }), "value": .int(value),
             "owner": .string(owner), "tags": .array(tags.map { .string($0) }), "updatedAt": .int(updated),
             "fields": ["twitter_followers": "120", "empty": ""],
+        ]
+        for (key, value) in socials { object[key] = .string(value) }
+        return .object(object)
+    }
+
+    func networkedSummary() -> JSONObject {
+        var json = summary()
+        json["contacts"] = .array([
+            contact(hexA, "Ada", flow: "investment", stage: "sourced", views: [listA], value: 500, owner: "alice", tags: ["vip"], updated: 3,
+                    socials: ["mastodon": "@ada@x.test", "github": "ada"]),
+            contact(hexB, "Bob", flow: "investment", stage: "meeting", value: 100, owner: "bob", updated: 2, socials: ["github": "   ", "linkedin": ""]),
+            contact(hexC, "Cy", flow: "customers", stage: "lead", views: [listA, listB], updated: 1, socials: ["github": "cy"]),
+            contact(hexD, "Dee", flow: "retired", stage: "lead", socials: ["twitter": "dee"]),
         ])
+        return json
     }
 
     func summary() -> JSONObject {
@@ -115,6 +129,50 @@ final class CrmWorkspaceTests: XCTestCase {
         XCTAssertEqual(data.workspaceTabs.last?.tab, .shared)
     }
 
+    func testNetworksGroupEveryListByProfile() {
+        let data = CrmOrganizationData(json: networkedSummary())
+        XCTAssertEqual(CrmNetwork.all.map(\.id), ["mastodon", "bluesky", "twitter", "linkedin", "github"])
+        XCTAssertEqual(CrmNetwork.all.map(\.name), ["Mastodon", "Bluesky", "X (Twitter)", "LinkedIn", "GitHub"])
+        let tabs = data.networkTabs
+        XCTAssertEqual(tabs.map(\.tab), [.network("mastodon"), .network("twitter"), .network("github")])
+        XCTAssertEqual(tabs.map(\.title), ["Mastodon", "X (Twitter)", "GitHub"])
+        XCTAssertEqual(tabs.map(\.count), [1, 1, 2])
+        XCTAssertTrue(tabs.allSatisfy { $0.view == nil && $0.flow == nil })
+        XCTAssertEqual(data.contacts(for: .network("github")).map(\.name), ["Ada", "Cy"])
+        XCTAssertEqual(data.contacts(for: .network("twitter")).map(\.name), ["Dee"])
+        XCTAssertEqual(data.contacts(for: .network("linkedin")), [])
+        XCTAssertEqual(data.contacts(for: .network("myspace")), [])
+        XCTAssertNil(data.flow(for: .network("github")))
+        XCTAssertNil(data.view(for: .network("github")))
+        XCTAssertFalse(data.contactTabs.contains { if case .network = $0.tab { true } else { false } })
+        XCTAssertEqual(CrmTab.network("github").id, "network:github")
+        XCTAssertTrue(CrmTab.network("github").isContacts)
+        XCTAssertEqual(CrmOrganizationData(json: summary()).networkTabs, [])
+    }
+
+    @MainActor func testNetworkTabNarrowsWithSearchAndFilters() async {
+        let transport = FakePackagesTransport()
+        let model = await loadedModel(transport, networkedSummary())
+        model.select(.network("github"))
+        XCTAssertEqual(model.activeTab, .network("github"))
+        XCTAssertEqual(model.activeTitle, "GitHub")
+        XCTAssertNil(model.activeFlow)
+        XCTAssertNil(model.activeView)
+        XCTAssertEqual(model.visibleContacts.map(\.name), ["Ada", "Cy"])
+        model.query = "cy"
+        XCTAssertEqual(model.visibleContacts.map(\.name), ["Cy"])
+        model.query = ""
+        model.filter.owner = "alice"
+        XCTAssertEqual(model.visibleContacts.map(\.name), ["Ada"])
+        model.filter.owner = ""
+        model.filter.stage = "lead"
+        XCTAssertEqual(model.visibleContacts.map(\.name), ["Cy"])
+        model.show(.contacts)
+        XCTAssertEqual(model.activeTab, .network("github"))
+        model.tab = .network("myspace")
+        XCTAssertEqual(model.activeTab, .list(listA))
+    }
+
     func testTwoListsOnOnePipelineSplitByMembership() {
         var json = summary()
         var views = json.list("views")
@@ -204,9 +262,9 @@ final class CrmWorkspaceTests: XCTestCase {
         XCTAssertTrue(CrmSettings.zohoComposeURL(region: "", to: "a@b.c")!.absoluteString.hasPrefix("https://mail.zoho.com/zm/comp.do?ct=mailto%3A"))
     }
 
-    @MainActor func loadedModel(_ transport: FakePackagesTransport) async -> CrmModel {
+    @MainActor func loadedModel(_ transport: FakePackagesTransport, _ json: JSONObject? = nil) async -> CrmModel {
         transport.on("GET", "/api/crm", ["organizations": [["name": "acme", "role": "owner", "installed": true]]])
-        transport.on("GET", "/api/crm/acme", summary())
+        transport.on("GET", "/api/crm/acme", json ?? summary())
         let model = CrmModel(client: PackagesClient(transport: transport))
         await model.refresh()
         return model
