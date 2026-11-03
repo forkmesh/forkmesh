@@ -236,6 +236,15 @@ class ProbeHarness(Harness):
                               headers={"cf-connecting-ip": ip})
         return self.probe.denied(self.env, request, path)
 
+    def sign_in(self, account_bi, ip, seen=None, revoked=0):
+        seen = self.now if seen is None else seen
+        self.db.execute(
+            "INSERT INTO account_sessions (session_id,account_bi,token_digest,"
+            "created_at,last_seen_at,expires_at,revoked_at,client_ip) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            ("s-%s-%s" % (account_bi, ip), account_bi, "d-%s-%s" % (
+                account_bi, ip), seen, seen, self.now + 90 * DAY, revoked, ip))
+
 
 def test_every_scanner_family_from_the_404_list_is_classified():
     probe = ProbeHarness().probe
@@ -315,6 +324,48 @@ def test_checking_the_deployed_build_does_not_ban_the_operator():
     assert h.scan("/version") == "scored"
     assert h.visitor()["score"] == 2
     assert h.rules() == [] and h.bans() == []
+
+
+def test_a_network_an_administrator_signed_in_from_is_never_banned():
+    h = ProbeHarness()
+    h.sign_in("bi-0", "2603:7000:8c00:27ce::1f")
+    workstation = {"ip": "2603:7000:8c00:27ce:a1b2::9bd"}
+    assert h.scan("/BUILD_REV", workstation) == "scored"
+    assert h.scan("/.env", workstation) == "trusted"
+    assert h.scan("/wp-login.php", workstation) == "trusted"
+    assert h.rules() == [] and h.bans() == []
+    assert h.visitor()["score"] == 0
+    assert h.denied(workstation["ip"]) is None
+    assert h.scan("/.env", {"ip": "2603:7000:8c00:27cf::1"}) == "banned"
+
+
+def test_only_live_administrator_sessions_vouch_for_a_network():
+    h = ProbeHarness()
+    h.db.execute(
+        "INSERT INTO users (user_bi, data, is_admin) VALUES (?,?,0)",
+        ("bi-user", json.dumps({"name": "carol"})))
+    h.sign_in("bi-user", SCANNER)
+    h.sign_in("bi-0", OTHER, revoked=h.now)
+    h.sign_in("bi-1", THIRD, seen=h.now - 31 * DAY)
+    for ip in (SCANNER, OTHER, THIRD):
+        assert h.scan("/.env", {"ip": ip}) == "banned", ip
+    assert len(h.rules()) == 3
+
+
+def test_the_sweep_lifts_a_ban_on_an_administrators_network():
+    h = ProbeHarness()
+    assert h.scan("/.env") == "banned"
+    assert h.scan("/.env", {"ip": OTHER}) == "banned"
+    h.sign_in("bi-1", SCANNER)
+    _run(h.probe.sweep(h.env, h.now + 60_000))
+    [rule] = h.rules()
+    assert rule["pattern"] == OTHER
+    lifted = [b for b in h.bans() if b["lifted_at"]]
+    assert [b["lifted_by"] for b in lifted] == ["admin sign-in"]
+    assert SCANNER not in h.local_bans and OTHER in h.local_bans
+    assert h.denied(SCANNER) is None
+    assert h.scan("/.git/config") == "trusted"
+    assert len(h.rules()) == 1
 
 
 def test_one_script_probe_bans_and_one_backup_probe_does_not():

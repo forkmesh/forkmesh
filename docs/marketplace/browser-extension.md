@@ -127,6 +127,12 @@ The pytest wrappers run the harnesses with Node and stand up
 ```
 
 - Bump the version in all four places, then rebuild the catalog.
+- 2.32.0 reads the CRM when an email opens (`autoLink` in the `sentMail`
+  setting, on by default) because pressing **Look up** and then **Link only**
+  on every message from a known contact was the common case. Only an exact
+  address match (`matchedBy: "email"`) is linked, with `createContact: false`,
+  so a loose name match never files mail under the wrong person. Lookups and
+  links give up after 20 seconds with a **Retry** instead of spinning forever.
 - A version is out only once the **Deploy nodes** run for its merge passes
   ([auto-deploy](../operations/auto-deploy.md)): the zip and the CRM endpoints
   it calls ship together. 2.30.0 and CRM 1.50.0 sat on `main` unserved because

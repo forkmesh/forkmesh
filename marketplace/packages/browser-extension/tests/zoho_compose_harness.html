@@ -26,15 +26,25 @@ Wrong Sender</div>
   const PIXEL = { token: "c".repeat(32) + "." + "d".repeat(24), url: "https://pixel.invalid/api/crm/-/t/o/" + "c".repeat(32) + "." + "d".repeat(24) + ".png" };
   document.querySelector("iframe").contentDocument.designMode = "on";
   const FLOWS = [{ id: "customers", name: "Customers", stages: ["lead"] }];
+  if (MODE === "auto") document.getElementById("compose").remove();
   if (MODE === "add") {
     const to = document.getElementById("to");
     to.querySelector(".chip").remove();
     to.querySelector("input").value = "Ada Lovelace <ada@engines.example>";
   }
   window.calls = [];
+  const SENDER = { id: CONTACT, name: "Wrong Sender", email: "wrong@sender.example", flow: "customers", stage: "lead", views: [LIST] };
   function respond(msg) {
     if (msg.type === "fm-status") return { ok: true, connected: true, account: "me", organization: "org" };
-    if (msg.type === "fm-sent-settings") return { ok: true, track: true };
+    if (msg.type === "fm-sent-settings") return { ok: true, track: true, autoLink: MODE === "auto" };
+    if (MODE === "auto" && msg.type === "fm-lookup") {
+      return calls.filter((c) => c.type === "fm-lookup").length === 1
+        ? { ok: false, error: "server_error", message: "boom" }
+        : { ok: true, matchedBy: "email", emails: [], contact: SENDER, flows: FLOWS, lists: LISTS };
+    }
+    if (MODE === "auto" && msg.type === "fm-link") {
+      return { ok: true, emails: [{ id: "e1", externalId: msg.message.messageId, provider: msg.message.provider }], contact: SENDER, flows: FLOWS, lists: LISTS };
+    }
     if (msg.type === "fm-lookup") {
       return MODE === "add"
         ? { ok: true, matchedBy: "", emails: [], contact: null, flows: FLOWS, lists: LISTS }
@@ -47,7 +57,7 @@ Wrong Sender</div>
   }
   window.chrome = { runtime: {
     lastError: null,
-    sendMessage(msg, cb) { calls.push(JSON.parse(JSON.stringify(msg))); const r = respond(msg); setTimeout(() => cb && cb(r), 0); },
+    sendMessage(msg, cb) { calls.push(JSON.parse(JSON.stringify(msg))); const r = respond(msg); setTimeout(() => cb && cb(r), MODE === "auto" && ["fm-lookup", "fm-link"].includes(msg.type) ? 600 : 0); },
     onMessage: { addListener(fn) { window.listener = fn; } },
   } };
 </script>
@@ -87,8 +97,31 @@ Wrong Sender</div>
       pixel: link.message.trackToken === PIXEL.token };
     out.notice = root().querySelector(".ok")?.textContent;
   }
+  async function auto(out) {
+    await wait(300);
+    out.loading = strip();
+    out.spinner = Boolean(root().querySelector(".strip .spin"));
+    await wait(1200);
+    out.failed = strip();
+    root().querySelector('[data-strip="retry"]').click();
+    await wait(900);
+    out.linking = strip();
+    await wait(1000);
+    out.lookups = calls.filter((c) => c.type === "fm-lookup").map((c) => c.email);
+    const link = calls.find((c) => c.type === "fm-link");
+    out.link = link && { contactId: link.message.contactId, createContact: link.message.createContact, contactEmail: link.message.contactEmail };
+    out.strip = strip();
+    root().querySelector('[data-strip="toggle"]').click();
+    await wait(100);
+    out.notice = root().querySelector(".ok")?.textContent;
+  }
   (async () => {
     const out = {};
+    if (MODE === "auto") {
+      await auto(out);
+      document.getElementById("out").textContent = "RESULT " + JSON.stringify(out);
+      return;
+    }
     await wait(1500);
     out.lookups = calls.filter((c) => c.type === "fm-lookup").map((c) => c.email);
     out.strip = strip();

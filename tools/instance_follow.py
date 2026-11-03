@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 GENERATED = (
@@ -28,6 +29,8 @@ FINGERPRINT_LINE = re.compile(r'\s*"[0-9a-f]{64}"\s*')
 CONFLICT = re.compile(
     r"<<<<<<< [^\n]*\n(.*?)=======\n(.*?)>>>>>>> [^\n]*\n", re.S)
 MARKER = re.compile(r"^(<<<<<<<|>>>>>>>) ", re.M)
+MIGRATION_REFERENCE = re.compile(r"\b\d{4}_([a-z0-9_]+\.sql)\b")
+SHARED_WALK = 200
 GIT_TIMEOUT = 30 * 60
 
 
@@ -143,8 +146,96 @@ def latest_only(work):
     return True
 
 
+def same_migrations(work, path):
+    file = work / path
+    try:
+        text = file.read_text(encoding="utf-8")
+    except (OSError, ValueError):
+        return False
+    blocks = CONFLICT.findall(text)
+    if not blocks or not all(
+            ours != theirs and MIGRATION_REFERENCE.sub(r"\1", ours)
+            == MIGRATION_REFERENCE.sub(r"\1", theirs)
+            for ours, theirs in blocks):
+        return False
+    file.write_text(CONFLICT.sub(lambda m: m.group(1), text),
+                    encoding="utf-8")
+    git(work, "add", "--", path)
+    return True
+
+
+def blob(work, commit, path):
+    return git(work, "rev-parse", "--verify", "-q",
+               "%s:%s" % (commit, path), check=False).strip()
+
+
+def content(work, oid):
+    return subprocess.run(
+        ["git", "-C", str(work), "cat-file", "blob", oid], capture_output=True,
+        timeout=GIT_TIMEOUT, check=True).stdout
+
+
+def file_patch(work, commit, path):
+    diff = git(work, "diff", commit + "^", commit, "--", path)
+    if not diff:
+        return ""
+    return subprocess.run(
+        ["git", "-C", str(work), "patch-id", "--stable"], input=diff,
+        capture_output=True, text=True, timeout=GIT_TIMEOUT,
+        check=True).stdout.split(" ")[0]
+
+
+def merge_text(ours, base, theirs):
+    with tempfile.TemporaryDirectory() as folder:
+        names = []
+        for name, data in (("ours", ours), ("base", base), ("theirs", theirs)):
+            names.append(str(Path(folder) / name))
+            Path(names[-1]).write_bytes(data)
+        completed = subprocess.run(
+            ["git", "merge-file", "-p", *names], capture_output=True,
+            timeout=GIT_TIMEOUT, check=False)
+    return completed.stdout if completed.returncode == 0 else None
+
+
+def shared_merge(work, path, base):
+    ours, theirs = blob(work, "HEAD", path), blob(work, "MERGE_HEAD", path)
+    if not ours or not theirs:
+        return False
+    held = {}
+    for commit in git(work, "rev-list", base + "..MERGE_HEAD", "--",
+                      path).split() + [base]:
+        held.setdefault(blob(work, commit, path), commit)
+    held.pop("", None)
+    since = next((commit for commit in git(
+        work, "rev-list", "--first-parent", "--max-count=%d" % SHARED_WALK,
+        "HEAD", "--", path).split() if blob(work, commit, path) in held), "")
+    if not since:
+        return False
+    shared = blob(work, since, path)
+    sent = {file_patch(work, commit, path) for commit in git(
+        work, "rev-list", "--no-merges", held[shared] + "..MERGE_HEAD", "--",
+        path).split()} - {""}
+    text = content(work, ours)
+    for commit in git(work, "rev-list", "--no-merges", since + "..HEAD", "--",
+                      path).split():
+        if file_patch(work, commit, path) not in sent:
+            continue
+        before = blob(work, commit + "^", path)
+        text = merge_text(text, content(work, blob(work, commit, path)),
+                          content(work, before) if before else b"")
+        if text is None:
+            return False
+    merged = merge_text(text, content(work, shared), content(work, theirs))
+    if merged is None:
+        return False
+    (work / path).write_bytes(merged)
+    git(work, "add", "--", path)
+    return True
+
+
 def resolve_conflicts(work):
     unresolved, rebuild = [], False
+    base = git(work, "merge-base", "HEAD", "MERGE_HEAD", check=False).strip()
     for path in conflicted(work):
         if generated(path):
             rebuild = True
@@ -158,6 +249,9 @@ def resolve_conflicts(work):
         elif path == ENTRY and entry_only_fingerprint(work):
             continue
         elif path == MIGRATION_TEST and latest_only(work):
+            continue
+        elif same_migrations(work, path) or (
+                base and shared_merge(work, path, base)):
             continue
         else:
             unresolved.append(path)

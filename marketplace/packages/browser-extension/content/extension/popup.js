@@ -100,13 +100,17 @@ async function renderOrganizations() {
 async function renderSent() {
   const result = await send({ type: "fm-sent-settings" });
   if (!result.ok) return note("[data-sent-status]", humanError(result));
+  $("[data-auto-link]").checked = Boolean(result.autoLink);
   $("[data-track-sent]").checked = Boolean(result.track);
   $("[data-track-pixel]").checked = Boolean(result.pixel);
   $("[data-track-pixel]").disabled = !result.track;
   const last = result.last;
-  const intro = result.track
+  const opened = result.autoLink
+    ? "An email you open in Gmail or Zoho Mail is looked up in the CRM and linked when its address is on a contact. "
+    : "An email you open is looked up only when you press Look up. ";
+  const intro = opened + (result.track
     ? `Mail you send from Gmail or Zoho Mail to someone in the CRM is linked to their record.${result.pixel ? " A 1-pixel image in each email pings you when it is first opened." : ""}`
-    : "Sent mail is not linked on its own; use the panel on the message instead.";
+    : "Sent mail is not linked on its own; use the panel on the message instead.");
   const recent = !last ? "" : last.error
     ? ` Last send not tracked (${ago(last.at)}): ${last.error}.`
     : ` Last tracked ${ago(last.at)}: ${last.subject || "(no subject)"} → ${last.contact || "contact"}.`;
@@ -991,6 +995,11 @@ document.addEventListener("DOMContentLoaded", () => {
     delete $("[data-note-contact]").dataset.loaded;
     if ($("[data-note-section]").open) await loadNoteContacts();
     await renderPanel();
+    void refreshMailTab();
+  });
+  $("[data-auto-link]").addEventListener("change", async (event) => {
+    await send({ type: "fm-sent-set-track", autoLink: event.target.checked });
+    await renderSent();
     void refreshMailTab();
   });
   $("[data-track-sent]").addEventListener("change", async (event) => {

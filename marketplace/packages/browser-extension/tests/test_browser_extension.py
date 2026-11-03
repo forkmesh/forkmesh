@@ -190,6 +190,12 @@ def test_mail_page_shows_the_crm_record_above_the_email_and_the_panel_lives_on_t
     assert "ui.stale = Boolean(message?.messageId)" in present
     assert '"fm-lookup"' not in present
     assert "ui.emails = []; ui.stale = false;" in PANEL
+    # "Look up and link emails I open" reads the record when a mail opens and
+    # links it only to a contact holding that exact address.
+    assert "autoLink: stored.autoLink !== false" in BACKGROUND
+    assert "if (settings?.ok && settings.autoLink) void panel.load(message, { autoLink: true });" in CONTENT
+    assert 'ui.matchedBy === "email"' in PANEL and "createContact: false" in PANEL
+    assert "data-auto-link" in POPUP_HTML and 'autoLink: event.target.checked' in POPUP
     # No floating button: the header's FM button opens the panel in the page,
     # and the toolbar icon's popup mounts the same panel.
     assert "position: fixed" not in CONTENT and "position: fixed" not in PANEL
@@ -417,6 +423,19 @@ def test_a_new_zoho_email_looks_up_its_to_address_and_links_to_it_when_sent(tmp_
     assert out["pixels"] == ["https://pixel.invalid/api/crm/-/t/o/" + "c" * 32 + "." + "d" * 24 + ".png"]
     assert out["reading"] == "wrong@sender.example"
     assert "Look up" in out["readingStrip"]
+
+
+@pytest.mark.skipif(_headless_chrome() is None, reason="no headless Chrome")
+def test_an_opened_email_is_looked_up_with_a_loader_and_linked_when_its_address_is_on_a_contact(tmp_path):
+    out = _compose_harness("auto", tmp_path)
+    assert out["spinner"] and "Looking up this address in the CRM" in out["loading"]
+    assert "Lookup failed: boom" in out["failed"] and "Retry" in out["failed"]
+    assert "Linking this email" in out["linking"]
+    assert out["lookups"] == ["wrong@sender.example", "wrong@sender.example"]
+    assert out["link"] == {"contactId": "a" * 32, "createContact": False, "contactEmail": "wrong@sender.example"}
+    assert "Wrong Sender" in out["strip"] and "Linked1 · this one · auto" in out["strip"]
+    assert "Retry" not in out["strip"]
+    assert out["notice"] == "Linked to Wrong Sender automatically: the CRM has wrong@sender.example."
 
 
 @pytest.mark.skipif(_headless_chrome() is None, reason="no headless Chrome")

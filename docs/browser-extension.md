@@ -116,10 +116,15 @@ organization's ForkMesh CRM. It works in Gmail (`mail.google.com`), Zoho Mail
 (`mail.zoho.com`, `.eu`, `.in`, `.com.au`, `.jp`, `mail.zohocloud.ca`) and any
 Mastodon instance you add.
 
-**An email.** A compact **CRM header** above the message names the other party
-and offers **Look up**; nothing is asked of ForkMesh until you press it. Look
-up shows the record: name, pipeline and stage, owner, last email, linked
-emails, company, title, deal value, next step and tags. The **FM** button (or
+**An email.** A compact **CRM header** above the message names the other party,
+their address and how many other people are on it. With **Look up and link
+emails I open** on (the default), opening the email looks the address up, with
+a spinner while it waits, and links the email to the contact that has exactly
+that address. A match by name, profile or phone is shown but not linked on its
+own, and a failed or slow lookup offers **Retry**. With it off, nothing is
+asked of ForkMesh until you press **Look up**. The record shows name, pipeline
+and stage, owner, last email, linked emails, company, title, deal value, next
+step and tags. The **FM** button (or
 the toolbar popup) opens the panel, prefilled from the message:
 
 | Button | What it does |

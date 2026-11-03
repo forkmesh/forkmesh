@@ -226,18 +226,22 @@ const SENT_RECIPIENTS = 5;
 
 async function sentState() {
   const stored = (await chrome.storage.local.get([SENT_KEY]))[SENT_KEY] || {};
-  return { track: stored.track !== false, pixel: stored.pixel !== false, last: stored.last || null };
+  return {
+    track: stored.track !== false, pixel: stored.pixel !== false, autoLink: stored.autoLink !== false,
+    last: stored.last || null,
+  };
 }
 
 async function sentSettings() {
   return { ok: true, ...(await sentState()) };
 }
 
-async function setTrackSent({ track, pixel }) {
+async function setTrackSent({ track, pixel, autoLink }) {
   const state = await sentState();
   const next = { ...state };
   if (track !== undefined) next.track = Boolean(track);
   if (pixel !== undefined) next.pixel = Boolean(pixel);
+  if (autoLink !== undefined) next.autoLink = Boolean(autoLink);
   await chrome.storage.local.set({ [SENT_KEY]: next });
   return sentSettings();
 }
