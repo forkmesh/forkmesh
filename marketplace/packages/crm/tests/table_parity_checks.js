@@ -13,6 +13,7 @@ const exported = [
   "crmPictureFor", "crmPictureCache", "crmPictures", "crmWithContactEdit", "crmPatchContacts",
   "crmMarkContacted", "crmSelection", "crmSelectContact", "crmMenuSelection", "crmSort", "crmFilteredContacts",
   "crmVisibleColumns", "crmColumnLabel", "crmDeleteColumnItems", "crmListColumns",
+  "crmFollowBack", "crmFollowBackButton",
 ];
 const page = new Function(
   "$", "$$", "session", "escapeHtml", "relativeTimeLabel",
@@ -287,6 +288,27 @@ same(page.crmCustomColumnLabel("deal_size"), "Deal size", "the key reads back as
   same(page.crmFilteredContacts(), [], "an unknown network opens nothing");
   view.activeView = "list-a";
   same(page.crmFilteredContacts().map((contact) => contact.id).sort(), ["m1", "n1"], "a list still shows only its members");
+
+  view.organization = "acme";
+  view.settings = { ...view.settings, mastodon: { account: "forkmesh@mastodon.social", connected: true } };
+  page.crmFollowBack.organization = "acme";
+  page.crmFollowBack.handles = new Set(["grace@fosstodon.org"]);
+  const follower = { id: "g", name: "Grace", mastodon: "@Grace@fosstodon.org" };
+  view.activeView = "network:mastodon";
+  const button = page.crmFollowBackButton(follower);
+  check(button.includes('data-crm-follow-back="grace@fosstodon.org"') && button.includes(">Follow back</button>"),
+        "a follower the account does not follow gets Follow back on the Mastodon network list");
+  check(button.includes("Follow them back from @forkmesh@mastodon.social"), "its tooltip names the account that follows");
+  check(!button.includes(`type="button" disabled`), "it is enabled until clicked");
+  page.crmFollowBack.following.add("grace@fosstodon.org");
+  check(page.crmFollowBackButton(follower).includes(`type="button" disabled`), "it is disabled while the follow is sent");
+  page.crmFollowBack.following.clear();
+  same(page.crmFollowBackButton({ id: "m1", mastodon: "a@mastodon.social" }), "", "an account already followed gets no button");
+  view.activeView = "list-a";
+  same(page.crmFollowBackButton(follower), "", "other lists do not show it");
+  view.activeView = "network:mastodon";
+  view.organization = "other";
+  same(page.crmFollowBackButton(follower), "", "another organization's answer is not used");
 
   if (failures) {
     console.error(`${failures} check(s) failed`);
