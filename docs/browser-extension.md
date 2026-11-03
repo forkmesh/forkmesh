@@ -124,8 +124,8 @@ the toolbar popup) opens the panel, prefilled from the message:
 
 | Button | What it does |
 | --- | --- |
-| **Add to pipeline** | Picks a flow and stage, creates the contact if needed and links the email |
-| **Link only** | Records the message without changing the pipeline |
+| **Add to list** | Picks one of the CRM's lists, creates the contact if needed, puts them on it and links the email |
+| **Link only** | Records the message without changing any list |
 | **Link to an existing contact…** | Files the message under another record; the address joins that record, so the next message is found by itself |
 | **Last contacted** | Sets the date on the record |
 | **Unlink** | Removes the link |
@@ -135,9 +135,15 @@ profile, phone, or by name when the address or company supports it. A name
 that contradicts the record or fits two records never matches on its own, and
 the panel says how a record was found.
 
+**A new email in Zoho Mail.** While you write, the header follows the **To**
+address instead of the message open behind the compose tab, and looks it up
+straight away. When the CRM has that person, the header shows **On send ·
+Links here** and the email is linked to them when you send it.
+
 **Mail you send.** With **Track emails I send** on (the default), a message you
 send from Gmail or Zoho Mail is linked to the first recipient that already has
-a record, people outside your domain first, and moves **Last contacted**. Gmail
+a record, To before Cc, people outside your domain first, and moves **Last
+contacted**. Gmail
 sends are linked after its 10-second undo window. No contact is created for a
 send to unknown people.
 

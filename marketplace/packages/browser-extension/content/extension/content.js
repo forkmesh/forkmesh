@@ -371,10 +371,39 @@
     };
   }
 
+  const composeIds = new WeakMap();
+
+  function composeId(box) {
+    if (!composeIds.has(box)) composeIds.set(box, `fm-compose-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`);
+    return composeIds.get(box);
+  }
+
+  function openCompose() {
+    for (const field of document.querySelectorAll(SUBJECT_FIELD)) {
+      if (!visible(field)) continue;
+      const box = composeAround(field);
+      if (box && visible(box)) return box;
+    }
+    return null;
+  }
+
+  function readZohoCompose(box) {
+    const mailbox = composeMailbox(box);
+    const editor = [...box.querySelectorAll('iframe, [contenteditable="true"]')].find(visible);
+    return {
+      provider: "zoho", accountIndex: 0, messageId: composeId(box), threadId: "",
+      subject: composeSubject(box), from: { email: mailbox, name: "" },
+      to: composeRecipients(box, mailbox, { typing: true }), mailbox, sentAt: NaN, lines: [],
+      sentHint: true, providerUrl: "", compose: true, anchor: editor || box.querySelector(SUBJECT_FIELD),
+    };
+  }
+
   // The open message, and the node the CRM header goes above: the newest
-  // message's body. List views and unreadable layouts have no anchor.
+  // message's body, or a new email's editor. List views and unreadable
+  // layouts have no anchor.
   function readPage() {
-    const read = PROVIDER === "gmail" ? readGmail() : readZoho();
+    const compose = PROVIDER === "zoho" ? openCompose() : null;
+    const read = compose ? readZohoCompose(compose) : PROVIDER === "gmail" ? readGmail() : readZoho();
     const { lines, sentHint, anchor, ...message } = read;
     const mailbox = message.mailbox;
     // Which side is the contact: whoever is not this mailbox.
@@ -393,7 +422,7 @@
         participants.push({ email: person.email, name: realName(person.name, person.email) });
       }
     }
-    if (ownDomain) participants.sort((a, b) => (domainOf(a.email) === ownDomain) - (domainOf(b.email) === ownDomain));
+    if (ownDomain && !message.compose) participants.sort((a, b) => (domainOf(a.email) === ownDomain) - (domainOf(b.email) === ownDomain));
     message.participants = participants;
     return { message: applyContact(message, participants[0] || { email: "", name: "" }), anchor };
   }
@@ -402,7 +431,12 @@
   // The strip of chips and the panel under it are panel.js's; this script
   // only reads Gmail and Zoho and says which node the header sits above.
 
-  const { host, panel, place } = crm.header({ read: async () => readPage().message });
+  const { host, panel, place } = crm.header({ read: async () => withSendSettings(readPage().message) });
+
+  async function withSendSettings(message) {
+    if (message?.compose) message.linkOnSend = (await crm.send({ type: "fm-sent-settings" }))?.track !== false;
+    return message;
+  }
 
   // Gmail and Zoho are single-page apps that redraw the reading pane at will:
   // put the header back above the newest message whenever it moves, and show
@@ -422,8 +456,14 @@
     const key = `${message.messageId}|${message.contactEmail}`;
     if (key === shown) return;
     shown = key;
-    if (asked) { asked = false; void panel.load(message); }
+    if (message.compose) { asked = false; void loadCompose(message, key); }
+    else if (asked) { asked = false; void panel.load(message); }
     else void panel.present(message);
+  }
+
+  async function loadCompose(message, key) {
+    await withSendSettings(message);
+    if (key === shown) await panel.load(message);
   }
 
   // At most one read of the page per interval, however busy the client is.
@@ -434,6 +474,7 @@
   }
   new MutationObserver(() => schedule()).observe(document.body || document.documentElement, { childList: true, subtree: true });
   window.addEventListener("hashchange", () => schedule(150));
+  document.addEventListener("focusout", () => schedule(), true);
   schedule(0);
 
   const SEND_GRACE = 10000;
@@ -442,6 +483,13 @@
     ? ['[role="dialog"]', ".M9", ".ip", "form"]
     : ['[role="dialog"]', '[class*="compose" i]', "form"];
   const RECIPIENT_FIELD = /^(to|cc|bcc)\b|recipient/i;
+  const SEND_CONTROL = '[role="button"], button, input[type="submit"], [data-tooltip]';
+  const SUBJECT_FIELD = 'input[name="subjectbox"], input[name*="subject" i], input[aria-label*="subject" i], '
+    + 'input[placeholder*="subject" i], input[id*="subject" i]';
+  const FIELD_LABEL = /^(from|to|cc|bcc)\b\s*:?/i;
+  const FIELD_RANK = { to: 0, "": 1, cc: 2, bcc: 3, from: 4 };
+  const COMPOSE_PEOPLE = "[data-hovercard-id], [email], [data-email], [data-emailid], [data-address]"
+    + (PROVIDER === "zoho" ? ", [title*='@']" : "");
   const outgoing = { pending: null, timer: 0, poll: 0 };
 
   function composeOf(node) {
@@ -452,50 +500,90 @@
     return null;
   }
 
-  function sendControl(node) {
-    const control = node?.closest?.('[role="button"], button, input[type="submit"], [data-tooltip]');
-    if (!control || !composeOf(control)) return null;
-    if (PROVIDER === "gmail" && control.classList.contains("aoO")) return control;
+  function isSend(control) {
+    if (PROVIDER === "gmail" && control.classList.contains("aoO")) return true;
     const label = [attr(control, "aria-label"), attr(control, "data-tooltip"), attr(control, "title"),
       attr(control, "value"), text(control)].find(Boolean) || "";
-    if (!/^send\b/i.test(label) || /^send\s+(later|options|feedback)|schedule/i.test(label)) return null;
-    return control;
+    return /^send\b/i.test(label) && !/^send\s+(later|options|feedback)|schedule/i.test(label);
   }
 
-  function composeRecipients(box, mailbox) {
+  function composeAround(node) {
+    for (let up = node?.parentElement; up && up !== document.body; up = up.parentElement) {
+      if (up.querySelector(SUBJECT_FIELD) && [...up.querySelectorAll(SEND_CONTROL)].some(isSend)) return up;
+    }
+    return null;
+  }
+
+  function composeBox(node) {
+    return (PROVIDER === "zoho" && composeAround(node)) || composeOf(node);
+  }
+
+  function sendControl(node) {
+    const control = node?.closest?.(SEND_CONTROL);
+    return control && isSend(control) && composeBox(control) ? control : null;
+  }
+
+  function fieldKind(field) {
+    const hint = attr(field, "name") || attr(field, "aria-label") || attr(field, "placeholder");
+    const kind = (hint.match(/^(from|to|cc|bcc)\b/i) || [])[1];
+    return kind ? kind.toLowerCase() : RECIPIENT_FIELD.test(hint) ? "to" : "";
+  }
+
+  function recipientKind(node, box) {
+    for (let up = node.parentElement; up && up !== box && box.contains(up); up = up.parentElement) {
+      const label = (text(up).match(FIELD_LABEL) || [])[1];
+      if (label) return label.toLowerCase();
+      const kinds = new Set([...up.querySelectorAll("input, textarea, select")].map(fieldKind).filter(Boolean));
+      if (kinds.size) return kinds.size === 1 ? [...kinds][0] : "";
+    }
+    return "";
+  }
+
+  function composeMailbox(box) {
+    return address(box.querySelector('[name="from"]')?.value || "")
+      || (PROVIDER === "gmail" ? gmailMailbox() : zohoMailbox());
+  }
+
+  function composeRecipients(box, mailbox, { typing = false } = {}) {
     const found = [];
-    const add = (email, name = "") => {
+    const add = (email, name, kind) => {
       const clean = address(email);
       if (!clean || clean === mailbox || found.some((item) => item.email === clean)) return;
-      found.push({ email: clean, name: realName(name, clean) });
+      found.push({ email: clean, name: realName(name, clean), kind });
     };
     const from = address(box.querySelector('[name="from"]')?.value || "");
-    for (const node of box.querySelectorAll("[data-hovercard-id], [email], [data-email], [data-emailid], [data-address]")) {
-      if (node.closest('[contenteditable="true"], [name="from"]')) continue;
-      const email = attr(node, "data-hovercard-id") || attr(node, "email") || attr(node, "data-email")
+    for (const node of box.querySelectorAll(COMPOSE_PEOPLE)) {
+      if (node.closest('[contenteditable="true"], [name="from"]') || node.matches("input, textarea, select")) continue;
+      const tagged = attr(node, "data-hovercard-id") || attr(node, "email") || attr(node, "data-email")
         || attr(node, "data-emailid") || attr(node, "data-address");
-      if (address(email) === from) continue;
-      add(email, attr(node, "data-name") || attr(node, "name") || text(node));
+      const titled = tagged ? null : addressList(attr(node, "title"))[0];
+      const email = tagged || titled?.email;
+      if (!email || address(email) === from) continue;
+      const label = text(node);
+      const name = tagged ? attr(node, "data-name") || attr(node, "name") || label
+        : titled.name || (NAME_RE.test(label) ? label : "");
+      add(email, name, recipientKind(node, box));
     }
     for (const field of box.querySelectorAll("input, textarea")) {
-      const hint = attr(field, "name") || attr(field, "aria-label") || attr(field, "placeholder");
-      if (!RECIPIENT_FIELD.test(hint)) continue;
-      for (const person of addressList(field.value)) if (person.email !== from) add(person.email, person.name);
+      if (!RECIPIENT_FIELD.test(attr(field, "name") || attr(field, "aria-label") || attr(field, "placeholder"))) continue;
+      if (typing && field === document.activeElement) continue;
+      for (const person of addressList(field.value)) if (person.email !== from) add(person.email, person.name, fieldKind(field));
     }
     const ownDomain = FREE_MAIL.has(domainOf(mailbox)) ? "" : domainOf(mailbox);
-    if (ownDomain) found.sort((a, b) => (domainOf(a.email) === ownDomain) - (domainOf(b.email) === ownDomain));
-    return found.slice(0, SEND_RECIPIENTS);
+    const own = (person) => Boolean(ownDomain) && domainOf(person.email) === ownDomain;
+    found.sort((a, b) => FIELD_RANK[a.kind] - FIELD_RANK[b.kind] || own(a) - own(b));
+    const addressed = found.some((person) => person.kind === "to")
+      ? found.filter((person) => person.kind !== "from") : found;
+    return addressed.slice(0, SEND_RECIPIENTS).map(({ email, name }) => ({ email, name }));
   }
 
   function composeSubject(box) {
-    const field = box.querySelector('input[name="subjectbox"], input[name*="subject" i], input[aria-label*="subject" i], '
-      + 'input[placeholder*="subject" i], input[id*="subject" i]');
+    const field = box.querySelector(SUBJECT_FIELD);
     return String(field?.value || "").replace(/\s+/g, " ").trim().slice(0, 300);
   }
 
   function readCompose(box) {
-    const mailbox = address(box.querySelector('[name="from"]')?.value || "")
-      || (PROVIDER === "gmail" ? gmailMailbox() : zohoMailbox());
+    const mailbox = composeMailbox(box);
     const recipients = composeRecipients(box, mailbox);
     if (!recipients.length) return null;
     return {
@@ -529,7 +617,7 @@
     clearTimeout(outgoing.timer);
     clearInterval(outgoing.poll);
     const found = sent.provider === "gmail" ? sentMessageId(sent.toast) : { id: "", permalink: false };
-    const messageId = found.id || `fm-sent-${sent.sentAt.toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    const messageId = found.id || sent.messageId || `fm-sent-${sent.sentAt.toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
     const providerUrl = found.permalink
       ? `https://mail.google.com/mail/u/${sent.accountIndex}/#all/${messageId}` : sentSearchUrl(sent);
     const { toast, before, ...message } = sent;
@@ -543,9 +631,19 @@
     } catch { }
   }
 
+  function pinCompose(sent, box) {
+    const { message, contact } = panel.ui;
+    if (!box || !message?.compose || !contact?.id || message.messageId !== composeIds.get(box)) return sent;
+    const person = { email: message.contactEmail, name: message.contactName };
+    if (!person.email) return sent;
+    const recipients = [person, ...sent.recipients.filter((item) => item.email !== person.email)];
+    return { ...sent, messageId: message.messageId, contactId: contact.id, recipients: recipients.slice(0, SEND_RECIPIENTS) };
+  }
+
   function captureSend(box) {
-    const sent = readCompose(box);
-    if (!sent) return;
+    const read = box && readCompose(box);
+    if (!read) return;
+    const sent = pinCompose(read, box);
     if (outgoing.pending) trackSent();
     outgoing.pending = { ...sent, before: sentToast(), toast: "" };
     outgoing.timer = setTimeout(trackSent, SEND_GRACE);
@@ -569,11 +667,11 @@
       return;
     }
     const control = sendControl(event.target);
-    if (control) captureSend(composeOf(control));
+    if (control) captureSend(composeBox(control));
   }, true);
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Enter" || !(event.ctrlKey || event.metaKey) || event.isComposing) return;
-    const box = composeOf(event.target);
+    const box = composeBox(event.target);
     if (box) captureSend(box);
   }, true);
   window.addEventListener("pagehide", trackSent);

@@ -1314,6 +1314,36 @@ def test_an_import_follows_the_confirmed_mapping_and_needs_no_email():
     assert (dorothy["owner"], dorothy["fields"]) == ("", {"owner_region": "APAC"})
 
 
+def test_the_extension_saves_a_mail_contact_to_a_list():
+    runtime = Runtime()
+    plain = call(runtime.use("POST", body={"name": "Engines leads"}),
+                 "/api/crm/acme/views")["data"]["view"]
+    partners = call(runtime.use("POST", body={"name": "Partner deals", "flow": "partnerships"}),
+                    "/api/crm/acme/views")["data"]["view"]
+    looked = call(runtime.use("POST", body={"email": "ada@example.com"}),
+                  "/api/crm/acme/contacts/lookup")["data"]
+    assert looked["contact"] is None
+    assert [item["id"] for item in looked["lists"]] == [plain["id"], partners["id"]]
+    assert looked["lists"][1]["flow"] == "partnerships"
+    message = {"provider": "zoho", "direction": "outbound", "contactEmail": "ada@example.com",
+               "contactName": "Ada Lovelace", "mailbox": "me@acme.example"}
+    linked = call(runtime.use("POST", body={**message, "messageId": "fm-compose-1", "list": plain["id"]}),
+                  "/api/crm/acme/emails/link")
+    assert linked["status"] == 201 and linked["data"]["contactCreated"] is True
+    assert linked["data"]["contact"]["views"] == [plain["id"]]
+    assert [item["id"] for item in linked["data"]["lists"]] == [plain["id"], partners["id"]]
+    moved = call(runtime.use("POST", body={**message, "messageId": "fm-compose-2", "list": partners["id"],
+                                           "flow": "customers", "stage": "won"}),
+                 "/api/crm/acme/emails/link")["data"]["contact"]
+    assert moved["views"] == [plain["id"], partners["id"]]
+    assert moved["flow"] == "partnerships"
+    assert call(runtime.use("POST", body={"email": "ada@example.com"}),
+                "/api/crm/acme/contacts/lookup")["data"]["contact"]["id"] == moved["id"]
+    missing = call(runtime.use("POST", body={**message, "messageId": "fm-compose-3", "list": "c" * 32}),
+                   "/api/crm/acme/emails/link")
+    assert (missing["status"], missing["data"]["error"]) == (404, "list_not_found")
+
+
 def test_a_mail_message_is_tied_to_a_contact_and_reopens_in_its_mailbox():
     runtime = Runtime()
     # The extension sends the Gmail message it has open; the other party is

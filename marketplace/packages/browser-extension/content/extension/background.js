@@ -161,7 +161,7 @@ async function lookup({ email, handle, name, contact, organization }) {
   return {
     ok: true, organization: org, contact: payload.contact || null,
     matchedBy: String(payload.matchedBy || ""),
-    emails: payload.emails || [], flows: payload.flows || [],
+    emails: payload.emails || [], flows: payload.flows || [], lists: payload.lists || [],
   };
 }
 
@@ -204,6 +204,7 @@ function linkBody(message) {
     contact: contactDetails(message.contact),
     flow: String(message.flow || ""),
     stage: String(message.stage || ""),
+    list: String(message.list || ""),
     createContact: message.createContact !== false,
   };
 }
@@ -214,7 +215,7 @@ async function link({ message, organization }) {
   return {
     ok: true, organization: org, contact: payload.contact || null,
     email: payload.email || null, emails: payload.emails || [], flows: payload.flows || [],
-    contactCreated: Boolean(payload.contactCreated), relinked: Boolean(payload.relinked),
+    lists: payload.lists || [], contactCreated: Boolean(payload.contactCreated), relinked: Boolean(payload.relinked),
   };
 }
 
