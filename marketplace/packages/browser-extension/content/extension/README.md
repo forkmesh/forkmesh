@@ -144,7 +144,7 @@ Zoho Mail are linked to the first recipient that already has a record (To
 before Cc and Bcc, people outside your domain first) and move **Last
 contacted**.
 
-**Open tracking** (2.30.0, on by default under **Track emails I send**: **Tell
+**Open tracking** (2.31.0, on by default under **Track emails I send**: **Tell
 me when they are opened**): for every compose it sees (a Zoho compose tab, a
 Gmail editor), the page asks the background for a pixel (`fm-track-pixel`),
 which returns nothing when either switch is off or no one is signed in, else
