@@ -57,6 +57,7 @@
 #include <QProgressBar>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QResizeEvent>
 #include <QSaveFile>
 #include <QScrollArea>
 #include <QScrollBar>
@@ -132,6 +133,7 @@ const QStringList kKeptColumns{QStringLiteral("name"), QStringLiteral("email"),
                                QStringLiteral("flow"), QStringLiteral("stage")};
 // Contact rows put into the table per event-loop turn.
 constexpr int kFillChunkRows = 100;
+constexpr int kRowWidgetMargin = 6;
 constexpr int kActivityContactColumn = 2;
 constexpr int kActivityIdColumn = 5;
 // The ForkMesh browser extension is its own Market package; its dashboard
@@ -1787,6 +1789,24 @@ protected:
         QTableWidget::keyPressEvent(event);
     }
 
+public:
+    std::function<void()> viewportChanged;
+
+protected:
+    void resizeEvent(QResizeEvent *event) override
+    {
+        QTableWidget::resizeEvent(event);
+        if (viewportChanged)
+            viewportChanged();
+    }
+
+    void showEvent(QShowEvent *event) override
+    {
+        QTableWidget::showEvent(event);
+        if (viewportChanged)
+            viewportChanged();
+    }
+
 private:
     QPersistentModelIndex m_anchor;
     bool m_columnDrag = false;
@@ -2194,6 +2214,15 @@ CrmFeature::CrmFeature(const forkmesh::market::NativePackageHost &host,
     contactsLayout->addWidget(m_stageStrip);
     contactsLayout->addLayout(filters);
     m_contactsTable = new ContactsTable(0, 0);
+    static_cast<ContactsTable *>(m_contactsTable)->viewportChanged = [this] {
+        scheduleRowWidgets();
+    };
+    connect(m_contactsTable->verticalScrollBar(), &QScrollBar::valueChanged, this,
+            [this] { scheduleRowWidgets(); });
+    connect(m_contactsTable->verticalScrollBar(), &QScrollBar::rangeChanged, this,
+            [this] { scheduleRowWidgets(); });
+    connect(m_contactsTable->verticalScrollBar(), &QScrollBar::sliderReleased, this,
+            [this] { scheduleRowWidgets(); });
     m_contactsTable->setObjectName(QStringLiteral("crmContactsTable"));
     // Row actions are a compact strip: only geometry is set here, so the
     // buttons keep the theme's colours (and Delete its red outline) in both
@@ -3705,6 +3734,7 @@ void CrmFeature::rebuildContactColumns()
     ++m_fillGeneration;
     m_filling = false;
     m_tableRows.clear();
+    m_widgetRows.clear();
     m_contactsTable->setRowCount(0);
     m_contactsTable->setColumnCount(columns.size());
     QStringList labels;
@@ -4018,6 +4048,7 @@ void CrmFeature::renderContacts()
         m_contactsTable->setRowCount(0);
         m_rendering = false;
         m_tableRows.clear();
+        m_widgetRows.clear();
         fillContactRows();
     });
 }
@@ -4031,8 +4062,6 @@ void CrmFeature::fillContactRows()
         text(m_settings, "mailProvider") == QLatin1String("gmail")
             ? QStringLiteral("Gmail") : QStringLiteral("Zoho Mail");
     QHash<QRgb, QIcon> stageDots;
-    const QIcon mastodonRefresh =
-        refreshIcon(m_contactsTable->palette().color(QPalette::WindowText));
     m_rendering = true;
     m_contactsTable->setRowCount(first + end - m_fillNext);
     for (int at = m_fillNext; at < end; ++at) {
@@ -4043,51 +4072,8 @@ void CrmFeature::fillContactRows()
         m_tableRows.append(sourceIndex);
         for (int column = 0; column < m_columns.size(); ++column) {
             const ContactColumnSpec &spec = m_columns.at(column);
-            if (spec.kind == ContactColumnSpec::Actions) {
-                auto *actions = new QWidget(m_contactsTable);
-                actions->setObjectName(QStringLiteral("crmRowActions"));
-                auto *actionLayout = new QHBoxLayout(actions);
-                actionLayout->setContentsMargins(8, 0, 8, 0);
-                actionLayout->setSpacing(4);
-                auto *email = new QPushButton(QStringLiteral("Email"), actions);
-                auto *prompt = new QPushButton(QStringLiteral("Copy prompt"), actions);
-                prompt->setToolTip(QStringLiteral(
-                    "Copy a prompt asking an assistant about ForkMesh and this "
-                    "contact, and for a short toot to send them"));
-                auto *edit = new QPushButton(QStringLiteral("Edit"), actions);
-                auto *remove = new QPushButton(QStringLiteral("Delete"), actions);
-                remove->setObjectName(QStringLiteral("dangerButton"));
-                QFont labelFont = email->font();
-                labelFont.setWeight(QFont::DemiBold);
-                const QFontMetrics labelMetrics(labelFont);
-                for (QPushButton *button : {email, prompt, edit, remove}) {
-                    // A slim button centred in the 36px row (the table's
-                    // row-actions style sets the padding), as wide as its
-                    // semibold label so no label is clipped. Delete stands a
-                    // little apart from the everyday actions.
-                    button->setFixedHeight(26);
-                    button->setMinimumWidth(labelMetrics.horizontalAdvance(button->text()) + 26);
-                    button->setCursor(Qt::PointingHandCursor);
-                    if (button == remove)
-                        actionLayout->addSpacing(8);
-                    actionLayout->addWidget(button);
-                }
-                email->setEnabled(source.hasEmail);
-                connect(email, &QPushButton::clicked, this, [this, contactId] {
-                    composeEmail(contactById(contactId));
-                });
-                connect(prompt, &QPushButton::clicked, this, [this, contactId] {
-                    copyOutreachPrompt(contactById(contactId));
-                });
-                connect(edit, &QPushButton::clicked, this, [this, contactId] {
-                    editContact(contactById(contactId));
-                });
-                connect(remove, &QPushButton::clicked, this, [this, contactId] {
-                    deleteContact(contactById(contactId));
-                });
-                m_contactsTable->setCellWidget(row, column, actions);
+            if (spec.kind == ContactColumnSpec::Actions)
                 continue;
-            }
             auto *item = new QTableWidgetItem;
             const QString value = source.cells.value(column);
             switch (spec.kind) {
@@ -4143,33 +4129,8 @@ void CrmFeature::fillContactRows()
             case ContactColumnSpec::MastodonLatest: {
                 fillMastodonItem(item, source.mastodonKey);
                 item->setFlags(item->flags() & ~Qt::ItemIsEditable);
-                const QString key = source.mastodonKey;
-                if (key.isEmpty())
-                    break;
-                // The row's own refresh button, right-aligned over the cell.
-                // The holder passes every other click through to the table,
-                // so a double click still opens the post.
-                item->setData(kRowButtonRole, true);
-                auto *holder = new QWidget(m_contactsTable);
-                auto *holderLayout = new QHBoxLayout(holder);
-                holderLayout->setContentsMargins(0, 0, 4, 0);
-                holderLayout->addStretch(1);
-                auto *refresh = new QToolButton(holder);
-                refresh->setObjectName(QStringLiteral("crmMastodonRefresh"));
-                refresh->setProperty("mastodonKey", key);
-                refresh->setAutoRaise(true);
-                refresh->setCursor(Qt::PointingHandCursor);
-                refresh->setIcon(mastodonRefresh);
-                refresh->setIconSize(QSize(14, 14));
-                refresh->setFixedSize(22, 22);
-                refresh->setToolTip(
-                    QStringLiteral("Check @%1 for a newer post now").arg(key));
-                refresh->setEnabled(!m_mastodonPending.contains(key) &&
-                                    !m_mastodonQueue.contains(key));
-                holderLayout->addWidget(refresh);
-                connect(refresh, &QToolButton::clicked, this,
-                        [this, key] { refreshMastodonNow(key); });
-                m_contactsTable->setCellWidget(row, column, holder);
+                if (!source.mastodonKey.isEmpty())
+                    item->setData(kRowButtonRole, true);
                 break;
             }
             case ContactColumnSpec::LastContacted:
@@ -4215,6 +4176,7 @@ void CrmFeature::fillContactRows()
     }
     m_fillNext = end;
     m_rendering = false;
+    attachVisibleRowWidgets();
     if (m_fillNext < m_fillRows.size()) {
         // The rest after the window has had a turn to paint and take input.
         const quint64 generation = m_fillGeneration;
@@ -4250,6 +4212,134 @@ void CrmFeature::fillContactRows()
                           QItemSelectionModel::Select | QItemSelectionModel::Rows);
     focusContactRow();
     refreshMastodonUpdates();
+}
+
+void CrmFeature::scheduleRowWidgets()
+{
+    if (m_rowWidgetsQueued)
+        return;
+    m_rowWidgetsQueued = true;
+    QTimer::singleShot(0, this, [this] {
+        m_rowWidgetsQueued = false;
+        attachVisibleRowWidgets();
+    });
+}
+
+void CrmFeature::attachVisibleRowWidgets()
+{
+    const int rows = int(m_tableRows.size());
+    if (rows > 0 && m_contactsTable->verticalScrollBar()->isSliderDown())
+        return;
+    if (rows == 0 || !m_contactsTable->isVisible()) {
+        if (rows == 0)
+            m_widgetRows.clear();
+        return;
+    }
+    const int height = m_contactsTable->viewport()->height();
+    int top = m_contactsTable->rowAt(0);
+    int bottom = m_contactsTable->rowAt(qMax(0, height - 1));
+    if (top < 0)
+        top = 0;
+    if (bottom < 0)
+        bottom = rows - 1;
+    const int keep = 3 * qMax(kRowWidgetMargin, bottom - top + 1);
+    const int from = qMax(0, top - kRowWidgetMargin);
+    const int to = qMin(rows - 1, bottom + kRowWidgetMargin);
+    const QList<int> held(m_widgetRows.cbegin(), m_widgetRows.cend());
+    for (int row : held) {
+        if (row >= top - keep && row <= bottom + keep)
+            continue;
+        for (int column = 0; column < m_columns.size(); ++column) {
+            if (m_contactsTable->cellWidget(row, column))
+                m_contactsTable->removeCellWidget(row, column);
+        }
+        m_widgetRows.remove(row);
+    }
+    for (int row = from; row <= to; ++row) {
+        if (m_contactsTable->isRowHidden(row) || m_widgetRows.contains(row))
+            continue;
+        attachRowWidgets(row);
+        m_widgetRows.insert(row);
+    }
+}
+
+void CrmFeature::attachRowWidgets(int row)
+{
+    const ContactRow &source = m_fillSource.at(m_tableRows.at(row));
+    const QString contactId = source.id;
+    for (int column = 0; column < m_columns.size(); ++column) {
+        const ContactColumnSpec &spec = m_columns.at(column);
+        if (spec.kind == ContactColumnSpec::Actions) {
+            auto *actions = new QWidget(m_contactsTable);
+            actions->setObjectName(QStringLiteral("crmRowActions"));
+            auto *actionLayout = new QHBoxLayout(actions);
+            actionLayout->setContentsMargins(8, 0, 8, 0);
+            actionLayout->setSpacing(4);
+            auto *email = new QPushButton(QStringLiteral("Email"), actions);
+            auto *prompt = new QPushButton(QStringLiteral("Copy prompt"), actions);
+            prompt->setToolTip(QStringLiteral(
+                "Copy a prompt asking an assistant about ForkMesh and this "
+                "contact, and for a short toot to send them"));
+            auto *edit = new QPushButton(QStringLiteral("Edit"), actions);
+            auto *remove = new QPushButton(QStringLiteral("Delete"), actions);
+            remove->setObjectName(QStringLiteral("dangerButton"));
+            QFont labelFont = email->font();
+            labelFont.setWeight(QFont::DemiBold);
+            const QFontMetrics labelMetrics(labelFont);
+            for (QPushButton *button : {email, prompt, edit, remove}) {
+                // A slim button centred in the 36px row (the table's
+                // row-actions style sets the padding), as wide as its
+                // semibold label so no label is clipped. Delete stands a
+                // little apart from the everyday actions.
+                button->setFixedHeight(26);
+                button->setMinimumWidth(labelMetrics.horizontalAdvance(button->text()) + 26);
+                button->setCursor(Qt::PointingHandCursor);
+                if (button == remove)
+                    actionLayout->addSpacing(8);
+                actionLayout->addWidget(button);
+            }
+            email->setEnabled(source.hasEmail);
+            connect(email, &QPushButton::clicked, this, [this, contactId] {
+                composeEmail(contactById(contactId));
+            });
+            connect(prompt, &QPushButton::clicked, this, [this, contactId] {
+                copyOutreachPrompt(contactById(contactId));
+            });
+            connect(edit, &QPushButton::clicked, this, [this, contactId] {
+                editContact(contactById(contactId));
+            });
+            connect(remove, &QPushButton::clicked, this, [this, contactId] {
+                deleteContact(contactById(contactId));
+            });
+            m_contactsTable->setCellWidget(row, column, actions);
+            continue;
+        }
+        if (spec.kind == ContactColumnSpec::MastodonLatest) {
+            const QString key = source.mastodonKey;
+            if (key.isEmpty())
+                continue;
+            auto *holder = new QWidget(m_contactsTable);
+            auto *holderLayout = new QHBoxLayout(holder);
+            holderLayout->setContentsMargins(0, 0, 4, 0);
+            holderLayout->addStretch(1);
+            auto *refresh = new QToolButton(holder);
+            refresh->setObjectName(QStringLiteral("crmMastodonRefresh"));
+            refresh->setProperty("mastodonKey", key);
+            refresh->setAutoRaise(true);
+            refresh->setCursor(Qt::PointingHandCursor);
+            refresh->setIcon(refreshIcon(m_contactsTable->palette().color(QPalette::WindowText)));
+            refresh->setIconSize(QSize(14, 14));
+            refresh->setFixedSize(22, 22);
+            refresh->setToolTip(
+                QStringLiteral("Check @%1 for a newer post now").arg(key));
+            refresh->setEnabled(!m_mastodonPending.contains(key) &&
+                                !m_mastodonQueue.contains(key));
+            holderLayout->addWidget(refresh);
+            connect(refresh, &QToolButton::clicked, this,
+                    [this, key] { refreshMastodonNow(key); });
+            m_contactsTable->setCellWidget(row, column, holder);
+        }
+    }
 }
 
 bool CrmFeature::contactRowShown(const ContactRow &row) const
@@ -6210,9 +6300,6 @@ void CrmFeature::renderSheetList()
 {
     if (!m_sheetList || !m_tabs)
         return;
-    const int scroll = m_sheetList->verticalScrollBar()->value();
-    const QSignalBlocker blocker(m_sheetList);
-    m_sheetList->clear();
     const bool next = Theme::isNext();
     const QColor ink = next ? Theme::color(Theme::Role::FgMuted)
                             : palette().color(QPalette::WindowText);
@@ -6260,6 +6347,39 @@ void CrmFeature::renderSheetList()
             "QFrame#crmSheetRow QLabel#mutedLabel { color: @fgMuted; font-size: 12px; }"),
             Theme::Design::Next, Theme::activeDark());
     }
+    QHash<QString, int> uncontactedBySheet;
+    QStringList signature{css, ink.name(QColor::HexArgb), base.name(QColor::HexArgb),
+                          QString::number(scale)};
+    for (int index = 0; index < m_tabs->count(); ++index) {
+        const QString id = sheetTabId(index);
+        signature << id << m_tabs->tabText(index) << m_tabs->tabToolTip(index);
+        if (id.isEmpty()) {
+            signature << m_tabs->widget(index)->property("crmPageIcon").toString();
+            continue;
+        }
+        const QJsonObject sheet = sheetById(id);
+        const QVector<int> rows = m_snapshot.sheetRows.value(id);
+        int uncontacted = 0;
+        for (int at : rows) {
+            if (m_snapshot.rows.at(at).lastContactedAt <= 0)
+                ++uncontacted;
+        }
+        uncontactedBySheet.insert(id, uncontacted);
+        signature << text(sheet, "name") << text(sheet, "flow") << text(sheet, "owner")
+                  << QString::number(rows.size()) << QString::number(uncontacted)
+                  << (sheetIsList(sheet) ? sheetShareSummary(sheet) + QLatin1Char('\n') +
+                                               sheetShareNames(sheet).join(QLatin1Char('\n'))
+                                         : QString());
+    }
+    const QString joined = signature.join(QChar(0x1f));
+    if (joined == m_sheetListSignature && m_sheetList->count() > 0) {
+        syncSheetList();
+        return;
+    }
+    m_sheetListSignature = joined;
+    const int scroll = m_sheetList->verticalScrollBar()->value();
+    const QSignalBlocker blocker(m_sheetList);
+    m_sheetList->clear();
     if (m_sheetList->styleSheet() != css)
         m_sheetList->setStyleSheet(css);
     bool more = false;
@@ -6350,11 +6470,7 @@ void CrmFeature::renderSheetList()
             name->setProperty("crmRole", QStringLiteral("listName"));
         name->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
         top->addWidget(name, 1);
-        int uncontacted = 0;
-        for (int at : rows) {
-            if (m_snapshot.rows.at(at).lastContactedAt <= 0)
-                ++uncontacted;
-        }
+        const int uncontacted = uncontactedBySheet.value(id);
         auto *count = new QLabel(QStringLiteral("%1/%2").arg(locale.toString(uncontacted),
                                                              locale.toString(qsizetype(rows.size()))));
         count->setObjectName(QStringLiteral("mutedLabel"));
@@ -9534,9 +9650,12 @@ void CrmFeature::openBrowserExtension()
 void CrmFeature::filterContacts()
 {
     const int rows = qMin(m_contactsTable->rowCount(), int(m_tableRows.size()));
-    for (int row = 0; row < rows; ++row)
-        m_contactsTable->setRowHidden(
-            row, !contactRowShown(m_fillSource.at(m_tableRows.at(row))));
+    for (int row = 0; row < rows; ++row) {
+        const bool hide = !contactRowShown(m_fillSource.at(m_tableRows.at(row)));
+        if (m_contactsTable->isRowHidden(row) != hide)
+            m_contactsTable->setRowHidden(row, hide);
+    }
+    scheduleRowWidgets();
     renderPeople();
 }
 
@@ -10120,17 +10239,35 @@ void CrmFeature::fetchAvatar(const QString &source)
         return;
     }
     const QString cached = avatarCachePath(source);
-    const QFileInfo saved(cached);
-    if (saved.exists() &&
-        saved.lastModified().msecsTo(QDateTime::currentDateTime()) < kAvatarCacheMs) {
-        const QImage image = saved.size() > 0 ? QImage(cached) : QImage();
-        if (!image.isNull() || saved.size() == 0) {
-            // Next turn, so a queue of saved pictures does not recurse
-            // through finishAvatar and pumpAvatars.
-            QTimer::singleShot(0, this, [this, source, image] { finishAvatar(source, image); });
-            return;
+    const QPointer<CrmFeature> guard(this);
+    QThreadPool::globalInstance()->start([guard, source, cached] {
+        const QFileInfo saved(cached);
+        bool hit = false;
+        QImage image;
+        if (saved.exists() &&
+            saved.lastModified().msecsTo(QDateTime::currentDateTime()) < kAvatarCacheMs) {
+            if (saved.size() > 0)
+                image = QImage(cached);
+            hit = !image.isNull() || saved.size() == 0;
         }
-    }
+        QMetaObject::invokeMethod(
+            QCoreApplication::instance(),
+            [guard, source, hit, image] {
+                if (!guard)
+                    return;
+                if (hit)
+                    guard->finishAvatar(source, image);
+                else
+                    guard->fetchAvatarRemote(source);
+            },
+            Qt::QueuedConnection);
+    });
+}
+
+void CrmFeature::fetchAvatarRemote(const QString &source)
+{
+    const QString kind = source.section(QLatin1Char(':'), 0, 0);
+    const QString account = source.section(QLatin1Char(':'), 1);
     if (kind == QLatin1String("gravatar")) {
         fetchAvatarImage(source, gravatarPicture(account, kAvatarKeep));
         return;
@@ -10200,19 +10337,22 @@ void CrmFeature::fetchAvatarImage(const QString &source, const QUrl &url)
         QImage image;
         if (reply->error() == QNetworkReply::NoError)
             image.loadFromData(reply->readAll());
-        if (forkmesh::networkReplyStatusIsExpected(reply)) {
-            QSaveFile file(avatarCachePath(source));
-            if (openCacheFile(file))
-                file.commit();
-        }
+        const bool expected = forkmesh::networkReplyStatusIsExpected(reply);
         if (!image.isNull()) {
             const int keep = kAvatarKeep;
             if (image.width() > keep || image.height() > keep)
                 image = image.scaled(keep, keep, Qt::KeepAspectRatioByExpanding,
                                      Qt::SmoothTransformation);
-            QSaveFile file(avatarCachePath(source));
-            if (openCacheFile(file) && image.save(&file, "PNG"))
-                file.commit();
+        }
+        if (expected || !image.isNull()) {
+            const QString path = avatarCachePath(source);
+            QThreadPool::globalInstance()->start([path, image] {
+                QSaveFile file(path);
+                if (!openCacheFile(file))
+                    return;
+                if (image.isNull() || image.save(&file, "PNG"))
+                    file.commit();
+            });
         }
         finishAvatar(source, image);
     });
@@ -10279,7 +10419,6 @@ void CrmFeature::applyAvatars()
         }
     }
     pumpAvatars();
-    renderSheetList();
     if (!m_peopleQueued && m_tabs->currentWidget() == m_peoplePage) {
         m_peopleQueued = true;
         QTimer::singleShot(600, this, [this] {

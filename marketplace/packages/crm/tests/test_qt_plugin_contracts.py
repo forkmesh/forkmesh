@@ -124,8 +124,12 @@ def test_desktop_cache_files_are_owner_only_and_hold_no_secrets():
     # carries the Zoho secrets (test_crm checks the summary itself).
     # A picture comes off disk for a week before its service is asked again.
     avatar = _feature_body("fetchAvatar")
-    assert avatar.index("avatarCachePath(source)") < avatar.index("m_network->get")
+    assert "avatarCachePath(source)" in avatar
+    assert "m_network" not in avatar
     assert "kAvatarCacheMs" in avatar
+    assert "QThreadPool::globalInstance()->start(" in avatar
+    assert "guard->fetchAvatarRemote(source)" in avatar
+    assert "m_network->get" in _feature_body("fetchAvatarRemote")
     assert "avatarCachePath(source)" in _feature_body("fetchAvatarImage")
 
 
@@ -250,7 +254,8 @@ def test_desktop_stage_cells_and_mastodon_row_refresh():
     # instance.
     assert "m_mastodonRefresh" not in FEATURE
     assert "item->setData(kRowButtonRole, true)" in fill
-    assert "[this, key] { refreshMastodonNow(key); }" in fill
+    attach = FEATURE.split("void CrmFeature::attachRowWidgets(int row)", 1)[1].split("\n}\n", 1)[0]
+    assert "[this, key] { refreshMastodonNow(key); }" in attach
     now = FEATURE.split("void CrmFeature::refreshMastodonNow(const QString &key)", 1)[1].split("\n}\n", 1)[0]
     assert "latest->fetchedAt = 0" in now and "refreshMastodonUpdates()" in now
     assert "m_mastodonQueue.append(key)" in now
@@ -311,9 +316,11 @@ def test_desktop_contact_pictures_start_with_the_forkmesh_user_and_end_with_grav
     fetch = _feature_body("fetchAvatar")
     assert fetch.index('QLatin1String("forkmesh")') < fetch.index("avatarCachePath(source)")
     assert "m_network" not in fetch.split('QLatin1String("forkmesh")', 1)[1].split("return;", 1)[0]
-    assert "gravatarPicture(account, kAvatarKeep)" in fetch
+    assert "gravatarPicture(account, kAvatarKeep)" in _feature_body("fetchAvatarRemote")
     assert "saved.size() == 0" in fetch
-    assert "forkmesh::networkReplyStatusIsExpected(reply)" in _feature_body("fetchAvatarImage")
+    image = _feature_body("fetchAvatarImage")
+    assert "forkmesh::networkReplyStatusIsExpected(reply)" in image
+    assert image.index("QThreadPool::globalInstance()->start(") < image.index("image.save(&file")
     gravatar = FEATURE.split("QUrl gravatarPicture(", 1)[1].split("\n}\n", 1)[0]
     assert "QCryptographicHash::Sha256" in gravatar
     assert "https://gravatar.com/avatar/%1?s=%2&d=404" in gravatar
@@ -417,10 +424,10 @@ def test_desktop_and_web_read_the_same_accounts_for_a_cards_recent_updates():
 
 
 def test_desktop_contact_rows_copy_an_outreach_prompt_for_their_sheet():
-    fill = FEATURE.split("void CrmFeature::fillContactRows()", 1)[1].split("\n}\n", 1)[0]
-    assert 'QStringLiteral("Copy prompt")' in fill
-    assert "copyOutreachPrompt(contactById(contactId))" in fill
-    assert 'setObjectName(QStringLiteral("crmRowActions"))' in fill
+    attach = FEATURE.split("void CrmFeature::attachRowWidgets(int row)", 1)[1].split("\n}\n", 1)[0]
+    assert 'QStringLiteral("Copy prompt")' in attach
+    assert "copyOutreachPrompt(contactById(contactId))" in attach
+    assert 'setObjectName(QStringLiteral("crmRowActions"))' in attach
     assert "QWidget#crmRowActions QPushButton" in FEATURE
     prompt = FEATURE.split("QString CrmFeature::outreachPrompt(", 1)[1].split("\n}\n", 1)[0]
     assert "Tell me about ForkMesh" in prompt
@@ -1416,3 +1423,31 @@ def test_desktop_email_panel_drafts_with_the_selected_model_and_sends_tracked():
     worker = CRM_WORKER.split("async def _auto_email(", 1)[1].split("\nasync def ", 1)[0]
     assert 'if data.get("promptOnly"):' in worker
     assert worker.index('if data.get("promptOnly"):') < worker.index("_auto_email_write(")
+
+
+def test_desktop_contact_rows_build_their_buttons_only_in_view():
+    fill = FEATURE.split("void CrmFeature::fillContactRows()", 1)[1].split("\n}\n", 1)[0]
+    assert "new QPushButton" not in fill
+    assert "new QToolButton" not in fill
+    assert "setCellWidget" not in fill
+    assert "attachVisibleRowWidgets();" in fill
+    visible = FEATURE.split("void CrmFeature::attachVisibleRowWidgets()", 1)[1].split("\n}\n", 1)[0]
+    assert "m_contactsTable->rowAt(0)" in visible
+    assert "removeCellWidget(row, column)" in visible
+    assert "isRowHidden(row)" in visible
+    setup = FEATURE.split("m_contactsTable = new ContactsTable(0, 0);", 1)[1]
+    assert "&QScrollBar::valueChanged" in setup.split("QHeaderView *contactHeader", 1)[0]
+    assert "&QScrollBar::rangeChanged" in setup.split("QHeaderView *contactHeader", 1)[0]
+    assert "&QScrollBar::sliderReleased" in setup.split("QHeaderView *contactHeader", 1)[0]
+    assert "isSliderDown()" in visible
+    assert FEATURE.count("m_widgetRows.clear();") >= 2
+    filtered = FEATURE.split("void CrmFeature::filterContacts()", 1)[1].split("\n}\n", 1)[0]
+    assert "isRowHidden(row) != hide" in filtered
+    assert "scheduleRowWidgets();" in filtered
+
+
+def test_desktop_sheet_list_is_rebuilt_only_when_it_changed():
+    side = FEATURE.split("void CrmFeature::renderSheetList()", 1)[1].split("\nvoid CrmFeature::", 1)[0]
+    assert side.index("joined == m_sheetListSignature") < side.index("m_sheetList->clear()")
+    apply = FEATURE.split("void CrmFeature::applyAvatars()", 1)[1].split("\n}\n", 1)[0]
+    assert "renderSheetList()" not in apply
