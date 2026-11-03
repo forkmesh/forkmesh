@@ -101,7 +101,7 @@
     },
     {
       "id": "social.mastodon.toots",
-      "label": "Use the organization's Mastodon token to log toots it sent that mention a contact, follow contacts and follow back its followers",
+      "label": "Use the organization's Mastodon token to log toots mentioning a contact, follow contacts and follow back its followers",
       "risk": "sensitive"
     },
     {
