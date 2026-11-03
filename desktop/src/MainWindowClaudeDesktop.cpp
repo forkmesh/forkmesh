@@ -44,7 +44,7 @@ struct ClaudeDesktopLookup {
 
 bool MainWindow::claudeDesktopSessionsEnabled() const
 {
-    return QSettings().value(kClaudeDesktopSessionsSetting, true).toBool();
+    return QSettings().value(kClaudeDesktopSessionsSetting, false).toBool();
 }
 
 QString MainWindow::claudeDesktopBlocker(int sessionId)
