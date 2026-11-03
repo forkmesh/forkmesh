@@ -6,8 +6,8 @@
 // up" button puts the contact's pipeline, stage, owner and history over the
 // conversation, and whose FM button opens the panel that links the thread to
 // the record. Opening someone else's conversation asks ForkMesh for nothing
-// by itself; your own post, open on its permalink, logs the people it
-// mentions.
+// by itself; your own post, sent from this tab or open on its permalink, logs
+// the people it mentions.
 //
 // Mastodon knows people by handle (@name@instance) rather than by address, so
 // a linked conversation carries the handle and the CRM matches the contact on
@@ -24,6 +24,19 @@
 
   const text = (node) => String(node?.textContent || "").replace(/\s+/g, " ").trim();
   const attr = (node, name) => String(node?.getAttribute?.(name) || "").trim();
+  const clip = (value) => {
+    const body = String(value || "").replace(/\s+/g, " ").trim();
+    return body.length > 180 ? `${body.slice(0, 177)}…` : body;
+  };
+
+  const POST = "article[data-id], .detailed-status, .status";
+  const own = (node, selector) => [...(node?.querySelectorAll(selector) || [])]
+    .filter((item) => item.closest(POST) === node);
+  const mainPost = () => document.querySelector("article[data-variant='page'][data-id]")
+    || document.querySelector(".detailed-status");
+  const threadPosts = () => document.querySelectorAll(
+    "article[data-variant='thread'][data-id], .status__wrapper, .status");
+  const before = (node, other) => Boolean(node.compareDocumentPosition(other) & Node.DOCUMENT_POSITION_FOLLOWING);
 
   // "@grace" on its own instance, "@grace@mastodon.social" from elsewhere.
   function fullHandle(acct, home = location.hostname) {
@@ -55,6 +68,11 @@
   // Who posted a status: the display name beside its avatar and the handle
   // under it, with the profile link as the fallback for both.
   function accountOf(node) {
+    const byline = node?.querySelector(":scope > header a[data-hover-card-account][title^='@']");
+    if (byline) {
+      const handle = fullHandle(attr(byline, "title"));
+      return { handle, name: realName(text(node.querySelector(":scope > header .display-name__html")), handle) };
+    }
     const link = node?.querySelector(
       "a.detailed-status__display-name, a.status__display-name, .display-name, a[href^='/@']");
     const acct = text(link?.querySelector(".display-name__account"));
@@ -68,13 +86,22 @@
   // What the post is about, in one line: its content warning when it has one,
   // otherwise the opening of the text. Shown in the panel before anything is
   // linked, and the only part of a post the CRM keeps.
+  function warningOf(node) {
+    if (!node?.matches?.("article[data-id]")) return "";
+    const callout = own(node, "[aria-controls]")
+      .find((item) => node.querySelector(`[id="${CSS.escape(attr(item, "aria-controls"))}"]`));
+    if (!callout) return "";
+    const copy = callout.cloneNode(true);
+    for (const extra of copy.querySelectorAll("button, svg")) extra.remove();
+    return text(copy);
+  }
+
   function summary(node) {
-    const warning = text(node?.querySelector(
+    const warning = warningOf(node) || text(node?.querySelector(
       ".status__content__spoiler-text, .p-summary, .spoiler-text"));
     if (warning) return `CW: ${warning}`.slice(0, 300);
-    const body = String(node?.querySelector(".status__content__text, .status__content")?.innerText || "")
-      .replace(/\s+/g, " ").trim();
-    return body.length > 180 ? `${body.slice(0, 177)}…` : body;
+    const body = own(node, "[lang]")[0] || node?.querySelector(".status__content__text, .status__content");
+    return clip(body?.innerText);
   }
 
   // A mention reads "@grace" even when grace lives elsewhere; its link says
@@ -98,10 +125,10 @@
     const add = (person) => {
       if (person?.handle && !people.some((item) => item.handle === person.handle)) people.push(person);
     };
-    for (const status of document.querySelectorAll(".status__wrapper, .status")) {
+    for (const status of threadPosts()) {
       if (!detailed.contains(status)) add(accountOf(status));
     }
-    for (const mention of detailed.querySelectorAll("a.mention")) {
+    for (const mention of own(detailed, "a.mention:not(.hashtag)")) {
       add({ handle: mentionHandle(mention), name: "" });
     }
     return people;
@@ -112,21 +139,24 @@
   // header sits under who wrote it the way an email's sits over its body.
   // Timelines and profiles have no open conversation.
   function readPage() {
-    const detailed = document.querySelector(".detailed-status");
+    const detailed = mainPost();
     if (!detailed) return { message: { provider: "mastodon", messageId: "" }, anchor: null };
     const wrapper = detailed.closest(".detailed-status__wrapper") || detailed;
-    const stamp = detailed.querySelector("time[datetime]");
-    const permalink = [...detailed.querySelectorAll("a[href]")]
+    const stamp = own(detailed, "time[datetime]")[0];
+    const permalink = own(detailed, "a[href]")
       .map((link) => link.href)
       .find((href) => statusId(href) && /\/@|\/statuses\//.test(href));
     const messageId = statusId(location.pathname) || statusId(permalink)
       || attr(wrapper, "data-id").replace(/^.*?(\d+)$/, "$1");
     // The posts above this one are its ancestors; the first is the thread's
     // root, which is what ties every reply to one conversation.
-    const ancestors = [...document.querySelectorAll(".status__wrapper a[href]")]
+    const above = [...document.querySelectorAll("article[data-variant='thread'][data-id]")]
+      .filter((post) => before(post, detailed)).map((post) => attr(post, "data-id"));
+    const ancestors = above.length ? above : [...document.querySelectorAll(".status__wrapper a[href]")]
       .map((link) => link.href).filter((href) => statusId(href));
     const author = accountOf(detailed);
-    const body = detailed.querySelector(".content-warning, .status__content");
+    const body = detailed.querySelector(":scope > header")?.nextElementSibling
+      || detailed.querySelector(".content-warning, .status__content");
     const mine = myHandle();
     const outbound = Boolean(mine) && author.handle === mine;
     const participants = [];
@@ -138,7 +168,7 @@
     }
     const message = {
       provider: "mastodon", accountIndex: 0, messageId,
-      threadId: statusId(ancestors[0]) || messageId,
+      threadId: statusId(`/${ancestors[0] || ""}`) || messageId,
       subject: summary(detailed),
       from: outbound ? { handle: mine, name: "" } : author,
       to: outbound ? participants.slice(0, 1) : [],
@@ -159,19 +189,19 @@
 
   function ownPost() {
     const path = location.pathname.match(PERMALINK);
-    const detailed = document.querySelector(".detailed-status");
+    const detailed = mainPost();
     if (!path || !detailed) return null;
     const author = accountOf(detailed);
     if (!author.handle || author.handle !== fullHandle(decodeURIComponent(path[1]))) return null;
     const { message } = readPage();
     if (message.messageId !== path[2]) return null;
     const names = new Map();
-    for (const status of document.querySelectorAll(".status__wrapper, .status")) {
+    for (const status of threadPosts()) {
       const person = accountOf(status);
       if (person.handle && person.name) names.set(person.handle, person.name);
     }
     const people = [];
-    for (const mention of detailed.querySelectorAll("a.mention:not(.hashtag)")) {
+    for (const mention of own(detailed, "a.mention:not(.hashtag)")) {
       const handle = mentionHandle(mention);
       if (handle && !people.some((item) => item.handle === handle)) {
         people.push({ handle, name: names.get(handle) || "" });
@@ -186,6 +216,7 @@
   // --- CRM header above the open conversation ------------------------------
 
   const { host, panel, place } = crm.header({ read: async () => readPage().message });
+  for (const type of ["keydown", "keypress", "keyup"]) host.addEventListener(type, (event) => event.stopPropagation());
 
   // Mastodon redraws its columns as the timeline moves: put the header back
   // above the open post whenever it is redrawn, and show the new conversation
@@ -219,6 +250,10 @@
   function logOwnPost() {
     let toot;
     try { toot = ownPost(); } catch { return; }
+    track(toot);
+  }
+
+  function track(toot) {
     if (!toot?.people.length || tried.has(toot.statusId)) return;
     tried.add(toot.statusId);
     try {
@@ -230,6 +265,49 @@
       });
     } catch { }
   }
+
+  const TOOT_ID = /^\d{5,25}$/;
+
+  function sentToot(status) {
+    const id = String(status?.id || "");
+    const author = fullHandle(status?.account?.acct);
+    if (!TOOT_ID.test(id) || !author) return null;
+    const people = [];
+    for (const mention of Array.isArray(status.mentions) ? status.mentions : []) {
+      const handle = fullHandle(mention?.acct);
+      if (handle && handle !== author && !people.some((item) => item.handle === handle)) {
+        people.push({ handle, name: "" });
+      }
+    }
+    const parent = String(status.in_reply_to_id || "");
+    let threadId = TOOT_ID.test(parent) ? parent : id;
+    if (threadId !== id) {
+      try {
+        const open = readPage().message;
+        if (open.messageId === parent && TOOT_ID.test(open.threadId)) threadId = open.threadId;
+      } catch { /* the reply was written away from its thread */ }
+    }
+    const url = String(status.url || "");
+    const body = new DOMParser().parseFromString(String(status.content || ""), "text/html").body;
+    for (const line of body.querySelectorAll("br")) line.replaceWith("\n");
+    for (const block of body.querySelectorAll("p")) block.append(" ");
+    const warning = String(status.spoiler_text || "").replace(/\s+/g, " ").trim();
+    return {
+      statusId: id, threadId, author: { handle: author, name: "" }, mine: myHandle(), people,
+      subject: warning ? `CW: ${warning}`.slice(0, 300) : clip(body.textContent),
+      sentAt: Date.parse(String(status.created_at || "")) || NaN,
+      providerUrl: url.startsWith(`https://${location.host}/`) ? url
+        : `https://${location.host}/@${String(status.account.acct).replace(/^@/, "")}/${id}`,
+    };
+  }
+
+  window.addEventListener("message", (event) => {
+    if (event.source !== window || event.origin !== location.origin) return;
+    if (event.data?.source !== "forkmesh-toot-sent") return;
+    let toot;
+    try { toot = sentToot(event.data.status); } catch { return; }
+    track(toot);
+  });
 
   let timer = 0;
   function schedule(delay = 400) {

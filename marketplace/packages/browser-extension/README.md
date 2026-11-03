@@ -12,7 +12,7 @@ the feature reference is `content/extension/README.md`:
 - fills and saves logins from the Password Vault (`vault` package);
 - links Gmail, Zoho Mail and Mastodon conversations to CRM contacts, links
   mail you send to the recipient's record, logs the people your own Mastodon
-  posts mention (adding the new ones as contacts), and files pages under a
+  posts mention as you send them (adding the new ones as contacts), and files pages under a
   contact (`crm` package);
 - sorts, searches and groups a Zoho Mail list by sender and selects, marks
   read, archives or deletes the shown messages in bulk through Zoho's own
