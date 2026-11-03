@@ -76,7 +76,7 @@ def test_extension_is_manifest_v3_with_the_narrowest_permissions():
                  "dashboard.js", "popup.js", "popup.html", "popup-vault.js",
                  "vault.js", "vault-crypto.js", "vault-client.js", "x.js", "reddit.js",
                  "marketing-capture.js", "capture.html", "capture.js", "x-developer.js",
-                 "zoho-tidy.js", "zoho-sort.js"):
+                 "zoho-tidy.js", "zoho-sort.js", "map.html", "map.js", "map-source.js", "codemap.js"):
         assert (EXTENSION / name).is_file()
     for size in ("16", "32", "48", "128"):
         assert (EXTENSION / MANIFEST["icons"][size]).is_file()
@@ -373,7 +373,13 @@ def test_your_own_mastodon_post_logs_the_people_it_mentions():
     assert "index ? `${statusId}/${person.handle}` : statusId" in track
     assert "if (state.seen[key])" in track
     assert "const PERMALINK = /^\\/(?:deck\\/)?@([^/]+)\\/(\\d{5,25})\\/?$/;" in MASTODON
-    assert 'detailed.querySelectorAll("a.mention:not(.hashtag)")' in MASTODON
+    assert 'own(detailed, "a.mention:not(.hashtag)")' in MASTODON
+    assert "article[data-variant='page'][data-id]" in MASTODON
+    assert 'window.addEventListener("message", (event) => {' in MASTODON
+    assert 'event.data?.source !== "forkmesh-toot-sent"' in MASTODON
+    assert 'MASTODON_SENT_FILES = { js: ["mastodon-sent.js"], world: "MAIN" }' in BACKGROUND
+    assert "...MASTODON_SENT_FILES, runAt: \"document_start\"" in BACKGROUND
+    assert "files: MASTODON_SENT_FILES.js" in BACKGROUND
     assert 'author.handle !== fullHandle(decodeURIComponent(path[1]))' in MASTODON
     assert '{ type: "fm-track-toot", toot }' in MASTODON
     assert "data-track-toots" in POPUP_HTML and "data-toot-status" in POPUP_HTML
@@ -409,6 +415,85 @@ def _compose_harness(mode, tmp_path):
     found = re.search(r"(RESULT|ERROR) (.*)</pre>", result.stdout, re.S)
     assert found and found.group(1) == "RESULT", result.stdout[-3000:] + result.stderr[-2000:]
     return json.loads(found.group(2))
+
+
+SENT_STATUS = {
+    "id": "117553400000000002", "url": "https://mastodon.test/@forkmesh/117553400000000002",
+    "created_at": "2026-11-03T16:30:00.000Z", "visibility": "direct", "in_reply_to_id": None,
+    "spoiler_text": "", "content": "<p><span class=\"h-card\"><a href=\"https://mastodon.test/@torproject\" "
+    "class=\"u-url mention\">@<span>torproject</span></a></span> Would you try<br>ForkMesh?</p>",
+    "account": {"id": "1", "acct": "forkmesh"},
+    "mentions": [{"id": "5", "acct": "torproject"}, {"id": "9", "acct": "ada@mathstodon.xyz"},
+                 {"id": "1", "acct": "forkmesh"}],
+}
+
+
+def _mastodon_harness(mode, tmp_path):
+    import http.server
+    import threading
+
+    class Handler(http.server.SimpleHTTPRequestHandler):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, directory=str(PACKAGE), **kwargs)
+
+        def log_message(self, *args):
+            pass
+
+        def do_POST(self):
+            self.rfile.read(int(self.headers.get("Content-Length") or 0))
+            body = json.dumps(SENT_STATUS if self.path == "/api/v1/statuses" else {"id": "1"}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        result = subprocess.run(
+            [_headless_chrome(), "--headless", "--no-sandbox", f"--user-data-dir={tmp_path}",
+             "--host-resolver-rules=MAP mastodon.test 127.0.0.1", "--virtual-time-budget=30000", "--dump-dom",
+             f"http://mastodon.test:{server.server_address[1]}/tests/mastodon_harness.html?mode={mode}"],
+            capture_output=True, text=True, timeout=180)
+    finally:
+        server.shutdown()
+    found = re.search(r"(RESULT|ERROR) (.*)</pre>", result.stdout, re.S)
+    assert found and found.group(1) == "RESULT", result.stdout[-3000:] + result.stderr[-2000:]
+    return json.loads(found.group(2))
+
+
+@pytest.mark.skipif(_headless_chrome() is None, reason="no headless Chrome")
+def test_a_post_on_the_redesigned_mastodon_page_gets_the_header_and_logs_its_mentions(tmp_path):
+    out = _mastodon_harness("page", tmp_path)
+    assert out["message"] == {
+        "messageId": "117553375139168494", "threadId": "117553300000000001", "direction": "outbound",
+        "from": "forkmesh@mastodon.test",
+        "subject": "@torproject Hi Tor team! We're building ForkMesh, a federated Git platform. #TorProject",
+        "sentAt": 1793722140000, "providerUrl": out["message"]["providerUrl"],
+        "participants": ["ada@mathstodon.xyz", "torproject@mastodon.test"]}
+    assert out["message"]["providerUrl"].endswith("/@forkmesh/117553375139168494")
+    assert out["placed"] is True
+    assert out["hotkeys"] == 0
+    assert [toot["statusId"] for toot in out["tracked"]] == ["117553375139168494"]
+    toot = out["tracked"][0]
+    assert toot["author"]["handle"] == toot["mine"] == "forkmesh@mastodon.test"
+    assert toot["threadId"] == "117553300000000001"
+    assert toot["people"] == [{"handle": "torproject@mastodon.test", "name": ""}]
+
+
+@pytest.mark.skipif(_headless_chrome() is None, reason="no headless Chrome")
+def test_a_toot_is_logged_the_moment_mastodon_says_it_was_sent(tmp_path):
+    out = _mastodon_harness("sent", tmp_path)
+    assert len(out["tracked"]) == 1
+    toot = out["tracked"][0]
+    assert toot["statusId"] == toot["threadId"] == "117553400000000002"
+    assert toot["author"]["handle"] == toot["mine"] == "forkmesh@mastodon.test"
+    assert toot["people"] == [{"handle": "torproject@mastodon.test", "name": ""},
+                              {"handle": "ada@mathstodon.xyz", "name": ""}]
+    assert toot["subject"] == "@torproject Would you try ForkMesh?"
+    assert toot["sentAt"] == 1793723400000
+    assert toot["providerUrl"].endswith("/@forkmesh/117553400000000002")
 
 
 @pytest.mark.skipif(_headless_chrome() is None, reason="no headless Chrome")
@@ -775,10 +860,12 @@ def test_the_refresh_panel_follows_the_tab_without_touching_any_channel_site():
     for gone in ("fm-bar-", "BAR_", "refresh-bar", "barMark", "fm-refresh-bar"):
         assert gone not in BACKGROUND, gone
     assert BACKGROUND.count("chrome.scripting.registerContentScripts(") == 1
-    assert "registerContentScripts(missing.map((host) => ({" in BACKGROUND
-    assert BACKGROUND.count("executeScript(") == 6, (
-        "three for a channel capture, two to pace one page of a Reddit walk, "
-        "one to load the Reddit reader into a profile tab opened before the extension")
+    assert "const scripts = wanted.flatMap(mastodonScripts);" in BACKGROUND
+    assert "chrome.scripting.registerContentScripts(missing)" in BACKGROUND
+    assert BACKGROUND.count("executeScript(") == 7, (
+        "two for a channel capture, two to pace one page of a Reddit walk, "
+        "one to load the Reddit reader into a profile tab opened before the extension, "
+        "two to load the Mastodon reader and its sent-post watcher into the tab an instance was added on")
     section = BACKGROUND.split('const REFRESH_SETUP_KEY = "refreshSetup";', 1)[1].split("const X_SETUP_KEY", 1)[0]
     update = section.split("async function refreshChannel(", 1)[1].split("\n}\n", 1)[0]
     planned = section.replace(update, "")
@@ -854,3 +941,32 @@ def test_the_repository_card_agrees_with_the_import_service():
         assert value == repository_imports.external_repository_id(provider, external)
     for url in found["canonical"]:
         assert repository_imports.parse_provider_source(url)["canonicalUrl"] == url
+
+
+def test_a_repository_opens_its_size_map_and_code_map_from_the_popup():
+    repo_popup = (EXTENSION / "popup-repo.js").read_text(encoding="utf-8")
+    map_html = (EXTENSION / "map.html").read_text(encoding="utf-8")
+    map_page = (EXTENSION / "map.js").read_text(encoding="utf-8")
+    map_source = (EXTENSION / "map-source.js").read_text(encoding="utf-8")
+    assert 'data-repo-map="size"' in POPUP_HTML and 'data-repo-map="code"' in POPUP_HTML
+    assert 'chrome.runtime.getURL(`map.html?${query}`)' in repo_popup
+    for script in ("repo.js", "map-source.js", "codemap.js", "map.js"):
+        assert f'<script src="{script}"></script>' in map_html
+    for source in (map_page, map_source):
+        assert "chrome.storage" not in source and "sessionToken" not in source
+        assert "eval(" not in source and "new Function" not in source
+    assert map_source.count('credentials: "omit"') == 3
+    assert "https://" not in map_html
+    result = subprocess.run(
+        [sys.executable, str(PACKAGE / "tools" / "sync_codemap.py"), "--check"],
+        capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_the_repository_map_reads_the_tree_at_one_commit():
+    result = subprocess.run(
+        [shutil.which("node"), "--no-warnings", str(PACKAGE / "tests" / "repo_map_harness.js")],
+        capture_output=True, text=True, timeout=120, env={"PATH": "/usr/local/bin:/usr/bin:/bin"})
+    assert result.returncode == 0, result.stdout[-3000:] + result.stderr[-2000:]
+    assert "checks passed" in result.stdout

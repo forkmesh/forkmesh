@@ -91,6 +91,7 @@ struct NativePackageHost {
                        NativePackageSpecialAgentActionHandler)>
         specialAgentAction;
     std::function<QString()> accountName;
+    std::function<bool()> accountSignedIn;
     std::function<void(const QString &)> openDirectMessage;
     std::function<void(const QString &)> openUserProfile;
     std::function<QList<NativePackageRepository>()> repositories;
@@ -127,6 +128,7 @@ struct NativePackageHost {
     std::function<void(QWidget *)> attachPackageMenu;
     std::function<QUrl(const QString &)> accountApiUrl;
     std::function<QString(const QUrl &)> accountSessionToken;
+    std::function<void(std::function<void(const QString &)>)> requestAccountSession;
     std::function<bool(const QString &, const QString &, QString *, QString *,
                        QString *)>
         signProof;

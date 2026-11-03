@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Repository map · ForkMesh</title>
+  <link rel="icon" href="icons/icon32.png" />
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f6f8fa; --surface: #ffffff; --raised: #f1f3f5; --border: #d8dee4; --fg: #1f2328; --muted: #59636e;
+      --accent: #0969da; --accent-soft: rgb(9 105 218 / .1); --danger: #cf222e; --track: #eaeef2;
+      --shadow: 0 1px 2px rgb(31 35 40 / .06), 0 8px 24px rgb(31 35 40 / .06);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #010409; --surface: #0d1117; --raised: #161b22; --border: #30363d; --fg: #f0f6fc; --muted: #9198a1;
+        --accent: #58a6ff; --accent-soft: rgb(88 166 255 / .14); --danger: #ff7b72; --track: #21262d;
+        --shadow: 0 1px 2px rgb(0 0 0 / .4), 0 8px 24px rgb(0 0 0 / .35);
+      }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--fg); font: 13px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    button, a.btn { font: inherit; }
+    .bar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 12px 24px; background: color-mix(in srgb, var(--surface) 88%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--border); }
+    .brand { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1 1 320px; }
+    .brand img { width: 28px; height: 28px; border-radius: 7px; flex-shrink: 0; }
+    .brand div { display: grid; min-width: 0; }
+    .brand b { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .brand small { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .chip { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 11px; font-weight: 600; margin-left: 8px; vertical-align: 2px; }
+    .seg { display: inline-flex; padding: 3px; border-radius: 9px; background: var(--raised); border: 1px solid var(--border); }
+    .seg button { height: 28px; padding: 0 14px; border: 0; border-radius: 6px; background: none; color: var(--muted); font-weight: 600; cursor: pointer; }
+    .seg button:hover { color: var(--fg); }
+    .seg button[aria-pressed="true"] { background: var(--surface); color: var(--fg); box-shadow: 0 1px 3px rgb(0 0 0 / .15); }
+    .seg.small button { height: 24px; padding: 0 9px; font-size: 12px; }
+    .btn { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 7px; border: 1px solid var(--border); background: var(--surface); color: var(--fg); font-weight: 600; text-decoration: none; cursor: pointer; white-space: nowrap; }
+    .btn:hover { background: var(--raised); }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn[disabled] { opacity: .45; cursor: default; }
+    :is(button, a, [tabindex]):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    main { max-width: 1480px; margin: 0 auto; padding: 20px 24px 32px; }
+    .state { display: grid; place-items: center; gap: 12px; min-height: 60vh; text-align: center; color: var(--muted); }
+    .state p { margin: 0; max-width: 520px; }
+    .state.error p { color: var(--danger); }
+    .spinner { width: 28px; height: 28px; border-radius: 50%; border: 3px solid var(--track); border-top-color: var(--accent); animation: spin .9s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .layout { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 20px; align-items: start; }
+    @media (max-width: 1080px) { .layout { grid-template-columns: 1fr; } }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); }
+    .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+    .crumbs { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; min-width: 0; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); }
+    .crumbs button { border: 0; background: none; color: var(--fg); font: inherit; padding: 3px 6px; border-radius: 5px; cursor: pointer; max-width: 24ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .crumbs button:hover { background: var(--raised); }
+    .crumbs button[aria-current="true"] { color: var(--accent); font-weight: 600; }
+    .controls { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; }
+    .chart-wrap { position: relative; padding: 18px; }
+    .chart { margin: 0 auto; max-width: min(760px, calc(100vh - 210px)); }
+    .chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+    .chart path { transition: opacity .12s; outline: none; }
+    .chart path:hover, .chart path:focus-visible { opacity: .82; }
+    .chart.hovering path:not(.lit) { opacity: .35; }
+    .chart [role="button"] { cursor: pointer; }
+    .tip { position: absolute; z-index: 3; max-width: 360px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; pointer-events: none; overflow-wrap: anywhere; }
+    .tip small { display: block; color: var(--muted); font-size: 11px; }
+    .hint { margin: 0; padding: 10px 16px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; }
+    .side { display: grid; gap: 16px; }
+    .side h2 { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 0; font-size: 13px; }
+    .side h2 span { color: var(--muted); font-weight: 400; font-size: 12px; font-variant-numeric: tabular-nums; }
+    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; margin: 0; background: var(--border); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+    .stats div { background: var(--surface); padding: 12px 14px; }
+    .stats dt { color: var(--muted); font-size: 11px; }
+    .stats dd { margin: 2px 0 0; font-size: 17px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    ol.bars { list-style: none; margin: 0; padding: 6px; display: grid; gap: 1px; max-height: 360px; overflow: auto; }
+    ol.bars button { position: relative; display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: center; gap: 8px; width: 100%; padding: 6px 8px; border: 0; border-radius: 6px; background: none; color: var(--fg); text-align: left; cursor: pointer; overflow: hidden; }
+    ol.bars button:hover { background: var(--raised); }
+    ol.bars i { width: 10px; height: 10px; border-radius: 3px; }
+    ol.bars span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    ol.bars em { font-style: normal; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+    ol.bars u { position: absolute; left: 8px; right: 8px; bottom: 2px; height: 2px; border-radius: 1px; background: var(--track); text-decoration: none; }
+    ol.bars u b { display: block; height: 100%; border-radius: 1px; background: var(--accent); opacity: .7; }
+    .card > h2 { padding: 12px 16px 4px; }
+    .card > p.empty { margin: 0; padding: 4px 16px 14px; color: var(--muted); font-size: 12px; }
+    .note { margin: 0 0 16px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--muted); font-size: 12px; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <header class="bar">
+    <div class="brand">
+      <img src="icons/icon32.png" alt="" />
+      <div>
+        <b><span data-map-name>Repository</span><span data-map-provider class="chip" hidden></span></b>
+        <small data-map-meta>Reading the repository…</small>
+      </div>
+    </div>
+    <div class="seg" role="group" aria-label="View">
+      <button data-map-view="size" type="button" aria-pressed="true">Size map</button>
+      <button data-map-view="code" type="button" aria-pressed="false">Code map</button>
+    </div>
+    <a data-map-source class="btn" target="_blank" rel="noopener" hidden>Open on provider ↗</a>
+  </header>
+  <main>
+    <section data-map-state="loading" class="state"><div class="spinner"></div><p data-map-loading>Reading the file tree…</p></section>
+    <section data-map-state="error" class="state error" hidden>
+      <p data-map-error></p>
+      <button data-map-retry class="btn" type="button">Try again</button>
+    </section>
+    <section data-map-state="ready" hidden>
+      <p data-map-truncated class="note" hidden></p>
+      <div class="layout">
+        <div class="card">
+          <div class="card-head">
+            <nav data-map-crumbs class="crumbs" aria-label="Folder"></nav>
+            <div class="controls">
+              <span>Rings</span>
+              <div data-map-rings class="seg small" role="group" aria-label="Rings">
+                <button type="button" data-rings="2" aria-pressed="false">2</button>
+                <button type="button" data-rings="3" aria-pressed="false">3</button>
+                <button type="button" data-rings="4" aria-pressed="true">4</button>
+                <button type="button" data-rings="6" aria-pressed="false">6</button>
+              </div>
+              <button data-map-up class="btn" type="button" disabled>Up</button>
+            </div>
+          </div>
+          <div class="chart-wrap">
+            <div data-map-chart class="chart"></div>
+            <div data-map-tip class="tip" hidden></div>
+          </div>
+          <p class="hint">Click a folder to zoom in, the centre or Up to zoom out, and a file to open it on <span data-map-provider-name>the provider</span>. Every slice is sized by its bytes at the pinned commit.</p>
+        </div>
+        <aside class="side">
+          <dl data-map-stats class="stats"></dl>
+          <div class="card"><h2>In this folder <span data-map-focus-size></span></h2><ol data-map-children class="bars"></ol></div>
+          <div class="card"><h2>Largest files <span>here and below</span></h2><ol data-map-largest class="bars"></ol></div>
+          <div class="card"><h2>File types <span>by bytes</span></h2><ol data-map-types class="bars"></ol></div>
+        </aside>
+      </div>
+    </section>
+  </main>
+  <script src="repo.js"></script>
+  <script src="map-source.js"></script>
+  <script src="codemap.js"></script>
+  <script src="map.js"></script>
+</body>
+</html>

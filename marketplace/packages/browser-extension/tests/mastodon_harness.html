@@ -1,0 +1,100 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Mastodon</title></head>
+<body>
+<script id="initial-state" type="application/json">{"meta":{"me":"1","domain":"mastodon.test"},"accounts":{"1":{"id":"1","acct":"forkmesh"}}}</script>
+<div class="column" id="column"></div>
+<pre id="out"></pre>
+<script>
+  const MODE = new URLSearchParams(location.search).get("mode") || "page";
+  const byline = (acct, name, id, statusId, stamp, to = "") => `
+    <header class="_root_header">
+      <a href="/@${acct}" title="@${acct}" data-id="${id}" data-hover-card-account="${id}" role="presentation" tabindex="-1"><img alt=""></a>
+      <div>
+        <p><span><a href="/@${acct}" title="@${acct}" data-id="${id}" data-hover-card-account="${id}"><span class="display-name"><bdi><strong class="display-name__html">${name}</strong></bdi></span></a>${to}</span>
+          &bull; <a href="/@${acct}/${statusId}"><time datetime="${stamp}" title="">1h</time></a></p>
+        <p><a href="/@${acct}" title="@${acct}" role="presentation" tabindex="-1">@${acct}</a></p>
+      </div>
+    </header>`;
+  const PAGE = `
+    <div class="item-list _thread">
+      <article data-id="117553300000000001" data-variant="thread" class="focusable" tabindex="-1">
+        ${byline("ada@mathstodon.xyz", "Ada Lovelace", "9", "117553300000000001", "2026-11-03T15:00:00.000Z")}
+        <div><div id="«r1»"><div><div lang="en"><p>Who mirrors Snowflake?</p></div></div></div></div>
+      </article>
+    </div>
+    <div class="item-list _mainStatus" tabindex="0">
+      <article data-id="117553375139168494" data-variant="page" class="focusable" tabindex="-1" id="main">
+        ${byline("forkmesh", "Forkmesh", "1", "117553375139168494", "2026-11-03T16:09:00.000Z",
+          ' to <span class="display-name"><bdi><strong class="display-name__html">The Tor Project</strong></bdi></span>')}
+        <div class="_mainWrapper">
+          <div id="«r2»"><div><div lang="en"><p><span class="h-card"><a href="/@torproject" class="u-url mention" title="@torproject" data-hover-card-account="5">@<span>torproject</span></a></span> Hi Tor team! We're building ForkMesh, a federated Git platform. <a href="/tags/TorProject" class="mention hashtag">#<span>TorProject</span></a></p></div></div>
+            <article data-id="117553000000000009" data-variant="feed"><header><a href="/@quoted" title="@quoted" data-hover-card-account="7">Quoted</a></header>
+              <div><div lang="en"><a href="/@someone" class="mention" title="@someone">@someone</a> quoted text</div></div></article>
+          </div>
+          <footer><button type="button">Reply</button><time datetime="2026-11-03T16:09:00.000Z">Nov 03, 2026, 11:09 AM</time></footer>
+        </div>
+      </article>
+    </div>`;
+  if (MODE === "page") {
+    history.replaceState(null, "", "/@forkmesh/117553375139168494");
+    document.getElementById("column").innerHTML = PAGE;
+  } else {
+    history.replaceState(null, "", "/home");
+  }
+  window.calls = [];
+  window.hotkeys = 0;
+  const main = document.getElementById("main");
+  if (main) main.addEventListener("keydown", () => { window.hotkeys += 1; });
+  function respond(msg) {
+    if (msg.type === "fm-track-toot") return { ok: true, tracked: true };
+    return { ok: true };
+  }
+  window.chrome = { runtime: {
+    lastError: null,
+    sendMessage(msg, cb) { calls.push(JSON.parse(JSON.stringify(msg))); const r = respond(msg); setTimeout(() => cb && cb(r), 0); },
+    onMessage: { addListener(fn) { window.listener = fn; } },
+  } };
+</script>
+<script src="/content/extension/mastodon-sent.js"></script>
+<script src="/content/extension/panel.js"></script>
+<script src="/content/extension/mastodon.js"></script>
+<script>
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const read = () => new Promise((resolve) => window.listener({ type: "fm-read-message" }, null, (r) => resolve(r.message)));
+  const tracked = () => calls.filter((c) => c.type === "fm-track-toot").map((c) => c.toot);
+  async function page(out) {
+    await wait(2500);
+    const message = await read();
+    out.message = {
+      messageId: message.messageId, threadId: message.threadId, direction: message.direction,
+      from: message.from.handle, subject: message.subject, sentAt: message.sentAt,
+      providerUrl: message.providerUrl, participants: message.participants.map((p) => p.handle),
+    };
+    const host = document.getElementById("forkmesh-crm-host");
+    out.placed = host?.previousElementSibling?.tagName === "HEADER" && host.parentNode === main;
+    host.shadowRoot.firstElementChild?.dispatchEvent?.(new KeyboardEvent("keydown", { key: "f", bubbles: true, composed: true }));
+    host.dispatchEvent(new KeyboardEvent("keydown", { key: "f", bubbles: true, composed: true }));
+    out.hotkeys = window.hotkeys;
+    out.tracked = tracked();
+  }
+  async function sent(out) {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/v1/statuses");
+    xhr.setRequestHeader("Content-Type", "application/json");
+    xhr.send(JSON.stringify({ status: "@torproject hi", visibility: "direct" }));
+    await fetch("/api/v1/statuses", { method: "POST", body: "{}" });
+    await fetch("/api/v1/statuses/117553375139168494/favourite", { method: "POST" });
+    await wait(1500);
+    out.tracked = tracked();
+  }
+  (async () => {
+    const out = {};
+    try {
+      await (MODE === "page" ? page(out) : sent(out));
+      document.getElementById("out").textContent = "RESULT " + JSON.stringify(out);
+    } catch (error) {
+      document.getElementById("out").textContent = "ERROR " + String(error?.stack || error);
+    }
+  })();
+</script>
+</body></html>

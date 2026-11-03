@@ -161,9 +161,11 @@ send to unknown people.
 **Mastodon.** Add each instance under **Mastodon instances** in the popup, or
 press **Record this toot in the CRM** on one you have not added; Chrome asks
 for that site once. With **Add people I mention on Mastodon** on (the
-default), opening one of your own posts on its permalink links everyone it
-mentions to the CRM, up to ten people, creating contacts for new ones.
-Timelines, profiles and other people's posts send nothing.
+default), every post you send, private mentions included, links everyone it
+mentions to the CRM as soon as Mastodon accepts it, up to ten people, creating
+contacts for new ones. Opening one of your own posts on its permalink does the
+same for posts sent elsewhere. Timelines, profiles and other people's posts
+send nothing.
 
 **Save this page to a contact** adds a dated line with the page's title and
 address to a contact's notes.
@@ -204,6 +206,15 @@ Open the popup on any page of a repository on `github.com`, `gitlab.com`,
 `codeberg.org` or `gitea.com`. A card shows its size, stars, forks and open
 issues, its language, licence and default branch, when it last changed, and
 whether it is already on ForkMesh.
+
+**Size map** opens the repository in a new tab as a sunburst of its folders
+and files, sized by bytes: click a folder to zoom in, the centre or **Up** to
+zoom out, and a file to open it on the provider. Beside it are the folder's
+contents, its largest files and its file types. **Code map** shows the same
+tree as ForkMesh's code map, with each file's source drawn in its cell and a
+3D view. Both read the default branch at one commit from the provider's
+public API and need no sign-in; GitLab's API lists no file sizes, so GitLab
+repositories have no map.
 
 **Mirror to my ForkMesh account** lists the repository under your account;
 the mirror nodes copy its Git history on their next pass (about every 30

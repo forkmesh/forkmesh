@@ -3949,6 +3949,10 @@ private:
                                 bool ownsDesktopKey,
                                 const QString &instanceUrl);
     void cacheActiveAccountSession(const QString &instanceUrl);
+    void ensureAccountSession(std::function<void(const QString &)> done = {});
+    void finishAccountSessionRequest(const QString &error);
+    bool waitForAccountSession(const QUrl &url, std::function<void()> retry,
+                               std::function<void(const QString &)> fail = {});
     bool restoreCachedAccountSession(const QString &accountName,
                                      const QString &instanceUrl);
     QStringList accountDesktopKeysForSession(
@@ -16126,6 +16130,9 @@ private:
     QString m_accountSessionToken;
     QString m_accountSessionInstanceUrl;
     forkmesh::accounts::SessionCache m_accountSessionCache;
+    QPointer<QNetworkReply> m_accountSessionReply;
+    QList<std::function<void(const QString &)>> m_accountSessionWaiters;
+    qint64 m_accountSessionFailedAtMs = 0;
     bool m_accountSolanaVerified = false;
     bool m_accountDesktopCapable = false;
     QString m_accountTier = QStringLiteral("free");
