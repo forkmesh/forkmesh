@@ -205,6 +205,15 @@ Open the popup on any page of a repository on `github.com`, `gitlab.com`,
 issues, its language, licence and default branch, when it last changed, and
 whether it is already on ForkMesh.
 
+**Size map** opens the repository in a new tab as a sunburst of its folders
+and files, sized by bytes: click a folder to zoom in, the centre or **Up** to
+zoom out, and a file to open it on the provider. Beside it are the folder's
+contents, its largest files and its file types. **Code map** shows the same
+tree as ForkMesh's code map, with each file's source drawn in its cell and a
+3D view. Both read the default branch at one commit from the provider's
+public API and need no sign-in; GitLab's API lists no file sizes, so GitLab
+repositories have no map.
+
 **Mirror to my ForkMesh account** lists the repository under your account;
 the mirror nodes copy its Git history on their next pass (about every 30
 minutes), and **Open on ForkMesh** takes you to it. A repository someone else
