@@ -4274,11 +4274,13 @@ window.ForkMeshDashboard.registerPage("crm", ({
     // A Mastodon handle opens the profile on its own instance: the handle is the
     // link where the cell is read-only, and a link sits beside it where it edits.
     const profile = column.field === "mastodon" ? crmProfileUrl(column.field, contact.mastodon) : "";
+    const follow = profile && !crmActiveShared() ? crmFollowBackButton(contact) : "";
     if (profile && (column.readonly || crmActiveShared())) {
-      return `<a href="${escapeHtml(profile)}" target="_blank" rel="noopener noreferrer" class="crm-link block truncate whitespace-nowrap text-xs" style="max-width:${column.width || "12rem"}" title="${escapeHtml(profile)}">${escapeHtml(contact.mastodon)}</a>`;
+      const link = `<a href="${escapeHtml(profile)}" target="_blank" rel="noopener noreferrer" class="crm-link block min-w-0 truncate whitespace-nowrap text-xs" style="max-width:${column.width || "12rem"}" title="${escapeHtml(profile)}">${escapeHtml(contact.mastodon)}</a>`;
+      return follow ? `<span class="flex items-center gap-1">${link}${follow}</span>` : link;
     }
     if (profile) {
-      return `<span class="flex items-center gap-1">${crmInlineContactField(contact, column, width, line)}<a href="${escapeHtml(profile)}" target="_blank" rel="noopener noreferrer" class="crm-tile" title="Open ${escapeHtml(profile)}" aria-label="Open Mastodon profile">&#8599;</a></span>`;
+      return `<span class="flex items-center gap-1">${crmInlineContactField(contact, column, width, line)}<a href="${escapeHtml(profile)}" target="_blank" rel="noopener noreferrer" class="crm-tile" title="Open ${escapeHtml(profile)}" aria-label="Open Mastodon profile">&#8599;</a>${follow}</span>`;
     }
     if (column.readonly || crmActiveShared()) {
       const value = crmFieldValue(contact, column.field);
@@ -4534,9 +4536,11 @@ window.ForkMeshDashboard.registerPage("crm", ({
     const cell = (contact, column) => column.field === "name"
       ? `<div class="flex items-start gap-2">${photo(contact)}<div class="min-w-0 flex-1">${name(contact, column)}${crmNameMeta(contact, columns, personChip(contact))}</div></div>`
       : crmContactControl(contact, column);
+    const followAction = crmActiveView()?.network === "mastodon" && !columns.some((column) => column.field === "mastodon");
+    const follow = (contact) => followAction ? crmFollowBackButton(contact) : "";
     const actions = (contact, compact) => shared ? "" : compact
-      ? `<div class="mt-3 flex justify-end gap-1">${crmFollowBackButton(contact)}<button data-crm-contact-deck="${escapeHtml(contact.id)}" class="rounded border border-border px-2 py-1 text-xs text-foreground">Deck</button><button data-crm-contact-compose="${escapeHtml(contact.id)}" class="rounded border border-border px-2 py-1 text-xs text-foreground">Email</button><button data-crm-contact-prompt="${escapeHtml(contact.id)}" class="rounded border border-border px-2 py-1 text-xs text-foreground">Copy prompt</button><button data-crm-contact-edit="${escapeHtml(contact.id)}" class="rounded border border-border px-2 py-1 text-xs text-foreground">Edit</button><button data-crm-contact-delete-row="${escapeHtml(contact.id)}" class="rounded border border-destructive px-2 py-1 text-xs text-destructive">Delete</button></div>`
-      : `<td class="px-3 py-2 align-top"><div class="crm-row-actions flex justify-end gap-1">${crmFollowBackButton(contact)}<button data-crm-contact-deck="${escapeHtml(contact.id)}" title="Share the investor deck with a private, tracked link" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-background">Deck</button><button data-crm-contact-compose="${escapeHtml(contact.id)}" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-background">Email</button><button data-crm-contact-prompt="${escapeHtml(contact.id)}" title="Copy a prompt for an assistant to write them a toot about ForkMesh" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-background">Copy prompt</button><button data-crm-contact-edit="${escapeHtml(contact.id)}" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-background">Edit</button><button data-crm-contact-delete-row="${escapeHtml(contact.id)}" aria-label="Delete ${escapeHtml(contact.name || contact.email || "contact")}" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-destructive hover:bg-background">Delete</button></div></td><td></td>`;
+      ? `<div class="mt-3 flex justify-end gap-1">${follow(contact)}<button data-crm-contact-deck="${escapeHtml(contact.id)}" class="rounded border border-border px-2 py-1 text-xs text-foreground">Deck</button><button data-crm-contact-compose="${escapeHtml(contact.id)}" class="rounded border border-border px-2 py-1 text-xs text-foreground">Email</button><button data-crm-contact-prompt="${escapeHtml(contact.id)}" class="rounded border border-border px-2 py-1 text-xs text-foreground">Copy prompt</button><button data-crm-contact-edit="${escapeHtml(contact.id)}" class="rounded border border-border px-2 py-1 text-xs text-foreground">Edit</button><button data-crm-contact-delete-row="${escapeHtml(contact.id)}" class="rounded border border-destructive px-2 py-1 text-xs text-destructive">Delete</button></div>`
+      : `<td class="px-3 py-2 align-top"><div class="crm-row-actions flex justify-end gap-1">${follow(contact)}<button data-crm-contact-deck="${escapeHtml(contact.id)}" title="Share the investor deck with a private, tracked link" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-background">Deck</button><button data-crm-contact-compose="${escapeHtml(contact.id)}" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-background">Email</button><button data-crm-contact-prompt="${escapeHtml(contact.id)}" title="Copy a prompt for an assistant to write them a toot about ForkMesh" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-background">Copy prompt</button><button data-crm-contact-edit="${escapeHtml(contact.id)}" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-background">Edit</button><button data-crm-contact-delete-row="${escapeHtml(contact.id)}" aria-label="Delete ${escapeHtml(contact.name || contact.email || "contact")}" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-destructive hover:bg-background">Delete</button></div></td><td></td>`;
     const page = crmRowPageSlice(contacts);
     renderCrmRowPager(contacts.length, page, board || people);
     list.innerHTML = page.rows.map((contact) => `
@@ -7033,8 +7037,12 @@ window.ForkMeshDashboard.registerPage("crm", ({
     return { following: Boolean(relationship?.following), requested: Boolean(relationship?.requested) };
   }
 
+  function crmMastodonFollowShown() {
+    if (crmActiveShared() || crmPeople.open) return false;
+    return crmActiveView()?.network === "mastodon" || crmVisibleColumns().some((column) => column.field === "mastodon");
+  }
+
   function crmFollowBackKey(contact) {
-    if (crmActiveView()?.network !== "mastodon") return "";
     const key = crmMastodonKey(contact?.mastodon).toLowerCase();
     const own = crmFollowAccount().account;
     const known = crmFollowBack.organization === state.crmView.organization;
@@ -7088,7 +7096,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
       crmFollowBack.organization = organization;
       crmFollowBack.account = account;
     }
-    if (crmFollowBack.loading || !organization || crmActiveView()?.network !== "mastodon" || !account) return;
+    if (crmFollowBack.loading || !organization || !crmMastodonFollowShown() || !account) return;
     if (Date.now() - crmFollowBack.loadedAt < CRM_MASTODON_FRESH_MS) return;
     crmFollowBack.loading = true;
     crmFollowBack.loadedAt = Date.now();
@@ -7118,7 +7126,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     if (!key || crmFollowBack.following.has(key)) return;
     crmFollowBack.following.add(key);
     renderCrmContacts();
-    crmMessage("notice", `Following @${key} back…`);
+    crmMessage("notice", `Following @${key}…`);
     try {
       const follower = crmFollowAccount();
       const payload = follower.plugin ? await crmMastodonPluginFollow(follower.session, key)

@@ -253,7 +253,7 @@ def test_desktop_stage_cells_and_mastodon_row_refresh():
     # it, only the Reach out card queues reads: drawing a row never reaches an
     # instance.
     assert "m_mastodonRefresh" not in FEATURE
-    assert "item->setData(kRowButtonRole, true)" in fill
+    assert "item->setData(kRowButtonRole, kRowButtonWidth)" in fill
     attach = FEATURE.split("void CrmFeature::attachRowWidgets(int row)", 1)[1].split("\n}\n", 1)[0]
     assert "[this, key] { refreshMastodonNow(key); }" in attach
     now = FEATURE.split("void CrmFeature::refreshMastodonNow(const QString &key)", 1)[1].split("\n}\n", 1)[0]
@@ -1454,14 +1454,16 @@ def test_desktop_sheet_list_is_rebuilt_only_when_it_changed():
 
 
 def test_mastodon_network_tab_offers_follow_back_for_followers_not_followed():
+    button = _feature_body("mastodonFollowButton")
+    assert "m_mastodonFollowBack.contains(key)" in button
+    assert "m_mastodonFollowed.contains(key)" in button
+    assert 'QStringLiteral("Follow")' in button and 'QStringLiteral("Follow back")' in button
+    assert "connected && !m_mastodonFollowing.contains(key)" in button
+    assert "[this, key] { followMastodonBack(key); }" in button
     attach = FEATURE.split("void CrmFeature::attachRowWidgets(int row)", 1)[1].split("\n}\n", 1)[0]
-    assert "m_mastodonFollowBack.contains(key)" in attach
-    assert "!m_mastodonFollowed.contains(key)" in attach
-    assert 'QStringLiteral("Follow")' in attach and 'QStringLiteral("Follow back")' in attach
-    assert "connected && !m_mastodonFollowing.contains(key)" in attach
     assert 'text(activeSheet(), "network") == QLatin1String("mastodon")' in attach
+    assert "!mastodonColumnShown()" in attach
     assert "{followBack, email, prompt, edit, remove}" in attach
-    assert "[this, key] { followMastodonBack(key); }" in attach
     load = _feature_body("loadMastodonFollowBack")
     assert '"/mastodon/follow-back"' in load and 'QByteArrayLiteral("GET")' in load
     assert "kMastodonFreshMs" in load and "rebuildFollowBackRows(QString())" in load
@@ -1478,6 +1480,20 @@ def test_mastodon_network_tab_offers_follow_back_for_followers_not_followed():
     assert 'text(activeSheet(), "network") == QLatin1String("mastodon")' in bar
     assert '"follow-back": ("GET",), "follow": ("POST",)' in CRM_WORKER
     assert "follow back its followers" in MANIFEST
+
+
+def test_every_list_with_the_mastodon_column_offers_follow_in_that_column():
+    attach = FEATURE.split("void CrmFeature::attachRowWidgets(int row)", 1)[1].split("\n}\n", 1)[0]
+    cell = attach.split('spec.key == QLatin1String("mastodon")', 1)[1].split("ContactColumnSpec::MastodonLatest", 1)[0]
+    assert "mastodonFollowButton(source.mastodonKey, holder)" in cell
+    assert "item->setData(kRowButtonRole, room > 0 ? QVariant(room) : QVariant())" in cell
+    assert "m_contactsTable->removeCellWidget(row, column)" in cell
+    assert "m_contactsTable->setCellWidget(row, column, holder)" in cell
+    shown = _feature_body("mastodonColumnShown")
+    assert 'columnIndex(ContactColumnSpec::Field, QStringLiteral("mastodon"))' in shown
+    assert "!m_contactsTable->isColumnHidden(column)" in shown
+    load = _feature_body("loadMastodonFollowBack")
+    assert '!= QLatin1String("mastodon") && !mastodonColumnShown()' in load
 
 
 def test_mastodon_follow_uses_the_mastodon_plugin_sign_in_without_an_org_token():

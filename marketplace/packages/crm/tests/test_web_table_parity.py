@@ -201,12 +201,18 @@ def test_imports_and_the_lists_overview_live_in_the_more_menu():
 
 def test_mastodon_network_list_offers_follow_back_like_the_desktop():
     render = WEB_SCRIPT.split("function renderCrmContacts()", 1)[1].split("\n  // --- board layout", 1)[0]
-    assert render.count("${crmFollowBackButton(contact)}") == 2
+    assert render.count("${follow(contact)}") == 2
+    assert 'crmActiveView()?.network === "mastodon" && !columns.some((column) => column.field === "mastodon")' in render
+    control = _function("crmContactControl")
+    assert 'const follow = profile && !crmActiveShared() ? crmFollowBackButton(contact) : "";' in control
+    assert control.count("${follow}") == 2
     assert "void loadCrmFollowBack();" in render
     load = _function("loadCrmFollowBack")
     assert 'crmRequest(crmOrganizationPath("/mastodon/follow-back"))' in load
     assert "crmMastodonPluginFollowBack(follower.session)" in load
-    assert "CRM_MASTODON_FRESH_MS" in load and 'crmActiveView()?.network !== "mastodon"' in load
+    assert "CRM_MASTODON_FRESH_MS" in load and "!crmMastodonFollowShown()" in load
+    shown = _function("crmMastodonFollowShown")
+    assert 'crmVisibleColumns().some((column) => column.field === "mastodon")' in shown
     follow = _function("crmFollowMastodonBack")
     assert 'crmOrganizationPath("/mastodon/follow"), "POST", { handle: key }' in follow
     assert "crmMastodonPluginFollow(follower.session, key)" in follow

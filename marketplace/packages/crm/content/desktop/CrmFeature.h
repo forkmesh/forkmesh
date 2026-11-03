@@ -512,6 +512,8 @@ private:
     void loadMastodonFollowBack();
     void followMastodonBack(const QString &key);
     void rebuildFollowBackRows(const QString &key);
+    bool mastodonColumnShown() const;
+    QPushButton *mastodonFollowButton(const QString &key, QWidget *parent);
     void updateMastodonBar();
     void applyMastodonLatest(const QString &key);
     void fillMastodonItem(QTableWidgetItem *item, const QString &key) const;
