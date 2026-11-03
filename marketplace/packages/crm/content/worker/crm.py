@@ -6772,11 +6772,12 @@ async def _follow_back(runtime, org_bi):
                 account_id, kind, FOLLOWER_PAGE_SIZE), token)
         if error:
             return _response(runtime, {"error": error}, 502)
-    if not lists["followers"] and _integer((profile or {}).get("followers_count")):
-        return _response(runtime, {"error": "mastodon_followers_hidden"}, 502)
+    hidden = not lists["followers"] and _integer((profile or {}).get("followers_count"))
     handles = [handle for handle in lists["followers"]
                if handle != account and handle not in lists["following"]]
-    return _response(runtime, {"ok": True, "account": account, "handles": handles})
+    return _response(runtime, {"ok": True, "account": account, "handles": handles,
+                               "following": list(lists["following"]),
+                               "warning": "mastodon_followers_hidden" if hidden else ""})
 
 
 async def _follow_handle(runtime, org_bi, org_name, actor, data):

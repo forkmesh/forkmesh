@@ -492,6 +492,7 @@ private:
     void loadMastodonFollowBack();
     void followMastodonBack(const QString &key);
     void rebuildFollowBackRows(const QString &key);
+    void updateMastodonBar();
     void applyMastodonLatest(const QString &key);
     void fillMastodonItem(QTableWidgetItem *item, const QString &key) const;
     // Contact pictures beside the name: queued once per load (opening the page
@@ -726,6 +727,9 @@ private:
     QWidget *m_zohoBar = nullptr;
     QLabel *m_zohoBarLabel = nullptr;
     QList<QPushButton *> m_zohoStepButtons;
+    QWidget *m_mastodonBar = nullptr;
+    QLabel *m_mastodonBarLabel = nullptr;
+    QPushButton *m_mastodonBarButton = nullptr;
     QToolButton *m_noteDraftsButton = nullptr;
     QPointer<QTableWidget> m_noteDraftsTable;
     QPointer<QLabel> m_noteDraftsCount;
@@ -840,6 +844,8 @@ private:
     QHash<QString, qint64> m_mastodonBackoff;
     QSet<QString> m_mastodonFollowBack;
     QSet<QString> m_mastodonFollowing;
+    QSet<QString> m_mastodonFollowed;
+    QString m_mastodonFollowError;
     QString m_mastodonFollowBackOrg;
     qint64 m_mastodonFollowBackAt = 0;
     bool m_mastodonFollowBackLoading = false;

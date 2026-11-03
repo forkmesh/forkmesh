@@ -3487,17 +3487,21 @@ def test_follow_back_lists_followers_the_account_does_not_follow():
     listed = call(runtime.use("GET", actor="charlie"), "/api/crm/acme/mastodon/follow-back")
     assert listed["status"] == 200
     assert listed["data"]["handles"] == ["newbie@mastodon.social", "grace@fosstodon.org"]
+    assert listed["data"]["following"] == ["ada@hachyderm.io", "x@mas.to"]
+    assert listed["data"]["warning"] == ""
     reads = [item for item in runtime.outbound_calls if "/follow" in item[0]]
     assert {item[2]["authorization"] for item in reads} == {"Bearer secret-token"}
     assert len([item for item in reads if "/followers" in item[0]]) == 2
     assert call(runtime.use("POST"), "/api/crm/acme/mastodon/follow-back")["status"] == 405
 
 
-def test_follow_back_reports_a_hidden_followers_list():
-    runtime = MastodonRuntime(followers_count=12)
+def test_follow_back_reports_a_hidden_followers_list_and_still_lists_following():
+    runtime = MastodonRuntime(followers_count=12, following=[_follower("x@mas.to")])
     _connect_mastodon(runtime)
     hidden = call(runtime.use("GET"), "/api/crm/acme/mastodon/follow-back")
-    assert (hidden["status"], hidden["data"]["error"]) == (502, "mastodon_followers_hidden")
+    assert hidden["status"] == 200
+    assert hidden["data"]["warning"] == "mastodon_followers_hidden"
+    assert (hidden["data"]["handles"], hidden["data"]["following"]) == ([], ["x@mas.to"])
 
 
 def test_follow_follows_a_handle_as_the_organizations_account():

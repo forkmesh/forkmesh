@@ -1455,7 +1455,10 @@ def test_desktop_sheet_list_is_rebuilt_only_when_it_changed():
 
 def test_mastodon_network_tab_offers_follow_back_for_followers_not_followed():
     attach = FEATURE.split("void CrmFeature::attachRowWidgets(int row)", 1)[1].split("\n}\n", 1)[0]
-    assert "m_mastodonFollowBack.contains(source.mastodonKey)" in attach
+    assert "m_mastodonFollowBack.contains(key)" in attach
+    assert "!m_mastodonFollowed.contains(key)" in attach
+    assert 'QStringLiteral("Follow")' in attach and 'QStringLiteral("Follow back")' in attach
+    assert "connected && !m_mastodonFollowing.contains(key)" in attach
     assert 'text(activeSheet(), "network") == QLatin1String("mastodon")' in attach
     assert "{followBack, email, prompt, edit, remove}" in attach
     assert "[this, key] { followMastodonBack(key); }" in attach
@@ -1465,6 +1468,12 @@ def test_mastodon_network_tab_offers_follow_back_for_followers_not_followed():
     follow = _feature_body("followMastodonBack")
     assert '"/mastodon/follow"' in follow and 'QByteArrayLiteral("POST")' in follow
     assert "m_mastodonFollowBack.remove(key)" in follow
-    assert "loadMastodonFollowBack();" in _feature_body("fillContactRows")
+    assert "m_mastodonFollowed.insert(key)" in follow
+    assert 'keys("following")' in load and 'text(payload, "warning")' in load
+    fill = _feature_body("fillContactRows")
+    assert fill.index("updateMastodonBar();") < fill.index("loadMastodonFollowBack();")
+    bar = _feature_body("updateMastodonBar")
+    assert "Mastodon: not logged in" in bar and "Log in to Mastodon" in bar
+    assert 'text(activeSheet(), "network") == QLatin1String("mastodon")' in bar
     assert '"follow-back": ("GET",), "follow": ("POST",)' in CRM_WORKER
     assert "follow back its followers" in MANIFEST

@@ -1951,6 +1951,40 @@ CrmFeature::CrmFeature(const forkmesh::market::NativePackageHost &host,
     m_zohoBar->hide();
     outer->addWidget(m_zohoBar);
 
+    m_mastodonBar = new QWidget;
+    m_mastodonBar->setObjectName(QStringLiteral("firewallBanner"));
+    m_mastodonBar->setAttribute(Qt::WA_StyledBackground, true);
+    m_mastodonBar->setAccessibleName(QStringLiteral("Mastodon status"));
+    auto *mastodonBarLayout = new QHBoxLayout(m_mastodonBar);
+    mastodonBarLayout->setContentsMargins(14, 10, 12, 10);
+    mastodonBarLayout->setSpacing(10);
+    if (Theme::isNext()) {
+        mastodonBarLayout->setContentsMargins(16, 10, 12, 10);
+        auto *noticeIcon = new QLabel;
+        noticeIcon->setObjectName(QStringLiteral("crmNoticeIcon"));
+        noticeIcon->setFixedSize(16, 16);
+        mastodonBarLayout->addWidget(noticeIcon, 0, Qt::AlignTop);
+    }
+    m_mastodonBarLabel = new QLabel;
+    m_mastodonBarLabel->setObjectName(QStringLiteral("firewallBannerLabel"));
+    m_mastodonBarLabel->setTextFormat(Qt::RichText);
+    m_mastodonBarLabel->setWordWrap(true);
+    mastodonBarLayout->addWidget(m_mastodonBarLabel, 1);
+    m_mastodonBarButton = new QPushButton;
+    m_mastodonBarButton->setObjectName(QStringLiteral("primaryButton"));
+    m_mastodonBarButton->setCursor(Qt::PointingHandCursor);
+    connect(m_mastodonBarButton, &QPushButton::clicked, this, [this] {
+        if (m_mastodonBarButton->property("retry").toBool()) {
+            m_mastodonFollowBackAt = 0;
+            loadMastodonFollowBack();
+        } else {
+            editSettings();
+        }
+    });
+    mastodonBarLayout->addWidget(m_mastodonBarButton, 0, Qt::AlignVCenter);
+    m_mastodonBar->hide();
+    outer->addWidget(m_mastodonBar);
+
     m_summary = new QLabel(QStringLiteral("Shared organization relationships"));
     m_summary->setObjectName(QStringLiteral("mutedLabel"));
     m_summary->hide();
@@ -4220,6 +4254,7 @@ void CrmFeature::fillContactRows()
                           QItemSelectionModel::Select | QItemSelectionModel::Rows);
     focusContactRow();
     refreshMastodonUpdates();
+    updateMastodonBar();
     loadMastodonFollowBack();
 }
 
@@ -4285,16 +4320,24 @@ void CrmFeature::attachRowWidgets(int row)
             actionLayout->setContentsMargins(8, 0, 8, 0);
             actionLayout->setSpacing(4);
             QPushButton *followBack = nullptr;
-            if (m_mastodonFollowBack.contains(source.mastodonKey) &&
+            const QJsonObject mastodon = m_settings.value(QStringLiteral("mastodon")).toObject();
+            const QString account = mastodonHandleKey(text(mastodon, "account"));
+            const QString key = source.mastodonKey;
+            if (!key.isEmpty() && key != account && !m_mastodonFollowed.contains(key) &&
                 text(activeSheet(), "network") == QLatin1String("mastodon")) {
-                const QString key = source.mastodonKey;
-                followBack = new QPushButton(QStringLiteral("Follow back"), actions);
+                const bool connected = mastodon.value(QStringLiteral("connected")).toBool();
+                const bool back = connected && m_mastodonFollowBack.contains(key);
+                followBack = new QPushButton(back ? QStringLiteral("Follow back")
+                                                  : QStringLiteral("Follow"), actions);
                 followBack->setObjectName(QStringLiteral("primaryButton"));
                 followBack->setToolTip(
-                    QStringLiteral("@%1 follows @%2. Follow them back from @%2.")
-                        .arg(key, text(m_settings.value(QStringLiteral("mastodon")).toObject(),
-                                       "account")));
-                followBack->setEnabled(!m_mastodonFollowing.contains(key));
+                    !connected
+                        ? QStringLiteral("Log in first: connect the organization's Mastodon "
+                                         "account in CRM settings to follow @%1 from it.").arg(key)
+                    : back ? QStringLiteral("@%1 follows @%2. Follow them back from @%2.")
+                                 .arg(key, account)
+                           : QStringLiteral("Follow @%1 from @%2.").arg(key, account));
+                followBack->setEnabled(connected && !m_mastodonFollowing.contains(key));
                 connect(followBack, &QPushButton::clicked, this,
                         [this, key] { followMastodonBack(key); });
             }
@@ -9943,19 +9986,22 @@ void CrmFeature::refreshMastodonUpdates()
 
 void CrmFeature::loadMastodonFollowBack()
 {
+    const QString org = m_organization->currentData().toString();
+    if (org != m_mastodonFollowBackOrg && !m_mastodonFollowBackLoading) {
+        m_mastodonFollowBack.clear();
+        m_mastodonFollowed.clear();
+        m_mastodonFollowError.clear();
+        m_mastodonFollowBackAt = 0;
+        m_mastodonFollowBackOrg = org;
+    }
     if (m_mastodonFollowBackLoading ||
         text(activeSheet(), "network") != QLatin1String("mastodon") ||
         !m_settings.value(QStringLiteral("mastodon")).toObject()
              .value(QStringLiteral("connected")).toBool())
         return;
-    const QString org = m_organization->currentData().toString();
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
     if (org == m_mastodonFollowBackOrg && now - m_mastodonFollowBackAt < kMastodonFreshMs)
         return;
-    if (org != m_mastodonFollowBackOrg) {
-        m_mastodonFollowBack.clear();
-        m_mastodonFollowBackOrg = org;
-    }
     m_mastodonFollowBackLoading = true;
     m_mastodonFollowBackAt = now;
     request(QByteArrayLiteral("GET"), organizationPath(QStringLiteral("/mastodon/follow-back")),
@@ -9966,18 +10012,27 @@ void CrmFeature::loadMastodonFollowBack()
             return;
         }
         if (!ok) {
-            setStatus(QStringLiteral("Could not check which followers to follow back: %1")
+            m_mastodonFollowError = text(payload, "error").isEmpty()
+                ? error : text(payload, "error");
+            setStatus(QStringLiteral("Could not check who the Mastodon account follows: %1")
                           .arg(mastodonErrorText(text(payload, "error"), error)),
                       true);
+            updateMastodonBar();
             return;
         }
-        QSet<QString> handles;
-        for (const QJsonValue &value : payload.value(QStringLiteral("handles")).toArray()) {
-            const QString key = mastodonHandleKey(value.toString());
-            if (!key.isEmpty())
-                handles.insert(key);
-        }
-        m_mastodonFollowBack = handles;
+        const auto keys = [&payload](const char *field) {
+            QSet<QString> handles;
+            for (const QJsonValue &value : payload.value(QLatin1String(field)).toArray()) {
+                const QString key = mastodonHandleKey(value.toString());
+                if (!key.isEmpty())
+                    handles.insert(key);
+            }
+            return handles;
+        };
+        m_mastodonFollowBack = keys("handles");
+        m_mastodonFollowed = keys("following");
+        m_mastodonFollowError = text(payload, "warning");
+        updateMastodonBar();
         rebuildFollowBackRows(QString());
     });
 }
@@ -9994,6 +10049,13 @@ void CrmFeature::followMastodonBack(const QString &key)
             [this, key](bool ok, const QJsonObject &payload, const QString &error) {
         m_mastodonFollowing.remove(key);
         if (!ok) {
+            const QString code = text(payload, "error");
+            if (code == QLatin1String("mastodon_follow_not_allowed") ||
+                code == QLatin1String("mastodon_token_rejected") ||
+                code == QLatin1String("mastodon_not_connected")) {
+                m_mastodonFollowError = code;
+                updateMastodonBar();
+            }
             rebuildFollowBackRows(key);
             setStatus(QStringLiteral("Could not follow @%1: %2")
                           .arg(key, mastodonErrorText(text(payload, "error"), error)),
@@ -10001,6 +10063,7 @@ void CrmFeature::followMastodonBack(const QString &key)
             return;
         }
         m_mastodonFollowBack.remove(key);
+        m_mastodonFollowed.insert(key);
         rebuildFollowBackRows(key);
         setStatus(payload.value(QStringLiteral("following")).toBool() ||
                           !payload.value(QStringLiteral("requested")).toBool()
@@ -10008,6 +10071,48 @@ void CrmFeature::followMastodonBack(const QString &key)
                       : QStringLiteral("Asked to follow @%1; they approve followers first.")
                             .arg(key));
     });
+}
+
+void CrmFeature::updateMastodonBar()
+{
+    const QJsonObject mastodon = m_settings.value(QStringLiteral("mastodon")).toObject();
+    const bool connected = mastodon.value(QStringLiteral("connected")).toBool();
+    const bool tab = m_installed && text(activeSheet(), "network") == QLatin1String("mastodon");
+    m_mastodonBar->setVisible(tab && (!connected || !m_mastodonFollowError.isEmpty()));
+    if (!m_mastodonBar->isVisible())
+        return;
+    const QString account = text(mastodon, "account");
+    QString html;
+    bool retry = false;
+    if (!connected) {
+        html = QStringLiteral("<b>Mastodon: not logged in</b><br>")
+            + (account.isEmpty()
+                   ? QStringLiteral("Log in to follow people from this list: save the "
+                                    "organization's Mastodon account and an access token with "
+                                    "the read:accounts and write:follows scopes in CRM settings.")
+                   : QStringLiteral("Log in to follow people from this list: @%1 has no access "
+                                    "token saved; save one with the read:accounts and "
+                                    "write:follows scopes in CRM settings.")
+                         .arg(account).toHtmlEscaped());
+        if (!m_canManageSettings)
+            html += QStringLiteral(" Ask an owner or admin of the organization to do it.");
+    } else {
+        const QString code = m_mastodonFollowError;
+        retry = code != QLatin1String("mastodon_follow_not_allowed") &&
+                code != QLatin1String("mastodon_token_rejected") &&
+                code != QLatin1String("mastodon_followers_hidden");
+        html = QStringLiteral("<b>Mastodon: %1</b><br>%2").arg(
+            code == QLatin1String("mastodon_followers_hidden")
+                ? QStringLiteral("followers hidden, so Follow back cannot be shown")
+                : QStringLiteral("could not check who @%1 follows").arg(account).toHtmlEscaped(),
+            mastodonErrorText(code, code).toHtmlEscaped());
+    }
+    m_mastodonBarLabel->setText(html);
+    m_mastodonBarButton->setProperty("retry", retry);
+    m_mastodonBarButton->setText(retry ? QStringLiteral("Try again")
+                                       : connected ? QStringLiteral("Open CRM settings")
+                                                   : QStringLiteral("Log in to Mastodon"));
+    m_mastodonBarButton->setVisible(retry || m_canManageSettings);
 }
 
 void CrmFeature::rebuildFollowBackRows(const QString &key)
@@ -13091,6 +13196,11 @@ void CrmFeature::editSettings()
             m_settings = payload.value(QStringLiteral("settings")).toObject();
             showMastodon(m_settings.value(QStringLiteral("mastodon")).toObject());
             setStatus(QStringLiteral("Mastodon account saved."));
+            m_mastodonFollowError.clear();
+            m_mastodonFollowBackAt = 0;
+            updateMastodonBar();
+            loadMastodonFollowBack();
+            rebuildFollowBackRows(QString());
         });
     };
     connect(mastodonSave, &QPushButton::clicked, &dialog,

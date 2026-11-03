@@ -208,5 +208,12 @@ def test_mastodon_network_list_offers_follow_back_like_the_desktop():
     follow = _function("crmFollowMastodonBack")
     assert 'crmOrganizationPath("/mastodon/follow"), "POST", { handle: key }' in follow
     assert "crmFollowBack.handles.delete(key)" in follow
+    assert "crmFollowBack.followed.add(key)" in follow
+    assert "crmFollowBack.followed = keys(payload.following)" in load
+    assert "renderCrmMastodonBanner();" in render
+    banner = _function("renderCrmMastodonBanner")
+    assert '"Mastodon: not logged in"' in banner and '"Log in to Mastodon"' in banner
+    assert 'crmActiveView()?.network === "mastodon"' in banner
+    assert "<div data-crm-mastodon-banner" in WEB_VIEW
     click = _function("handleCrmParityClick")
     assert "crmFollowMastodonBack(follow.dataset.crmFollowBack)" in click
