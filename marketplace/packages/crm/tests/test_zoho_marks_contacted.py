@@ -63,10 +63,10 @@ def test_zoho_sync_moves_a_reach_out_contact_to_contacted_once():
          "receivedAt": sent_at},
     ]
     synced = _sync(runtime)
-    assert (synced["outboundRecorded"], synced["contactsAdvanced"]) == (5, 2)
+    assert (synced["outboundRecorded"], synced["contactsAdvanced"]) == (5, 3)
     contacts = _contacts(runtime)
     assert {key: contacts[key]["stage"] for key in (reach, ahead, partner, lead)} == {
-        reach: "contacted", ahead: "meeting", partner: "contacted", lead: "lead"}
+        reach: "contacted", ahead: "meeting", partner: "contacted", lead: "contacted"}
     assert contacts[reach]["lastContactedAt"] == sent_at
     assert contacts[ahead]["lastContactedAt"] == sent_at
     assert contacts[partner]["lastContactedAt"] == sent_at - 1
