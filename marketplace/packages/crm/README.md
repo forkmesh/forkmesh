@@ -179,11 +179,13 @@ into an update) instead of a `500`. A shared sheet's add still answers
 
 ### List cleanup
 
-**List cleanup** (web, under More, `?section=cleanup`) lists the people who
-show on more than one list, so each can be kept on one. A person is the
+**List cleanup** (web: under More, `?section=cleanup`; desktop: `⋯` > List
+cleanup, a window) lists the people who show on more than one list, so each
+can be kept on one. A person is the
 records that share a `personKeys` key (see
 [One person, several records](#one-person-several-records)), and their lists
-are the saved lists any of those records shows on (`crmContactInView`).
+are the saved lists any of those records shows on (`crmContactInView`, the
+desktop's `contactInSheet`).
 Someone counts when they have several records on two or more lists, or one
 record on two or more plain lists. One record on a plain list and on its own
 pipeline's list does not count: every contact is in a pipeline, so that is
@@ -202,10 +204,12 @@ the normal shape of an imported list.
   when the pipeline has it, else the first); a plain list keeps the pipeline
   list the record was put on, because the contact stays in its pipeline.
 - With a list picked, **Keep N on <list>** does the same for every person
-  shown, one after the other, with one confirm.
+  shown (at most the 500 drawn), one after the other, with one confirm.
 - Moves wait until every contact has loaded (paging), so a person's records
   are all known. A failure stops the run, reports how many finished and reads
   the organization again.
+- The desktop window redraws whenever the contacts change. A list button's
+  click is queued, because the redraw that follows a move deletes the button.
 - It differs from **Possible duplicates**, which also matches names and
   GitHub profiles and merges one pair at a time from the table.
 
@@ -1243,8 +1247,8 @@ raising, so the caller can keep the lead.
   of contacts with pictures, imports, and a rail count of never-contacted
   contacts. Each list is one line: icon, name, `<not contacted>/<total>` and
   who can open it. The header holds only the title, the organization, Import,
-  Mail, `⋯` (People, Pipelines, History, Extension), Settings, Refresh and
-  Add contact; a status message other than an error fades after six seconds. Data is read when the
+  Mail, `⋯` (People, Pipelines, History, List cleanup, Extension), Settings,
+  Refresh and Add contact; a status message other than an error fades after six seconds. Data is read when the
   CRM opens and on **Refresh**; nothing re-reads itself. Sorting and list
   membership are computed off the GUI thread.
 - **iPhone layout**: a section bar under the title holds **Home** (greeting,

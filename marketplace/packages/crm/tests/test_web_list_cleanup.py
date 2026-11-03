@@ -39,3 +39,19 @@ def test_list_cleanup_moves_through_the_merge_and_bulk_endpoints():
     assert '"/contacts/merge"' in apply and '"/contacts/bulk"' in apply
     assert apply.index('"/contacts/merge"') < apply.index('"/contacts/bulk"')
     assert "renderCrmCleanup();" in WEB_SCRIPT.split("function renderCrmSections() {", 1)[1].split("\n  }\n", 1)[0]
+
+
+DESKTOP = (CRM_PACKAGE / "content" / "desktop" / "CrmFeature.cpp").read_text(encoding="utf-8")
+
+
+def test_the_desktop_offers_the_same_list_cleanup():
+    more = DESKTOP.split("const QList<QToolButton *> moreButtons{", 1)[1].split("};", 1)[0]
+    assert "m_cleanupButton" in more
+    assert "connect(m_cleanupButton, &QToolButton::clicked, this, [this] { showListCleanup(); });" in DESKTOP
+    keep = DESKTOP.split("void CrmFeature::keepPeopleOnList(", 1)[1].split("\n}\n", 1)[0]
+    assert 'QStringLiteral("/contacts/merge")' in keep and 'QStringLiteral("/contacts/bulk")' in keep
+    assert "if (m_cleanupBusy || !m_pagedSummary.isEmpty())" in keep
+    fill = DESKTOP.split("void CrmFeature::fillListCleanup()", 1)[1].split("\n}\n", 1)[0]
+    assert "keepPeopleOnList({personId}, id); },\n                    Qt::QueuedConnection);" in fill
+    snapshot = DESKTOP.split("void CrmFeature::refreshContactSnapshot()", 1)[1].split("\n}\n", 1)[0]
+    assert "fillListCleanup();" in snapshot

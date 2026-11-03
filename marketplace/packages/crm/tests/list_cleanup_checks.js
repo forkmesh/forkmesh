@@ -88,7 +88,7 @@ view.contacts = contacts();
     ["POST", "/api/crm/acme/contacts/merge", { from: "p2", into: "p1" }],
     ["POST", "/api/crm/acme/contacts/bulk", { edits: [{ id: "p1", setViews: ["inv2"] }] }],
   ], "a move merges the other records, then sets the kept record's lists");
-  check(asked.length === 1 && asked[0].includes("merge into"), "the move is confirmed first and says records merge");
+  check(asked.length === 1 && asked[0].includes("of this person merges into"), "the move is confirmed first and says records merge");
   same(view.contacts.map((contact) => contact.id), ["one", "two", "p1", "s1", "s2"], "the merged record leaves the page");
   same(view.contacts.find((contact) => contact.id === "p1").views, ["inv2"], "the kept record shows the saved lists");
   same(page.crmCleanupPeople().map((row) => row.id), ["two"], "the person is no longer on more than one list");

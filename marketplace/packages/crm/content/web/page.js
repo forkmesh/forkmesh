@@ -4926,7 +4926,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
       const list = state.crmView.views.find((view) => view.id === crmCleanup.list);
       all.hidden = !list || !shown.length;
       all.disabled = locked;
-      if (list) all.textContent = `Keep ${shown.length.toLocaleString()} on ${list.name}`;
+      if (list) all.textContent = `Keep ${Math.min(shown.length, CRM_CLEANUP_SHOWN).toLocaleString()} on ${list.name}`;
     }
   }
 
@@ -4967,11 +4967,11 @@ window.ForkMeshDashboard.registerPage("crm", ({
       const [plan] = plans;
       const name = `“${crmMergeLabel(plan.keep)}”`;
       return confirm(`Keep ${name} on “${plan.list.name}” only?\n\n`
-        + (plan.merge.length ? `${plan.merge.length} other record${plan.merge.length === 1 ? "" : "s"} of this person merge into ${name}: it keeps what it has and gains their blanks, tags, notes and email history, and they are deleted. ` : "")
+        + (plan.merge.length ? `${plan.merge.length} other record${plan.merge.length === 1 ? " of this person merges" : "s of this person merge"} into ${name}: it keeps what it has and gains their blanks, tags, notes and email history, and they are deleted. ` : "")
         + `${name} leaves every other list${plan.list.flow ? "" : " but stays in its pipeline"}.`);
     }
     return confirm(`Keep ${plans.length} people on “${plans[0].list.name}” only?\n\n`
-      + (merged ? `${merged} extra record${merged === 1 ? "" : "s"} merge into the record on “${plans[0].list.name}”, with every field, tag, note and email, and are then deleted. ` : "")
+      + (merged ? `${merged} extra record${merged === 1 ? " merges" : "s merge"} into the record on “${plans[0].list.name}”, with every field, tag, note and email, and are then deleted. ` : "")
       + `Each person leaves every other list${plans[0].list.flow ? "" : " but stays in their pipeline"}.`);
   }
 
@@ -5018,7 +5018,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
       const keep = event.target.closest("[data-crm-cleanup-keep]");
       if (keep) { void keepCrmPeopleOnList([keep.dataset.crmCleanupKeep], keep.dataset.crmCleanupKeepList); return; }
       if (event.target.closest("[data-crm-cleanup-keep-all]") && crmCleanup.list) {
-        void keepCrmPeopleOnList(crmCleanupShown(crmCleanupPeople()).map((row) => row.id), crmCleanup.list);
+        void keepCrmPeopleOnList(crmCleanupShown(crmCleanupPeople()).slice(0, CRM_CLEANUP_SHOWN).map((row) => row.id), crmCleanup.list);
       }
     });
     $(`[data-crm-cleanup-search]`)?.addEventListener("input", renderCrmCleanup);
