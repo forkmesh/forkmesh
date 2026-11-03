@@ -16,11 +16,12 @@ How it works, what each format keeps, and the limits:
 | --- | --- | --- |
 | Web | `content/web/view.html`, `content/web/page.js` | `/dashboard/spreadsheets`; the whole editor and every file format run in the browser. |
 | Worker | `content/worker/spreadsheets.py`, `/api/spreadsheets` | Account-scoped, sealed per account, revision-checked saves, AI operations. |
-| Desktop | `content/desktop/SpreadsheetsLink.cpp` | Rail button **Spreadsheets** that opens the web page on the active host. |
+| Desktop | `content/desktop/SpreadsheetsPage.cpp` | Rail page **Spreadsheets**: the same editor in an embedded view, signed in as the desktop, kept open while you switch pages. |
 
 ## Test
 
 ```sh
 python3 -m pytest -q marketplace/packages/spreadsheets/tests
 node marketplace/packages/spreadsheets/tests/engine_checks.js
+cmake --build desktop/build --target forkmesh-spreadsheets-tests && desktop/build/forkmesh-spreadsheets-tests
 ```
