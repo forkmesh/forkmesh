@@ -700,8 +700,8 @@ the send time (forward only) and moves the contact to the `contacted` stage
 when its pipeline has one and the contact sits before it (`sourced`,
 `prospect`, or a stage the pipeline does not know). Contacts at or past
 `contacted` (`meeting`, `passed`, `customer`, ...) keep their stage; a
-pipeline without a `contacted` stage (Customers, Applicants, Grants) only gets
-the date. A recipient who is not a contact is stored unlinked, as before, and
+pipeline without a `contacted` stage (Applicants, Grants, or a flow you made
+without one) only gets the date. A recipient who is not a contact is stored unlinked, as before, and
 no contact is created.
 
 The sync is idempotent: a message already linked to a contact is not
@@ -742,6 +742,19 @@ moved back by hand afterwards stays where it was put. The marker has its own
 table rather than a settings key because the Zoho sync rewrites settings from
 the known keys only, and would drop the marker. Uninstalling purges the
 marker with the rest. Tests: `tests/test_contact_made_marks_contacted.py`.
+
+**Customers has a `contacted` stage** (1.54.0). Customers used to run `lead`,
+`qualified`, `trial`, ... with no `contacted` stage, so a lead you had tooted
+at or emailed got its **Last contacted** date but stayed at `lead`, and the
+**contacted** stage filter and strip never showed it. Mastodon outreach lands
+in Customers, so that was most of it. Customers is now `lead`, `contacted`,
+`qualified`, `trial`, `customer`, `renewal`, `inactive`. An organization whose
+saved Customers flow still has the old stages exactly gets `contacted` put
+after `lead` once, the first time the CRM page loads
+(`_backfill_customers_contacted_stage`), and every Customers contact with a
+**Last contacted** date still at `lead` moves to it. A Customers flow edited
+by hand is left alone. The pass is marked `customers-contacted-stage` in
+`crm_backfills`, so removing the stage again afterwards sticks.
 
 ### Sending and tracking
 

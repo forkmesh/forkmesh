@@ -114,12 +114,15 @@ DEFAULT_FLOWS = (
     {"id": "partnerships", "name": "Partnerships", "icon": "partners", "stages": (
         "prospect", "contacted", "discovery", "negotiation", "active", "closed")},
     {"id": "customers", "name": "Customers", "icon": "customers", "stages": (
-        "lead", "qualified", "trial", "customer", "renewal", "inactive")},
+        "lead", "contacted", "qualified", "trial", "customer", "renewal", "inactive")},
     {"id": "grants", "name": "Grants", "icon": "grants", "stages": (
         "researching", "eligible", "drafting", "submitted", "awarded", "declined")},
 )
 CONTACTED_STAGE = "contacted"
 CONTACTED_BACKFILL = "contacted-stages"
+CUSTOMERS_CONTACTED_BACKFILL = "customers-contacted-stage"
+CUSTOMERS_FLOW = "customers"
+LEGACY_CUSTOMER_STAGES = ("lead", "qualified", "trial", "customer", "renewal", "inactive")
 # The kind of pipeline a flow is, shown as an icon on its tab and in every
 # pipeline picker. "pipeline" is the plain funnel a flow gets when none is set.
 FLOW_ICONS = ("pipeline", "investors", "hiring", "partners", "customers",
@@ -2581,10 +2584,11 @@ async def _activity(runtime, org_bi, members):
     }
 
 
-async def _backfill_contacted_stages(runtime, org_bi, account_bi, actor):
+async def _backfill_contacted_stages(runtime, org_bi, account_bi, actor,
+                                     name=CONTACTED_BACKFILL, flow_ids=None):
     if await runtime.d1_first(
             "SELECT done_at FROM crm_backfills WHERE org_bi=? AND name=?",
-            org_bi, CONTACTED_BACKFILL):
+            org_bi, name):
         return 0
     flows = await _org_flows(runtime, org_bi)
     rows = await runtime.d1_all(
@@ -2594,6 +2598,8 @@ async def _backfill_contacted_stages(runtime, org_bi, account_bi, actor):
     for contact_row in rows or []:
         before = await runtime.open(contact_row.get("data"))
         if not isinstance(before, dict) or not _integer(before.get("lastContactedAt")):
+            continue
+        if flow_ids is not None and before.get("flow") not in flow_ids:
             continue
         contact = dict(before)
         if _advance_contacted(contact, flows):
@@ -2605,12 +2611,35 @@ async def _backfill_contacted_stages(runtime, org_bi, account_bi, actor):
         await _record_contact_changes(runtime, org_bi, account_bi, actor, changes)
     await runtime.d1_run(
         "INSERT OR IGNORE INTO crm_backfills(org_bi,name,done_at) VALUES(?,?,?)",
-        org_bi, CONTACTED_BACKFILL, now)
+        org_bi, name, now)
     return len(sealed)
+
+
+async def _backfill_customers_contacted_stage(runtime, org_bi, account_bi, actor):
+    if await runtime.d1_first(
+            "SELECT done_at FROM crm_backfills WHERE org_bi=? AND name=?",
+            org_bi, CUSTOMERS_CONTACTED_BACKFILL):
+        return 0
+    row = await runtime.d1_first("SELECT data FROM crm_settings WHERE org_bi=?", org_bi)
+    opened = await runtime.open(row.get("data")) if row else None
+    if isinstance(opened, dict) and isinstance(opened.get("flows"), list):
+        flows = _flows(opened["flows"])
+        legacy = [flow for flow in flows if flow["id"] == CUSTOMERS_FLOW
+                  and tuple(flow["stages"]) == LEGACY_CUSTOMER_STAGES]
+        for flow in legacy:
+            flow["stages"].insert(1, CONTACTED_STAGE)
+        if legacy:
+            await runtime.d1_run(
+                "UPDATE crm_settings SET data=? WHERE org_bi=?",
+                await runtime.seal(_settings_data({"flows": flows}, opened)), org_bi)
+    return await _backfill_contacted_stages(
+        runtime, org_bi, account_bi, actor, CUSTOMERS_CONTACTED_BACKFILL,
+        {CUSTOMERS_FLOW})
 
 
 async def _summary(runtime, org_bi, org_name, account_bi, actor, role):
     await _backfill_contacted_stages(runtime, org_bi, account_bi, actor)
+    await _backfill_customers_contacted_stage(runtime, org_bi, account_bi, actor)
     page_limit = _contact_page_limit(runtime.query_params().get("contacts"))
     totals, following = None, ""
     if page_limit:

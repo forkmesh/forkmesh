@@ -1628,8 +1628,8 @@ def test_linking_an_email_can_put_the_contact_in_a_pipeline_stage():
         "Gracie", "Show Co", "Host")
     assert len(moved["data"]["emails"]) == 1
 
-    # A flow alone lands on that flow's first stage; plain links leave the
-    # pipeline alone.
+    # A flow alone lands on that flow's first stage; a plain outbound link
+    # moves a lead on to contacted.
     switched = call(runtime.use("POST", body={
         "provider": "zoho", "messageId": "1700000000000020001",
         "contactEmail": "grace@example.com", "flow": "customers",
@@ -1640,7 +1640,7 @@ def test_linking_an_email_can_put_the_contact_in_a_pipeline_stage():
         "provider": "zoho", "messageId": "1700000000000020001",
         "contactEmail": "grace@example.com",
     }), "/api/crm/acme/emails/link")
-    assert plain["data"]["contact"]["stage"] == "lead"
+    assert plain["data"]["contact"]["stage"] == "contacted"
 
     # Unknown flows and stages are refused before anything is written.
     assert call(runtime.use("POST", body={
