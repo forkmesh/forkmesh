@@ -2513,6 +2513,9 @@ public:
     void testReloadTeammatesPanel() { loadTeammatesPanel(); }
     QWidget *testSideRail() const { return m_sideRail; }
     QWidget *testSideRailBrowserPanel() const { return m_sideRailBrowserPanel; }
+    QWidget *testAgentPagesPanel() const { return m_agentPagesPanel; }
+    QTabWidget *testAgentPagesTabs() const { return m_agentPagesTabs; }
+    bool testDockAgentPage(QWidget *frame) { return dockAgentPage(frame); }
     void testRefreshSideRail() { refreshSideRail(); }
     void testSetSideRailEnabled(bool enabled) { setSideRailEnabled(enabled); }
     bool testDropOnSideRail(const QMimeData *mime, int index) { return dropOnSideRail(mime, index); }
@@ -8999,6 +9002,7 @@ private:
     bool sideRailBrowserOpen() const;
     void setSideRailBrowserOpen(bool open);
     void openInSideRailBrowser(const QString &address);
+    bool dockAgentPage(QWidget *frame);
     QWidget *buildTerminalsSection();
     forkmesh::ui::TerminalTabsPage *ensureTerminalsPage();
     void dockTerminals(bool sidePane);
@@ -13259,6 +13263,8 @@ private:
     QTimer *m_teammateRailClock = nullptr;
     QWidget *m_sideRail = nullptr;
     QWidget *m_sideRailBrowserPanel = nullptr;
+    QWidget *m_agentPagesPanel = nullptr;
+    QTabWidget *m_agentPagesTabs = nullptr;
     QBoxLayout *m_sideRailItemsLayout = nullptr;
     QPushButton *m_sideRailBrowserButton = nullptr;
     QTimer *m_sideRailRefreshTimer = nullptr;

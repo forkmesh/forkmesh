@@ -264,6 +264,7 @@ a write land wherever a symlinked record points.
 | Issues and planning | `search_issues`, `create_issue`, `comment_on_issue`, `create_milestone`, `update_milestone`, `create_project`, `update_project` | Signed tracker writes |
 | Pull requests | `open_pr_from_branch`, `get_pr_diff` | The PR carries the MCP marker |
 | CRM | `crm_list_organizations`, `crm_get_pipeline`, `crm_list_contacts`, `crm_get_contact`, `crm_list_activity`, `crm_update_contact`, `crm_find_duplicates`, `crm_check_accounts`, `crm_merge_contacts` | Signed CRM API |
+| Booking | `booking_get_page`, `booking_update_page` | Signed `/api/booking` as the account; an update sets the page up when there is none and checks every value first, because the API quietly swaps a value it does not accept for the default ([../marketplace/booking.md](../marketplace/booking.md)) |
 | Tasks | `list_tasks`, `get_task`, `create_task`, `update_task`, `complete_task`, `reopen_task`, `attach_work_item`, `detach_work_item`, `delete_task`, `restore_task` | Signed `/api/tasks`; delete is soft |
 | Agents | `create_agent`, `link_branch` | Desktop socket; `create_agent` 12 per 10 minutes, `task` / `handoff` hand an organization task to the new agent; `link_branch` (listed only when the socket is there) links a branch the calling agent created to its own session |
 | Releases | `list_releases`, `create_release`, `publish_release` | Desktop socket; 6 per 10 minutes |

@@ -79,6 +79,7 @@ windows::Registry *MainWindow::agentWindows()
             return forkmesh::agentrules::decideUrl(entry.rules, url, entry.approved).verdict ==
                    forkmesh::agentrules::Verdict::Run;
         });
+        m_agentWindows->setBrowserDock([this](QWidget *frame) { return dockAgentPage(frame); });
     }
     return m_agentWindows.get();
 }

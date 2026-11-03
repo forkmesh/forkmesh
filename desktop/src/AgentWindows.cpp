@@ -989,9 +989,13 @@ QJsonObject Registry::browse(int sessionId, const QString &agentLabel,
     state.input.clear();
     QWidget *widget = buildBrowser(id, state);
     state.widget = widget;
-    if (!reuse) {
-        place(widget, state);
-        widget->show();
+    if (!reuse || !widget->isWindow()) {
+        if (!m_browserDock || !m_browserDock(widget)) {
+            if (!widget->isWindow())
+                widget->setParent(m_host, Qt::Tool);
+            place(widget, state);
+            widget->show();
+        }
     } else if (request.width > 0 || request.height > 0) {
         widget->resize(request.width > 0 ? request.width : widget->width(),
                        request.height > 0 ? request.height : widget->height());
@@ -1434,6 +1438,12 @@ bool Registry::raise(const QString &windowId)
     const auto it = m_windows.constFind(windowId);
     if (it == m_windows.constEnd() || !it->widget)
         return false;
+    if (!it->widget->isWindow() && m_browserDock && m_browserDock(it->widget))
+        return true;
+    if (!it->widget->isWindow()) {
+        it->widget->setParent(m_host, Qt::Tool);
+        place(it->widget, it.value());
+    }
     it->widget->show();
     it->widget->raise();
     it->widget->activateWindow();

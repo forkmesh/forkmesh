@@ -496,6 +496,50 @@ static void testBrowser()
     }
 }
 
+static void testBrowserDock()
+{
+    if (!embeddedBrowserAvailable())
+        return;
+    QWidget host;
+    QWidget dock;
+    Registry registry(&host);
+    QList<QWidget *> docked;
+    bool accept = true;
+    registry.setBrowserDock([&](QWidget *frame) {
+        if (!accept)
+            return false;
+        if (frame->isWindow())
+            frame->setParent(&dock, Qt::Widget);
+        docked << frame;
+        return true;
+    });
+    const auto open = [&registry](const QString &id) {
+        QJsonObject params{{QStringLiteral("url"), QStringLiteral("http://localhost:3000/")}};
+        if (!id.isEmpty())
+            params.insert(QStringLiteral("window_id"), id);
+        return registry.handle(5, QStringLiteral("Agent five"), QString(), BrowseMethod, params)
+            .value(QStringLiteral("window_id"))
+            .toString();
+    };
+    const QString id = open(QString());
+    QWidget *frame = registry.state(id) ? registry.state(id)->widget.data() : nullptr;
+    check(frame && docked == QList<QWidget *>{frame} && !frame->isWindow() &&
+              frame->parentWidget() == &dock,
+          "a browser page goes to the dock instead of its own window");
+    check(open(id) == id && docked.size() == 2 && docked.last() == frame,
+          "navigating a docked page brings its tab forward again");
+    check(registry.raise(id) && docked.size() == 3, "raising a docked page asks the dock");
+    accept = false;
+    check(registry.raise(id) && frame->isWindow(),
+          "a docked page the dock no longer takes becomes a window");
+    registry.close(5, id);
+    check(registry.openCount(5) == 0, "closing a docked page closes the window record");
+    const QString floating = open(QString());
+    check(registry.state(floating) && registry.state(floating)->widget &&
+              registry.state(floating)->widget->isWindow(),
+          "when the dock refuses, the page opens in its own window");
+}
+
 static void testCaptureParsing()
 {
     CaptureRequest request;
@@ -707,6 +751,7 @@ int main(int argc, char **argv)
     testHelpers();
     testRegistry();
     testBrowser();
+    testBrowserDock();
     testCaptureParsing();
     testWidgetAndActionParsing();
     testSuggestionAndWidgetState();
