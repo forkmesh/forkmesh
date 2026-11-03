@@ -23,6 +23,8 @@ Wrong Sender</div>
   const CONTACT = "a".repeat(32), LIST = "b".repeat(32);
   const ADA = { id: CONTACT, name: "Ada Lovelace", email: "ada@engines.example", flow: "customers", stage: "lead", views: [LIST] };
   const LISTS = [{ id: LIST, name: "Engines leads", flow: "" }];
+  const PIXEL = { token: "c".repeat(32) + "." + "d".repeat(24), url: "https://pixel.invalid/api/crm/-/t/o/" + "c".repeat(32) + "." + "d".repeat(24) + ".png" };
+  document.querySelector("iframe").contentDocument.designMode = "on";
   const FLOWS = [{ id: "customers", name: "Customers", stages: ["lead"] }];
   if (MODE === "add") {
     const to = document.getElementById("to");
@@ -40,6 +42,7 @@ Wrong Sender</div>
     }
     if (msg.type === "fm-link") return { ok: true, contactCreated: true, emails: [], contact: ADA, flows: FLOWS, lists: LISTS };
     if (msg.type === "fm-track-sent") return { ok: true, tracked: true };
+    if (msg.type === "fm-track-pixel") return { ok: true, pixel: PIXEL };
     return { ok: true };
   }
   window.chrome = { runtime: {
@@ -58,11 +61,14 @@ Wrong Sender</div>
   async function send(out) {
     const compose = await read();
     out.compose = { contactEmail: compose.contactEmail, participants: compose.participants.map((p) => p.email), direction: compose.direction };
+    document.getElementById("send").dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
     document.getElementById("send").click();
+    out.pixels = [...document.querySelector("iframe").contentDocument.body.querySelectorAll("img")].map((img) => img.getAttribute("src"));
     await wait(11000);
     const sent = calls.find((c) => c.type === "fm-track-sent");
     out.sent = sent && {
       sameId: sent.message.messageId === compose.messageId, contactId: sent.message.contactId,
+      pixel: sent.message.trackToken === PIXEL.token,
       recipients: sent.message.recipients.map((r) => r.email),
     };
     document.getElementById("compose").remove();
@@ -77,7 +83,8 @@ Wrong Sender</div>
     root().querySelector('[data-act="list"]').click();
     await wait(500);
     const link = calls.find((c) => c.type === "fm-link");
-    out.link = link && { list: link.message.list, contactEmail: link.message.contactEmail, flow: link.message.flow || "" };
+    out.link = link && { list: link.message.list, contactEmail: link.message.contactEmail, flow: link.message.flow || "",
+      pixel: link.message.trackToken === PIXEL.token };
     out.notice = root().querySelector(".ok")?.textContent;
   }
   (async () => {

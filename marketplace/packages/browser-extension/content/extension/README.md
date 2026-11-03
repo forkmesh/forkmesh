@@ -142,7 +142,23 @@ send nothing.
 **Mail you send** (on by default, **Track emails I send**): sends from Gmail or
 Zoho Mail are linked to the first recipient that already has a record (To
 before Cc and Bcc, people outside your domain first) and move **Last
-contacted**. Gmail sends are linked
+contacted**.
+
+**Open tracking** (2.30.0, on by default under **Track emails I send**: **Tell
+me when they are opened**): for every compose it sees (a Zoho compose tab, a
+Gmail editor), the page asks the background for a pixel (`fm-track-pixel`),
+which returns nothing when either switch is off or no one is signed in, else
+the CRM's signed image address (`POST /emails/pixel`). The image is appended to
+the editor (Zoho's editor frame body, Gmail's `g_editable` body) on the mouse
+press on **Send**, so it is not loading while you write, and again on the click
+or Ctrl+Enter if it is missing. Its token rides with the send; the link adopts
+it as the email's id, so the CRM's existing open pixel records the open and
+pings the sender on the first one. A send to nobody with a record is still
+recorded, contactless, so the open can be reported. A link made from the panel
+during the compose carries the token too. Known limits: a Zoho Ctrl+Enter
+inside the editor frame gets no image (its key events never reach the page),
+the Gmail side is checked only against the selectors the send tracking already
+used, and Gmail and Apple Mail fetch images through their own proxies. Gmail sends are linked
 after the 10-second undo window or when the tab closes. No contact is created
 for a send to unknown recipients.
 

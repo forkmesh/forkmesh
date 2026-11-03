@@ -405,6 +405,7 @@
     const compose = PROVIDER === "zoho" ? openCompose() : null;
     const read = compose ? readZohoCompose(compose) : PROVIDER === "gmail" ? readGmail() : readZoho();
     const { lines, sentHint, anchor, ...message } = read;
+    if (compose) Object.defineProperty(message, "trackToken", { enumerable: true, get: () => pixels.get(compose)?.token || "" });
     const mailbox = message.mailbox;
     // Which side is the contact: whoever is not this mailbox.
     const outbound = sentHint || (Boolean(mailbox) && message.from.email === mailbox);
@@ -448,6 +449,7 @@
   let shown = "";
   let asked = false;
   function sync() {
+    try { openComposes().forEach(requestPixel); } catch { }
     let page;
     try { page = readPage(); } catch { return; }
     const { message, anchor } = page;
@@ -640,10 +642,51 @@
     return { ...sent, messageId: message.messageId, contactId: contact.id, recipients: recipients.slice(0, SEND_RECIPIENTS) };
   }
 
+  const pixels = new WeakMap();
+
+  function openComposes() {
+    if (PROVIDER === "zoho") return [openCompose()].filter(Boolean);
+    return [...document.querySelectorAll('[g_editable="true"]')].filter(visible).map(composeOf).filter(Boolean);
+  }
+
+  function requestPixel(box) {
+    if (pixels.has(box)) return;
+    pixels.set(box, null);
+    void crm.send({ type: "fm-track-pixel" }).then((result) => {
+      if (result?.ok && result.pixel?.url) pixels.set(box, result.pixel);
+    });
+  }
+
+  function composeEditor(box) {
+    for (const frame of box.querySelectorAll("iframe")) {
+      try {
+        const doc = frame.contentDocument;
+        if (doc?.body && (doc.body.isContentEditable || doc.designMode === "on")) return doc.body;
+      } catch { }
+    }
+    return box.querySelector('[g_editable="true"]') || [...box.querySelectorAll('[contenteditable="true"]')].find(visible) || null;
+  }
+
+  function insertPixel(box) {
+    const pixel = box && pixels.get(box);
+    const editor = pixel && composeEditor(box);
+    if (!editor) return null;
+    if ([...editor.querySelectorAll("img")].some((img) => img.getAttribute("src") === pixel.url)) return pixel;
+    const image = editor.ownerDocument.createElement("img");
+    image.setAttribute("src", pixel.url);
+    image.setAttribute("width", "1");
+    image.setAttribute("height", "1");
+    image.setAttribute("alt", "");
+    image.setAttribute("style", "display:block;width:1px;height:1px;border:0;margin:0;padding:0");
+    editor.appendChild(image);
+    return pixel;
+  }
+
   function captureSend(box) {
     const read = box && readCompose(box);
     if (!read) return;
-    const sent = pinCompose(read, box);
+    const pixel = insertPixel(box);
+    const sent = { ...pinCompose(read, box), ...(pixel ? { trackToken: pixel.token } : {}) };
     if (outgoing.pending) trackSent();
     outgoing.pending = { ...sent, before: sentToast(), toast: "" };
     outgoing.timer = setTimeout(trackSent, SEND_GRACE);
@@ -659,6 +702,10 @@
     return Boolean(control && (attr(control, "id").startsWith("link_undo") || /^undo$/i.test(text(control))));
   }
 
+  document.addEventListener("mousedown", (event) => {
+    const control = sendControl(event.target);
+    if (control) insertPixel(composeBox(control));
+  }, true);
   document.addEventListener("click", (event) => {
     if (outgoing.pending && undoSend(event.target)) {
       outgoing.pending = null;

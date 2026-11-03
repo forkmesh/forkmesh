@@ -143,7 +143,13 @@ Links here** and the email is linked to them when you send it.
 **Mail you send.** With **Track emails I send** on (the default), a message you
 send from Gmail or Zoho Mail is linked to the first recipient that already has
 a record, To before Cc, people outside your domain first, and moves **Last
-contacted**. Gmail
+contacted**. With **Tell me when they are opened** on (the default), the
+extension adds a 1-pixel image to the end of each email as you press Send, and
+the first time the recipient's mail app loads it you get a ping ("📬 Ada opened
+your email"). A send to someone the CRM does not know is still recorded so its
+open can be reported, without creating a contact. Opens from your own network
+(viewing your Sent copy) are not counted; Gmail and Apple Mail load images
+through their own servers, so an open there can be early, late or missing. Gmail
 sends are linked after its 10-second undo window. No contact is created for a
 send to unknown people.
 
@@ -235,7 +241,7 @@ and Zoho's API console, each for the feature named above.
 | Feature | Sent to ForkMesh | Never sent |
 | --- | --- | --- |
 | Vault | Encrypted items, wrapped keys, signed shares | Master password, keys, decrypted logins |
-| CRM | Message and thread ids, subject, addresses or handles, direction, date, the details shown in the panel, the chosen flow and stage | The email body (read only to prefill the panel) |
+| CRM | Message and thread ids, subject, addresses or handles, direction, date, the details shown in the panel, the chosen list; with open tracking, the address of an unknown recipient, and the recipient's mail app loads the open image from ForkMesh | The email body (read only to prefill the panel) |
 | Marketing | A channel's counts, title, description, image and up to five recent posts; Reddit desk fields; X keys once | Anything to X, Reddit or the channel sites |
 | Repositories | The derived import id when you open the popup; the address when you press Mirror | Your provider sign-in |
 | Zoho Mail tools | Nothing | Everything |

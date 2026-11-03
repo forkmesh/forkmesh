@@ -205,6 +205,8 @@ function linkBody(message) {
     flow: String(message.flow || ""),
     stage: String(message.stage || ""),
     list: String(message.list || ""),
+    trackToken: String(message.trackToken || ""),
+    keepWithoutContact: message.keepWithoutContact === true,
     createContact: message.createContact !== false,
   };
 }
@@ -224,17 +226,35 @@ const SENT_RECIPIENTS = 5;
 
 async function sentState() {
   const stored = (await chrome.storage.local.get([SENT_KEY]))[SENT_KEY] || {};
-  return { track: stored.track !== false, last: stored.last || null };
+  return { track: stored.track !== false, pixel: stored.pixel !== false, last: stored.last || null };
 }
 
 async function sentSettings() {
   return { ok: true, ...(await sentState()) };
 }
 
-async function setTrackSent({ track }) {
+async function setTrackSent({ track, pixel }) {
   const state = await sentState();
-  await chrome.storage.local.set({ [SENT_KEY]: { ...state, track: Boolean(track) } });
+  const next = { ...state };
+  if (track !== undefined) next.track = Boolean(track);
+  if (pixel !== undefined) next.pixel = Boolean(pixel);
+  await chrome.storage.local.set({ [SENT_KEY]: next });
   return sentSettings();
+}
+
+const PIXEL_TOKEN_RE = /^[0-9a-f]{32}\.[0-9a-f]{24}$/;
+
+async function trackPixel() {
+  const current = await settings();
+  const state = await sentState();
+  if (!state.track || !state.pixel || !current.sessionToken || !current.organization) return { ok: true, pixel: null };
+  const payload = await api(orgPath(current.organization, "/emails/pixel"), "POST", {});
+  const token = String(payload.token || "");
+  const url = String(payload.url || "");
+  if (!PIXEL_TOKEN_RE.test(token) || !url.startsWith("https://") || !url.endsWith(`/api/crm/-/t/o/${token}.png`)) {
+    return { ok: true, pixel: null };
+  }
+  return { ok: true, pixel: { token, url } };
 }
 
 async function rememberSent(last) {
@@ -271,7 +291,27 @@ async function trackSent({ message }) {
       throw error;
     }
   }
-  return { ok: true, tracked: false };
+  const first = recipients.find((person) => person?.email);
+  if (!sent.trackToken || !first) return { ok: true, tracked: false };
+  let result;
+  try {
+    result = await link({
+      organization: current.organization,
+      message: {
+        ...sent, direction: "outbound", threadId: "", createContact: false, keepWithoutContact: true, contactId: "",
+        contactEmail: String(first.email || ""), contactName: String(first.name || ""),
+      },
+    });
+  } catch (error) {
+    if (error?.code === "contact_not_found") return { ok: true, tracked: false };
+    await rememberSent({ at: Date.now(), subject, organization: current.organization, contact: "", error: error?.message || "request failed" });
+    throw error;
+  }
+  await rememberSent({
+    at: Date.now(), subject, organization: result.organization, error: "", contactId: "",
+    contact: `${first.email} (not in the CRM; opens are reported)`,
+  });
+  return { ok: true, tracked: true, contact: null, email: result.email };
 }
 
 const CONTACT_ID_RE = /^[0-9a-f]{32}$/;
@@ -3371,6 +3411,7 @@ const HANDLERS = {
   "fm-track-sent": trackSent,
   "fm-sent-settings": sentSettings,
   "fm-sent-set-track": setTrackSent,
+  "fm-track-pixel": trackPixel,
   "fm-open-crm": openCrm,
   "fm-mastodon-hosts": syncMastodon,
   "fm-mastodon-add": addMastodon,

@@ -28,6 +28,9 @@ def main():
         message = json.loads(line)
         if message.get("control") == "pings":
             reply = {"status": 200, "data": {"ok": True, "pings": runtime.pings}}
+        elif message.get("control") == "advance":
+            runtime.clock += int(message["ms"])
+            reply = {"status": 200, "data": {"ok": True}}
         else:
             runtime.use(message["method"], message["actor"], message.get("body"))
             reply = asyncio.run(crm.handle(runtime, message["path"]))

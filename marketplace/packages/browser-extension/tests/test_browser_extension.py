@@ -412,8 +412,9 @@ def test_a_new_zoho_email_looks_up_its_to_address_and_links_to_it_when_sent(tmp_
     assert out["compose"] == {"contactEmail": "ada@engines.example", "direction": "outbound",
                               "participants": ["ada@engines.example", "cc@other.example"]}
     assert "ListEngines leads" in out["strip"] and "On sendLinks here" in out["strip"]
-    assert out["sent"] == {"sameId": True, "contactId": "a" * 32,
+    assert out["sent"] == {"sameId": True, "contactId": "a" * 32, "pixel": True,
                            "recipients": ["ada@engines.example", "cc@other.example"]}
+    assert out["pixels"] == ["https://pixel.invalid/api/crm/-/t/o/" + "c" * 32 + "." + "d" * 24 + ".png"]
     assert out["reading"] == "wrong@sender.example"
     assert "Look up" in out["readingStrip"]
 
@@ -424,8 +425,18 @@ def test_a_new_contact_on_a_zoho_email_is_added_to_a_list(tmp_path):
     assert out["lookups"] == ["ada@engines.example"]
     assert "Not in the CRM yet" in out["strip"] and "Add to list" in out["strip"]
     assert out["button"] == "Add to list"
-    assert out["link"] == {"list": "b" * 32, "contactEmail": "ada@engines.example", "flow": ""}
+    assert out["link"] == {"list": "b" * 32, "contactEmail": "ada@engines.example", "flow": "", "pixel": True}
     assert out["notice"] == "Created Ada Lovelace on Engines leads; linked."
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_a_sent_email_carries_an_open_pixel_and_its_first_open_pings_the_sender():
+    result = subprocess.run(
+        [shutil.which("node"), "--no-warnings", str(PACKAGE / "tests" / "background_sent_pixel_harness.js")],
+        capture_output=True, text=True, timeout=300,
+        env={"PATH": "/usr/local/bin:/usr/bin:/bin", "PYTHON": sys.executable})
+    assert result.returncode == 0, result.stdout[-3000:] + result.stderr[-2000:]
+    assert "checks passed" in result.stdout
 
 
 def test_a_zoho_subject_is_never_the_folder_name_and_stays_editable():
