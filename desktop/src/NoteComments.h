@@ -18,6 +18,9 @@ constexpr int kCommentContext = 32;
 constexpr int kMaxCommentQuote = 1000;
 constexpr int kMaxCommentBody = 4000;
 constexpr int kPresencePollMs = 5000;
+constexpr int kPresenceFollowMs = 1000;
+constexpr int kPresenceChatMs = 2000;
+constexpr int kMaxChatBody = 2000;
 constexpr int kPresenceRetryMs = 30000;
 constexpr int kPresenceTypingMs = 10000;
 constexpr int kPresenceFaces = 4;
@@ -444,6 +447,8 @@ struct NotePeer {
     QString name;
     QString state;
     QString via;
+    int line = 0;
+    int column = 0;
     bool editing() const { return state == QLatin1String("editing"); }
 };
 
@@ -456,6 +461,8 @@ inline QList<NotePeer> notePeers(const QJsonArray &values)
                        peer.value(QLatin1String("name")).toString().trimmed(),
                        peer.value(QLatin1String("state")).toString(),
                        peer.value(QLatin1String("via")).toString()};
+        entry.line = qMax(0, peer.value(QLatin1String("line")).toInt());
+        entry.column = qMax(0, peer.value(QLatin1String("column")).toInt());
         if (entry.clientId.isEmpty() || entry.state == QLatin1String("left"))
             continue;
         if (entry.name.isEmpty())
@@ -504,6 +511,71 @@ inline QString notePresenceLine(const QList<NotePeer> &peers)
     if (peers.size() > 1)
         return QStringLiteral("Live · %1 others here").arg(peers.size());
     return QString();
+}
+
+inline NotePeer noteFollowedPeer(const QList<NotePeer> &peers, const QString &name)
+{
+    NotePeer found;
+    for (const NotePeer &peer : peers) {
+        if (peer.name != name || peer.line <= 0)
+            continue;
+        if (found.clientId.isEmpty() || (peer.editing() && !found.editing()))
+            found = peer;
+    }
+    return found;
+}
+
+inline bool notePeerHere(const QList<NotePeer> &peers, const QString &name)
+{
+    return std::any_of(peers.cbegin(), peers.cend(),
+                       [&name](const NotePeer &peer) { return peer.name == name; });
+}
+
+struct NoteChatMessage {
+    QString id;
+    QString author;
+    QString body;
+    qint64 createdAt = 0;
+};
+
+inline QList<NoteChatMessage> noteChatMessages(const QJsonArray &values)
+{
+    QList<NoteChatMessage> messages;
+    for (const QJsonValue &value : values) {
+        const QJsonObject message = value.toObject();
+        NoteChatMessage entry{message.value(QLatin1String("id")).toString(),
+                              message.value(QLatin1String("author")).toString(),
+                              message.value(QLatin1String("body")).toString(),
+                              qint64(message.value(QLatin1String("createdAt")).toDouble())};
+        if (entry.id.isEmpty())
+            continue;
+        if (entry.author.isEmpty())
+            entry.author = QStringLiteral("Someone");
+        messages.append(entry);
+    }
+    return messages;
+}
+
+inline int noteChatUnread(const QList<NoteChatMessage> &messages, const QString &me,
+                          qint64 seenAt)
+{
+    return int(std::count_if(messages.cbegin(), messages.cend(),
+                             [&](const NoteChatMessage &message) {
+        return message.createdAt > seenAt &&
+               message.author.compare(me, Qt::CaseInsensitive) != 0;
+    }));
+}
+
+inline QString noteChatButtonLabel(int unread)
+{
+    return unread > 0 ? QStringLiteral("Chat (%1)").arg(unread > 99 ? QStringLiteral("99+")
+                                                                     : QString::number(unread))
+                      : QStringLiteral("Chat");
+}
+
+inline int notePresencePollMs(bool following, bool chatOpen)
+{
+    return following ? kPresenceFollowMs : chatOpen ? kPresenceChatMs : kPresencePollMs;
 }
 
 inline QString notePresenceOverflow(int peers)

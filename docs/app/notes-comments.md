@@ -1,4 +1,4 @@
-# Notes: inline comments and who is here
+# Notes: inline comments, chat and who is here
 
 Since 2026-10-31 everyone a note is shared with can leave comments on a
 passage of the note, reply, mention collaborators and resolve threads, and
@@ -94,6 +94,48 @@ the list with its quote shown as removed text, and nothing is highlighted.
 - Opening `/dashboard/notes?note=<id>&comment=<commentId>` opens the note
   with that thread shown.
 
+## Chat
+
+Since 2026-11-03 the side panel next to a note has a Chat tab beside
+Comments, for talking with everyone who has the note open or can open it.
+Chat messages are not anchored to the text; select text and comment for that.
+
+`note_chat` (migration `0300_note_chat.sql`) holds one row per message:
+`message_id`, `note_id`, `author_bi`, `created_at` and `data`, the sealed
+`{body}`. Rows go with the note (`ON DELETE CASCADE`); a note keeps its newest
+500 messages (`MAX_CHAT`), older ones are dropped as new ones arrive, and a
+body is at most 2000 characters. The table is in the rekey lists of
+`tools/next_rekey.py` ([rekey](../operations/rekey.md)).
+
+The owner, editors and viewers can read and write the chat:
+
+- `GET /api/notes/<id>/chat` answers `messages` (oldest first, each `{id,
+  author, body, createdAt}`) and `canModerate` (you own the note).
+- `POST /api/notes/<id>/chat` with `{body}` answers 201, the list and the new
+  `message`; an empty or too long body is `invalid_message`.
+- `DELETE /api/notes/<id>/chat/<messageId>`: the author or the note's owner
+  (`message_author_required` otherwise, `message_not_found` for an unknown id).
+
+Every change sends `{"type": "note-chat"}` to the note's room, and the
+presence routes answer `chatKey` (message count and newest time) so polling
+clients reload when it moves. Clients count messages from others newer than
+the last one you saw in that note as unread, on the Chat button and tab.
+
+## Following someone
+
+Every client sends where its caret is: the web page sends `{"type":
+"cursor", clientId, line, column}` on the socket when the caret moves (and
+`line`/`column` with each draft), the desktop sends `line` and `column` with
+its presence poll. `line` is 1-based, `column` counts UTF-16 units, and 0
+means unknown. The room keeps each socket's last cursor and polled client's
+last line, passes them on in presence and cursor frames, and includes them in
+the `peers` the presence routes answer.
+
+Choosing Follow next to someone in the "Here now" list (the faces menu on the
+desktop) keeps their place in view: each time their line moves, the editor
+scrolls to it and marks it with their name and colour. Typing, Stop following,
+or the person leaving ends it.
+
 ## Who is here
 
 ### On the live socket
@@ -111,10 +153,10 @@ and when a socket closes tells the others `{"type": "leave", "clientId",
 The desktop does not link QtWebSockets, so it reaches the same room over
 HTTP:
 
-- `POST /api/notes/<id>/presence` with `{clientId, state}`, where `state` is
-  `viewing`, `editing` or `left`, registers the caller and answers `peers`,
-  everyone else in the room: `{clientId, name, state, via}`, `via` being
-  `live` (socket) or `poll`. The room passes the poll on to socket clients as
+- `POST /api/notes/<id>/presence` with `{clientId, state, line?, column?}`,
+  where `state` is `viewing`, `editing` or `left`, registers the caller and
+  answers `peers`, everyone else in the room: `{clientId, name, state, line,
+  column, via}`, `via` being `live` (socket) or `poll`. The room passes the poll on to socket clients as
   an ordinary presence frame (a `leave` frame for `left`), so the web and
   phones see desktop users too.
 - `GET /api/notes/<id>/presence[?clientId=<yours>]` answers `peers` without
@@ -123,7 +165,8 @@ HTTP:
   `state` is `invalid_presence`; a viewer's `editing` is stored as `viewing`.
 
 Both also answer `commentsKey`, the number of comments and the time of the
-latest change, so a polling client reloads comments only when it moves. A
+latest change, and `chatKey`, the same for chat messages, so a polling client
+reloads comments or chat only when they move. A
 polled peer is forgotten 20 seconds after its last poll; the desktop polls
 every 5 seconds while a note is open and sends `left` when it closes the note.
 Presence lives in the room's memory only: nothing about who opened a note is
@@ -143,4 +186,10 @@ picking the faces lists everyone with their state.
 replies, quotes kept sealed, mentions kept only for collaborators and pinged,
 replies pinging the thread, edit and resolve permissions, deleting a thread
 with its replies, the cap, anonymous readers refused, removal with the note,
-and the presence routes.
+and the presence routes. `app/tests/test_notes_chat.py` covers the chat:
+sealed bodies, listing, the length rule, outsiders refused, deleting your own
+or (as owner) anyone's, the 500-message window, removal with the note, the
+`chatKey`, and the room remembering cursor lines for polling followers.
+`app/browser_tests/tests/dashboard-notes-live.spec.js` drives the web page:
+Live mode block editing, commenting on a selection in a live block, following
+a collaborator, and the chat tab with its unread count.

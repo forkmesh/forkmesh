@@ -114,6 +114,10 @@ private:
     void hideNotePresence();
     void updateCommentControls();
     void setCommentsPanelOpen(bool open);
+    void toggleSidePanel(bool chat);
+    void setNoteFollow(const QString &name);
+    void followNotePeer(const NotePeer &peer);
+    void noteCaretMoved();
     void startNoteComment();
     CommentQuote noteSelectionQuote(bool *previewMiss = nullptr) const;
     void showCommentPassage(const CommentThread *thread);
@@ -180,6 +184,16 @@ private:
     NoteCommentsPanel *m_commentsPanel = nullptr;
     QPushButton *m_commentsButton = nullptr;
     QPushButton *m_commentButton = nullptr;
+    QPushButton *m_chatButton = nullptr;
+    QPushButton *m_followStop = nullptr;
+    QList<NotePeer> m_peers;
+    QString m_followName;
+    int m_followLine = 0;
+    int m_followColumn = 0;
+    int m_presenceSentLine = 0;
+    QJsonValue m_chatKey;
+    bool m_preferLive = false;
+    bool m_openingNoteView = false;
     QWidget *m_presenceBox = nullptr;
     NotePresenceFaces *m_presenceFaces = nullptr;
     QLabel *m_presenceLine = nullptr;

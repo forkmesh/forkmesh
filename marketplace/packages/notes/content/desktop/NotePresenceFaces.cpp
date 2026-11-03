@@ -211,6 +211,23 @@ void NotePresenceFaces::showEveryone()
                 openProfile(name);
         });
     }
+    if (follow) {
+        menu.addSeparator();
+        const QString current = following ? following() : QString();
+        QStringList names;
+        for (const NotePeer &peer : std::as_const(m_peers)) {
+            if (!names.contains(peer.name))
+                names << peer.name;
+        }
+        for (const QString &name : std::as_const(names)) {
+            const bool on = name == current;
+            QAction *action = menu.addAction(on ? QStringLiteral("Stop following %1").arg(name)
+                                                : QStringLiteral("Follow %1").arg(name));
+            action->setToolTip(QStringLiteral("Keep %1's place in the note in view").arg(name));
+            connect(action, &QAction::triggered, this,
+                    [this, name, on] { follow(on ? QString() : name); });
+        }
+    }
     menu.exec(mapToGlobal(QPoint(0, height())));
 }
 

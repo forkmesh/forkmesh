@@ -1153,6 +1153,8 @@ set(FORKMESH_APP_SOURCES
     src/MessageRow.h
     src/MessageRow.cpp
     src/MarkdownEditor.cpp
+    src/MarkdownLiveHighlighter.h
+    src/MarkdownLiveHighlighter.cpp
     src/KebabHeaderView.h
     src/KebabHeaderView.cpp
     src/SettingsSectionsView.h
@@ -3899,6 +3901,22 @@ forkmesh_link_opengl(forkmesh-window-tests)
             MACOSX_BUNDLE FALSE)
     endif()
 
+    qt_add_executable(forkmesh-markdown-live-tests
+        tests/test_markdown_live.cpp
+        src/MarkdownLiveHighlighter.h
+        src/MarkdownLiveHighlighter.cpp
+        src/Theme.h
+        src/DesignTokens.h
+        src/DesignTokens.cpp
+        ${FORKMESH_THEME_QRC}
+    )
+    target_link_libraries(forkmesh-markdown-live-tests PRIVATE Qt6::Widgets)
+    target_include_directories(forkmesh-markdown-live-tests PRIVATE src)
+    if(APPLE)
+        set_target_properties(forkmesh-markdown-live-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
     # A crash is written to the log by the dying process, so the next launch
     # is the only thing that can turn it into repair work. Core only: the
     # "crash, not a stop request" rule stays covered where the window suite is
@@ -4421,6 +4439,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-stall-watchdog-tests
         forkmesh-qt-runtime-diagnostics-tests
         forkmesh-prompt-spellcheck-tests
+        forkmesh-markdown-live-tests
         PROPERTIES EXCLUDE_FROM_ALL TRUE)
 
     # Register all suites with CTest so they run independently of the app:
@@ -4531,6 +4550,10 @@ forkmesh_link_opengl(forkmesh-perf-tests)
     add_test(NAME forkmesh-deploy-log-tests COMMAND forkmesh-deploy-log-tests)
     add_test(NAME forkmesh-prompt-spellcheck-tests
              COMMAND forkmesh-prompt-spellcheck-tests)
+    add_test(NAME forkmesh-markdown-live-tests
+             COMMAND forkmesh-markdown-live-tests)
+    set_tests_properties(forkmesh-markdown-live-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_test(NAME forkmesh-crash-scan-tests COMMAND forkmesh-crash-scan-tests)
     add_test(NAME forkmesh-diagnostics-report-tests COMMAND forkmesh-diagnostics-report-tests)
     add_test(NAME forkmesh-claude-session-scan-tests
@@ -4894,6 +4917,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-tests forkmesh-window-tests
         forkmesh-qt-runtime-diagnostics-tests
         forkmesh-prompt-spellcheck-tests
+        forkmesh-markdown-live-tests
         forkmesh-startup-splash-tests
         forkmesh-teammates-window-tests
         forkmesh-mirror-fleet-window-tests forkmesh-diff-stream-window-tests
@@ -5027,6 +5051,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-issue-mention-tests
         forkmesh-ledger-tests
         forkmesh-prompt-spellcheck-tests
+        forkmesh-markdown-live-tests
         ${FORKMESH_MARKETPLACE_TEST_TARGETS}
         forkmesh-crash-scan-tests forkmesh-system-pressure-tests
         forkmesh-diagnostics-report-tests
