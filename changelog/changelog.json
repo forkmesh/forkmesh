@@ -12,6 +12,7 @@
  ],
  "notes": [
   {"date": "2026-11-04", "area": "Market", "text": "CRM now logs Mastodon replies from contacts every time the CRM loads, including replies to toots sent before a draft existed, and no longer misses older mentions on a busy day."},
+  {"date": "2026-11-04", "area": "Other improvements", "text": "Web Notes: Split mode scrolls the Markdown and the preview together, an outline beside the editor jumps to any heading, and you can paste images straight from the clipboard."},
   {"date": "2026-11-04", "area": "Desktop", "text": "Diffs with avatars and agent transcripts with very long commands no longer freeze the window."},
   {"date": "2026-11-04", "area": "Highlights", "text": "Notes now has a right column beside the note with its live history (who saved each version, with view and restore), an activity timeline and a chat for everyone working on it; on iPhone and Android the same three tabs open in one sheet."},
   {"date": "2026-11-04", "area": "Market", "text": "A new Reticulum plugin connects the desktop, iPhone and Android to the Reticulum mesh network: chat end to end encrypted with Sideband and MeshChat users, see a live map of every destination by hop count with traffic and announce charts, find paths, and manage TCP, UDP, local rnsd and passphrase-protected interfaces."},
