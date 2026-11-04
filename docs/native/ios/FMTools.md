@@ -210,6 +210,10 @@ Recognises mouthed words from headphone motion; design and thresholds are in
 - `SilentModel.match` scores each word by its nearest takes and applies the distance and
   margin gates; `SilentEvaluator.evaluate` runs leave-one-out and the permutation test on one
   distance matrix. `SilentSegmenter` and `SilentNoiseFloor` pick words out of live motion.
+- `SilentText` holds the reading sentences and splits text into words, `SilentReading.plan`
+  picks a session's sentences and `SilentLanguage` is the bigram next-word guess that
+  `SilentScores.ranked` folds into the match. `SilentScope` keeps the last six seconds of
+  motion for the page's charts and its spectrum.
 - `SilentDataset` is the on-phone JSON shared with Android's core `silentspeech/`.
   `SilentSpeechListener` (`ForkMesh/Platform`) drives `CMHeadphoneMotionManager`; the view is
   `SilentSpeechScreen`.

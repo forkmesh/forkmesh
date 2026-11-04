@@ -26,6 +26,7 @@ import com.forkmesh.nativeapp.silentspeech.SilentNoiseFloor
 import com.forkmesh.nativeapp.silentspeech.SilentQuaternion
 import com.forkmesh.nativeapp.silentspeech.SilentReading
 import com.forkmesh.nativeapp.silentspeech.SilentSample
+import com.forkmesh.nativeapp.silentspeech.SilentScope
 import com.forkmesh.nativeapp.silentspeech.SilentSegmenter
 import com.forkmesh.nativeapp.silentspeech.SilentSpeechPrefs
 import com.forkmesh.nativeapp.silentspeech.SilentTake
@@ -54,9 +55,9 @@ object SilentSpeechListener : SensorEventListener {
         private set
     var problem by mutableStateOf<String?>(null)
         private set
-    var level by mutableStateOf(0.0)
-        private set
     var rate by mutableStateOf<Double?>(null)
+        private set
+    var scope by mutableStateOf(SilentScope())
         private set
     var hold by mutableStateOf<SilentHold?>(null)
         private set
@@ -170,11 +171,11 @@ object SilentSpeechListener : SensorEventListener {
         sensor = null
         listening = false
         connected = false
-        level = 0.0
         rate = null
         hold = null
         held.clear()
         recent.clear()
+        scope = SilentScope()
         rateWindow.clear()
         if (reading != null) finishReading()
         segmenter?.reset()
@@ -191,7 +192,6 @@ object SilentSpeechListener : SensorEventListener {
         sensorManager?.unregisterListener(this)
         sensor = null
         connected = false
-        level = 0.0
         rate = null
         hold = null
         held.clear()
@@ -212,7 +212,7 @@ object SilentSpeechListener : SensorEventListener {
 
     private fun receive(sample: SilentSample) {
         connected = true
-        level = level * 0.6 + sample.energy * 0.4
+        scope = scope.push(sample)
         rateWindow.add(sample.t)
         rateWindow.removeAll { it < sample.t - 2 }
         if (rateWindow.size > 5 && rateWindow.last() > rateWindow.first()) {
@@ -238,8 +238,8 @@ object SilentSpeechListener : SensorEventListener {
     }
 
     fun startReading() {
-        if (!listening || reading != null || hold != null || dataset.words.size < 2) return
-        reading = SilentReading.start(dataset.words.map { it.word }, System.currentTimeMillis())
+        if (!listening || reading != null || hold != null) return
+        reading = SilentReading.start(SilentReading.plan(dataset), System.currentTimeMillis())
         readingSummary = null
         lastSentence = emptyList()
         segmenter?.reset()
@@ -249,11 +249,12 @@ object SilentSpeechListener : SensorEventListener {
     private fun read(t: Double, segment: List<SilentSample>?) {
         var current = reading?.tick(t) ?: return
         if (segment != null) {
+            scope = scope.mark(segment, current.sentence.getOrNull(current.position).orEmpty())
             val (next, labelled) = current.hear(segment)
             current = next
             if (labelled.isNotEmpty()) {
                 val takes = labelled.map { SilentTake(UUID.randomUUID().toString(), it.first, it.second) }
-                dataset = takes.fold(dataset) { d, take -> d.addTake(take) }
+                dataset = takes.fold(dataset) { d, take -> d.learn(take) }
                 lastSentence = takes.map { it.id }
                 changed()
             }
@@ -307,6 +308,7 @@ object SilentSpeechListener : SensorEventListener {
         if (samples.size < 2 || samples.last().t - samples.first().t < 0.2) return
         when (kind) {
             is SilentHold.Train -> {
+                scope = scope.mark(samples, kind.word)
                 dataset = dataset.addTake(SilentTake(UUID.randomUUID().toString(), kind.word, samples))
                 changed()
             }
@@ -327,12 +329,18 @@ object SilentSpeechListener : SensorEventListener {
         segmenter = noise?.let { SilentSegmenter(it) }
         calibration.clear()
         calibrationStart = null
+        scope = scope.recentre()
+    }
+
+    fun recentre() {
+        scope = scope.recentre()
     }
 
     private fun decode(samples: List<SilentSample>) {
-        val current = model ?: SilentModel(dataset.takes, channels, SilentEvaluator.neighbors(dataset)).also { model = it }
-        val match = current.match(samples, maxDistance, minMargin)
+        val current = model ?: SilentModel(dataset.takes, channels, SilentEvaluator.neighbors(dataset), dataset.language).also { model = it }
+        val match = current.match(samples, maxDistance, minMargin, transcript.words.lastOrNull())
         lastMatch = match
+        if (match != null) scope = scope.mark(samples, if (match.accepted) match.word else "?")
         if (match == null || !match.accepted) return
         transcript = transcript.append(match.word)
         if (speakAloud) speak(dataset.phrase(match.word))
@@ -399,10 +407,10 @@ object SilentSpeechListener : SensorEventListener {
         if (limit != null) prefs()?.putDouble(SilentSpeechPrefs.MAX_DISTANCE, limit) else prefs()?.remove(SilentSpeechPrefs.MAX_DISTANCE)
     }
 
-    fun addWord(word: String, phrase: String): Boolean {
-        val next = dataset.addWord(word, phrase) ?: return false
+    fun addEntry(text: String): Boolean {
+        val (next, word) = dataset.addEntry(text) ?: return false
         dataset = next
-        selectedWord = SilentDataset.clean(word)
+        selectedWord = word
         changed()
         return true
     }

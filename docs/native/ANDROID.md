@@ -616,7 +616,8 @@ iOS features Android does not have, because they need an Apple-only API:
   choice yet.
 - **Eye Control** (S050): a gaze cursor needs ARKit TrueDepth face tracking.
 - **Silent Speech's Movement channel**: Android head trackers report rotation
-  and turning speed but no acceleration, so only the iPhone (AirPods) offers it.
+  and turning speed but no acceleration, so only the iPhone (AirPods) offers it
+  and its Movement chart.
 - **Spider Room** (S051): an ARKit and RealityKit scene; ARCore would be a
   new dependency.
 - **App Store update gate** (S052): Android is distributed directly and has

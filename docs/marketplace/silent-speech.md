@@ -1,7 +1,7 @@
 # Silent Speech
 
-`marketplace/packages/silent-speech` (Market id `silent-speech`) recognises a
-small vocabulary of words mouthed without a sound, from the head motion that
+`marketplace/packages/silent-speech` (Market id `silent-speech`) recognises
+words mouthed without a sound, from the head motion that
 AirPods or head-tracking earbuds report. It is a phone section on iPhone and
 Android (route `silentSpeech`, web path `/dashboard/silent-speech`), off by
 default and account-synced like the other mobile tools
@@ -58,35 +58,99 @@ Linux and the host JVM with the same synthetic data and expected numbers
    (`SilentEvaluator.neighbors`), so one mislabelled take cannot win alone.
    A match is rejected when it is above the max distance or less than 8% ahead
    of the runner-up.
-5. **Check** (`SilentEvaluator.evaluate`). Words with at least two takes are
+5. **Next-word guess** (`SilentLanguage`, `SilentScores.ranked`). With a
+   large vocabulary many words sit close together, so the decoder adds a
+   bigram model of the reading sentences (built-in and the user's own):
+   `P(w | previous) = (c(previous, w) + 2·P(w)) / (c(previous) + 2)`, with
+   add-one `P(w)`. Each word's score becomes
+   `d + 0.5·τ·(−ln P − min −ln P)`, where `τ` is half the gap between the
+   best and the median word's distance, so the guess only breaks near-ties
+   and never outweighs a clearly closer word. The previous word is the
+   transcript's last; an empty transcript uses the sentence-start context.
+   The 8% margin is measured on these scores.
+6. **Check** (`SilentEvaluator.evaluate`). Words with at least two takes are
    compared. Leave-one-out accuracy on the distance matrix, then 500 label
    shuffles of the same matrix; `p < 0.05` is reported as better than chance.
-6. **Listening without holding** (`SilentSegmenter`). Two seconds of
+   To stay within seconds on a phone with a big vocabulary, it uses the
+   newest 12 takes of each word and at most 600 takes in all
+   (`SilentEvaluator.sample`), and runs fewer shuffles when there are many
+   takes: `min(500, max(100, 4·10⁷ / n²))` (`SilentEvaluator.rounds`), so
+   600 takes get 111. With at least 100 shuffles the smallest p is 0.0099,
+   still well under 0.05. An 840-take, 70-word set took 7 s on a desktop JVM
+   with 800 takes and 500 shuffles before these limits, about 1 s after.
+7. **Listening without holding** (`SilentSegmenter`). Two seconds of
    stillness set the floor (median) and spread (1.4826 × MAD). A word starts
    after two samples above `floor + max(4·spread, 0.05)`, with 0.2 s of
    pre-roll, and ends after 0.35 s below `floor + max(2·spread, 0.025)`;
    anything under 0.3 s from onset is dropped, and 3 s is the longest word.
+   On the page this is the **Hands-free** chip.
 
 ## Reading session
 
 One take per button press gives a handful of takes a word, and DTW with a
-handful of templates is fragile. **Read sentences for 5 minutes**
-(`SilentReading`) collects far more, in the same condition the listener
-decodes in: words mouthed one after another with a short stop between them.
+handful of templates is fragile. **Read sentences · 5 min** (`SilentReading`)
+collects far more, in the same condition the listener decodes in: words
+mouthed one after another with a short stop between them.
 
-- **Script.** `SilentReading.script` deals the vocabulary in shuffled passes
-  (seeded SplitMix64, identical on both phones), never the same word twice in
-  a row, cut into sentences of 4 to 6 words. Every word appears equally often
-  and in varied neighbours.
+- **Vocabulary.** There is no fixed word list. `SilentText.sentences` holds
+  30 everyday sentences (about 110 different words, including the starter
+  five); the user can add their own sentences, or single words, in the one
+  "Add a word or your own sentence" field (`SilentDataset.addEntry`;
+  `word: phrase` sets what a one-word message says aloud). Every word read
+  becomes a word in the dataset (`SilentDataset.learn`), so the vocabulary
+  grows with each session. `SilentText.words` lowercases and splits on
+  anything but letters, digits and apostrophes.
+- **Plan.** A session reads 8 sentences (`SilentReading.plan`): the user's
+  own first, then the built-in ones, ranked by how few takes their words
+  already have (each word counted up to 10), plus any added word that is in
+  no sentence, dealt into sentences of 5. Repeating 8 sentences for five
+  minutes gives each of their words several takes; the next session picks
+  the next least-trained 8, so a few sessions cover the whole vocabulary.
+- **Script.** `SilentReading.script` deals those sentences in shuffled
+  passes (seeded SplitMix64, identical on both phones), never the same
+  sentence twice in a row.
 - **Labelling.** The session first measures stillness (two seconds, as in
-  step 6), then feeds `SilentSegmenter` output to `hear`. The highlighted word
-  moves on with each segment; when a sentence has as many segments as words,
-  they are labelled in order and saved as takes. **Start again** drops a
+  step 7), then feeds `SilentSegmenter` output to `hear`. The highlighted
+  word moves on with each segment; when a sentence has as many segments as
+  words, they are labelled in order and saved as takes. **Again** drops a
   half-read sentence when the count slips (a nod, two words run together),
-  **Drop last sentence** removes a finished one, **Skip** moves on.
+  **Drop last** removes a finished one, **Skip** moves on.
 - **Length.** Five minutes of motion-clock time; the session ends after the
-  sentence in progress, or on **Finish** or leaving the page. Around 1.5 s a
-  word gives roughly 200 takes, about 40 per word for the starter five.
+  sentence in progress, or on **Finish** or leaving the page.
+
+## Motion view
+
+The top card draws the last six seconds of head motion (`SilentScope`,
+resampled to 25 Hz like the recogniser) so the user can see what the earbuds
+report and whether a word stands out:
+
+- **Turning** (rotation rate, °/s), **Head angle** (rotation vector of
+  `q_ref⁻¹·q`, °) and, on iPhone, **Movement** (user acceleration, g), each
+  as X (nod), Y (tilt) and Z (turn) lines on a symmetric scale that grows
+  with the signal (at least ±30 °/s, ±5°, ±0.05 g), with the current values
+  in the legend. The angle reference is reset after each stillness
+  measurement and by the ↻ button.
+- **Energy** (`|ω| + |a|`, what the segmenter thresholds) with the on and
+  off thresholds dashed; every heard word is shaded across all strips and
+  labelled with the word read or recognised.
+- **Frequency**: the power spectrum of the three rotation axes summed (last
+  64 frames, mean removed, Hann window, zero-padded, so bins are 0.39 Hz up
+  to 12.5 Hz), with the strongest peak above 0.5 Hz named.
+
+Axis colours are the first three slots of the shared chart palette (blue,
+orange, aqua), which stay apart for colour-blind readers in light and dark;
+the legend names each axis, so colour is never the only cue.
+
+## Page layout
+
+One phone screen: the motion card, then the reading button (or the sentence
+being read), a collapsed **Words** row (taught and total words, takes;
+opens to chips with take counts, hold-to-teach for the selected word and
+the add field), the channel chips with **Check** (a mix-up map, the verdict
+and the three worst mix-ups), and **Speak silently** (hold button,
+**Hands-free**, **Speak** and **Skip far-off** chips, last match, the
+transcript with icon actions). The long explanations and per-channel notes
+went; the README is the user guide.
 
 ## Storage and privacy
 
@@ -101,7 +165,9 @@ Android's head tracker needs no permission.
 
 ## Limits
 
-Headphone motion is filtered and slow (about 25 Hz on AirPods); the speech
+Headphone motion is filtered and slow (about 25 Hz on AirPods), so words
+that move the jaw alike (`would` and `could`) stay hard to tell apart even
+with the next-word guess; the speech
 accelerometer and inward microphones are not open to apps, so this reads jaw
 and head movement, not the voice. Templates are per user and per seating of
 the earbuds. Android head trackers are rare and vendor-dependent: the page
