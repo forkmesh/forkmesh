@@ -10,6 +10,12 @@ and the **Booking** screen of the iPhone and Android apps.
   else, each with its own length, description and place (a video link, a
   phone number, an address). Every type also has its own link, such as
   `forkmesh.com/meet?alice/intro`.
+- **A private video room for every meeting.** Leave a video meeting type's
+  link empty and each booking gets its own ForkMesh video room. The link is in
+  both emails and on the calendar event. The room opens half an hour before
+  and needs no account. Calls are end-to-end encrypted with the key in the
+  link. You get the face, background, outfit and voice effects, the call
+  quality meter, and a transcript that runs offline on your device.
 - **Only free times.** You set your weekly hours, time zone, the shortest
   notice, how far ahead people can book, a gap between meetings and a daily
   limit. Times that clash with your ForkMesh calendar or another booking are

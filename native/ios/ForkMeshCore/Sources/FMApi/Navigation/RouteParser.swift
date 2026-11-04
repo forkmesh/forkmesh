@@ -24,7 +24,7 @@ public enum RouteParser {
     static let reservedOwners: Set<String> = [
         "api", "dashboard", "assets", "static", ".well-known", "docs", "login", "logout", "signup", "auth",
         "admin", "world", "legal", "blog", "download", "downloads", "pricing", "help", "raw", "ws", "org", "orgs", "oauth",
-        "settings", "status", "ledger", "market", "search", "explore", "new", "privacy", "terms",
+        "settings", "status", "ledger", "market", "search", "explore", "new", "privacy", "terms", "call",
     ]
 
     private static let safeSegment = try! NSRegularExpression(pattern: "^[A-Za-z0-9._-]+$")
@@ -54,11 +54,22 @@ public enum RouteParser {
         let pathSegments = segments(components.percentEncodedPath)
         if scheme == customScheme {
             guard let host = components.host, !host.isEmpty else { return nil }
+            if host.lowercased() == "call" && pathSegments.isEmpty {
+                guard let meeting = MeetingLink.route(query: components.percentEncodedQuery, fragment: components.percentEncodedFragment)
+                else { return nil }
+                return ParsedLink(project: explicitProject, stack: [meeting])
+            }
             let all = [host] + pathSegments
             guard let stack = customRoutes(all, query: query, me: me) else { return nil }
             return ParsedLink(project: explicitProject, stack: stack)
         }
         guard scheme == "https", let host = components.host, isUniversalLinkHost(host) else { return nil }
+        if MeetingLink.isCallPath(components.percentEncodedPath) {
+            guard let meeting = MeetingLink.route(query: components.percentEncodedQuery, fragment: components.percentEncodedFragment)
+            else { return nil }
+            return ParsedLink(
+                project: explicitProject ?? projectId(forHost: host), stack: [meeting], explicitProject: explicitProject != nil)
+        }
         guard let stack = routes(segments: pathSegments, query: query, me: me) else { return nil }
         return ParsedLink(
             project: explicitProject ?? projectId(forHost: host), stack: stack, explicitProject: explicitProject != nil)

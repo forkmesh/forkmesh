@@ -1,4 +1,5 @@
 const APP_PATHS = new Set([
+  "/call",
   "/chat",
   "/forgot-password",
   "/ledger",

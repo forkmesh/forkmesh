@@ -433,6 +433,9 @@ CACHE_BUSTED_ASSETS = (
     "chat-apps.js",
     # Standalone chat shell styling.
     "chat.css",
+    # Meeting room (/call).
+    "call-room.js",
+    "call-room.css",
     # Away + custom status helper (chat page and dashboard).
     "user-status.js",
     "username-autocomplete.js",
