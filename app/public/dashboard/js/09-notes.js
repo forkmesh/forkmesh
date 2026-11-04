@@ -20,6 +20,10 @@
   const NOTE_SEARCH_MS = 250;
   const NOTE_ACTIVITY_KEY = "forkmesh.notes.activity";
   const NOTE_SIDE_TAB_KEY = "forkmesh.notes.sideTab";
+  const NOTE_OUTLINE_KEY = "forkmesh.notes.outline";
+  const NOTE_MARKDOWN_MAX = 512 * 1024;
+  const NOTE_IMAGE_MAX_CHARS = 360 * 1024;
+  const NOTE_IMAGE_MAX_WIDTH = 1600;
   const NOTE_SIDE_TABS = ["comments", "chat", "activity", "history"];
   const NOTE_ACTIVITY_REFRESH_MS = 1200;
   const NOTE_EDIT_GROUP_MS = 30 * 60 * 1000;
@@ -59,6 +63,9 @@
     assist_failed: "The AI didn't send back any text. Try again.",
     text_too_long: "Select up to 6,000 characters to write with AI.",
     prompt_required: "Type what you want the AI to do.",
+    image_too_large: "That image is too large to paste into the note, even made smaller.",
+    note_full: "This note has no room left for another image.",
+    image_unreadable: "That image couldn't be read. Try copying it again, or as PNG.",
     get upstream_unavailable() { return `${platformName()} is restarting. Try again in a few seconds.`; },
     get sealed() { return `${platformName()} is restarting. Try again in a few seconds.`; },
   };
@@ -436,6 +443,12 @@
           : '<p class="notes-preview-empty">Nothing written yet.</p>';
       }
       markNoteCommentsInPreview(preview);
+    }
+    forgetNoteScrollGeometry();
+    renderNoteOutline(markdown);
+    const view = state.notesView;
+    if ((view.mode === "split" || view.outlineOpen) && !view.scrollFrame) {
+      view.scrollFrame = requestAnimationFrame(() => { view.scrollFrame = 0; syncNoteScroll(view.scrollLead); renderNoteOutlineCurrent(); });
     }
     const words = markdown.split(/\s+/).filter(Boolean).length;
     const counts = $("[data-note-counts]");
@@ -1556,20 +1569,229 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
     }, 120);
   }
 
-  function noteTextareaTop(area, offset) {
+  function noteTextareaTop(area, offset) { return noteTextareaTops(area, [offset])[0]; }
+
+  function noteTextareaTops(area, offsets) {
     const style = getComputedStyle(area), mirror = document.createElement("div");
     for (const name of ["boxSizing", "width", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
       "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth", "fontFamily", "fontSize",
       "fontWeight", "fontStyle", "letterSpacing", "lineHeight", "tabSize", "textIndent", "wordSpacing", "wordBreak"]) mirror.style[name] = style[name];
     Object.assign(mirror.style, { position: "absolute", visibility: "hidden", top: "0", left: "-9999px", whiteSpace: "pre-wrap", overflowWrap: "break-word", borderStyle: "solid" });
-    mirror.textContent = area.value.slice(0, offset);
-    const marker = document.createElement("span");
-    marker.textContent = "​";
-    mirror.appendChild(marker);
+    const markers = [];
+    let at = 0;
+    for (const offset of offsets) {
+      mirror.appendChild(document.createTextNode(area.value.slice(at, Math.max(at, offset))));
+      at = Math.max(at, offset);
+      const marker = document.createElement("span");
+      marker.textContent = "​";
+      markers.push(mirror.appendChild(marker));
+    }
     document.body.appendChild(mirror);
-    const top = marker.offsetTop;
+    const tops = markers.map((marker) => marker.offsetTop);
     mirror.remove();
-    return top;
+    return tops;
+  }
+
+  function noteOutlineHeadings(markdown) {
+    const headings = [];
+    const lines = String(markdown || "").split("\n");
+    let fence = "", offset = 0;
+    lines.forEach((line, index) => {
+      const opener = line.match(/^\s*(```|~~~)/);
+      if (fence) { if (opener && opener[1] === fence) fence = ""; }
+      else if (opener) fence = opener[1];
+      else {
+        const match = line.match(/^(#{1,6})\s+(.*)$/);
+        if (match) {
+          const text = match[2].replace(/\s+#+\s*$/, "").replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[*_`~]/g, "").trim();
+          headings.push({ line: index, offset, level: match[1].length, text });
+        }
+      }
+      offset += line.length + 1;
+    });
+    return headings;
+  }
+
+  function noteOutlineKey(text) { return String(text || "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ""); }
+
+  function noteOutlineTargets(preview, headings) {
+    const found = [...preview.querySelectorAll("h1, h2, h3, h4, h5, h6")];
+    let next = 0;
+    return headings.map((heading) => {
+      const key = noteOutlineKey(heading.text);
+      for (let index = next; index < found.length && index < next + 4; index += 1) {
+        if (noteOutlineKey(found[index].textContent) === key) { next = index + 1; return found[index]; }
+      }
+      return null;
+    });
+  }
+
+  function noteScrollGeometry() {
+    const view = state.notesView;
+    if (view.scrollGeometry) return view.scrollGeometry;
+    const area = $("[data-note-markdown]"), pane = $("[data-note-preview-pane]"), preview = $("[data-note-preview]");
+    if (!area || !pane || !preview) return null;
+    const headings = noteOutlineHeadings(area.value);
+    const sourceShown = Boolean(area.offsetParent), previewShown = Boolean(pane.offsetParent);
+    const sourceTops = sourceShown ? noteTextareaTops(area, headings.map((heading) => heading.offset)) : headings.map(() => null);
+    const paneTop = pane.getBoundingClientRect().top - pane.scrollTop;
+    const previewTops = previewShown
+      ? noteOutlineTargets(preview, headings).map((target) => target ? target.getBoundingClientRect().top - paneTop : null)
+      : headings.map(() => null);
+    const sourceMax = Math.max(0, area.scrollHeight - area.clientHeight), previewMax = Math.max(0, pane.scrollHeight - pane.clientHeight);
+    const anchors = [[0, 0]];
+    headings.forEach((_, index) => {
+      const source = sourceTops[index], target = previewTops[index], last = anchors[anchors.length - 1];
+      if (source == null || target == null) return;
+      if (source > last[0] && target > last[1] && source < sourceMax && target < previewMax) anchors.push([source, target]);
+    });
+    anchors.push([sourceMax, previewMax]);
+    view.scrollGeometry = { headings, sourceTops, previewTops, anchors, sourceMax, previewMax };
+    return view.scrollGeometry;
+  }
+
+  function forgetNoteScrollGeometry() { state.notesView.scrollGeometry = null; }
+
+  function noteScrollMap(anchors, value, from, to) {
+    for (let index = 1; index < anchors.length; index += 1) {
+      const start = anchors[index - 1], end = anchors[index];
+      if (value > end[from] && index < anchors.length - 1) continue;
+      const span = end[from] - start[from];
+      const ratio = span > 0 ? Math.max(0, Math.min(1, (value - start[from]) / span)) : 0;
+      return start[to] + ratio * (end[to] - start[to]);
+    }
+    return 0;
+  }
+
+  function syncNoteScroll(from) {
+    const view = state.notesView;
+    if ($("[data-note-work]")?.dataset.mode !== "split" || view.scrollLead !== from || view.follow) return;
+    const area = $("[data-note-markdown]"), pane = $("[data-note-preview-pane]");
+    const source = from === "source" ? area : pane, target = from === "source" ? pane : area;
+    if (!source || !target) return;
+    const geometry = noteScrollGeometry();
+    if (!geometry) return;
+    const [fromIndex, toIndex, max] = from === "source" ? [0, 1, geometry.previewMax] : [1, 0, geometry.sourceMax];
+    const top = Math.round(Math.max(0, Math.min(max, noteScrollMap(geometry.anchors, source.scrollTop, fromIndex, toIndex))));
+    if (Math.abs(target.scrollTop - top) >= 1) target.scrollTop = top;
+  }
+
+  function renderNoteOutline(markdown) {
+    const view = state.notesView, nav = $("[data-note-outline]");
+    if (!nav) return;
+    const headings = noteOutlineHeadings(markdown);
+    const key = JSON.stringify(headings.map((heading) => [heading.level, heading.text]));
+    if (key === view.outlineKey) return;
+    view.outlineKey = key;
+    view.outlineCurrent = -1;
+    const top = Math.min(6, ...headings.map((heading) => heading.level));
+    nav.innerHTML = headings.length
+      ? headings.map((heading, index) => `<button type="button" class="notes-outline-entry" data-note-outline-entry="${index}" style="--depth:${Math.min(3, heading.level - top)}" title="${escapeHtml(heading.text)}">${escapeHtml(heading.text || "Untitled section")}</button>`).join("")
+      : '<p class="notes-outline-empty">Headings you add (# Title) show up here.</p>';
+    renderNoteOutlineCurrent();
+  }
+
+  function renderNoteOutlineOpen() {
+    const open = state.notesView.outlineOpen;
+    const body = $(".notes-body");
+    if (body) body.dataset.outline = open ? "open" : "closed";
+    const toggle = $("[data-note-outline-toggle]");
+    if (toggle) {
+      toggle.setAttribute("aria-pressed", open ? "true" : "false");
+      toggle.setAttribute("aria-label", open ? "Hide outline" : "Show outline");
+    }
+  }
+
+  function setNoteOutlineOpen(open) {
+    state.notesView.outlineOpen = open;
+    try { localStorage.setItem(NOTE_OUTLINE_KEY, open ? "open" : "closed"); } catch (_) {}
+    renderNoteOutlineOpen();
+    forgetNoteScrollGeometry();
+    if (open) renderNoteOutlineCurrent();
+  }
+
+  function renderNoteOutlineCurrent() {
+    const view = state.notesView, nav = $("[data-note-outline]");
+    if (!nav || !view.outlineOpen || nav.offsetParent === null) return;
+    const geometry = noteScrollGeometry();
+    if (!geometry) return;
+    const write = $("[data-note-work]")?.dataset.mode === "write";
+    const tops = write ? geometry.sourceTops : geometry.previewTops;
+    const scroll = (write ? $("[data-note-markdown]") : $("[data-note-preview-pane]"))?.scrollTop || 0;
+    let current = -1;
+    tops.forEach((top, index) => { if (top != null && top <= scroll + 24) current = index; });
+    if (current === view.outlineCurrent) return;
+    view.outlineCurrent = current;
+    nav.querySelectorAll("[data-note-outline-entry]").forEach((entry) =>
+      entry.setAttribute("aria-current", Number(entry.dataset.noteOutlineEntry) === current ? "true" : "false"));
+  }
+
+  function jumpToNoteHeading(index) {
+    const view = state.notesView, geometry = noteScrollGeometry(), heading = geometry?.headings[index];
+    if (!heading) return;
+    const mode = $("[data-note-work]")?.dataset.mode || "split";
+    const area = $("[data-note-markdown]"), pane = $("[data-note-preview-pane]");
+    if (mode === "write" || mode === "split") {
+      view.scrollLead = "source";
+      if (!area.readOnly) { area.focus({ preventScroll: true }); area.setSelectionRange(heading.offset, heading.offset); }
+      if (geometry.sourceTops[index] != null) area.scrollTop = Math.min(geometry.sourceMax, geometry.sourceTops[index]);
+      syncNoteScroll("source");
+    } else if (geometry.previewTops[index] != null) {
+      view.scrollLead = "preview";
+      pane.scrollTop = Math.max(0, Math.min(geometry.previewMax, geometry.previewTops[index] - 12));
+    }
+    view.outlineCurrent = -2;
+    renderNoteOutlineCurrent();
+  }
+
+  function noteImageEncodings(bitmap, width) {
+    const scale = Math.min(1, width / bitmap.width);
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    return [canvas.toDataURL("image/png"), canvas.toDataURL("image/webp", 0.85), canvas.toDataURL("image/jpeg", 0.82)];
+  }
+
+  async function noteImageDataUrl(file, budget) {
+    const original = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+    const bitmap = await createImageBitmap(file);
+    try {
+      if (/^data:image\/(?:png|jpeg|gif|webp);base64,/.test(original) && original.length <= budget && bitmap.width <= NOTE_IMAGE_MAX_WIDTH) return original;
+      for (const width of [NOTE_IMAGE_MAX_WIDTH, 1200, 900, 600]) {
+        const fits = noteImageEncodings(bitmap, width).filter((url) => /^data:image\/(?:png|jpeg|webp);base64,/.test(url) && url.length <= budget);
+        if (fits.length) return fits.reduce((best, url) => url.length < best.length ? url : best);
+      }
+      return "";
+    } finally { bitmap.close?.(); }
+  }
+
+  async function pasteNoteImage(event) {
+    const area = event.target;
+    const files = [...(event.clipboardData?.files || [])].filter((file) => file.type.startsWith("image/"));
+    if (!files.length || area.readOnly || (event.clipboardData.getData("text/plain") || "").trim()) return;
+    event.preventDefault();
+    const main = $("[data-note-markdown]");
+    for (const file of files) {
+      const budget = Math.min(NOTE_IMAGE_MAX_CHARS, NOTE_MARKDOWN_MAX - main.value.length - 64);
+      if (budget < 4096) { noteNotice("main", NOTE_ERRORS.note_full, "bad"); return; }
+      let url = "";
+      try { url = await noteImageDataUrl(file, budget); } catch (_) { noteNotice("main", NOTE_ERRORS.image_unreadable, "bad"); return; }
+      if (!url) { noteNotice("main", NOTE_ERRORS.image_too_large, "bad"); return; }
+      const target = area.isConnected ? area : main;
+      const { selectionStart: start, selectionEnd: end, value } = target;
+      const text = `${start > 0 && value[start - 1] !== "\n" ? "\n" : ""}![image](${url})${end < value.length && value[end] !== "\n" ? "\n" : ""}`;
+      target.focus({ preventScroll: true });
+      if (!document.execCommand("insertText", false, text)) {
+        target.setRangeText(text, start, end, "end");
+        target.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+    }
   }
 
   function noteFollowPreviewElement(preview, lines, index) {
@@ -1850,8 +2072,28 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
       event.preventDefault();
       document.execCommand("insertText", false, (event.clipboardData?.getData("text/plain") || "").replace(/\s+/g, " "));
     });
-    const area = $("[data-note-markdown]");
+    const area = $("[data-note-markdown]"), pane = $("[data-note-preview-pane]");
     for (const type of ["keyup", "mouseup", "select"]) area?.addEventListener(type, sendNoteCursor);
+    area?.addEventListener("paste", (event) => void pasteNoteImage(event));
+    preview?.addEventListener("paste", (event) => { if (event.target.matches("[data-note-live-input]")) void pasteNoteImage(event); });
+    area?.addEventListener("scroll", () => { syncNoteScroll("source"); renderNoteOutlineCurrent(); }, { passive: true });
+    pane?.addEventListener("scroll", () => { syncNoteScroll("preview"); renderNoteOutlineCurrent(); }, { passive: true });
+    preview?.addEventListener("load", forgetNoteScrollGeometry, true);
+    for (const type of ["mouseenter", "wheel", "pointerdown", "touchstart", "focusin", "input"]) {
+      area?.addEventListener(type, () => { view.scrollLead = "source"; }, { passive: true });
+      pane?.addEventListener(type, () => { view.scrollLead = "preview"; }, { passive: true });
+    }
+    if (window.ResizeObserver) {
+      const resized = new ResizeObserver(forgetNoteScrollGeometry);
+      for (const node of [area, pane, preview]) if (node) resized.observe(node);
+    }
+    try { view.outlineOpen = localStorage.getItem(NOTE_OUTLINE_KEY) === "open"; } catch (_) { view.outlineOpen = false; }
+    renderNoteOutlineOpen();
+    $("[data-note-outline-toggle]")?.addEventListener("click", () => setNoteOutlineOpen(!view.outlineOpen));
+    $("[data-note-outline]")?.addEventListener("click", (event) => {
+      const entry = event.target.closest("[data-note-outline-entry]");
+      if (entry) jumpToNoteHeading(Number(entry.dataset.noteOutlineEntry));
+    });
     $("[data-note-chat-toggle]")?.addEventListener("click", () => toggleNotePanel("chat"));
     document.querySelectorAll("[data-note-panel-tab]").forEach((button) =>
       button.addEventListener("click", () => setNotePanelTab(button.dataset.notePanelTab)));
@@ -3689,6 +3931,7 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
       live: null, follow: "", followTagTimer: 0, cursorTimer: 0, sentCursor: "", panelTab: "comments",
       chat: null, chatTimer: 0, chatGeneration: 0, chatSending: false, chatScroll: false,
       assist: null, assistReady: null, assistStatus: false,
+      outlineOpen: false, outlineKey: "", outlineCurrent: -1, scrollGeometry: null, scrollLead: "source", scrollFrame: 0,
     });
     try { view.mode = NOTE_MODES.includes(localStorage.getItem(NOTE_MODE_KEY)) ? localStorage.getItem(NOTE_MODE_KEY) : "split"; } catch (_) { view.mode = "split"; }
 

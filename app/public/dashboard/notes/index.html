@@ -4329,6 +4329,12 @@
             .notes-banner { margin: .75rem 1rem 0; }
             [data-view="notes"] .fm-flash { align-items: center; }
             .notes-body { position: relative; display: flex; flex: 1; min-height: 0; }
+            .notes-outline { display: none; width: 13rem; flex: none; min-height: 0; overflow-y: auto; border-right: 1px solid var(--nt-soft); padding: 1rem .5rem; }
+            .notes-body[data-outline="open"] .notes-outline { display: block; }
+            .notes-outline-entry { display: block; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: .375rem; padding: .25rem .5rem .25rem calc(.5rem + var(--depth, 0) * .8rem); text-align: left; font-size: .78rem; color: var(--nt-muted); }
+            .notes-outline-entry:hover { background: var(--nt-hover); color: rgb(var(--dashboard-foreground-rgb)); }
+            .notes-outline-entry[aria-current="true"] { background: var(--nt-selected); color: var(--nt-accent); }
+            .notes-outline-empty { padding: .25rem .5rem; font-size: .75rem; color: var(--nt-faint); }
             .notes-work { display: grid; min-width: 0; flex: 1; min-height: 0; grid-template-columns: 1fr 1fr; }
             .notes-work[data-mode="write"], .notes-work[data-mode="preview"], .notes-work[data-mode="live"] { grid-template-columns: 1fr; }
             .notes-work[data-mode="write"] [data-note-preview-pane], .notes-work[data-mode="preview"] [data-note-write-pane], .notes-work[data-mode="live"] [data-note-write-pane] { display: none; }
@@ -4647,6 +4653,7 @@
               .notes-app[data-mobile="editor"] .notes-side, .notes-app[data-mobile="list"] .notes-main { display: none; }
               .notes-side { border-right: 0; }
               .notes-crumb [data-note-back] { display: inline-grid; }
+              .notes-bar .notes-outline-toggle, .notes-body[data-outline="open"] .notes-outline { display: none; }
               .notes-work[data-mode="split"] { grid-template-columns: 1fr; }
               .notes-work[data-mode="split"] [data-note-preview-pane] { display: none; }
               .notes-work[data-mode="split"] [data-note-write-pane] { border-right: 0; }
@@ -4715,6 +4722,7 @@
                     <button type="button" data-note-mode="preview" aria-pressed="false">Preview</button>
                     <button type="button" data-note-mode="live" aria-pressed="false" title="Edit the formatted note">Live</button>
                   </div>
+                  <button data-note-outline-toggle type="button" class="notes-icon-btn notes-outline-toggle" title="Outline" aria-label="Show outline" aria-pressed="false" aria-controls="note-outline"><i data-lucide="list-tree"></i></button>
                   <button data-note-comments-toggle type="button" class="notes-btn" title="Comments" aria-label="Show comments" aria-pressed="false" aria-controls="note-comments"><i data-lucide="message-square"></i><span data-note-comments-count class="notes-count">Comments</span></button>
                   <button data-note-chat-toggle type="button" class="notes-btn" title="Chat" aria-label="Show chat" aria-pressed="false" aria-controls="note-comments"><i data-lucide="messages-square"></i>Chat<span data-note-chat-badge class="notes-unread" hidden></span></button>
                   <button data-note-share-open type="button" class="notes-btn" aria-haspopup="dialog" aria-expanded="false"><i data-lucide="user-plus"></i>Share</button>
@@ -4735,6 +4743,7 @@
                 </div>
 
                 <div class="notes-body">
+                <nav data-note-outline id="note-outline" class="notes-outline" aria-label="Outline"></nav>
                 <div data-note-work class="notes-work" data-mode="split">
                   <div data-note-write-pane class="notes-pane">
                     <div class="notes-doc">
