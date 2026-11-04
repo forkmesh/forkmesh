@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-04", "area": "Desktop", "text": "Text you copy anywhere in the desktop now pastes with its line breaks, paragraph spacing, list markers and table columns."},
   {"date": "2026-11-04", "area": "Market", "text": "In the CRM's Mastodon column, contacts you already follow now show Following instead of a Follow button."},
   {"date": "2026-11-03", "area": "Market", "text": "Silent Speech now saves a read sentence only when it heard every word, so words are no longer trained on the wrong motion; a Diagnose button finds what is holding recognition back and fixes it in one tap, holding the button can take several words, the page runs smoother, and sitting still can show your heartbeat."},
   {"date": "2026-11-03", "area": "Market", "text": "Silent Speech learns every word in the sentences you read, not just five, guesses the likely next word to settle close calls, and shows live charts of your head's turning, angle, movement and rhythm on one compact page."},
