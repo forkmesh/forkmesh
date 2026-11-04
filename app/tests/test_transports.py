@@ -765,9 +765,9 @@ def test_probe_distinguishes_slow_intermittent_and_unreachable_routes(origin):
     try:
         url = "https://%s:%d/" % (PRIVATE_NAME, echo.port)
         chosen = profile("private", {"id": "tor", "kind": "proxy", "network": "tor",
-                                     "socks": origin["proxy"].endpoint}, latency_ms=20)
+                                     "socks": origin["proxy"].endpoint}, latency_ms=250)
         assert tool.probe(chosen, url, attempts=2)["state"] == "protected"
-        origin["proxy"].delay = 0.08
+        origin["proxy"].delay = 0.6
         slow = tool.probe(chosen, url, attempts=2)
         assert (slow["state"], slow["reason"]) == ("degraded", "slow")
         origin["proxy"].delay = 0.0

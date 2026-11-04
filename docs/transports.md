@@ -105,4 +105,6 @@ failures do not trigger failover.
 | `6` | Git failed on a reachable route. |
 
 Tests: `app/tests/test_transports.py` (quality gate `transport-conformance`).
+The probe test's latency budget (250 ms) and slow-proxy delay (600 ms) sit far
+apart so a busy CI runner cannot make a fast route read as slow.
 Only Git traffic honours the profile so far.
