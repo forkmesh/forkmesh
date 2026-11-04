@@ -251,6 +251,40 @@ def test_organization_shares_follow_membership():
     assert len(call(runtime, "GET", "/api/vault/items", "bob")["data"]["shared"]) == 1
 
 
+def test_organization_auditors_read_but_never_write():
+    runtime = ready("alice", "bob")
+    runtime.join("acme", "bob", "auditor")
+    add_item(runtime)
+    target = {"kind": "organization", "name": "acme"}
+    shared = call(runtime, "POST", f"/api/vault/items/{ITEM}/shares", "alice", {
+        "target": target, "permission": "write",
+        "grants": [{"recipient": "bob", "via": target, "grant": grant("W")}]})
+    assert shared["status"] == 200
+    view = call(runtime, "GET", "/api/vault/items", "bob")["data"]["shared"]
+    assert [entry["permission"] for entry in view] == ["read"]
+    denied = call(runtime, "PUT", f"/api/vault/items/{ITEM}", "bob", {"revision": 1, "body": b64(344, "X")})
+    assert (denied["status"], denied["data"]["error"]) == (403, "read_only")
+
+
+def test_owner_who_left_an_organization_cannot_reach_its_members():
+    runtime = ready("alice", "bob")
+    add_item(runtime)
+    target = {"kind": "organization", "name": "acme"}
+    assert call(runtime, "POST", f"/api/vault/items/{ITEM}/shares", "alice", {
+        "target": target, "permission": "read",
+        "grants": [{"recipient": "bob", "via": target, "grant": grant()}]})["status"] == 200
+    runtime.leave("acme", "alice")
+    call(runtime, "POST", "/api/vault/install", "carol", install_body("carol"))
+    assert call(runtime, "GET", "/api/vault/pending")["data"]["pending"] == []
+    recipients = call(runtime, "GET", f"/api/vault/items/{ITEM}/recipients")["data"]
+    assert all(entry["members"] == [] for entry in recipients["recipients"]
+               if entry["kind"] == "organization")
+    planted = call(runtime, "POST", f"/api/vault/items/{ITEM}/grants", "alice", {
+        "grants": [{"recipient": "carol", "via": target, "grant": grant("C")}]})
+    assert planted["data"]["error"] == "invalid_grants"
+    assert call(runtime, "GET", "/api/vault/items", "carol")["data"]["shared"] == []
+
+
 def test_organization_guests_are_never_recipients_or_readers():
     runtime = ready("alice", "bob", "erin")
     runtime.join("acme", "erin", "guest")

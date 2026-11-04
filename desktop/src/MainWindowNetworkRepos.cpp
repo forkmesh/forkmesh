@@ -2627,7 +2627,10 @@ QList<QList<QJsonObject>> MainWindow::groupNetworkRepoRecords(
         QString cloneUrl = repo.value("cloneUrl").toString().trimmed();
         if (cloneUrl.isEmpty())
             cloneUrl = repo.value("clone_url").toString().trimmed();
-        if (cloneUrl.isEmpty())
+        static const QRegularExpression remoteCloneUrl(
+            QStringLiteral("^(?:https?://|ssh://|git://|[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:)"),
+            QRegularExpression::CaseInsensitiveOption);
+        if (cloneUrl.isEmpty() || !remoteCloneUrl.match(cloneUrl).hasMatch())
             cloneUrl = hostedCloneUrl(owner, name);
         repo.insert("cloneUrl", cloneUrl);
         records.append(repo);

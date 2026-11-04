@@ -72,6 +72,13 @@ def _setup():
         CREATE TABLE host_cron_runs (slot INTEGER, node TEXT);
         CREATE TABLE dns_health_votes (voter TEXT, target TEXT, ok INTEGER);
         CREATE TABLE dns_reconciler_state (k TEXT, v TEXT);
+        CREATE TABLE autoscale_nodes (name TEXT PRIMARY KEY, mesh_url TEXT);
+        CREATE TABLE autoscale_commands (id TEXT PRIMARY KEY, mesh_url TEXT);
+        CREATE TABLE autoscale_settings (k TEXT PRIMARY KEY, mesh_url TEXT);
+        CREATE TABLE autoscale_state (k TEXT PRIMARY KEY, mesh_url TEXT);
+        CREATE TABLE autoscale_lease (k TEXT PRIMARY KEY, mesh_url TEXT);
+        CREATE TABLE autoscale_audit (id TEXT PRIMARY KEY, mesh_url TEXT);
+        CREATE TABLE autoscale_nonces (nonce TEXT PRIMARY KEY, mesh_url TEXT);
         CREATE TABLE repositories (
             key_bi TEXT PRIMARY KEY, owner_bi TEXT NOT NULL,
             data TEXT NOT NULL);
@@ -452,7 +459,10 @@ def test_host_cluster_tables_refuse_every_write_and_hide_rows():
     never edited (or read) through the generic Database tab."""
     module, db, env = _setup()
     tables = ("cluster_members", "host_secrets", "do_storage", "do_alarms",
-              "host_cron_runs", "dns_health_votes", "dns_reconciler_state")
+              "host_cron_runs", "dns_health_votes", "dns_reconciler_state",
+              "autoscale_nodes", "autoscale_commands", "autoscale_settings",
+              "autoscale_state", "autoscale_lease", "autoscale_audit",
+              "autoscale_nonces")
     index = 0
     for table in tables:
         for payload in (

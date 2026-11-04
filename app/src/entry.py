@@ -17474,6 +17474,8 @@ def _repository_logo_image_response(logo, public=True):
                 else "private, no-store, max-age=0, must-revalidate"
             ),
             "x-content-type-options": "nosniff",
+            "content-security-policy":
+                "default-src 'none'; style-src 'unsafe-inline'; sandbox",
         },
     }))
 
@@ -42794,13 +42796,14 @@ async def _accept_issue_submission(env, request, owner, repo, repo_bi, data,
         # "wantsAgent" makes the owner's node start a coding agent on this
         # issue automatically once merged — unlike the other meta fields
         # above, that's an immediate, unreviewed side effect, so it's only
-        # honored when the request comes from a privileged account: the repo
-        # owner, or an admin acting on the owner's behalf (adhoc #225).
+        # honored when the request comes from the repo owner's own account
+        # (adhoc #225).
         wants_agent = False
         agent_model = ""
         agent_provider = ""
         if meta_in.get("wantsAgent"):
-            ok, err = await _authorize_owner_account(env, owner, data, request)
+            ok, err = await _authorize_owner_account(env, owner, data, request,
+                                                     allow_admin=False)
             if not ok:
                 return err
             wants_agent = True
