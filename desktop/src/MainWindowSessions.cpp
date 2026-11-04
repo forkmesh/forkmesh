@@ -5,7 +5,10 @@
 #include "AgentCloudSessions.h"
 #include "AgentHub.h"
 #include "AgentLogText.h"
+#include "AgentResumeIdentity.h"
+#include "AgentWorktree.h"
 #include "AppPaths.h"
+#include "ClaudeAccountRouting.h"
 #include "ClaudeDesktopSessions.h"
 #include "ClaudeDesktopSidebar.h"
 #include "ClaudePeerMessaging.h"
@@ -18,6 +21,7 @@
 
 #include <QAbstractItemView>
 #include <QAction>
+#include <QActionGroup>
 #include <QComboBox>
 #include <QCoreApplication>
 #include <QDateTime>
@@ -40,6 +44,7 @@
 #include <QPainterPath>
 #include <QPlainTextEdit>
 #include <QPointer>
+#include <QProcess>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QRegularExpression>
@@ -54,12 +59,14 @@
 #include <QSysInfo>
 #include <QTextCursor>
 #include <QTimer>
+#include <QUuid>
 #include <QToolButton>
 #include <QVBoxLayout>
 
 #include <algorithm>
 #include <climits>
 #include <functional>
+#include <memory>
 
 using namespace forkmesh::ui;
 
@@ -103,17 +110,6 @@ struct SessionsPageUi : public QObject {
     QPointer<QLabel> emptyTitle;
     QPointer<QLabel> emptyBody;
     QPointer<ClaudeTranscriptView> transcript;
-    QPointer<QPlainTextEdit> composer;
-    QPointer<QWidget> targetRow;
-    QPointer<QComboBox> toCombo;
-    QPointer<QComboBox> alsoCombo;
-    QPointer<QToolButton> forward;
-    QPointer<QWidget> newRow;
-    QPointer<QComboBox> repoCombo;
-    QPointer<QComboBox> providerCombo;
-    QPointer<QPushButton> send;
-    QPointer<QPushButton> plus;
-    QPointer<QLabel> composerNote;
 
     QPointer<QPushButton> filterButton;
     QPointer<QAction> searchIcon;
@@ -122,19 +118,25 @@ struct SessionsPageUi : public QObject {
     QPointer<QFrame> branchBadge;
     QPointer<QLabel> branchText;
     QPointer<QPushButton> panelToggle;
+    QPointer<QWidget> center;
     QPointer<QWidget> column;
     QVBoxLayout *columnLayout = nullptr;
     QPointer<QWidget> emptyColumn;
-    QVBoxLayout *composerSlot = nullptr;
-    QPointer<QWidget> composerHost;
-    QHBoxLayout *composerHostLayout = nullptr;
     QPointer<QWidget> starters;
-    QPointer<QLabel> composerModel;
     QPointer<forkmesh::ui::SessionSidePanels> details;
     bool next = false;
     bool panelOpen = true;
     SessionsGrouping grouping = SessionsGrouping::Claude;
     QSet<QString> collapsedGroups;
+    QHash<QString, bool> pins;
+    QHash<QString, QString> sectionOf;
+    QSet<QString> archived;
+    QList<QPair<QString, QString>> ownSections;
+    bool showArchived = false;
+    QSet<int> forking;
+    QHash<QString, QList<int>> groupMembers;
+    QHash<QString, QString> groupLabels;
+    QStringList groupOrder;
 
     forkmesh::claudedesktop::DesktopIndex desktop;
     QHash<int, AgentSession> desktopRows;
@@ -193,6 +195,16 @@ constexpr qint64 kSessionsDesktopReadMs = 1500;
 constexpr int kSessionsDesktopTickMs = 2000;
 constexpr qint64 kSessionsDesktopLiveMs = 90 * 1000;
 const QString kSessionsGroupingSetting = QStringLiteral("sessions/groupBy");
+const QString kSessionsPinsSetting = QStringLiteral("sessions/pins");
+const QString kSessionsSectionOfSetting = QStringLiteral("sessions/sectionOf");
+const QString kSessionsArchivedSetting = QStringLiteral("sessions/archived");
+const QString kSessionsSectionsSetting = QStringLiteral("sessions/sections");
+const QString kSessionsShowArchivedSetting = QStringLiteral("sessions/showArchived");
+const QString kSessionsDesktopKeyPrefix = QStringLiteral("claude-app:");
+const QString kSessionsOwnSectionPrefix = QStringLiteral("fm-");
+const QString kSessionsPinnedGroup = QStringLiteral("@pinned");
+const QString kSessionsSectionGroupPrefix = QStringLiteral("@section:");
+const QString kSessionsArchivedGroup = QStringLiteral("@archived");
 
 enum SessionsRole {
     kSessionIdRole = Qt::UserRole,
@@ -207,6 +219,35 @@ enum SessionsRole {
     kSessionCollapsedRole,
     kSessionAddableRole,
     kSessionTrailingChevronRole,
+    kSessionMenuGroupRole,
+};
+
+class SessionsMenuKeys : public QObject
+{
+public:
+    using QObject::QObject;
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        auto *menu = qobject_cast<QMenu *>(watched);
+        if (!menu || event->type() != QEvent::KeyPress)
+            return QObject::eventFilter(watched, event);
+        auto *press = static_cast<QKeyEvent *>(event);
+        if (press->modifiers() & ~(Qt::ShiftModifier | Qt::KeypadModifier))
+            return QObject::eventFilter(watched, event);
+        const QKeySequence pressed(press->key());
+        for (QAction *action : menu->actions()) {
+            if (action->menu() || !action->isEnabled() || !action->isVisible() ||
+                action->shortcut() != pressed)
+                continue;
+            menu->setActiveAction(action);
+            QKeyEvent enter(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+            QCoreApplication::sendEvent(menu, &enter);
+            return true;
+        }
+        return QObject::eventFilter(watched, event);
+    }
 };
 
 bool sessionsHeaderId(int id)
@@ -740,25 +781,6 @@ void retintSessionsIcons(SessionsPageUi *ui)
         ui->panelToggle->setIcon(sessionsPanelIcon(Theme::color(Theme::Role::FgMuted)));
 }
 
-void placeSessionsComposer(SessionsPageUi *ui)
-{
-    if (!ui || !ui->next || !ui->composerHost || !ui->composerSlot ||
-        !ui->columnLayout || !ui->composerHostLayout)
-        return;
-    const bool centred = ui->newMode;
-    QWidget *target = centred ? ui->emptyColumn.data() : ui->column.data();
-    if (!target || ui->composerHost->parentWidget() == target)
-        return;
-    if (centred) {
-        ui->composerHostLayout->setContentsMargins(0, 0, 0, 0);
-        ui->composerSlot->addWidget(ui->composerHost);
-    } else {
-        ui->composerHostLayout->setContentsMargins(24, 0, 24, 16);
-        ui->columnLayout->addWidget(ui->composerHost);
-    }
-    ui->composerHost->show();
-}
-
 }
 
 QString MainWindow::sessionsTitle(const AgentSession &session) const
@@ -809,6 +831,24 @@ QWidget *MainWindow::buildSessionsSection()
     if (savedGrouping >= int(SessionsGrouping::Claude) &&
         savedGrouping <= int(SessionsGrouping::Status))
         ui->grouping = SessionsGrouping(savedGrouping);
+    {
+        QSettings settings;
+        const QVariantMap pins = settings.value(kSessionsPinsSetting).toMap();
+        for (auto it = pins.cbegin(); it != pins.cend(); ++it)
+            ui->pins.insert(it.key(), it.value().toBool());
+        const QVariantMap sectionOf = settings.value(kSessionsSectionOfSetting).toMap();
+        for (auto it = sectionOf.cbegin(); it != sectionOf.cend(); ++it)
+            ui->sectionOf.insert(it.key(), it.value().toString());
+        const QStringList archived = settings.value(kSessionsArchivedSetting).toStringList();
+        ui->archived = QSet<QString>(archived.cbegin(), archived.cend());
+        for (const QVariant &entry : settings.value(kSessionsSectionsSetting).toList()) {
+            const QVariantMap section = entry.toMap();
+            const QString id = section.value(QStringLiteral("id")).toString();
+            if (id.startsWith(kSessionsOwnSectionPrefix))
+                ui->ownSections.append({id, section.value(QStringLiteral("name")).toString()});
+        }
+        ui->showArchived = settings.value(kSessionsShowArchivedSetting, false).toBool();
+    }
 
     auto *page = new QWidget;
     page->setObjectName(QStringLiteral("sessionsPage"));
@@ -876,7 +916,7 @@ QWidget *MainWindow::buildSessionsSection()
         ui->list->setItemDelegate(new SessionsNextRowDelegate(ui->list));
     else
         ui->list->setItemDelegate(new SessionsRowDelegate(ui->list));
-    ui->list->setSelectionMode(QAbstractItemView::SingleSelection);
+    ui->list->setSelectionMode(QAbstractItemView::ExtendedSelection);
     ui->list->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
     ui->list->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     ui->list->setContextMenuPolicy(Qt::CustomContextMenu);
@@ -886,6 +926,7 @@ QWidget *MainWindow::buildSessionsSection()
 
     auto *center = new QWidget;
     center->setObjectName(QStringLiteral("sessionsCenter"));
+    ui->center = center;
     center->setAttribute(Qt::WA_StyledBackground, true);
     auto *centerLayout = new QVBoxLayout(center);
     centerLayout->setContentsMargins(0, 0, 0, 0);
@@ -1062,9 +1103,7 @@ QWidget *MainWindow::buildSessionsSection()
         emptyColumnLayout->setSpacing(6);
         emptyColumnLayout->addWidget(ui->emptyTitle);
         emptyColumnLayout->addWidget(ui->emptyBody);
-        ui->composerSlot = new QVBoxLayout;
-        ui->composerSlot->setContentsMargins(0, 22, 0, 0);
-        emptyColumnLayout->addLayout(ui->composerSlot);
+        emptyColumnLayout->addSpacing(22);
         ui->starters = new QWidget(ui->emptyColumn);
         ui->starters->setObjectName(QStringLiteral("sessionsStarters"));
         auto *startersLayout = new QHBoxLayout(ui->starters);
@@ -1106,12 +1145,11 @@ QWidget *MainWindow::buildSessionsSection()
             startersLayout->addWidget(card, 1);
             const QString prompt = starter.at(2);
             connect(card, &QPushButton::clicked, this, [this, prompt] {
-                if (!m_sessionsUi || !m_sessionsUi->composer ||
-                    !m_sessionsUi->composer->isEnabled())
+                if (!m_issueQuickAdd)
                     return;
-                m_sessionsUi->composer->setPlainText(prompt);
-                m_sessionsUi->composer->moveCursor(QTextCursor::End);
-                m_sessionsUi->composer->setFocus(Qt::OtherFocusReason);
+                m_issueQuickAdd->setPlainText(prompt);
+                m_issueQuickAdd->moveCursor(QTextCursor::End);
+                m_issueQuickAdd->setFocus(Qt::OtherFocusReason);
             });
         }
         ui->starters->hide();
@@ -1145,148 +1183,6 @@ QWidget *MainWindow::buildSessionsSection()
         centerLayout->addWidget(ui->centerStack, 1);
     }
 
-    auto *composerBox = new QFrame(center);
-    composerBox->setObjectName(QStringLiteral("sessionsComposer"));
-    auto *composerLayout = new QVBoxLayout(composerBox);
-    if (next)
-        composerLayout->setContentsMargins(10, 12, 8, 8);
-    else
-        composerLayout->setContentsMargins(12, 10, 12, 10);
-    composerLayout->setSpacing(6);
-    ui->composer = new QPlainTextEdit(composerBox);
-    ui->composer->setObjectName(QStringLiteral("sessionsComposerInput"));
-    ui->composer->setTabChangesFocus(true);
-    ui->composer->setFixedHeight(next ? 60 : 84);
-    composerLayout->addWidget(ui->composer);
-
-    auto *controls = new QHBoxLayout;
-    controls->setSpacing(8);
-    ui->plus = new QPushButton(composerBox);
-    ui->plus->setObjectName(next ? QStringLiteral("sessionsPlus")
-                                 : QStringLiteral("ghostButton"));
-    ui->plus->setCursor(Qt::PointingHandCursor);
-    ui->plus->setFixedSize(28, 28);
-    ui->plus->setToolTip(QStringLiteral(
-        "Add files or photos (Ctrl+U), a folder, slash commands, connectors or plugins"));
-    setOcticon(ui->plus, QStringLiteral("plus"), 16);
-    connect(ui->plus, &QPushButton::clicked, this,
-            [this, plus = ui->plus, input = ui->composer] {
-                if (plus && input)
-                    openComposerPlusMenu(plus, input);
-            });
-    installComposerPlusShortcut(ui->composer);
-    controls->addWidget(ui->plus);
-    ui->targetRow = new QWidget(composerBox);
-    auto *targetLayout = new QHBoxLayout(ui->targetRow);
-    targetLayout->setContentsMargins(0, 0, 0, 0);
-    targetLayout->setSpacing(6);
-    auto *toLabel = new QLabel(QStringLiteral("To"), ui->targetRow);
-    toLabel->setObjectName(QStringLiteral("sessionsComposerLabel"));
-    auto *toCombo = new SessionsPickerCombo;
-    toCombo->setParent(ui->targetRow);
-    toCombo->setObjectName(QStringLiteral("sessionsToCombo"));
-    toCombo->setMinimumWidth(180);
-    toCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
-    toCombo->setMinimumContentsLength(18);
-    ui->toCombo = toCombo;
-    auto *alsoLabel = new QLabel(QStringLiteral("Also send to"), ui->targetRow);
-    alsoLabel->setObjectName(QStringLiteral("sessionsComposerLabel"));
-    auto *alsoCombo = new SessionsPickerCombo;
-    alsoCombo->setParent(ui->targetRow);
-    alsoCombo->setObjectName(QStringLiteral("sessionsAlsoCombo"));
-    alsoCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
-    alsoCombo->setMinimumContentsLength(14);
-    ui->alsoCombo = alsoCombo;
-    ui->forward = new QToolButton(ui->targetRow);
-    ui->forward->setObjectName(QStringLiteral("sessionsForward"));
-    ui->forward->setText(QString::fromUtf8("Forward last reply to\xE2\x80\xA6"));
-    ui->forward->setToolTip(
-        QStringLiteral("Send this session's latest reply to another session "
-                       "as a message from this session"));
-    ui->forward->setPopupMode(QToolButton::InstantPopup);
-    ui->forward->setCursor(Qt::PointingHandCursor);
-    auto *forwardMenu = new QMenu(ui->forward);
-    ui->forward->setMenu(forwardMenu);
-    targetLayout->addWidget(toLabel);
-    targetLayout->addWidget(toCombo);
-    targetLayout->addWidget(alsoLabel);
-    targetLayout->addWidget(alsoCombo);
-    targetLayout->addWidget(ui->forward);
-    controls->addWidget(ui->targetRow);
-
-    ui->newRow = new QWidget(composerBox);
-    auto *newLayout = new QHBoxLayout(ui->newRow);
-    newLayout->setContentsMargins(0, 0, 0, 0);
-    newLayout->setSpacing(6);
-    auto *repoLabel = new QLabel(QStringLiteral("Repository"), ui->newRow);
-    repoLabel->setObjectName(QStringLiteral("sessionsComposerLabel"));
-    ui->repoCombo = new QComboBox(ui->newRow);
-    ui->repoCombo->setObjectName(QStringLiteral("sessionsRepoCombo"));
-    ui->repoCombo->setMinimumWidth(180);
-    auto *providerLabel = new QLabel(QStringLiteral("Agent"), ui->newRow);
-    providerLabel->setObjectName(QStringLiteral("sessionsComposerLabel"));
-    ui->providerCombo = new QComboBox(ui->newRow);
-    ui->providerCombo->setObjectName(QStringLiteral("sessionsProviderCombo"));
-    for (const auto &[id, label] :
-         QList<QPair<QString, QString>>{
-             {QStringLiteral("claude-code"), QStringLiteral("Claude Code")},
-             {QStringLiteral("codex"), QStringLiteral("Codex")},
-             {QStringLiteral("claude-api"), QStringLiteral("Claude API")},
-             {QStringLiteral("openai"), QStringLiteral("OpenAI")}})
-        ui->providerCombo->addItem(label, id);
-    if (ui->providerCombo->findData(defaultAgentProvider()) < 0)
-        ui->providerCombo->addItem(defaultAgentProvider(), defaultAgentProvider());
-    selectDefaultAgentProvider(ui->providerCombo);
-    newLayout->addWidget(repoLabel);
-    newLayout->addWidget(ui->repoCombo);
-    newLayout->addWidget(providerLabel);
-    newLayout->addWidget(ui->providerCombo);
-    ui->newRow->hide();
-    controls->addWidget(ui->newRow);
-
-    ui->composerNote = new QLabel(composerBox);
-    ui->composerNote->setObjectName(QStringLiteral("sessionsComposerNote"));
-    ui->composerNote->setWordWrap(true);
-    ui->composerNote->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    controls->addWidget(ui->composerNote, 1);
-    if (next) {
-        ui->composerModel = new QLabel(composerBox);
-        ui->composerModel->setObjectName(QStringLiteral("sessionsComposerModel"));
-        ui->composerModel->setTextFormat(Qt::PlainText);
-        ui->composerModel->hide();
-        controls->addWidget(ui->composerModel);
-        ui->send = new QPushButton(composerBox);
-        ui->send->setObjectName(QStringLiteral("sessionsSend"));
-        ui->send->setCursor(Qt::PointingHandCursor);
-        ui->send->setToolTip(QStringLiteral("Send (Enter)"));
-        ui->send->setFixedSize(28, 28);
-        ui->send->setProperty("sessionsRound", true);
-        ui->send->setProperty("nextIconRole", int(Theme::Role::OnAccent));
-        setOcticon(ui->send, QStringLiteral("arrow-left"), 14, 90.0);
-    } else {
-        ui->send = new QPushButton(QStringLiteral("Send"), composerBox);
-        ui->send->setObjectName(QStringLiteral("sessionsSend"));
-        ui->send->setCursor(Qt::PointingHandCursor);
-        setOcticon(ui->send, QStringLiteral("paper-airplane"), 14);
-    }
-    controls->addWidget(ui->send);
-    composerLayout->addLayout(controls);
-    if (next) {
-        ui->composerHost = new QWidget(ui->column);
-        ui->composerHost->setObjectName(QStringLiteral("sessionsComposerHost"));
-        ui->composerHostLayout = new QHBoxLayout(ui->composerHost);
-        ui->composerHostLayout->setContentsMargins(24, 0, 24, 16);
-        ui->composerHostLayout->setSpacing(0);
-        ui->composerHostLayout->addStretch(1);
-        ui->composerHostLayout->addWidget(composerBox, 100);
-        ui->composerHostLayout->addStretch(1);
-        composerBox->setMaximumWidth(760);
-        composerBox->setProperty("sessionsHosted", true);
-        ui->columnLayout->addWidget(ui->composerHost);
-    } else {
-        centerLayout->addWidget(composerBox);
-    }
-
     split->addWidget(sidebar);
     split->addWidget(center);
     split->setStretchFactor(0, 0);
@@ -1318,9 +1214,15 @@ QWidget *MainWindow::buildSessionsSection()
                     return;
                 QListWidgetItem *item = m_sessionsUi->list->itemAt(at);
                 const int id = item ? item->data(kSessionIdRole).toInt() : 0;
-                if (id != 0)
-                    showSessionsContextMenu(
-                        id, m_sessionsUi->list->viewport()->mapToGlobal(at));
+                const QPoint globalPos = m_sessionsUi->list->viewport()->mapToGlobal(at);
+                if (id != 0) {
+                    showSessionsContextMenu(id, globalPos);
+                    return;
+                }
+                const QString group =
+                    item ? item->data(kSessionMenuGroupRole).toString() : QString();
+                if (!group.isEmpty())
+                    showSessionsHeaderContextMenu(group, globalPos);
             });
     connect(ui->stop, &QPushButton::clicked, this, [this] {
         if (m_sessionsUi && m_sessionsUi->openId != 0)
@@ -1336,60 +1238,6 @@ QWidget *MainWindow::buildSessionsSection()
         if (m_sessionsUi && m_sessionsUi->openId != 0)
             switchToAgentsTab(m_sessionsUi->openId);
     });
-    connect(ui->send, &QPushButton::clicked, this,
-            [this] { sendSessionsComposer(); });
-    toCombo->beforePopup = [this] {
-        if (m_sessionsUi && m_sessionsUi->toCombo)
-            fillSessionsPicker(m_sessionsUi->toCombo,
-                               m_sessionsUi->toCombo->currentData().toInt(), 0,
-                               QString());
-    };
-    alsoCombo->beforePopup = [this] {
-        if (m_sessionsUi && m_sessionsUi->alsoCombo)
-            fillSessionsPicker(m_sessionsUi->alsoCombo,
-                               m_sessionsUi->alsoCombo->currentData().toInt(), 0,
-                               QStringLiteral("No one else"));
-    };
-    connect(forwardMenu, &QMenu::aboutToShow, this, [this, forwardMenu] {
-        forwardMenu->clear();
-        const int from = m_sessionsUi ? m_sessionsUi->openId : 0;
-        if (from == 0 || sessionsLastReply(from).isEmpty()) {
-            forwardMenu->addAction(QStringLiteral("No reply to forward yet"))
-                ->setEnabled(false);
-            return;
-        }
-        SessionsPickerCombo picker;
-        fillSessionsPicker(&picker, 0, from, QString());
-        for (int row = 0; row < picker.count(); ++row) {
-            const int to = picker.itemData(row).toInt();
-            forwardMenu->addAction(picker.itemText(row), this, [this, from, to] {
-                QString why;
-                if (forwardLastSessionReply(from, to, &why))
-                    flashMessage(QStringLiteral("Forwarded the last reply of "
-                                                "session #%1 to session #%2.")
-                                     .arg(from)
-                                     .arg(to));
-                else
-                    flashMessage(why, true);
-            });
-        }
-        if (forwardMenu->isEmpty())
-            forwardMenu->addAction(QStringLiteral("No other session"))
-                ->setEnabled(false);
-    });
-
-    ui->composer->installEventFilter(new SessionsEventHook(
-        [this](QObject *, QEvent *event) {
-            if (event->type() != QEvent::KeyPress)
-                return false;
-            auto *key = static_cast<QKeyEvent *>(event);
-            if ((key->key() != Qt::Key_Return && key->key() != Qt::Key_Enter) ||
-                (key->modifiers() & Qt::ShiftModifier))
-                return false;
-            sendSessionsComposer();
-            return true;
-        },
-        ui->composer));
     page->installEventFilter(new SessionsEventHook(
         [this](QObject *, QEvent *event) {
             if (event->type() == QEvent::Show && m_sessionsUi)
@@ -1400,6 +1248,17 @@ QWidget *MainWindow::buildSessionsSection()
             return false;
         },
         page));
+    QWidget *composerPane = next ? ui->column.data() : center;
+    composerPane->installEventFilter(new SessionsEventHook(
+        [this](QObject *, QEvent *event) {
+            if (event->type() == QEvent::Show || event->type() == QEvent::Hide)
+                QTimer::singleShot(0, this, [this] { updateQuickAddEnterTarget(); });
+            if (event->type() == QEvent::Show || event->type() == QEvent::Hide ||
+                event->type() == QEvent::Resize)
+                schedulePositionGlobalFooterOverlays();
+            return false;
+        },
+        composerPane));
 
     connect(ui->transcript, &ClaudeTranscriptView::referenceActivated, this,
             &MainWindow::openAgentTranscriptReference);
@@ -1452,6 +1311,17 @@ QWidget *MainWindow::buildSessionsSection()
             between->setChecked(ui->betweenFilter && ui->betweenFilter->isChecked());
             between->setToolTip(ui->betweenFilter ? ui->betweenFilter->toolTip()
                                                   : QString());
+            QAction *archived = filterMenu->addAction(
+                QStringLiteral("Archived sessions"), this, [this](bool on) {
+                    if (!m_sessionsUi)
+                        return;
+                    m_sessionsUi->showArchived = on;
+                    QSettings().setValue(kSessionsShowArchivedSetting, on);
+                    refreshSessionsList();
+                });
+            archived->setObjectName(QStringLiteral("sessionsShowArchivedAction"));
+            archived->setCheckable(true);
+            archived->setChecked(ui->showArchived);
             filterMenu->addSection(QStringLiteral("Group by"));
             const auto groupAction = [this, filterMenu](const QString &text,
                                                         SessionsGrouping grouping) {
@@ -1513,19 +1383,7 @@ QWidget *MainWindow::buildSessionsSection()
                         return true;
                     if (item->data(kSessionAddableRole).toBool() &&
                         at.x() >= rect.right() - 26) {
-                        startNewSessionInSessionsPage();
-                        if (!m_sessionsUi || !m_sessionsUi->repoCombo)
-                            return true;
-                        for (int index = 0; index < m_repositories.size(); ++index) {
-                            const RepositoryRecord &repo = m_repositories.at(index);
-                            if (repo.owner + QLatin1Char('/') + repo.name != key)
-                                continue;
-                            const int row = m_sessionsUi->repoCombo->findData(index);
-                            if (row >= 0) {
-                                m_sessionsUi->repoCombo->setCurrentIndex(row);
-                                break;
-                            }
-                        }
+                        startNewSessionInSessionsPageFor(key);
                         return true;
                     }
                     if (!m_sessionsUi->collapsedGroups.remove(key))
@@ -1651,8 +1509,11 @@ void MainWindow::refreshSessionsPage()
     refreshSessionsComposer();
     refreshSessionsRelayStrip();
     syncSessionsTranscript();
-    if (ui->openId != 0 && isActiveWindow())
-        markAgentSessionRead(ui->openId);
+    if (ui->openId != 0 && isActiveWindow()) {
+        const AgentSession *open = findAgentSession(ui->openId);
+        if (!open || !m_agentMarkedUnread.contains(agentReadKey(*open)))
+            markAgentSessionRead(ui->openId);
+    }
 }
 
 void MainWindow::requestSessionsDesktopIndex(bool force)
@@ -1725,7 +1586,7 @@ void MainWindow::rebuildSessionsDesktopRows()
             continue;
         if (!session.claudeAppSessionId.isEmpty())
             bySession.insert(session.claudeAppSessionId.toLower(), session.id);
-        if (session.claudeImported())
+        if (session.claudeImported() && !bySession.contains(session.claudeImportId.toLower()))
             bySession.insert(session.claudeImportId.toLower(), session.id);
         const QString repoPath =
             repoPaths.value(session.owner + QLatin1Char('/') + session.name);
@@ -1889,6 +1750,7 @@ void MainWindow::refreshSessionsList()
     };
     QList<Row> active;
     QList<Row> recent;
+    QList<Row> archivedRows;
     const auto consider = [&](const AgentSession &session) {
         if (session.deletedAtMs > 0 || session.associationOnly || session.id == 0)
             return;
@@ -1905,11 +1767,14 @@ void MainWindow::refreshSessionsList()
             if (!haystack.contains(needle))
                 return;
         }
+        const bool archived = sessionsArchived(session);
+        if (archived && !ui->showArchived)
+            return;
         const int rank = sessionsActiveRank(session);
         qint64 at = sessionsActivityMs(session);
         if (isExternalSession(session.id) && !isCloudSession(session.id))
             at = std::max(at, sessionsOutsideSession(session.id).lastActivityMs);
-        (rank >= 0 ? active : recent).append({&session, rank, at});
+        (archived ? archivedRows : rank >= 0 ? active : recent).append({&session, rank, at});
     };
     for (const AgentSession &session : std::as_const(m_agentSessions))
         consider(session);
@@ -1923,6 +1788,8 @@ void MainWindow::refreshSessionsList()
                      [](const Row &a, const Row &b) { return a.at > b.at; });
     if (recent.size() > kSessionsRecentLimit)
         recent = recent.mid(0, kSessionsRecentLimit);
+    std::stable_sort(archivedRows.begin(), archivedRows.end(),
+                     [](const Row &a, const Row &b) { return a.at > b.at; });
 
     struct Header {
         QString label;
@@ -1930,6 +1797,8 @@ void MainWindow::refreshSessionsList()
         bool collapsed = false;
         bool addable = false;
         bool trailing = false;
+        QString menuKey;
+        QList<int> members;
     };
     QList<int> ids;
     QList<const AgentSession *> sessions;
@@ -1946,32 +1815,124 @@ void MainWindow::refreshSessionsList()
     };
     const bool claudeLayout = ui->next && ui->grouping == SessionsGrouping::Claude;
     QHash<int, qint64> listedAt;
+    const auto idsOf = [](const QList<Row> &rows) {
+        QList<int> out;
+        for (const Row &row : rows)
+            out.append(row.session->id);
+        return out;
+    };
+    const auto addOwnGroup = [&](int id, const QString &key, const QString &label,
+                                 const QList<Row> &rows, bool keepEmpty = false) {
+        if (rows.isEmpty() && !keepEmpty)
+            return;
+        Header header;
+        header.label = label;
+        header.menuKey = key;
+        header.members = idsOf(rows);
+        if (ui->next) {
+            header.key = key;
+            header.collapsed = ui->collapsedGroups.contains(key);
+        }
+        addHeader(id, header);
+        if (!header.collapsed)
+            for (const Row &row : rows)
+                addRow(row);
+    };
     if (claudeLayout) {
         QList<Row> rows = active + recent;
         QList<forkmesh::claudedesktop::SidebarItem> items;
         items.reserve(rows.size());
+        forkmesh::claudedesktop::DesktopIndex arranged;
+        arranged.sections = ui->desktop.sections;
+        QSet<QString> unpinned;
+        QStringList pinnedExtra;
+        QHash<QString, QString> placed;
         for (Row &row : rows) {
             const qint64 claudeAt = ui->desktopAt.value(row.session->id);
             if (claudeAt > 0)
                 row.at = claudeAt;
             listedAt.insert(row.session->id, row.at);
-            items.append({ui->desktopRecord.value(row.session->id),
-                          sessionsFolder(*row.session), row.at});
+            QString itemKey = ui->desktopRecord.value(row.session->id);
+            if (itemKey.isEmpty())
+                itemKey = QStringLiteral("fm:") + sessionsKey(*row.session);
+            items.append({itemKey, sessionsFolder(*row.session), row.at});
+            if (!sessionsPinned(*row.session))
+                unpinned.insert(itemKey);
+            else if (!ui->desktop.pinned.contains(itemKey))
+                pinnedExtra.append(itemKey);
+            placed.insert(itemKey, sessionsSectionOf(*row.session));
+        }
+        for (const QString &key : std::as_const(ui->desktop.pinned))
+            if (!unpinned.contains(key))
+                arranged.pinned.append(key);
+        arranged.pinned += pinnedExtra;
+        int ownAt = int(arranged.sections.size());
+        for (int i = 0; i < arranged.sections.size(); ++i)
+            if (arranged.sections.at(i).kind == QLatin1String("sessions")) {
+                ownAt = i;
+                break;
+            }
+        for (const QPair<QString, QString> &own : std::as_const(ui->ownSections))
+            arranged.sections.insert(ownAt++, {own.first, QStringLiteral("manual"), own.second,
+                                               QString(), false, {}, true});
+        for (forkmesh::claudedesktop::DesktopSection &section : arranged.sections) {
+            if (section.kind != QLatin1String("manual"))
+                continue;
+            QStringList members;
+            for (const QString &key : std::as_const(section.members))
+                if (!placed.contains(key) || placed.value(key) == section.id)
+                    members.append(key);
+            for (auto it = placed.cbegin(); it != placed.cend(); ++it)
+                if (it.value() == section.id && !members.contains(it.key()))
+                    members.append(it.key());
+            section.members = members;
         }
         const QList<forkmesh::claudedesktop::SidebarGroup> groups =
-            forkmesh::claudedesktop::arrangeSidebar(ui->desktop, items);
+            forkmesh::claudedesktop::arrangeSidebar(arranged, items);
         for (const forkmesh::claudedesktop::SidebarGroup &group : groups) {
             Header header;
             header.key = group.key;
             header.label = group.label;
             header.trailing = true;
             header.collapsed = ui->collapsedGroups.contains(group.key);
+            header.menuKey = group.key;
+            for (int item : group.items)
+                header.members.append(rows.at(item).session->id);
             addHeader(kSessionsHeaderGroup, header);
             if (!header.collapsed)
                 for (int item : group.items)
                     addRow(rows.at(item));
         }
-    } else if (ui->next && ui->grouping == SessionsGrouping::Repository) {
+    } else {
+        QList<Row> pinnedRows;
+        QHash<QString, QList<Row>> sectionRows;
+        const QList<QPair<QString, QString>> sections = sessionsSectionList();
+        QSet<QString> sectionIds;
+        for (const QPair<QString, QString> &section : sections)
+            sectionIds.insert(section.first);
+        const auto claim = [&](QList<Row> &rows) {
+            QList<Row> kept;
+            for (const Row &row : std::as_const(rows)) {
+                const QString section = sessionsSectionOf(*row.session);
+                if (sessionsPinned(*row.session))
+                    pinnedRows.append(row);
+                else if (sectionIds.contains(section))
+                    sectionRows[section].append(row);
+                else
+                    kept.append(row);
+            }
+            rows = kept;
+        };
+        claim(active);
+        claim(recent);
+        addOwnGroup(kSessionsHeaderGroup, kSessionsPinnedGroup, QStringLiteral("Pinned"),
+                    pinnedRows);
+        for (const QPair<QString, QString> &section : sections)
+            addOwnGroup(kSessionsHeaderGroup, kSessionsSectionGroupPrefix + section.first,
+                        section.second, sectionRows.value(section.first),
+                        section.first.startsWith(kSessionsOwnSectionPrefix));
+    }
+    if (!claudeLayout && ui->next && ui->grouping == SessionsGrouping::Repository) {
         QSet<QString> localRepos;
         for (const RepositoryRecord &repo : std::as_const(m_repositories))
             if (!repo.previewOnly && !repo.localPath.trimmed().isEmpty())
@@ -2022,15 +1983,19 @@ void MainWindow::refreshSessionsList()
                                : group.name;
             header.collapsed = ui->collapsedGroups.contains(group.key);
             header.addable = localRepos.contains(group.key);
+            header.menuKey = group.key;
+            header.members = idsOf(group.rows);
             addHeader(kSessionsHeaderGroup, header);
             if (!header.collapsed)
                 for (const Row &row : group.rows)
                     addRow(row);
         }
-    } else {
+    } else if (!claudeLayout) {
         if (!active.isEmpty()) {
             Header header;
             header.label = QStringLiteral("Active (%1)").arg(active.size());
+            header.menuKey = QStringLiteral("@active");
+            header.members = idsOf(active);
             if (ui->next) {
                 header.key = QStringLiteral("@active");
                 header.collapsed = ui->collapsedGroups.contains(header.key);
@@ -2043,6 +2008,8 @@ void MainWindow::refreshSessionsList()
         if (!recent.isEmpty()) {
             Header header;
             header.label = QStringLiteral("Recent");
+            header.menuKey = QStringLiteral("@recent");
+            header.members = idsOf(recent);
             if (ui->next) {
                 header.key = QStringLiteral("@recent");
                 header.collapsed = ui->collapsedGroups.contains(header.key);
@@ -2053,6 +2020,8 @@ void MainWindow::refreshSessionsList()
                     addRow(row);
         }
     }
+    addOwnGroup(kSessionsHeaderGroup, kSessionsArchivedGroup,
+                QStringLiteral("Archived (%1)").arg(archivedRows.size()), archivedRows);
 
     const auto fill = [this, ui, claudeLayout, &listedAt](QListWidgetItem *item, int id,
                                  const AgentSession *session, const Header &header) {
@@ -2060,6 +2029,7 @@ void MainWindow::refreshSessionsList()
             item->setData(kSessionIdRole, 0);
             item->setData(kSessionHeaderRole, true);
             item->setData(Qt::DisplayRole, header.label);
+            item->setData(kSessionMenuGroupRole, header.menuKey);
             if (ui->next) {
                 item->setData(kSessionGroupRole, header.key);
                 item->setData(kSessionCollapsedRole, header.collapsed);
@@ -2121,6 +2091,16 @@ void MainWindow::refreshSessionsList()
         }
     };
 
+    ui->groupMembers.clear();
+    ui->groupLabels.clear();
+    ui->groupOrder.clear();
+    for (const Header &header : std::as_const(headers)) {
+        if (header.menuKey.isEmpty())
+            continue;
+        ui->groupMembers.insert(header.menuKey, header.members);
+        ui->groupLabels.insert(header.menuKey, header.label);
+        ui->groupOrder.append(header.menuKey);
+    }
     QSignalBlocker block(ui->list);
     if (ids == ui->listedIds && ui->list->count() == ids.size()) {
         for (int row = 0; row < ids.size(); ++row)
@@ -2270,10 +2250,12 @@ void forkmesh::ui::NextAccess::fillSessionSidePanels(MainWindow &window,
         }
     }
     if (!session) {
+        panels->setCommitAction({});
         panels->setDetails(details);
         return;
     }
     details.session = true;
+    details.sessionId = sessionId;
     const bool cloud = window.isCloudSession(session->id);
     const bool outside = window.isExternalSession(session->id) && !cloud;
     const AgentDiffStat stat = window.m_agentDiffStats.value(session->id);
@@ -2312,6 +2294,15 @@ void forkmesh::ui::NextAccess::fillSessionSidePanels(MainWindow &window,
         agent = model.isEmpty() ? QStringLiteral("Claude Code")
                                 : QStringLiteral("Claude Code \u00B7 ") + model;
     details.agent = agent.trimmed();
+    if (!cloud && (outside || agentIsClaudeProvider(session->provider))) {
+        const AgentAccountProfile account = activeAgentAccount(QStringLiteral("claude-code"));
+        const forkmesh::agentaccounts::ClaudeRemoteControl remote =
+            forkmesh::agentaccounts::readClaudeRemoteControl(
+                QDir(account.configDir).filePath(QStringLiteral("settings.json")),
+                claudeAccountStateFile(account));
+        details.claudeRemote = remote.state;
+        details.claudeRemoteSource = remote.source;
+    }
     details.mode = window.sessionsModeLabel(*session);
     details.contextUsed = session->contextTokens;
     details.contextWindow = session->contextWindow;
@@ -2326,6 +2317,30 @@ void forkmesh::ui::NextAccess::fillSessionSidePanels(MainWindow &window,
     details.dirty = stat.dirty;
     details.conflicted = stat.conflicted;
     details.prNumber = session->prNumber;
+    details.canCommit = !cloud && !stat.worktree.isEmpty() && !branch.isEmpty();
+    std::function<void()> commit;
+    if (details.canCommit) {
+        const QString worktree = stat.worktree;
+        const QPointer<SessionSidePanels> target(panels);
+        commit = [self, target, sessionId, worktree, branch] {
+            if (!self)
+                return;
+            self->commitWorktreeChanges(
+                worktree, branch, [self, target, sessionId](bool committed) {
+                    if (!self)
+                        return;
+                    if (committed) {
+                        auto stat = self->m_agentDiffStats.find(sessionId);
+                        if (stat != self->m_agentDiffStats.end())
+                            stat->dirty = 0;
+                    }
+                    self->scheduleAgentLiveDiffRefresh(sessionId);
+                    if (target && target->details().sessionId == sessionId)
+                        fillSessionSidePanels(*self, target, sessionId);
+                });
+        };
+    }
+    panels->setCommitAction(std::move(commit));
     panels->setDetails(details);
 }
 
@@ -2366,8 +2381,7 @@ void forkmesh::ui::NextAccess::feedSessionSidePanels(MainWindow &window,
         panels->clearActivity();
         feed.consumed = 0;
     }
-    for (int index = feed.consumed; index < events->size(); ++index)
-        panels->append(events->at(index));
+    panels->appendActivity(events.value(), feed.consumed);
     feed.consumed = int(events->size());
 }
 
@@ -2413,94 +2427,52 @@ void MainWindow::fillSessionsPicker(QComboBox *combo, int keepId, int excludeId,
 void MainWindow::refreshSessionsComposer()
 {
     SessionsPageUi *ui = m_sessionsUi;
-    if (!ui || !ui->composer)
+    if (!ui)
         return;
-    ui->targetRow->setVisible(!ui->newMode);
-    ui->newRow->setVisible(ui->newMode);
-    placeSessionsComposer(ui);
     if (ui->starters)
         ui->starters->setVisible(ui->newMode);
-    if (ui->composerModel)
-        ui->composerModel->hide();
-    if (ui->newMode) {
-        if (ui->repoCombo->property("sessionsRepoCount").toInt() !=
-                int(m_repositories.size()) ||
-            ui->repoCombo->count() == 0) {
-            const int keep = ui->repoCombo->count() > 0
-                                 ? ui->repoCombo->currentData().toInt()
-                                 : resolveAgentRepositoryIndex(m_repoDetailIndex);
-            QSignalBlocker block(ui->repoCombo);
-            ui->repoCombo->clear();
-            for (int index = 0; index < m_repositories.size(); ++index) {
-                const RepositoryRecord &repo = m_repositories.at(index);
-                if (repo.previewOnly || repo.localPath.trimmed().isEmpty())
-                    continue;
-                ui->repoCombo->addItem(repo.owner + QLatin1Char('/') + repo.name,
-                                       index);
-            }
-            const int at = ui->repoCombo->findData(keep);
-            ui->repoCombo->setCurrentIndex(at >= 0 ? at : 0);
-            ui->repoCombo->setProperty("sessionsRepoCount",
-                                       int(m_repositories.size()));
-        }
-        const bool canStart = ui->repoCombo->count() > 0;
-        ui->composer->setEnabled(canStart);
-        ui->send->setEnabled(canStart);
-        if (ui->plus)
-            ui->plus->setEnabled(canStart);
-        ui->composer->setPlaceholderText(
-            QString::fromUtf8("Describe the task for the new session\xE2\x80\xA6"));
-        ui->composerNote->setText(
-            canStart ? QString()
-                     : QStringLiteral("Add a repository with a local checkout "
-                                      "to start a session."));
+    updateQuickAddEnterTarget();
+    schedulePositionGlobalFooterOverlays();
+}
+
+int MainWindow::sessionsComposerTarget(QString *blocked) const
+{
+    const SessionsPageUi *ui = m_sessionsUi;
+    if (!ui || ui->newMode || ui->openId == 0 || !sessionsPageOnScreen())
+        return 0;
+    const int id = ui->openId;
+    if (blocked) {
+        if (sessionsDesktopRow(id))
+            *blocked = QStringLiteral("This session belongs to the Claude app, so it can "
+                                      "only be watched here. Right-click it and pick Open "
+                                      "in Claude app to reply, or send its last reply to "
+                                      "another session.");
+        else if (isExternalSession(id) && !isCloudSession(id) &&
+                 !outsideAgentSteerable(id))
+            *blocked = QStringLiteral("This Claude Code session runs outside ForkMesh "
+                                      "without a messaging socket, so it can only be "
+                                      "watched. Send its last reply to another session "
+                                      "instead.");
+    }
+    return id;
+}
+
+QWidget *MainWindow::sessionsComposerPane() const
+{
+    if (!m_sessionsUi)
+        return nullptr;
+    return m_sessionsUi->next ? m_sessionsUi->column.data()
+                              : m_sessionsUi->center.data();
+}
+
+void MainWindow::sessionsComposerSent(int sessionId)
+{
+    SessionsPageUi *ui = m_sessionsUi;
+    if (!ui || sessionId == 0 || sessionId != ui->openId)
         return;
-    }
-    const AgentSession *session =
-        ui->openId == 0 ? nullptr : sessionsFind(ui->openId);
-    QString note;
-    bool enabled = session != nullptr;
-    if (!session) {
-        note = QStringLiteral("Open a session or start a new one.");
-    } else if (sessionsDesktopRow(session->id)) {
-        enabled = false;
-        note = QStringLiteral("This session belongs to the Claude app, so it can only "
-                              "be watched here. Right-click it and pick Open in Claude "
-                              "app to reply, or forward its reply to another session.");
-    } else if (isExternalSession(session->id) && !isCloudSession(session->id) &&
-               !outsideAgentSteerable(session->id)) {
-        enabled = false;
-        note = QStringLiteral("This Claude Code session runs outside ForkMesh "
-                              "without a messaging socket, so it can only be "
-                              "watched. Forward its reply to another session "
-                              "instead.");
-    }
-    ui->composer->setEnabled(enabled);
-    ui->send->setEnabled(enabled);
-    if (ui->plus)
-        ui->plus->setEnabled(enabled);
-    if (ui->composerModel && session) {
-        QStringList parts;
-        const QString mode = sessionsModeLabel(*session);
-        if (!mode.isEmpty())
-            parts << mode;
-        QString model = agentModelLabel(session->model);
-        if (model.isEmpty())
-            model = cliProviderLabel(session->provider);
-        if (!model.trimmed().isEmpty())
-            parts << model.trimmed();
-        ui->composerModel->setText(parts.join(QString::fromUtf8(" \xC2\xB7 ")));
-        ui->composerModel->setVisible(!parts.isEmpty());
-    }
-    ui->forward->setEnabled(session != nullptr);
-    ui->toCombo->setEnabled(enabled);
-    ui->alsoCombo->setEnabled(enabled);
-    ui->composerNote->setText(note);
-    ui->composer->setPlaceholderText(
-        session ? QString::fromUtf8("Message #%1 \xE2\x80\x94 Enter sends, "
-                                    "Shift+Enter adds a line")
-                      .arg(session->id)
-                : QString());
+    if (ui->transcript)
+        ui->transcript->jumpToBottom();
+    scheduleSessionsPageRefresh();
 }
 
 void MainWindow::refreshSessionsRelayStrip()
@@ -2670,10 +2642,6 @@ void MainWindow::openSessionInSessionsPage(int sessionId)
             }
         }
     }
-    if (changed) {
-        fillSessionsPicker(ui->toCombo, sessionId, 0, QString());
-        fillSessionsPicker(ui->alsoCombo, 0, 0, QStringLiteral("No one else"));
-    }
     refreshSessionsHeader();
     refreshSessionsComposer();
     refreshSessionsRelayStrip();
@@ -2708,9 +2676,9 @@ void MainWindow::startNewSessionInSessionsPage()
     }
     ui->emptyTitle->setText(QStringLiteral("Start a new session"));
     ui->emptyBody->setText(
-        QStringLiteral("Choose the repository and the agent below, describe the "
-                       "task, and press Enter. The session opens here and its "
-                       "transcript streams in as it works."));
+        QStringLiteral("Describe the task in the composer below and press "
+                       "Enter. The session starts in the repository and with "
+                       "the agent the composer has picked."));
     ui->centerStack->setCurrentIndex(0);
     if (ui->list) {
         QSignalBlocker block(ui->list);
@@ -2720,7 +2688,24 @@ void MainWindow::startNewSessionInSessionsPage()
     refreshSessionsHeader();
     refreshSessionsComposer();
     refreshSessionsRelayStrip();
-    ui->composer->setFocus(Qt::OtherFocusReason);
+    if (m_issueQuickAdd)
+        m_issueQuickAdd->setFocus(Qt::OtherFocusReason);
+}
+
+void MainWindow::startNewSessionInSessionsPageFor(const QString &repoKey)
+{
+    startNewSessionInSessionsPage();
+    if (!m_issuesRepoCombo || repoKey.isEmpty())
+        return;
+    for (int index = 0; index < m_repositories.size(); ++index) {
+        const RepositoryRecord &repo = m_repositories.at(index);
+        if (repo.owner + QLatin1Char('/') + repo.name != repoKey)
+            continue;
+        const int row = m_issuesRepoCombo->findData(index);
+        if (row >= 0)
+            m_issuesRepoCombo->setCurrentIndex(row);
+        return;
+    }
 }
 
 void MainWindow::prepareSessionsTranscript(int sessionId)
@@ -3016,53 +3001,6 @@ void MainWindow::renderSessionsTranscriptSlice(quint64 generation)
     }
 }
 
-void MainWindow::sendSessionsComposer()
-{
-    SessionsPageUi *ui = m_sessionsUi;
-    if (!ui || !ui->composer || !ui->composer->isEnabled())
-        return;
-    const QString text = ui->composer->toPlainText().trimmed();
-    if (text.isEmpty())
-        return;
-    if (ui->newMode) {
-        const int repoIndex =
-            ui->repoCombo->count() > 0 ? ui->repoCombo->currentData().toInt() : -1;
-        const QString provider = ui->providerCombo->currentData().toString();
-        const int id = startAdHocAgentForRepo(repoIndex, text, provider,
-                                              /*createPr=*/false, QString(),
-                                              QString(), /*genie=*/false,
-                                              /*switchToTab=*/false);
-        if (id == 0)
-            return;
-        ui->composer->clear();
-        openSessionsPanels(ui);
-        refreshSessionsList();
-        openSessionInSessionsPage(id);
-        return;
-    }
-    int to = ui->toCombo ? ui->toCombo->currentData().toInt() : 0;
-    if (to == 0)
-        to = ui->openId;
-    const int also = ui->alsoCombo ? ui->alsoCombo->currentData().toInt() : 0;
-    if (to == 0)
-        return;
-    const auto deliver = [this](int target, const QString &message) {
-        if (isExternalSession(target) && !isCloudSession(target))
-            deliverToExternalSession(target, message);
-        else
-            sendPromptToAgentSession(target, message);
-    };
-    deliver(to, text);
-    if (also != 0 && also != to)
-        deliver(also, text);
-    ui->composer->clear();
-    if (ui->alsoCombo)
-        ui->alsoCombo->setCurrentIndex(0);
-    if (to == ui->openId && ui->transcript)
-        ui->transcript->jumpToBottom();
-    scheduleSessionsPageRefresh();
-}
-
 void MainWindow::deliverToExternalSession(int sessionId, const QString &text)
 {
     const auto surfaced = m_externalSurfaced.constFind(sessionId);
@@ -3242,68 +3180,913 @@ void MainWindow::promptSessionsMessage(int fromId, int toId)
 
 void MainWindow::showSessionsContextMenu(int sessionId, const QPoint &globalPos)
 {
+    std::unique_ptr<QMenu> menu(buildSessionsContextMenu(sessionId, this));
+    if (menu)
+        menu->exec(globalPos);
+}
+
+void MainWindow::showSessionsHeaderContextMenu(const QString &groupKey, const QPoint &globalPos)
+{
+    std::unique_ptr<QMenu> menu(buildSessionsHeaderMenu(groupKey, this));
+    if (menu)
+        menu->exec(globalPos);
+}
+
+QList<int> MainWindow::sessionsSelectedIds() const
+{
+    QList<int> ids;
+    if (!m_sessionsUi || !m_sessionsUi->list)
+        return ids;
+    for (int row = 0; row < m_sessionsUi->list->count(); ++row) {
+        const QListWidgetItem *item = m_sessionsUi->list->item(row);
+        const int id = item->isSelected() ? item->data(kSessionIdRole).toInt() : 0;
+        if (id != 0)
+            ids.append(id);
+    }
+    return ids;
+}
+
+QMenu *MainWindow::buildSessionsContextMenu(int sessionId, QWidget *parent)
+{
+    SessionsPageUi *ui = m_sessionsUi;
     const AgentSession *session = sessionsFind(sessionId);
-    if (!session)
-        return;
-    const bool outside = isExternalSession(sessionId) && !isCloudSession(sessionId);
-    QMenu menu(this);
-    if (sessionsDesktopRow(sessionId)) {
+    if (!ui || !session)
+        return nullptr;
+    const bool desktopRow = sessionsDesktopRow(sessionId);
+    const bool cloud = isCloudSession(sessionId);
+    const bool outside = isExternalSession(sessionId) && !cloud;
+    const bool own = !desktopRow && !outside && !cloud && sessionId > 0;
+    const QString key = sessionsKey(*session);
+    const QList<int> selected = sessionsSelectedIds();
+    const QList<int> targets =
+        selected.size() > 1 && selected.contains(sessionId) ? selected : QList<int>{sessionId};
+    const bool bulk = targets.size() > 1;
+    const auto counted = [&targets, bulk](const QString &one, const QString &many) {
+        return bulk ? many.arg(targets.size()) : one;
+    };
+
+    auto *menu = new QMenu(parent);
+    menu->setObjectName(QStringLiteral("sessionsContextMenu"));
+    menu->setToolTipsVisible(true);
+    menu->installEventFilter(new SessionsMenuKeys(menu));
+    const auto add = [this](QMenu *into, const QString &text, const QString &name,
+                            const QString &blocker, std::function<void()> run) {
+        QAction *action = into->addAction(text);
+        action->setObjectName(name);
+        action->setEnabled(blocker.isEmpty());
+        if (!blocker.isEmpty())
+            action->setToolTip(blocker);
+        connect(action, &QAction::triggered, this, [run] { run(); });
+        return action;
+    };
+    const auto keyed = [](QAction *action, Qt::Key shortcut) {
+        action->setShortcut(QKeySequence(shortcut));
+        action->setShortcutVisibleInContextMenu(true);
+    };
+    const QString claudeOnly = QStringLiteral(
+        "This session lives in the Claude app; ForkMesh only shows it here.");
+
+    QMenu *openIn = menu->addMenu(QStringLiteral("Open in"));
+    openIn->setObjectName(QStringLiteral("sessionsOpenInMenu"));
+    openIn->setToolTipsVisible(true);
+    add(openIn, QStringLiteral("Agents"), QStringLiteral("sessionsOpenInAgentsAction"),
+        desktopRow ? claudeOnly : QString(), [this, sessionId] { switchToAgentsTab(sessionId); });
+    if (desktopRow) {
         const QString uuid = sessionsOutsideSession(sessionId).uuid;
-        QAction *open = menu.addAction(QStringLiteral("Open in Claude app"), this,
-                                       [this, uuid] { queueClaudeDesktopLink(uuid, true); });
-        open->setEnabled(forkmesh::claudedesktop::isSessionId(uuid));
-        QMenu *message =
-            menu.addMenu(QString::fromUtf8("Send its last reply to\xE2\x80\xA6"));
-        SessionsPickerCombo picker;
-        fillSessionsPicker(&picker, 0, sessionId, QString());
-        for (int row = 0; row < picker.count(); ++row) {
-            const int to = picker.itemData(row).toInt();
+        add(openIn, QStringLiteral("Claude app"), QStringLiteral("sessionsOpenInClaudeAction"),
+            forkmesh::claudedesktop::isSessionId(uuid)
+                ? QString()
+                : QStringLiteral("The Claude app has not named this session yet."),
+            [this, uuid] { queueClaudeDesktopLink(uuid, true); });
+    } else {
+        add(openIn, QStringLiteral("Claude app"), QStringLiteral("sessionsOpenInClaudeAction"),
+            claudeDesktopBlocker(sessionId),
+            [this, sessionId] { addAgentToClaudeDesktop(sessionId, true); });
+    }
+    if (!desktopRow) {
+        add(menu, QStringLiteral("Continue"), QStringLiteral("sessionsContinueAction"),
+            outside || isStoppableAgentSession(sessionId)
+                ? QStringLiteral("This session is running or is not ForkMesh's to continue.")
+                : QString(),
+            [this, sessionId] {
+                continueAgentSessionInteractive(sessionId);
+                scheduleSessionsPageRefresh();
+            });
+        add(menu, QStringLiteral("Stop"), QStringLiteral("sessionsStopAction"),
+            isStoppableAgentSession(sessionId) ? QString()
+                                               : QStringLiteral("This session is not running."),
+            [this, sessionId] {
+                stopAgentSessions({sessionId});
+                scheduleSessionsPageRefresh();
+            });
+    }
+    menu->addSeparator();
+
+    const bool pinned = sessionsPinned(*session);
+    keyed(add(menu,
+              pinned ? counted(QStringLiteral("Unpin"), QStringLiteral("Unpin %1 sessions"))
+                     : counted(QStringLiteral("Pin"), QStringLiteral("Pin %1 sessions")),
+              QStringLiteral("sessionsPinAction"),
+              key.isEmpty() ? QStringLiteral("This session has no lasting name to pin it by yet.")
+                            : QString(),
+              [this, targets, pinned] { setSessionsPinned(targets, !pinned); }),
+          Qt::Key_P);
+    const AgentSession *readable = findAgentSession(sessionId);
+    const bool unread = readable && agentSessionUnread(*readable);
+    QString unreadBlocker;
+    if (desktopRow)
+        unreadBlocker = claudeOnly;
+    else if (!unread && (!readable || !agentSessionUnreadable(*readable)))
+        unreadBlocker = QStringLiteral("Only a finished session can be marked as unread.");
+    keyed(add(menu,
+              unread ? counted(QStringLiteral("Mark as read"),
+                               QStringLiteral("Mark %1 sessions as read"))
+                     : counted(QStringLiteral("Mark as unread"),
+                               QStringLiteral("Mark %1 sessions as unread")),
+              QStringLiteral("sessionsUnreadAction"), unreadBlocker,
+              [this, targets, unread] {
+                  for (const int id : targets) {
+                      if (unread)
+                          markAgentSessionRead(id);
+                      else
+                          markAgentSessionUnread(id);
+                  }
+                  refreshSessionsList();
+              }),
+          Qt::Key_U);
+    keyed(add(menu, QStringLiteral("Rename…"), QStringLiteral("sessionsRenameAction"),
+              own ? QString()
+                  : desktopRow ? QStringLiteral("Rename this session in the Claude app.")
+                               : QStringLiteral("Only sessions ForkMesh runs on this "
+                                                "computer can be renamed here."),
+              [this, sessionId] {
+                  renameAgentSessionInteractive(sessionId);
+                  scheduleSessionsPageRefresh();
+              }),
+          Qt::Key_R);
+    keyed(add(menu, QStringLiteral("Fork"), QStringLiteral("sessionsForkAction"),
+              sessionsForkBlocker(sessionId),
+              [this, sessionId] { forkSessionFromSessionsPage(sessionId); }),
+          Qt::Key_F);
+    menu->addSeparator();
+
+    QMenu *sections = menu->addMenu(
+        counted(QStringLiteral("Move to section"), QStringLiteral("Move %1 sessions to section")));
+    sections->setObjectName(QStringLiteral("sessionsSectionMenu"));
+    sections->menuAction()->setEnabled(!key.isEmpty());
+    const QString current = sessionsSectionOf(*session);
+    auto *group = new QActionGroup(sections);
+    group->setExclusive(true);
+    for (const QPair<QString, QString> &section : sessionsSectionList()) {
+        QAction *action = sections->addAction(section.second);
+        action->setObjectName(QStringLiteral("sessionsSection:") + section.first);
+        action->setCheckable(true);
+        action->setChecked(!bulk && section.first == current);
+        group->addAction(action);
+        const QString sectionId = section.first;
+        connect(action, &QAction::triggered, this,
+                [this, targets, sectionId] { moveSessionsToSection(targets, sectionId); });
+    }
+    if (!sections->isEmpty())
+        sections->addSeparator();
+    add(sections, QStringLiteral("New section…"), QStringLiteral("sessionsNewSectionAction"),
+        QString(), [this, targets] { promptNewSessionsSection(targets); });
+    add(sections, QStringLiteral("Remove from section"),
+        QStringLiteral("sessionsRemoveFromSectionAction"),
+        current.isEmpty() && !bulk ? QStringLiteral("This session is in no section.") : QString(),
+        [this, targets] { moveSessionsToSection(targets, QString()); });
+
+    QMenu *message = menu->addMenu(
+        desktopRow ? QString::fromUtf8("Send its last reply to\xE2\x80\xA6")
+                   : QString::fromUtf8("Send message to another session\xE2\x80\xA6"));
+    message->setObjectName(QStringLiteral("sessionsMessageMenu"));
+    SessionsPickerCombo picker;
+    fillSessionsPicker(&picker, 0, sessionId, QString());
+    for (int row = 0; row < picker.count(); ++row) {
+        const int to = picker.itemData(row).toInt();
+        if (desktopRow)
             message->addAction(picker.itemText(row), this, [this, sessionId, to] {
                 QString why;
                 if (!forwardLastSessionReply(sessionId, to, &why) && !why.isEmpty())
                     flashMessage(why, true);
             });
-        }
-        message->setEnabled(!message->isEmpty());
-        menu.exec(globalPos);
-        return;
-    }
-    menu.addAction(QStringLiteral("Open in Agents"), this,
-                   [this, sessionId] { switchToAgentsTab(sessionId); });
-    QAction *resume = menu.addAction(QStringLiteral("Continue"), this, [this, sessionId] {
-        continueAgentSessionInteractive(sessionId);
-        scheduleSessionsPageRefresh();
-    });
-    resume->setEnabled(!outside && !isStoppableAgentSession(sessionId));
-    QAction *stop = menu.addAction(QStringLiteral("Stop"), this, [this, sessionId] {
-        stopAgentSessions({sessionId});
-        scheduleSessionsPageRefresh();
-    });
-    stop->setEnabled(isStoppableAgentSession(sessionId));
-    QAction *toClaude = menu.addAction(QStringLiteral("Open in Claude app"), this,
-                                       [this, sessionId] {
-                                           addAgentToClaudeDesktop(sessionId, true);
-                                       });
-    toClaude->setEnabled(claudeDesktopBlocker(sessionId).isEmpty());
-    QMenu *message =
-        menu.addMenu(QString::fromUtf8("Send message to another session\xE2\x80\xA6"));
-    SessionsPickerCombo picker;
-    fillSessionsPicker(&picker, 0, sessionId, QString());
-    for (int row = 0; row < picker.count(); ++row) {
-        const int to = picker.itemData(row).toInt();
-        message->addAction(picker.itemText(row), this,
-                           [this, sessionId, to] { promptSessionsMessage(sessionId, to); });
+        else
+            message->addAction(picker.itemText(row), this,
+                               [this, sessionId, to] { promptSessionsMessage(sessionId, to); });
     }
     message->setEnabled(!message->isEmpty());
-    menu.addSeparator();
-    menu.addAction(QString::fromUtf8("Delete\xE2\x80\xA6"), this, [this, sessionId] {
-        deleteAgentSessionFromRow(sessionId);
-        scheduleSessionsPageRefresh();
-    });
-    menu.exec(globalPos);
+    if (!desktopRow) {
+        QMenu *forward =
+            menu->addMenu(QString::fromUtf8("Send its last reply to\xE2\x80\xA6"));
+        forward->setObjectName(QStringLiteral("sessionsForwardMenu"));
+        for (int row = 0; row < picker.count(); ++row) {
+            const int to = picker.itemData(row).toInt();
+            forward->addAction(picker.itemText(row), this, [this, sessionId, to] {
+                QString why;
+                if (!forwardLastSessionReply(sessionId, to, &why) && !why.isEmpty())
+                    flashMessage(why, true);
+            });
+        }
+        forward->setEnabled(!forward->isEmpty());
+    }
+    menu->addSeparator();
+
+    const bool archived = sessionsArchived(*session);
+    keyed(add(menu,
+              archived ? counted(QStringLiteral("Unarchive"),
+                                 QStringLiteral("Unarchive %1 sessions"))
+                       : counted(QStringLiteral("Archive"), QStringLiteral("Archive %1 sessions")),
+              QStringLiteral("sessionsArchiveAction"),
+              key.isEmpty()
+                  ? QStringLiteral("This session has no lasting name to archive it by yet.")
+                  : QString(),
+              [this, targets, archived] { setSessionsArchived(targets, !archived); }),
+          Qt::Key_A);
+    keyed(add(menu,
+              counted(QString::fromUtf8("Delete\xE2\x80\xA6"),
+                      QString::fromUtf8("Delete %1 sessions\xE2\x80\xA6")),
+              QStringLiteral("sessionsDeleteAction"),
+              desktopRow ? QStringLiteral("Delete this session in the Claude app.") : QString(),
+              [this, sessionId, targets, bulk] {
+                  if (bulk)
+                      deleteAgentSessionsConfirmed(targets);
+                  else
+                      deleteAgentSessionFromRow(sessionId);
+                  scheduleSessionsPageRefresh();
+              }),
+          Qt::Key_D);
+    return menu;
+}
+
+QMenu *MainWindow::buildSessionsHeaderMenu(const QString &groupKey, QWidget *parent)
+{
+    SessionsPageUi *ui = m_sessionsUi;
+    if (!ui || !ui->groupLabels.contains(groupKey))
+        return nullptr;
+    QString sectionId;
+    for (const QString &prefix : {kSessionsSectionGroupPrefix, QStringLiteral("@claude:")})
+        if (groupKey.startsWith(prefix))
+            sectionId = groupKey.mid(prefix.size());
+    int ownAt = -1;
+    for (int i = 0; i < ui->ownSections.size(); ++i)
+        if (ui->ownSections.at(i).first == sectionId)
+            ownAt = i;
+    bool claudeSection = false;
+    for (const forkmesh::claudedesktop::DesktopSection &section : std::as_const(ui->desktop.sections))
+        claudeSection = claudeSection ||
+                        (section.id == sectionId && section.kind == QLatin1String("manual"));
+    const QString sectionBlocker =
+        ownAt >= 0     ? QString()
+        : claudeSection ? QStringLiteral("This section belongs to the Claude app; change it there.")
+                        : QStringLiteral("Only sections you made can be changed.");
+    const QList<int> members = ui->groupMembers.value(groupKey);
+    QList<int> deletable;
+    for (const int id : members)
+        if (findAgentSession(id))
+            deletable.append(id);
+    const bool archivedGroup = groupKey == kSessionsArchivedGroup;
+
+    auto *menu = new QMenu(parent);
+    menu->setObjectName(QStringLiteral("sessionsHeaderMenu"));
+    menu->setToolTipsVisible(true);
+    const auto add = [this, menu](const QString &text, const QString &name,
+                                  const QString &blocker, std::function<void()> run) {
+        QAction *action = menu->addAction(text);
+        action->setObjectName(name);
+        action->setEnabled(blocker.isEmpty());
+        if (!blocker.isEmpty())
+            action->setToolTip(blocker);
+        connect(action, &QAction::triggered, this, [run] { run(); });
+        return action;
+    };
+    QString repoKey;
+    if (ui->grouping == SessionsGrouping::Repository && !groupKey.startsWith(QLatin1Char('@')))
+        repoKey = groupKey;
+    add(QStringLiteral("New session"), QStringLiteral("sessionsHeaderNewSessionAction"), QString(),
+        [this, repoKey] { startNewSessionInSessionsPageFor(repoKey); });
+    menu->addSeparator();
+    add(QStringLiteral("New section…"), QStringLiteral("sessionsHeaderNewSectionAction"),
+        QString(), [this] { promptNewSessionsSection({}); });
+    add(QStringLiteral("Rename section…"), QStringLiteral("sessionsHeaderRenameSectionAction"),
+        sectionBlocker, [this, sectionId] {
+            SessionsPageUi *ui = m_sessionsUi;
+            if (!ui)
+                return;
+            for (QPair<QString, QString> &section : ui->ownSections) {
+                if (section.first != sectionId)
+                    continue;
+                bool ok = false;
+                const QString name = QInputDialog::getText(
+                    this, QStringLiteral("Rename section"), QStringLiteral("Section name:"),
+                    QLineEdit::Normal, section.second, &ok).trimmed();
+                if (!ok || name.isEmpty() || !m_sessionsUi)
+                    return;
+                section.second = name;
+                saveSessionsOrganization();
+                return;
+            }
+        });
+    const auto moveSection = [this, sectionId](int step) {
+        SessionsPageUi *ui = m_sessionsUi;
+        if (!ui)
+            return;
+        for (int i = 0; i < ui->ownSections.size(); ++i) {
+            if (ui->ownSections.at(i).first != sectionId)
+                continue;
+            const int to = i + step;
+            if (to < 0 || to >= ui->ownSections.size())
+                return;
+            ui->ownSections.swapItemsAt(i, to);
+            saveSessionsOrganization();
+            return;
+        }
+    };
+    add(QStringLiteral("Move up"), QStringLiteral("sessionsHeaderMoveUpAction"),
+        !sectionBlocker.isEmpty() ? sectionBlocker
+        : ownAt == 0              ? QStringLiteral("This section is already at the top.")
+                                  : QString(),
+        [moveSection] { moveSection(-1); });
+    add(QStringLiteral("Move down"), QStringLiteral("sessionsHeaderMoveDownAction"),
+        !sectionBlocker.isEmpty() ? sectionBlocker
+        : ownAt == ui->ownSections.size() - 1
+            ? QStringLiteral("This section is already at the bottom.")
+            : QString(),
+        [moveSection] { moveSection(1); });
+    menu->addSeparator();
+    add(QStringLiteral("Select all"), QStringLiteral("sessionsHeaderSelectAllAction"),
+        members.isEmpty() ? QStringLiteral("This group has no sessions.") : QString(),
+        [this, groupKey] {
+            SessionsPageUi *ui = m_sessionsUi;
+            if (!ui || !ui->list)
+                return;
+            if (ui->collapsedGroups.remove(groupKey))
+                refreshSessionsList();
+            const QList<int> members = ui->groupMembers.value(groupKey);
+            QSignalBlocker block(ui->list);
+            ui->list->clearSelection();
+            for (int row = 0; row < ui->list->count(); ++row) {
+                QListWidgetItem *item = ui->list->item(row);
+                if (members.contains(item->data(kSessionIdRole).toInt()))
+                    item->setSelected(true);
+            }
+            ui->list->viewport()->update();
+        });
+    menu->addSeparator();
+    int collapsed = 0;
+    for (const QString &key : std::as_const(ui->groupOrder))
+        if (ui->collapsedGroups.contains(key))
+            ++collapsed;
+    const QString foldBlocker =
+        ui->next ? QString() : QStringLiteral("Groups fold only in the new interface.");
+    add(QStringLiteral("Collapse all"), QStringLiteral("sessionsHeaderCollapseAllAction"),
+        !foldBlocker.isEmpty() ? foldBlocker
+        : collapsed == ui->groupOrder.size() ? QStringLiteral("Every group is folded already.")
+                                             : QString(),
+        [this] {
+            if (!m_sessionsUi)
+                return;
+            for (const QString &key : std::as_const(m_sessionsUi->groupOrder))
+                m_sessionsUi->collapsedGroups.insert(key);
+            refreshSessionsList();
+        });
+    add(QStringLiteral("Expand all"), QStringLiteral("sessionsHeaderExpandAllAction"),
+        !foldBlocker.isEmpty() ? foldBlocker
+        : collapsed == 0       ? QStringLiteral("Every group is open already.")
+                               : QString(),
+        [this] {
+            if (!m_sessionsUi)
+                return;
+            m_sessionsUi->collapsedGroups.clear();
+            refreshSessionsList();
+        });
+    menu->addSeparator();
+    add(archivedGroup ? QStringLiteral("Unarchive all (%1)").arg(members.size())
+                      : QStringLiteral("Archive all (%1)").arg(members.size()),
+        QStringLiteral("sessionsHeaderArchiveAllAction"),
+        members.isEmpty() ? QStringLiteral("This group has no sessions.") : QString(),
+        [this, members, archivedGroup] { setSessionsArchived(members, !archivedGroup); });
+    add(QString::fromUtf8("Delete all sessions (%1)\xE2\x80\xA6").arg(deletable.size()),
+        QStringLiteral("sessionsHeaderDeleteAllAction"),
+        deletable.isEmpty() ? QStringLiteral("No session here is ForkMesh's to delete.")
+                            : QString(),
+        [this, deletable] {
+            if (deletable.size() == 1)
+                deleteAgentSessionFromRow(deletable.first());
+            else
+                deleteAgentSessionsConfirmed(deletable);
+            scheduleSessionsPageRefresh();
+        });
+    menu->addSeparator();
+    add(QStringLiteral("Delete section"), QStringLiteral("sessionsHeaderDeleteSectionAction"),
+        sectionBlocker, [this, sectionId] {
+            SessionsPageUi *ui = m_sessionsUi;
+            if (!ui)
+                return;
+            ui->ownSections.erase(
+                std::remove_if(ui->ownSections.begin(), ui->ownSections.end(),
+                               [&sectionId](const QPair<QString, QString> &section) {
+                                   return section.first == sectionId;
+                               }),
+                ui->ownSections.end());
+            for (auto it = ui->sectionOf.begin(); it != ui->sectionOf.end();) {
+                if (it.value() == sectionId)
+                    it = ui->sectionOf.erase(it);
+                else
+                    ++it;
+            }
+            saveSessionsOrganization();
+        });
+    return menu;
+}
+
+QString MainWindow::sessionsKey(const AgentSession &session) const
+{
+    const QString key = agentReadKey(session);
+    if (!key.isEmpty())
+        return key;
+    const QString record =
+        m_sessionsUi ? m_sessionsUi->desktopRecord.value(session.id) : QString();
+    return record.isEmpty() ? QString() : kSessionsDesktopKeyPrefix + record;
+}
+
+bool MainWindow::sessionsPinned(const AgentSession &session) const
+{
+    const SessionsPageUi *ui = m_sessionsUi;
+    if (!ui)
+        return false;
+    const QString key = sessionsKey(session);
+    const auto own = ui->pins.constFind(key);
+    if (!key.isEmpty() && own != ui->pins.cend())
+        return own.value();
+    const QString record = ui->desktopRecord.value(session.id);
+    return !record.isEmpty() && ui->desktop.pinned.contains(record);
+}
+
+bool MainWindow::sessionsArchived(const AgentSession &session) const
+{
+    if (!m_sessionsUi || m_sessionsUi->archived.isEmpty())
+        return false;
+    const QString key = sessionsKey(session);
+    return !key.isEmpty() && m_sessionsUi->archived.contains(key);
+}
+
+QString MainWindow::sessionsSectionOf(const AgentSession &session) const
+{
+    const SessionsPageUi *ui = m_sessionsUi;
+    if (!ui)
+        return QString();
+    const QString key = sessionsKey(session);
+    const auto own = ui->sectionOf.constFind(key);
+    if (!key.isEmpty() && own != ui->sectionOf.cend())
+        return own.value();
+    const QString record = ui->desktopRecord.value(session.id);
+    if (record.isEmpty())
+        return QString();
+    for (const forkmesh::claudedesktop::DesktopSection &section : ui->desktop.sections)
+        if (section.kind == QLatin1String("manual") && section.members.contains(record))
+            return section.id;
+    return QString();
+}
+
+QList<QPair<QString, QString>> MainWindow::sessionsSectionList() const
+{
+    QList<QPair<QString, QString>> out;
+    if (!m_sessionsUi)
+        return out;
+    for (const forkmesh::claudedesktop::DesktopSection &section : m_sessionsUi->desktop.sections)
+        if (section.kind == QLatin1String("manual"))
+            out.append({section.id, section.name.isEmpty() ? QStringLiteral("Untitled section")
+                                                           : section.name});
+    out += m_sessionsUi->ownSections;
+    return out;
+}
+
+void MainWindow::setSessionsPinned(const QList<int> &sessionIds, bool pinned)
+{
+    if (!m_sessionsUi)
+        return;
+    for (const int id : sessionIds)
+        if (const AgentSession *session = sessionsFind(id)) {
+            const QString key = sessionsKey(*session);
+            if (!key.isEmpty())
+                m_sessionsUi->pins.insert(key, pinned);
+        }
+    saveSessionsOrganization();
+}
+
+void MainWindow::setSessionsArchived(const QList<int> &sessionIds, bool archived)
+{
+    if (!m_sessionsUi)
+        return;
+    for (const int id : sessionIds)
+        if (const AgentSession *session = sessionsFind(id)) {
+            const QString key = sessionsKey(*session);
+            if (key.isEmpty())
+                continue;
+            if (archived)
+                m_sessionsUi->archived.insert(key);
+            else
+                m_sessionsUi->archived.remove(key);
+        }
+    saveSessionsOrganization();
+}
+
+void MainWindow::moveSessionsToSection(const QList<int> &sessionIds, const QString &sectionId)
+{
+    if (!m_sessionsUi)
+        return;
+    for (const int id : sessionIds)
+        if (const AgentSession *session = sessionsFind(id)) {
+            const QString key = sessionsKey(*session);
+            if (key.isEmpty())
+                continue;
+            m_sessionsUi->sectionOf.insert(key, sectionId);
+            if (!sectionId.isEmpty() && sessionsPinned(*session))
+                m_sessionsUi->pins.insert(key, false);
+        }
+    saveSessionsOrganization();
+}
+
+QString MainWindow::createSessionsSection(const QList<int> &sessionIds, const QString &name)
+{
+    if (!m_sessionsUi || name.trimmed().isEmpty())
+        return QString();
+    const QString id =
+        kSessionsOwnSectionPrefix + QUuid::createUuid().toString(QUuid::Id128).left(12);
+    m_sessionsUi->ownSections.append({id, name.trimmed()});
+    if (sessionIds.isEmpty())
+        saveSessionsOrganization();
+    else
+        moveSessionsToSection(sessionIds, id);
+    return id;
+}
+
+void MainWindow::promptNewSessionsSection(const QList<int> &sessionIds)
+{
+    bool ok = false;
+    const QString name = QInputDialog::getText(this, QStringLiteral("New section"),
+                                               QStringLiteral("Section name:"),
+                                               QLineEdit::Normal, QString(), &ok);
+    if (ok)
+        createSessionsSection(sessionIds, name);
+}
+
+void MainWindow::saveSessionsOrganization()
+{
+    SessionsPageUi *ui = m_sessionsUi;
+    if (!ui)
+        return;
+    QVariantMap pins;
+    for (auto it = ui->pins.cbegin(); it != ui->pins.cend(); ++it)
+        pins.insert(it.key(), it.value());
+    QVariantMap sectionOf;
+    for (auto it = ui->sectionOf.cbegin(); it != ui->sectionOf.cend(); ++it)
+        sectionOf.insert(it.key(), it.value());
+    QVariantList sections;
+    for (const QPair<QString, QString> &section : std::as_const(ui->ownSections))
+        sections.append(QVariantMap{{QStringLiteral("id"), section.first},
+                                    {QStringLiteral("name"), section.second}});
+    QSettings settings;
+    settings.setValue(kSessionsPinsSetting, pins);
+    settings.setValue(kSessionsSectionOfSetting, sectionOf);
+    settings.setValue(kSessionsArchivedSetting,
+                      QStringList(ui->archived.cbegin(), ui->archived.cend()));
+    settings.setValue(kSessionsSectionsSetting, sections);
+    refreshSessionsList();
+}
+
+QString MainWindow::sessionsForkBlocker(int sessionId)
+{
+    if (sessionsDesktopRow(sessionId) || (isExternalSession(sessionId) && !isCloudSession(sessionId)))
+        return QStringLiteral("Only sessions ForkMesh runs can be forked here; fork this one "
+                              "in the Claude app or Claude Code.");
+    const AgentSession *session = findAgentSession(sessionId);
+    if (!session || sessionId <= 0)
+        return QStringLiteral("Select a session first.");
+    if (session->cloud || isCloudSession(sessionId))
+        return QStringLiteral("This session runs on another machine; continue it here to fork it.");
+    if (session->provider != QLatin1String("claude-code"))
+        return QStringLiteral("Only Claude Code sessions can be forked; %1 cannot branch a "
+                              "conversation.")
+            .arg(agentProviderName(session->provider));
+    if (m_sessionsUi && m_sessionsUi->forking.contains(sessionId))
+        return QStringLiteral("This session is being forked already.");
+    const int repoIndex = repoIndexFor(session->owner, session->name);
+    if (repoIndex < 0 || repoIndex >= m_repositories.size() ||
+        m_repositories.at(repoIndex).localPath.trimmed().isEmpty())
+        return QStringLiteral("This session's repository has no local checkout to fork into.");
+    if (!session->directCheckout && session->branchName.isEmpty())
+        return QStringLiteral("This session has no branch to fork from yet.");
+    return QString();
+}
+
+// code-health: allow(blocking-wait) both git calls run inside runOffThread workers, 15 s cap each
+void MainWindow::forkSessionFromSessionsPage(int sessionId)
+{
+    const QString blocker = sessionsForkBlocker(sessionId);
+    if (!blocker.isEmpty() || !m_agentStore) {
+        if (!blocker.isEmpty())
+            flashMessage(blocker, true);
+        return;
+    }
+    const AgentSession source = *findAgentSession(sessionId);
+    const QString repoPath =
+        QDir(m_repositories.at(repoIndexFor(source.owner, source.name)).localPath).absolutePath();
+    QStringList configDirs;
+    for (const AgentAccountProfile &profile : agentAccountProfiles(QStringLiteral("claude-code")))
+        if (!profile.configDir.trimmed().isEmpty())
+            configDirs.append(profile.configDir);
+    configDirs.append(forkmesh::claudedesktop::defaultClaudeHome());
+    const QString accountId = activeAgentAccount(QStringLiteral("claude-code")).id;
+    AgentStore *store = m_agentStore;
+    if (m_sessionsUi)
+        m_sessionsUi->forking.insert(sessionId);
+    struct Lookup {
+        QList<QJsonObject> events;
+        QString log;
+        QString cliSessionId;
+        QString transcript;
+        QString head;
+        QString error;
+    };
+    runOffThread<Lookup>(
+        [store, source, repoPath, configDirs, accountId] {
+            Lookup out;
+            out.events = store->loadEvents(source);
+            out.cliSessionId = forkmesh::agents::claudeResumeSessionId(out.events, accountId);
+            if (out.cliSessionId.isEmpty()) {
+                out.error = QStringLiteral("it has no Claude Code conversation yet");
+                return out;
+            }
+            for (const QString &dir : configDirs) {
+                out.transcript = forkmesh::claudedesktop::findTranscript(
+                    QDir(dir).filePath(QStringLiteral("projects")), out.cliSessionId);
+                if (!out.transcript.isEmpty())
+                    break;
+            }
+            if (out.transcript.isEmpty()) {
+                out.error = QStringLiteral("its Claude Code transcript is not on this computer");
+                return out;
+            }
+            out.log = store->readLog(source);
+            if (source.directCheckout)
+                return out;
+            QProcess git;
+            git.setWorkingDirectory(repoPath);
+            git.start(QStringLiteral("git"),
+                      {QStringLiteral("rev-parse"), QStringLiteral("--verify"),
+                       QStringLiteral("--quiet"),
+                       QStringLiteral("refs/heads/%1^{commit}").arg(source.branchName)});
+            if (git.waitForFinished(15000) && git.exitCode() == 0)
+                out.head = QString::fromUtf8(git.readAllStandardOutput()).trimmed();
+            if (out.head.isEmpty())
+                out.error = QStringLiteral("branch %1 is not in the local checkout")
+                                .arg(source.branchName);
+            return out;
+        },
+        [this, sessionId, source, repoPath](Lookup out) {
+            if (m_sessionsUi)
+                m_sessionsUi->forking.remove(sessionId);
+            if (!out.error.isEmpty() || !m_agentStore) {
+                flashMessage(QStringLiteral("Could not fork session #%1: %2.")
+                                 .arg(sessionId)
+                                 .arg(out.error),
+                             true);
+                return;
+            }
+            const qint64 now = QDateTime::currentMSecsSinceEpoch();
+            AgentSession fork;
+            fork.owner = source.owner;
+            fork.name = source.name;
+            fork.issueNumber = 0;
+            fork.issueTitle = QStringLiteral("%1 (fork)").arg(sessionsTitle(source));
+            fork.prompt = source.prompt;
+            fork.provider = source.provider;
+            fork.runtimeId = source.runtimeId;
+            fork.model = source.model;
+            fork.mode = source.mode;
+            fork.strength = source.strength;
+            fork.contextWindow = source.contextWindow;
+            fork.directCheckout = source.directCheckout;
+            fork.createPr = false;
+            fork.startedByBot = source.startedByBot;
+            fork.originInstanceId = activeServerInstanceId();
+            fork.originInstanceUrl = activeServerInstanceUrl();
+            fork.baseBranch = source.directCheckout ? source.baseBranch : source.branchName;
+            fork.baseRef = source.directCheckout ? source.baseRef : out.head;
+            fork.status = AgentStatus::Success;
+            fork.claudeImportId = out.cliSessionId;
+            fork.claudeImportPath = out.transcript;
+            fork.claudeImportCwd =
+                source.directCheckout || source.worktreeName.isEmpty()
+                    ? repoPath
+                    : QDir(forkmesh::agentwt::root(repoPath)).filePath(source.worktreeName);
+            fork.claudeImportBytes = -1;
+            fork = m_agentStore->createSession(fork);
+            if (fork.id <= 0) {
+                flashMessage(QStringLiteral("Could not fork session #%1: the new session "
+                                            "could not be saved.")
+                                 .arg(sessionId),
+                             true);
+                return;
+            }
+            if (!fork.directCheckout) {
+                const QString name = forkmesh::agentwt::adHocName(fork.id, fork.issueTitle);
+                fork.branchName = name;
+                fork.worktreeName = name;
+            }
+            fork.createdAtMs = now;
+            fork.startedAtMs = now;
+            fork.finishedAtMs = now;
+            m_agentStore->saveSession(fork);
+            if (!out.log.isEmpty())
+                m_agentStore->appendLog(fork, out.log);
+            m_agentStore->appendLog(
+                fork, QStringLiteral("\n==> Forked from session #%1 (Claude Code session %2)%3.\n")
+                          .arg(sessionId)
+                          .arg(out.cliSessionId,
+                               fork.directCheckout
+                                   ? QString()
+                                   : QStringLiteral(" onto branch %1 at %2")
+                                         .arg(fork.branchName, out.head.left(12))));
+            for (const QJsonObject &event : std::as_const(out.events))
+                m_agentStore->appendEvent(fork, event);
+            m_streamEventsAbsent.remove(fork.id);
+            m_streamEvents.insert(fork.id, out.events);
+            m_agentSessions.append(fork);
+            reloadAgents();
+            scheduleAgentSessionsPush();
+            const int forkId = fork.id;
+            const auto opened = [this, sessionId, forkId] {
+                flashMessage(QStringLiteral("Forked session #%1 into #%2. Send a message to "
+                                            "carry on there.")
+                                 .arg(sessionId)
+                                 .arg(forkId));
+                if (sessionsPageOnScreen())
+                    openSessionInSessionsPage(forkId);
+                scheduleSessionsPageRefresh();
+            };
+            if (fork.directCheckout) {
+                opened();
+                return;
+            }
+            const QString branch = fork.branchName;
+            const QString head = out.head;
+            runOffThread<QString>(
+                [repoPath, branch, head] {
+                    QProcess git;
+                    git.setWorkingDirectory(repoPath);
+                    git.start(QStringLiteral("git"),
+                              {QStringLiteral("branch"), branch, head});
+                    if (!git.waitForFinished(15000))
+                        return QStringLiteral("git branch did not finish");
+                    if (git.exitCode() != 0)
+                        return QString::fromUtf8(git.readAllStandardError()).trimmed();
+                    return QString();
+                },
+                [this, forkId, branch, opened](QString error) {
+                    if (error.isEmpty()) {
+                        opened();
+                        return;
+                    }
+                    if (AgentSession *made = findAgentSession(forkId))
+                        m_agentStore->appendLog(
+                            *made, QStringLiteral("==> Could not create branch %1: %2\n")
+                                       .arg(branch, error));
+                    flashMessage(QStringLiteral("Forked into session #%1, but branch %2 could "
+                                                "not be created: %3")
+                                     .arg(forkId)
+                                     .arg(branch, error),
+                                 true);
+                    scheduleSessionsPageRefresh();
+                });
+        });
 }
 
 #ifdef FORKMESH_WINDOW_TESTS
+namespace {
+
+QStringList sessionsMenuEntries(const QMenu *menu)
+{
+    QStringList entries;
+    for (const QAction *action : menu->actions()) {
+        if (action->isSeparator()) {
+            entries << QStringLiteral("-");
+            continue;
+        }
+        QString entry = action->text();
+        if (action->menu())
+            entry += QStringLiteral(" >");
+        if (!action->shortcut().isEmpty())
+            entry += QLatin1Char('\t') + action->shortcut().toString();
+        if (!action->isEnabled())
+            entry += QStringLiteral(" (off)");
+        entries << entry;
+    }
+    return entries;
+}
+
+} // namespace
+
+QStringList MainWindow::testSessionsListLayout() const
+{
+    QStringList rows;
+    if (!m_sessionsUi || !m_sessionsUi->list)
+        return rows;
+    for (int row = 0; row < m_sessionsUi->list->count(); ++row) {
+        const QListWidgetItem *item = m_sessionsUi->list->item(row);
+        rows << (item->data(kSessionHeaderRole).toBool()
+                     ? QStringLiteral("# ") + item->data(Qt::DisplayRole).toString()
+                     : QString::number(item->data(kSessionIdRole).toInt()));
+    }
+    return rows;
+}
+
+QStringList MainWindow::testSessionsContextMenu(int sessionId)
+{
+    std::unique_ptr<QMenu> menu(buildSessionsContextMenu(sessionId, this));
+    return menu ? sessionsMenuEntries(menu.get()) : QStringList();
+}
+
+QStringList MainWindow::testSessionsHeaderMenu(const QString &label)
+{
+    if (!m_sessionsUi)
+        return {};
+    for (auto it = m_sessionsUi->groupLabels.cbegin(); it != m_sessionsUi->groupLabels.cend(); ++it)
+        if (it.value() == label) {
+            std::unique_ptr<QMenu> menu(buildSessionsHeaderMenu(it.key(), this));
+            return menu ? sessionsMenuEntries(menu.get()) : QStringList();
+        }
+    return {};
+}
+
+bool MainWindow::testSessionsHeaderAction(const QString &label, const QString &objectName)
+{
+    if (!m_sessionsUi)
+        return false;
+    for (auto it = m_sessionsUi->groupLabels.cbegin(); it != m_sessionsUi->groupLabels.cend(); ++it)
+        if (it.value() == label) {
+            std::unique_ptr<QMenu> menu(buildSessionsHeaderMenu(it.key(), this));
+            QAction *action = menu ? menu->findChild<QAction *>(objectName) : nullptr;
+            if (!action || !action->isEnabled())
+                return false;
+            action->trigger();
+            return true;
+        }
+    return false;
+}
+
+bool MainWindow::testSessionsMenuAction(int sessionId, const QString &objectName)
+{
+    std::unique_ptr<QMenu> menu(buildSessionsContextMenu(sessionId, this));
+    QAction *action = menu ? menu->findChild<QAction *>(objectName) : nullptr;
+    if (!action || !action->isEnabled())
+        return false;
+    action->trigger();
+    return true;
+}
+
+bool MainWindow::testSessionsMenuKey(int sessionId, int key)
+{
+    std::unique_ptr<QMenu> menu(buildSessionsContextMenu(sessionId, this));
+    if (!menu)
+        return false;
+    bool fired = false;
+    for (QAction *action : menu->actions())
+        connect(action, &QAction::triggered, menu.get(), [&fired] { fired = true; });
+    menu->popup(mapToGlobal(QPoint(20, 20)));
+    QKeyEvent press(QEvent::KeyPress, key, Qt::NoModifier, QKeySequence(key).toString().toLower());
+    QCoreApplication::sendEvent(menu.get(), &press);
+    menu->hide();
+    return fired;
+}
+
+QString MainWindow::testSessionsNewSection(const QList<int> &sessionIds, const QString &name)
+{
+    return createSessionsSection(sessionIds, name);
+}
+
+void MainWindow::testSetSessionsShowArchived(bool show)
+{
+    if (!m_sessionsUi)
+        return;
+    m_sessionsUi->showArchived = show;
+    refreshSessionsList();
+}
+
+void MainWindow::testSelectSessions(const QList<int> &sessionIds)
+{
+    if (!m_sessionsUi || !m_sessionsUi->list)
+        return;
+    QSignalBlocker block(m_sessionsUi->list);
+    m_sessionsUi->list->clearSelection();
+    for (int row = 0; row < m_sessionsUi->list->count(); ++row) {
+        QListWidgetItem *item = m_sessionsUi->list->item(row);
+        if (sessionIds.contains(item->data(kSessionIdRole).toInt()))
+            item->setSelected(true);
+    }
+}
+
 QList<int> MainWindow::testSessionsListIds() const
 {
     QList<int> ids;
@@ -3337,28 +4120,28 @@ int MainWindow::testSessionsTranscriptMatches(const QString &text)
     return matches;
 }
 
-void MainWindow::testSessionsComposerSend(const QString &text, int alsoTo)
+void MainWindow::testSessionsComposerSend(const QString &text)
 {
-    SessionsPageUi *ui = m_sessionsUi;
-    if (!ui || !ui->composer)
+    if (!m_issueQuickAdd || !m_quickAddSendToAgentButton)
         return;
-    if (alsoTo != 0 && ui->alsoCombo) {
-        fillSessionsPicker(ui->alsoCombo, alsoTo, 0, QStringLiteral("No one else"));
-    }
-    ui->composer->setPlainText(text);
-    QKeyEvent press(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
-    QCoreApplication::sendEvent(ui->composer, &press);
+    m_issueQuickAdd->setPlainText(text);
+    m_quickAddSendToAgentButton->click();
 }
 
 QString MainWindow::testSessionsComposerState() const
 {
-    const SessionsPageUi *ui = m_sessionsUi;
-    if (!ui || !ui->composer)
-        return QString();
-    return QStringLiteral("%1|%2|%3")
-        .arg(ui->composer->isEnabled() ? 1 : 0)
-        .arg(ui->toCombo ? ui->toCombo->currentData().toInt() : 0)
-        .arg(ui->composerNote ? ui->composerNote->text() : QString());
+    QString blocked;
+    const int target = sessionsComposerTarget(&blocked);
+    const QWidget *pane = sessionsComposerPane();
+    const bool docked =
+        pane && m_footerDock && m_globalOverlayHost && m_footerDock->isVisible() &&
+        m_footerDock->width() == pane->width() &&
+        m_footerDock->x() == pane->mapTo(m_globalOverlayHost, QPoint()).x();
+    return QStringLiteral("%1|%2|%3|%4")
+        .arg(blocked.isEmpty() ? 1 : 0)
+        .arg(target)
+        .arg(docked ? 1 : 0)
+        .arg(blocked);
 }
 
 QStringList MainWindow::testSessionsRelayStrip() const

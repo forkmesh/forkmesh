@@ -143,6 +143,18 @@ static void testPermissions()
     check(messageAllowed(QStringLiteral("Ask"), QStringLiteral("Ask")), "same mode");
     check(!messageAllowed(QStringLiteral("Plan"), QStringLiteral("Auto")), "plan to auto refused");
     check(!messageAllowed(QStringLiteral("Ask"), QStringLiteral("Edit")), "ask to edit refused");
+    check(cappedAgentMode(QStringLiteral("Auto"), QStringLiteral("Plan")) == QStringLiteral("Plan"),
+          "a plan agent's new agent stays in plan");
+    check(cappedAgentMode(QStringLiteral("Auto"), QStringLiteral("Edit")) == QStringLiteral("Edit"),
+          "an edit agent's new agent stays in edit");
+    check(cappedAgentMode(QStringLiteral("Ask"), QStringLiteral("Auto")) == QStringLiteral("Ask"),
+          "an auto agent's new agent keeps a lower default");
+    check(cappedAgentMode(QStringLiteral("Auto"), QStringLiteral("Auto")) == QStringLiteral("Auto"),
+          "an auto agent may start an auto agent");
+    check(cappedAgentMode(QStringLiteral("Auto"), QString()) == QStringLiteral("Plan"),
+          "a caller of unknown mode gets plan");
+    check(cappedAgentMode(QStringLiteral("something"), QStringLiteral("Ask")) == QStringLiteral("Ask"),
+          "an unknown default counts as the highest rank");
     check(!messageAllowed(QStringLiteral("Edit"), QString()), "unknown target counts as auto");
     check(messageAllowed(QStringLiteral("Auto"), QString()), "auto may message an unknown mode");
     check(!messageAllowed(QString(), QStringLiteral("Ask")), "unknown sender counts as plan");

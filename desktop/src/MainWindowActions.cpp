@@ -8,6 +8,7 @@
 #include "ProcessReaper.h"
 #include "MainWindowInternal.h"
 #include "DesktopPingForward.h"
+#include "CompactCelebration.h"
 #include "PingBatch.h"
 #include "ReleaseManifestTag.h"
 #include "ActionFailureSummary.h"
@@ -1618,6 +1619,14 @@ void MainWindow::applyWorkflowScan(const QString &owner, const QString &name,
         }
         if (!wf.valid || !matchesTrigger)
             continue;
+        if (!wf.mayStartFromEvent()) {
+            logSystem(QString::fromUtf8(
+                          "Actions: \xE2\x80\x9C%1\xE2\x80\x9D for %2/%3 @ %4 says "
+                          "sandbox: false, which only Run workflow may start, so "
+                          "this event does not run it.")
+                          .arg(wf.name, owner, name, commit.left(8)));
+            continue;
+        }
         if (trigger == WorkflowTrigger::Push && entry.defaultBranchRetiresPush) {
             logSystem(QString::fromUtf8(
                 "Actions: \xE2\x80\x9C%1\xE2\x80\x9D no longer runs on push on"
@@ -6581,7 +6590,7 @@ void MainWindow::refreshNotificationsTable()
         const bool recovery = kind == QLatin1String("operational_alert") &&
                               webPingIsRecovery(alert);
         NotificationRow data;
-        data.type = recovery ? QStringLiteral("System recovered")
+        data.type = recovery ? QStringLiteral("Good news")
                              : webPingKindLabel(kind);
         data.kind = kind;
         data.title = (unread ? QString::fromUtf8("\xE2\x97\x8F ") : QString()) +
@@ -7706,7 +7715,7 @@ void MainWindow::refreshWebAlerts(bool force)
 void MainWindow::celebrateFreshWebAlerts()
 {
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
-    QJsonObject newest;
+    QList<QJsonObject> fresh;
     for (const QJsonValue &value : std::as_const(m_webAlerts)) {
         const QJsonObject alert = value.toObject();
         if (!forkmesh::pingforward::isFreshCelebration(alert, now))
@@ -7715,21 +7724,34 @@ void MainWindow::celebrateFreshWebAlerts()
         if (m_celebratedWebAlertIds.contains(id))
             continue;
         m_celebratedWebAlertIds.insert(id);
-        if (newest.isEmpty() ||
-            alert.value(QStringLiteral("ts")).toDouble() >
-                newest.value(QStringLiteral("ts")).toDouble())
-            newest = alert;
+        fresh.append(alert);
     }
-    if (newest.isEmpty() || pingsPaused())
+    if (fresh.isEmpty() || pingsPaused())
         return;
+    std::stable_sort(fresh.begin(), fresh.end(),
+                     [](const QJsonObject &left, const QJsonObject &right) {
+                         return left.value(QStringLiteral("ts")).toDouble() <
+                                right.value(QStringLiteral("ts")).toDouble();
+                     });
+    const QJsonObject newest = fresh.last();
     const QString title =
         newest.value(QStringLiteral("title")).toString().trimmed();
     const QString body =
         newest.value(QStringLiteral("body")).toString().trimmed();
-    new forkmesh::ui::CelebrationOverlay(
-        this, 10000, title.isEmpty() ? QStringLiteral("🎉") : title, body, 2);
+    if (!m_compactCelebration)
+        m_compactCelebrationTitles.clear();
+    for (const QJsonObject &alert : std::as_const(fresh))
+        m_compactCelebrationTitles.append(
+            alert.value(QStringLiteral("title")).toString().trimmed());
+    const QString headline =
+        forkmesh::pingforward::celebrationHeadline(m_compactCelebrationTitles);
+    if (m_compactCelebration)
+        m_compactCelebration->showMessage(headline, body);
+    else
+        m_compactCelebration =
+            new forkmesh::ui::CompactCelebrationOverlay(this, headline, body);
     logSystem(title.isEmpty() ? QStringLiteral("🎉") : title);
-    showPingTrayMessage(title, body);
+    showPingTrayMessage(title.isEmpty() ? headline : title, body);
     cheerGenieFor(newest);
 }
 
@@ -9450,6 +9472,16 @@ void MainWindow::showRun(int runId)
         }
         const ActionWorkflow workflow =
             ActionFile::parse(run->workflowPath, run->workflowContent);
+        if (!workflow.sandbox)
+            reason += run->pullNumber > 0
+                          ? QStringLiteral(
+                                "\n\nThis workflow says sandbox: false. A pull request "
+                                "run outside the sandbox is refused even if you approve "
+                                "it.")
+                          : QStringLiteral(
+                                "\n\nThis workflow says sandbox: false: its steps run on "
+                                "this computer as you, with your files and network, "
+                                "outside the Actions sandbox.");
         QStringList graph;
         for (int index = 0; index < workflow.steps.size(); ++index) {
             const QString name = workflow.steps.at(index).name.trimmed();
@@ -9512,8 +9544,15 @@ void MainWindow::showRun(int runId)
         setDiffHtml(m_actionDiff, html);
     } else if (m_actionLog) {
         m_actionLog->setPlaceholderText(actionRunLogPlaceholder(*run));
-        m_actionLog->setPlainText(displaySafePlainLog(m_actionStore->readLog(*run)));
-        m_actionLog->moveCursor(QTextCursor::End);
+        const QString log = displaySafePlainLog(m_actionStore->readLog(*run));
+        const size_t shown = qHash(log);
+        if (m_actionLogShownRunId != run->id || m_actionLogShownHash != shown ||
+            m_actionLog->document()->characterCount() != log.size() + 1) {
+            m_actionLog->setPlainText(log);
+            m_actionLog->moveCursor(QTextCursor::End);
+            m_actionLogShownRunId = run->id;
+            m_actionLogShownHash = shown;
+        }
     }
 }
 
@@ -10131,6 +10170,11 @@ int MainWindow::rerunActionRun(int runId)
         return 0;
     const ActionWorkflow rerunWorkflow =
         ActionFile::parse(run.workflowPath, run.workflowContent);
+    if (!rerunWorkflow.sandbox && prev->pullNumber > 0) {
+        flashMessage(QStringLiteral(
+            "This pull request's workflow says sandbox: false, so it cannot be rerun."));
+        return 0;
+    }
     if (!workflowRunsOnThisNode(m_repositories.at(repoIndex), rerunWorkflow)) {
         flashMessage(QString::fromUtf8(
                          "\xE2\x80\x9C%1\xE2\x80\x9D runs on %2 \xE2\x80\x94 "

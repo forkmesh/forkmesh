@@ -107,6 +107,8 @@ Calls a package gets only when its manifest declares the permission:
 | `repository.read` | `repositories()`, `currentRepository()`, `openRepositoryFile(repository, path, line)` | Code analysis ([codebase-analysis.md](codebase-analysis.md#host-contract)) |
 | `desktop.models.usage.read` | `agentUsagePage(parent)` | The window's own Usage page with this desktop's Claude Code and Codex accounts and their controls, which the [Usage](usage.md) package embeds ([../desktop/agent-usage.md](../desktop/agent-usage.md)) |
 | `desktop.logins.use` | `loginStoreName()`, `saveLogin(login, asker, done)`, `findLogins(url, asker, done)` | See [Login store](#login-store) |
+| `social.mastodon.signin` | `mastodonSignIn()` | The Mastodon package's active account (`instance`, `acct`, `token`), empty when that package is not installed here or has no sign-in; the [CRM](../../marketplace/packages/crm/README.md#mastodon-plugin-sign-in) follows contacts with it |
+| `network.socket.connect` | `authorizeConnection(method, url)` | A raw TCP or UDP connection (no `QNetworkAccessManager`) asks the request firewall first, exactly like a WebSocket (`MainWindow::authorizeFirewallConnection`); the [Reticulum](reticulum.md) connector uses it for every interface |
 | `desktop.workflows.run` | `repositoryWorkflows()`, `repositoryWorkflowAction(repo, id, action, payload, done)` | The workflows in the desktop's repositories (special agents among them), run, edited and pinned to a rail on this desktop ([../app/workflows.md](../app/workflows.md#desktop-workflows-and-special-agents)); the repository key `@account/workflows` pins the account's own workflows (`pin`, `unpin`, `sync`) |
 
 A `NativePackageWidget` implements `refresh()` (load on open and on Refresh,
@@ -258,6 +260,14 @@ python3 app/tools/build_market_catalog.py        # after any catalog/manifest ch
 
 A desktop configure (`cmake`) reruns `generate_desktop_packages.py`; a broken
 catalog fails the configure with "Marketplace package discovery failed".
+The top-level marketplace JSON files, every `manifest.json`, every
+`content/desktop/build.json` and the generator's two scripts are
+`CMAKE_CONFIGURE_DEPENDS`, so editing one makes the next Ninja build configure
+again. A `CONFIGURE_DEPENDS` glob alone notices only added or removed files:
+before, a version bump kept the old `generated/marketplace/catalog.json`, while
+the app embeds `manifest.json` straight from the source, and the registry drops
+a package whose catalog and manifest versions differ ("Catalog identity does
+not match"), so CRM 1.49.0 vanished from the desktop's left rail.
 
 ## Operations
 

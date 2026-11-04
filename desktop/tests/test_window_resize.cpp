@@ -3991,6 +3991,69 @@ void checkUsersDetailRail(MainWindow &window)
 // to a browser, and that page is where a pending contributor reward is paid.
 // The rules that matter are which rows get a "Send payment" button: a record
 // the relay published an exact, ready payout plan for, and nothing else.
+void checkReticulumPage(MainWindow &window)
+{
+    window.resize(1400, 900);
+    const auto settle = [] {
+        QElapsedTimer timer;
+        timer.start();
+        while (timer.elapsed() < 400)
+            QApplication::processEvents(QEventLoop::AllEvents, 20);
+    };
+    const QString shotPrefix = qEnvironmentVariable("FORKMESH_RETICULUM_SHOT");
+    QSettings settings;
+    const QVariant designWas = settings.value(QStringLiteral("app/design"));
+    settings.setValue(QStringLiteral("app/design"), QStringLiteral("next"));
+    check(window.testSetPackageInstalled(QStringLiteral("reticulum"), true),
+          QStringLiteral("the Reticulum plugin installs"));
+    const QList<forkmesh::ui::LayoutMode> modes = {forkmesh::ui::LayoutMode::ControlTower,
+                                                   forkmesh::ui::LayoutMode::Focus,
+                                                   forkmesh::ui::LayoutMode::ControlTower};
+    int round = 0;
+    for (const forkmesh::ui::LayoutMode mode : modes) {
+        const QString name = mode == forkmesh::ui::LayoutMode::Focus ? QStringLiteral("Focus")
+                                                                      : QStringLiteral("Control Tower");
+        forkmesh::ui::setLayoutMode(mode);
+        MainWindow::applyTheme();
+        settle();
+        window.testShowNativePackage(QStringLiteral("reticulum"));
+        settle();
+        forkmesh::market::NativePackageWidget *page = window.testNativePackagePage(QStringLiteral("reticulum"));
+        check(page && page->isVisibleTo(&window) && page->width() > 600 && page->height() > 400,
+              QStringLiteral("the Reticulum page opens in %1 (%2x%3)")
+                  .arg(name)
+                  .arg(page ? page->width() : 0)
+                  .arg(page ? page->height() : 0));
+        auto *tabs = page ? page->findChild<QTabWidget *>(QStringLiteral("reticulumTabs")) : nullptr;
+        check(tabs && tabs->count() == 6, QStringLiteral("the Reticulum page has its six tabs in %1").arg(name));
+        if (!tabs)
+            continue;
+        for (int i = 0; i < tabs->count(); ++i) {
+            tabs->setCurrentIndex(i);
+            settle();
+            QWidget *current = tabs->currentWidget();
+            check(current && current->isVisibleTo(&window) && current->height() > 200,
+                  QStringLiteral("the %1 tab shows in %2").arg(tabs->tabText(i), name));
+            if (!shotPrefix.isEmpty())
+                window.grab().save(QStringLiteral("%1-%2-%3-%4.png")
+                                       .arg(shotPrefix)
+                                       .arg(round)
+                                       .arg(name.simplified().remove(QLatin1Char(' ')))
+                                       .arg(tabs->tabText(i)));
+        }
+        tabs->setCurrentIndex(0);
+        ++round;
+    }
+    if (designWas.isValid())
+        settings.setValue(QStringLiteral("app/design"), designWas);
+    else
+        settings.remove(QStringLiteral("app/design"));
+    settings.remove(QLatin1String(forkmesh::ui::kLayoutModeSetting));
+    forkmesh::ui::layoutModeState() = -1;
+    MainWindow::applyTheme();
+    settle();
+}
+
 void checkLedgerSection(MainWindow &window)
 {
     window.testShowLedgerSection();
@@ -12451,11 +12514,20 @@ void checkAgentCodeView(MainWindow &window)
 
     rawButton->click();
     QApplication::processEvents();
-    check(codePage && codePage->isVisible() && codeButton->isChecked() &&
-              outputStack && outputStack->isVisible(),
-          QStringLiteral("Raw swaps the transcript and keeps the Code pane beside it"));
+    QWidget *rawWindow = window.findChild<QWidget *>(QStringLiteral("agentRawWindow"));
+    auto *transcriptStack = qobject_cast<QStackedWidget *>(outputStack);
+    check(rawWindow && rawWindow->isVisible() && rawWindow->isWindow() &&
+              rawButton->isChecked() && codePage && codePage->isVisible() &&
+              codeButton->isChecked() && outputStack && outputStack->isVisible() &&
+              (!transcriptStack ||
+               (transcriptStack->currentWidget() &&
+                transcriptStack->currentWidget()->objectName() != QLatin1String("actionLog"))),
+          QStringLiteral("Raw opens a side window and leaves the transcript and the Code "
+                         "pane in place"));
     rawButton->click();
     QApplication::processEvents();
+    check(rawWindow && !rawWindow->isVisible() && !rawButton->isChecked(),
+          QStringLiteral("Raw again closes the side window"));
     codeButton->click();
     QApplication::processEvents();
     check(codePage && !codePage->isVisible() && !codeButton->isChecked() &&
@@ -16763,6 +16835,8 @@ void checkSessionsPage(MainWindow &window)
         session.branchName = QStringLiteral("agent/%1").arg(id);
         session.status = status;
         session.createdAtMs = now - id;
+        if (status == AgentStatus::Success)
+            session.finishedAtMs = now - 60000 - id;
         window.testAddAgentSession(session);
         return session;
     };
@@ -16813,20 +16887,21 @@ void checkSessionsPage(MainWindow &window)
 
     window.testSetAgentSessionLiveTransport(first.id, true);
     window.testSetAgentSessionLiveTransport(second.id, true);
-    check(window.testSessionsComposerState().startsWith(
-              QStringLiteral("1|%1|").arg(first.id)),
-          QStringLiteral("the composer is enabled and addressed to the open session "
-                         "(%1)")
+    check(waitUntil([&] {
+              return window.testSessionsComposerState().startsWith(
+                  QStringLiteral("1|%1|1|").arg(first.id));
+          }),
+          QStringLiteral("the global composer docks over the Sessions column and "
+                         "is addressed to the open session (%1)")
               .arg(window.testSessionsComposerState()));
-    window.testSessionsComposerSend(QStringLiteral("please cover the relay strip"),
-                                    second.id);
+    window.testSessionsComposerSend(QStringLiteral("please cover the relay strip"));
     check(waitUntil([&] {
               return window.testSessionsTranscriptIdle() &&
                      window.testSessionsTranscriptMatches(
                          QStringLiteral("please cover the relay strip")) > 0;
           }),
-          QStringLiteral("Enter in the composer sends through "
-                         "sendPromptToAgentSession and the turn shows live"));
+          QStringLiteral("sending from the global composer reaches the open session "
+                         "through sendPromptToAgentSession and the turn shows live"));
 
     QString why;
     check(!window.relayBetweenSessions(planner.id, first.id,
@@ -16842,18 +16917,109 @@ void checkSessionsPage(MainWindow &window)
               return window.testSessionsOpenId() == second.id &&
                      window.testSessionsTranscriptIdle() &&
                      window.testSessionsTranscriptMatches(
-                         QStringLiteral("please cover the relay strip")) > 0 &&
-                     window.testSessionsTranscriptMatches(
                          QStringLiteral("another agent, not the user")) > 0;
           }),
-          QStringLiteral("Also send to reached the second session and the "
-                         "forwarded reply arrived wrapped as an agent message"));
+          QStringLiteral("the forwarded reply arrived wrapped as an agent message"));
     check(window.testSessionsRelayStrip().join(QLatin1Char(' ')).contains(
               QStringLiteral("#%1").arg(first.id)),
           QStringLiteral("the strip shows the conversation between sessions (%1)")
               .arg(window.testSessionsRelayStrip().join(QStringLiteral(" | "))));
 
     window.testSetAgentSessionLiveTransport(first.id, false);
+    window.testSetAgentSessionLiveTransport(second.id, false);
+    const QStringList rowMenu = window.testSessionsContextMenu(second.id);
+    const QString rowMenuText = rowMenu.join(QStringLiteral(" | "));
+    check(rowMenu.contains(QStringLiteral("Open in >")) &&
+              rowMenu.contains(QStringLiteral("Pin\tP")) &&
+              rowMenu.contains(QStringLiteral("Rename…\tR")) &&
+              rowMenuText.contains(QStringLiteral("Fork\tF")) &&
+              rowMenu.contains(QStringLiteral("Move to section >")) &&
+              rowMenu.contains(QStringLiteral("Archive\tA")) &&
+              rowMenu.contains(QStringLiteral("Delete…\tD")) &&
+              rowMenuText.contains(QStringLiteral("\tU")),
+          QStringLiteral("a session row's menu offers Open in, Pin, Mark as unread, "
+                         "Rename, Fork, Move to section, Archive and Delete with their "
+                         "keys (%1)")
+              .arg(rowMenuText));
+    const auto groupOf = [&window](int id) {
+        QString group;
+        for (const QString &row : window.testSessionsListLayout()) {
+            if (row.startsWith(QStringLiteral("# ")))
+                group = row.mid(2);
+            else if (row == QString::number(id))
+                return group;
+        }
+        return QStringLiteral("<not listed>");
+    };
+    check(window.testSessionsMenuKey(second.id, Qt::Key_P) &&
+              groupOf(second.id) == QStringLiteral("Pinned"),
+          QStringLiteral("pressing P in the open menu pins the session into a Pinned "
+                         "group (%1)")
+              .arg(window.testSessionsListLayout().join(QStringLiteral(" | "))));
+    check(window.testSessionsMenuAction(second.id, QStringLiteral("sessionsPinAction")) &&
+              groupOf(second.id) != QStringLiteral("Pinned"),
+          QStringLiteral("Unpin takes the session out of the Pinned group"));
+    window.showSessionsPage(planner.id);
+    waitUntil([&] { return window.testSessionsOpenId() == planner.id; });
+    const bool wasUnread =
+        window.testSessionsContextMenu(planner.id).contains(QStringLiteral("Mark as read\tU"));
+    check(window.testSessionsMenuAction(planner.id, QStringLiteral("sessionsUnreadAction")) &&
+              window.testSessionsContextMenu(planner.id).contains(
+                  wasUnread ? QStringLiteral("Mark as unread\tU")
+                            : QStringLiteral("Mark as read\tU")),
+          QStringLiteral("Mark as unread flips the open session's read state and it "
+                         "stays that way while it is open (%1)")
+              .arg(window.testSessionsContextMenu(planner.id).join(QStringLiteral(" | "))));
+    window.testSessionsMenuAction(planner.id, QStringLiteral("sessionsUnreadAction"));
+
+    window.testSessionsNewSection({second.id}, QStringLiteral("Release work"));
+    check(groupOf(second.id) == QStringLiteral("Release work"),
+          QStringLiteral("New section files the session under its own header (%1)")
+              .arg(window.testSessionsListLayout().join(QStringLiteral(" | "))));
+    const QStringList headerMenu = window.testSessionsHeaderMenu(QStringLiteral("Release work"));
+    const QString headerMenuText = headerMenu.join(QStringLiteral(" | "));
+    check(headerMenu.contains(QStringLiteral("New session")) &&
+              headerMenu.contains(QStringLiteral("New section…")) &&
+              headerMenu.contains(QStringLiteral("Rename section…")) &&
+              headerMenuText.contains(QStringLiteral("Move up")) &&
+              headerMenu.contains(QStringLiteral("Select all")) &&
+              headerMenuText.contains(QStringLiteral("Collapse all")) &&
+              headerMenuText.contains(QStringLiteral("Expand all")) &&
+              headerMenu.contains(QStringLiteral("Archive all (1)")) &&
+              headerMenuText.contains(QStringLiteral("Delete all sessions (1)")) &&
+              headerMenu.contains(QStringLiteral("Delete section")),
+          QStringLiteral("a section header's menu offers the section actions (%1)")
+              .arg(headerMenuText));
+    window.testSelectSessions({second.id, planner.id});
+    check(window.testSessionsContextMenu(second.id).contains(QStringLiteral("Pin 2 sessions\tP")),
+          QStringLiteral("the row menu acts on the whole selection when the row is in it"));
+    window.testSelectSessions({});
+
+    check(window.testSessionsMenuAction(second.id, QStringLiteral("sessionsArchiveAction")) &&
+              !window.testSessionsListIds().contains(second.id),
+          QStringLiteral("Archive hides the session from the list"));
+    window.testSetSessionsShowArchived(true);
+    check(groupOf(second.id) == QStringLiteral("Archived (1)"),
+          QStringLiteral("Archived sessions shows it under an Archived header (%1)")
+              .arg(window.testSessionsListLayout().join(QStringLiteral(" | "))));
+    check(window.testSessionsHeaderAction(QStringLiteral("Archived (1)"),
+                                          QStringLiteral("sessionsHeaderArchiveAllAction")) &&
+              groupOf(second.id) == QStringLiteral("Release work"),
+          QStringLiteral("Unarchive all puts the session back in its section"));
+    window.testSetSessionsShowArchived(false);
+    check(window.testSessionsHeaderAction(QStringLiteral("Release work"),
+                                          QStringLiteral("sessionsHeaderDeleteSectionAction")) &&
+              groupOf(second.id) != QStringLiteral("Release work") &&
+              window.testSessionsListIds().contains(second.id),
+          QStringLiteral("Delete section removes the header and keeps its sessions"));
+    {
+        QSettings settings;
+        for (const QString &key :
+             {QStringLiteral("sessions/pins"), QStringLiteral("sessions/sectionOf"),
+              QStringLiteral("sessions/archived"), QStringLiteral("sessions/sections")})
+            settings.remove(key);
+    }
+
     window.testSetAgentSessionLiveTransport(second.id, false);
     window.testRemoveAgentSession(first.id);
     window.testRemoveAgentSession(second.id);
@@ -16922,6 +17088,96 @@ void checkGitCompactLayout(MainWindow &window)
     settle();
 }
 
+void checkPromptPlacementAtLaunch()
+{
+    const QRect detachGeometry(40, 60, 900, 180);
+    QSettings placement;
+    placement.setValue(QStringLiteral("prompt/floating"), true);
+    placement.setValue(QStringLiteral("prompt/floatPos"), QPoint(24, 48));
+    placement.setValue(QStringLiteral("prompt/floatSize"), QSize(320, 200));
+    placement.setValue(QStringLiteral("prompt/detached"), false);
+    placement.setValue(QStringLiteral("prompt/detachGeometry"), detachGeometry);
+    placement.sync();
+    const auto staleKeysGone = [&placement] {
+        for (const char *key : {"prompt/floating", "prompt/floatPos", "prompt/floatSize",
+                                "prompt/detached"}) {
+            if (placement.contains(QLatin1String(key)))
+                return false;
+        }
+        return true;
+    };
+    {
+        MainWindow restarted;
+        restarted.resize(1200, 720);
+        restarted.show();
+        QElapsedTimer timer;
+        timer.start();
+        while (!staleKeysGone() && timer.elapsed() < 4000)
+            QApplication::processEvents(QEventLoop::AllEvents, 20);
+        check(restarted.testPromptOverlayPlacement() == QStringLiteral("anchored") &&
+                  staleKeysGone() &&
+                  placement.value(QStringLiteral("prompt/detachGeometry")).toRect() == detachGeometry,
+              QStringLiteral("a launch docks the prompt, drops the floating keys it never reads and "
+                             "keeps the detached window's geometry (placement %1)")
+                  .arg(restarted.testPromptOverlayPlacement()));
+        restarted.close();
+        QApplication::processEvents();
+        stopChildProcesses(restarted);
+    }
+    check(staleKeysGone() &&
+              placement.value(QStringLiteral("prompt/detachGeometry")).toRect() == detachGeometry,
+          QStringLiteral("closing the window stores only the detached prompt's geometry"));
+}
+
+void checkOverviewCommitRefresh(MainWindow &window)
+{
+    auto *overview = window.findChild<QTreeWidget *>(QStringLiteral("overviewList"));
+    QTreeWidgetItem *readme = nullptr;
+    QElapsedTimer timer;
+    timer.start();
+    while (overview && (!readme || readme->text(1) != QLatin1String("readme")) &&
+           timer.elapsed() < 5000) {
+        QApplication::processEvents(QEventLoop::AllEvents, 20);
+        readme = nullptr;
+        for (int at = 0; at < overview->topLevelItemCount(); ++at) {
+            QTreeWidgetItem *item = overview->topLevelItem(at);
+            if (item->data(0, Qt::UserRole).toString() == QLatin1String("readme.txt") &&
+                overview->itemWidget(item, 0))
+                readme = item;
+        }
+    }
+    check(readme != nullptr && readme->text(1) == QLatin1String("readme"),
+          QStringLiteral("the overview lists readme.txt with its name cell and last commit"));
+    if (!readme)
+        return;
+    QWidget *cell = overview->itemWidget(readme, 0);
+    const int tracks = cell->findChildren<QWidget *>(QStringLiteral("overviewMetricTracks")).size();
+    const int oldTracks = cell->findChildren<QWidget *>(QStringLiteral("overviewMetricTrack")).size() +
+                          cell->findChildren<QWidget *>(QStringLiteral("overviewMetricFill")).size();
+    check(tracks == 1 && oldTracks == 0 && cell->findChildren<QWidget *>().size() <= 4,
+          QStringLiteral("an overview row's metric strip is one painted widget (%1 strips, %2 old bars, %3 children)")
+              .arg(tracks)
+              .arg(oldTracks)
+              .arg(cell->findChildren<QWidget *>().size()));
+    const QPointer<QWidget> before = cell;
+    window.testMergeOverviewEntryCommits(
+        {{QStringLiteral("readme.txt"), QByteArray("1700000000\x1f" "3 days ago\x1f" "Tune the readme")}});
+    QApplication::processEvents();
+    QTreeWidgetItem *after = nullptr;
+    for (int at = 0; at < overview->topLevelItemCount(); ++at) {
+        QTreeWidgetItem *item = overview->topLevelItem(at);
+        if (item->data(0, Qt::UserRole).toString() == QLatin1String("readme.txt"))
+            after = item;
+    }
+    check(after && after->text(1) == QLatin1String("Tune the readme") &&
+              after->toolTip(0).contains(QLatin1String("Updated: 3 days ago")),
+          QStringLiteral("commit info for an overview entry shows its subject and age (%1)")
+              .arg(after ? after->text(1) : QStringLiteral("row gone")));
+    check(before && after && overview->itemWidget(after, 0) == before.data(),
+          QStringLiteral("commit info arriving patches the overview rows in place instead of "
+                         "rebuilding every cell widget"));
+}
+
 void runGitLayoutOnly(MainWindow &window)
 {
     window.resize(1400, 900);
@@ -16943,6 +17199,7 @@ void runGitLayoutOnly(MainWindow &window)
     const int index = window.testAddLocalRepository("me", "gitlayout", repo.path());
     window.testOpenRepository(index);
     QApplication::processEvents();
+    checkOverviewCommitRefresh(window);
     window.testClickRailGitButton();
     QElapsedTimer timer;
     timer.start();
@@ -18074,7 +18331,41 @@ else:
                   window.testRepoDetailTabDeferred(4) &&
                   window.testRepoDetailTabDeferred(9),
               QStringLiteral("expensive repository tabs begin deferred"));
-        window.testClickRepoDetailTab(3);
+        {
+            const QSet<QWidget *> before = [] {
+                const QWidgetList all = QApplication::allWidgets();
+                return QSet<QWidget *>(all.cbegin(), all.cend());
+            }();
+            StyleChangeCounter counter;
+            qApp->installEventFilter(&counter);
+            QElapsedTimer timer;
+            timer.start();
+            window.testClickRepoDetailTab(3);
+            const qint64 elapsed = timer.elapsed();
+            qApp->removeEventFilter(&counter);
+            int built = 0;
+            int changes = 0;
+            int maxPerWidget = 0;
+            for (QWidget *widget : QApplication::allWidgets()) {
+                if (before.contains(widget))
+                    continue;
+                ++built;
+                const int count = counter.counts.value(widget);
+                changes += count;
+                maxPerWidget = qMax(maxPerWidget, count);
+            }
+            qInfo().noquote()
+                << QStringLiteral("agents tab build: %1 ms, %2 new widgets, "
+                                  "%3 style changes, at most %4 on one widget")
+                       .arg(elapsed)
+                       .arg(built)
+                       .arg(changes)
+                       .arg(maxPerWidget);
+            check(built > 0 && changes <= built * 2,
+                  QStringLiteral("building the Agents tab restyles each new "
+                                 "widget about once, not once per ancestor it "
+                                 "is moved under"));
+        }
         check(!window.testRepoDetailTabDeferred(3) &&
                   window.testRepoDetailTabDeferred(4) &&
                   window.testRepoDetailTabDeferred(5) &&
@@ -18400,6 +18691,11 @@ else:
 
     if (rewardHistoryOnly) {
         checkContributorRewardHistory(window);
+        stopChildProcesses(window);
+        return failures == 0 ? 0 : 1;
+    }
+    if (app.arguments().contains(QStringLiteral("--reticulum-only"))) {
+        checkReticulumPage(window);
         stopChildProcesses(window);
         return failures == 0 ? 0 : 1;
     }
@@ -18838,6 +19134,49 @@ else:
                           "(closed=%1)")
                       .arg(closedWidth));
 
+            {
+                QWidget *pagesPanel = window.testAgentPagesPanel();
+                QTabWidget *pagesTabs = window.testAgentPagesTabs();
+                auto *agentPage = new QWidget(&window, Qt::Tool);
+                agentPage->setAttribute(Qt::WA_DeleteOnClose);
+                agentPage->setWindowTitle(QStringLiteral("Agent five - Dev server"));
+                const bool docked = window.testDockAgentPage(agentPage);
+                settleRail();
+                const bool pageShown = docked && pagesPanel && pagesPanel->isVisible() &&
+                                       pagesTabs && pagesTabs->count() == 1 &&
+                                       pagesTabs->tabText(0) ==
+                                           QLatin1String("Agent five - Dev server") &&
+                                       !agentPage->isWindow() && agentPage->isVisible();
+                if (!railShot.isEmpty())
+                    window.grab().save(railShot + QStringLiteral(".agent-pages.png"));
+                const forkmesh::ui::LayoutMode startMode = forkmesh::ui::layoutMode();
+                const forkmesh::ui::LayoutMode otherMode =
+                    startMode == forkmesh::ui::LayoutMode::Focus
+                        ? forkmesh::ui::LayoutMode::ControlTower
+                        : forkmesh::ui::LayoutMode::Focus;
+                forkmesh::ui::setLayoutMode(otherMode);
+                settleRail();
+                const bool keptInOther = pagesPanel && pagesPanel->isVisible() &&
+                                         pagesTabs && pagesTabs->count() == 1;
+                forkmesh::ui::setLayoutMode(startMode);
+                settleRail();
+                const bool keptBack = pagesPanel && pagesPanel->isVisible() &&
+                                      pagesTabs && pagesTabs->count() == 1;
+                if (pagesTabs)
+                    emit pagesTabs->tabCloseRequested(0);
+                for (int i = 0; i < 20; ++i)
+                    QApplication::processEvents(QEventLoop::AllEvents, 10);
+                settleRail();
+                check(pageShown && keptInOther && keptBack && pagesTabs &&
+                          pagesTabs->count() == 0 && pagesPanel && !pagesPanel->isVisible(),
+                      QString("an agent's browser page docks as a tab in the Agent pages panel "
+                              "on the right, stays there in both layout modes, and closing its "
+                              "tab hides the panel (shown=%1 other=%2 back=%3)")
+                          .arg(pageShown)
+                          .arg(keptInOther)
+                          .arg(keptBack));
+            }
+
             window.testSetSideRailEnabled(false);
             settleRail();
             const bool railHidden = rail && !rail->isVisible() &&
@@ -18947,6 +19286,24 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
                       .arg(planType.value(QStringLiteral("error")).toString(),
                            privateRead.value(QStringLiteral("error")).toString(),
                            userClose.value(QStringLiteral("error")).toString()));
+
+            AgentSession lockedAgent = planAgent;
+            lockedAgent.id = 943511;
+            lockedAgent.mode = QStringLiteral("Auto");
+            lockedAgent.issueTitle = QStringLiteral("terminal locked auto agent");
+            window.testAddAgentSession(lockedAgent);
+            const QJsonObject lockedOpen = window.testTerminalRequest(
+                lockedAgent.id, QString(), QStringLiteral("terminals.open"), {});
+            const QJsonObject lockedType = window.testTerminalRequest(
+                lockedAgent.id, QString(), QStringLiteral("terminals.input"),
+                {{QStringLiteral("terminal"), terminalId}, {QStringLiteral("text"), QStringLiteral("x")}});
+            check(lockedOpen.value(QStringLiteral("error")).toString() == QStringLiteral("rules_gated") &&
+                      lockedType.value(QStringLiteral("error")).toString() ==
+                          QStringLiteral("rules_gated"),
+                  QString("an Auto agent under the default rules (folders locked, calls "
+                          "checked) cannot open or type into terminals (open=%1 type=%2)")
+                      .arg(lockedOpen.value(QStringLiteral("error")).toString(),
+                           lockedType.value(QStringLiteral("error")).toString()));
 
             QPushButton *chromeTerminal = nullptr;
             for (QPushButton *button : window.findChildren<QPushButton *>())
@@ -21969,10 +22326,24 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
         }
         const bool incomplete = installedBefore.size() < everything.size();
         const bool enabledBefore = installAll && installAll->isEnabled();
+        QHash<QString, QPointer<forkmesh::market::NativePackageWidget>> pagesBefore;
+        for (const QString &id : std::as_const(installedBefore)) {
+            if (forkmesh::market::NativePackageWidget *page = window.testNativePackagePage(id))
+                pagesBefore.insert(id, page);
+        }
+        const auto pagesKept = [&window, &pagesBefore] {
+            QStringList rebuilt;
+            for (auto it = pagesBefore.cbegin(); it != pagesBefore.cend(); ++it) {
+                if (!it.value() || window.testNativePackagePage(it.key()) != it.value())
+                    rebuilt << it.key();
+            }
+            return rebuilt;
+        };
         if (installAll && installAll->isEnabled())
             installAll->click();
         QApplication::processEvents();
         QApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        const QStringList rebuiltByInstall = pagesKept();
         bool allInstalled = !everything.isEmpty();
         for (const QString &id : everything)
             allInstalled = allInstalled && window.testPackageInstalled(id);
@@ -21993,6 +22364,15 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
         }
         QApplication::processEvents();
         QApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        const QStringList rebuiltByRemoval = pagesKept();
+        check(!pagesBefore.isEmpty() && rebuiltByInstall.isEmpty() &&
+                  rebuiltByRemoval.isEmpty(),
+              QStringLiteral("installing and removing other packages keeps the "
+                             "pages already built (pages=%1, rebuilt by install=%2, "
+                             "by removal=%3)")
+                  .arg(pagesBefore.size())
+                  .arg(rebuiltByInstall.join(QLatin1Char(',')),
+                       rebuiltByRemoval.join(QLatin1Char(','))));
     }
     check(previewDecodesFirstOpen > 0 &&
               previewDecodesFirstOpen <= packageCards.size() &&
@@ -22875,6 +23255,45 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
               .arg(branchesBack)
               .arg(window.testPackageInstalled(QStringLiteral("special-agents"))));
 
+    check(window.testRailButtonShown(QStringLiteral("files")) &&
+              window.testSetPackageInstalled(QStringLiteral("files"), false) &&
+              !window.testRailButtonShown(QStringLiteral("files")) &&
+              window.testSetPackageInstalled(QStringLiteral("files"), true) &&
+              window.testRailButtonShown(QStringLiteral("files")),
+          QStringLiteral("the Files rail button follows the Files package"));
+
+    const QString bugsPackage = QStringLiteral("bug-reports");
+    if (window.testNativePackageIds().contains(bugsPackage)) {
+        for (int i = 0; i < 50 && !window.findChild<QPushButton *>(
+                                       QStringLiteral("nativePackageNav-bug-reports"));
+             ++i)
+            QApplication::processEvents();
+        window.testShowNativePackage(bugsPackage);
+        QApplication::processEvents();
+        auto *bugsNav = window.findChild<QPushButton *>(
+            QStringLiteral("nativePackageNav-bug-reports"));
+        auto *bugsPage =
+            window.findChild<QWidget *>(QStringLiteral("bugReportsSection"));
+        check(window.testPackageInstalled(bugsPackage) &&
+                  window.testNativePackageActionVisible(bugsPackage) && bugsNav &&
+                  bugsNav->toolTip() == QStringLiteral("Open Bugs") &&
+                  window.testRailButtonShown(QStringLiteral("package:bug-reports")) &&
+                  bugsPage &&
+                  bugsPage->findChild<QPlainTextEdit *>(
+                      QStringLiteral("bugReportsMessage")),
+              QStringLiteral("Bugs is a package page in the left rail with its "
+                             "report form (installed=%1 nav=%2 page=%3)")
+                  .arg(window.testPackageInstalled(bugsPackage))
+                  .arg(bugsNav != nullptr)
+                  .arg(bugsPage != nullptr));
+        check(window.testSetPackageInstalled(bugsPackage, false) &&
+                  !window.testNativePackageActionVisible(bugsPackage) &&
+                  window.testSetPackageInstalled(bugsPackage, true),
+              QStringLiteral("removing Bugs takes its rail button away"));
+    } else {
+        check(false, QStringLiteral("this build has the Bugs package page"));
+    }
+
     // Discord is a package too: its only chrome is the connector card in
     // Settings, and removal must scrub the bot token the package owned.
     const QString discordTokenKey =
@@ -23540,6 +23959,7 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
         window.show();
         QApplication::processEvents();
         checkFooterOverlayGeometry(window);
+        checkPromptPlacementAtLaunch();
         return failures == 0 ? 0 : 1;
     }
 
@@ -36616,8 +37036,8 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
                               restartedDock->rect().center().x() &&
                           restartedPrompt->geometry().bottom() ==
                               restartedDock->rect().bottom() &&
-                          !placement.value(QStringLiteral("prompt/floating"))
-                               .toBool(),
+                          !placement.contains(QStringLiteral("prompt/floating")) &&
+                          !placement.contains(QStringLiteral("prompt/floatPos")),
                       QString("a launch pins the prompt to the lower-right corner "
                               "however it was left (placement %1)")
                           .arg(restarted.testPromptOverlayPlacement()));

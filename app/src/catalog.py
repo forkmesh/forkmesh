@@ -219,6 +219,10 @@ def safe_catalog_record(data):
         return None
 
     now = clean_string(data.get("updatedAt", ""), 32)
+    clone_url = clean_string(data.get("cloneUrl", ""), 2048)
+    if not re.match(r"(?:https?://|ssh://|git://|[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:)",
+                    clone_url, re.I):
+        clone_url = ""
     # Visibility fails closed. Older/malformed publishers that omit the field
     # may hide a public repository until they republish, but they can never make
     # a private repository discoverable by accident.
@@ -289,7 +293,7 @@ def safe_catalog_record(data):
         "sizeBytes": size_bytes,
         "description": clean_string(data.get("description", ""), 240),
         "logoMetadata": clean_logo_metadata(data.get("logoMetadata")),
-        "cloneUrl": clean_string(data.get("cloneUrl", ""), 2048),
+        "cloneUrl": clone_url,
         "solana": solana,
         "channel": clean_string(data.get("channel", f"#{owner}-{name}"), 120),
         "hostedSince": clean_string(data.get("hostedSince", ""), 32),

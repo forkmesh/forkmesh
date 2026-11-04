@@ -90,17 +90,17 @@ class AccountSettingsTest {
         expect(AccountSettings.create(prefs, MemorySecretStore()).serveAsNode)
     }
 
-    fun testTelemetryStripDefaultsOnAndPersists() {
+    fun testTelemetryStripDefaultsOffAndPersists() {
         val prefs = MemoryPrefStore()
         val settings = AccountSettings.create(prefs, MemorySecretStore())
         var notified = 0
         settings.addListener { notified++ }
-        expect(settings.showTelemetryStrip)
-        settings.setShowTelemetryStrip(false)
-        assertEq(1, notified)
-        expect(!AccountSettings.create(prefs, MemorySecretStore()).showTelemetryStrip)
+        expect(!settings.showTelemetryStrip)
         settings.setShowTelemetryStrip(true)
+        assertEq(1, notified)
         expect(AccountSettings.create(prefs, MemorySecretStore()).showTelemetryStrip)
+        settings.setShowTelemetryStrip(false)
+        expect(!AccountSettings.create(prefs, MemorySecretStore()).showTelemetryStrip)
     }
 
     fun testProfileAndRoomValues() {

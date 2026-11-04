@@ -165,3 +165,52 @@ def test_a_folder_the_tool_did_not_make_is_never_reset(repos):
     assert (fork.path / "untracked.txt").read_text() == "keep\n"
     assert fork.git("rev-parse", "HEAD") == head
     assert not fork.git("for-each-ref", "refs/follow/")
+
+
+def test_a_patch_forkmesh_accepted_and_revised_takes_the_revision(repos):
+    env, upstream, fork, publish, tmp = repos
+    sent = "# The reason, before review.\nVALUE = 1\n"
+    fork.write("app/src/feature.py", sent)
+    fork.commit("Feature")
+    upstream.write("app/src/feature.py", sent)
+    upstream.commit("Feature")
+    upstream.write("app/src/feature.py", "VALUE = 1\n")
+    upstream.commit("Feature: the reason moves to docs")
+    code, result = follow(env, fork, upstream, tmp / "work", publish)
+    assert code == 0 and result["state"] == "merged", result
+    assert (tmp / "work/app/src/feature.py").read_text() == "VALUE = 1\n"
+
+
+def test_an_instance_change_survives_a_revised_patch_in_the_same_file(repos):
+    env, upstream, fork, publish, tmp = repos
+    filler = "".join("LINE_%d = %d\n" % (n, n) for n in range(10))
+    upstream.write("app/src/feature.py", "ONE = 1\n" + filler + "TWO = 2\n")
+    upstream.commit("Feature file")
+    fork.git("pull", "-q", "--no-rebase", "--no-edit", "origin", "main")
+    fork.write("app/src/feature.py", "ONE = 1\n" + filler + "TWO = 22\n")
+    fork.commit("Instance only")
+    fork.write("app/src/feature.py",
+               "ONE = 1\n# Why three.\nTHREE = 3\n" + filler + "TWO = 22\n")
+    fork.commit("Sent")
+    upstream.write("app/src/feature.py",
+                   "ONE = 1\n# Why three.\nTHREE = 3\n" + filler + "TWO = 2\n")
+    upstream.commit("Sent")
+    upstream.write("app/src/feature.py",
+                   "ONE = 1\nTHREE = 3\n" + filler + "TWO = 2\n")
+    upstream.commit("Sent: the reason moves to docs")
+    code, result = follow(env, fork, upstream, tmp / "work", publish)
+    assert code == 0 and result["state"] == "merged", result
+    assert (tmp / "work/app/src/feature.py").read_text() == (
+        "ONE = 1\nTHREE = 3\n" + filler + "TWO = 22\n")
+
+
+def test_a_migration_number_forkmesh_gave_a_sent_migration_keeps_the_instances(
+        repos):
+    env, upstream, fork, publish, tmp = repos
+    fork.write("docs/mine.md", "Run 0002_mine.sql once.\n")
+    fork.commit("Mine docs")
+    upstream.write("docs/mine.md", "Run 0005_mine.sql once.\n")
+    upstream.commit("Mine docs")
+    code, result = follow(env, fork, upstream, tmp / "work", publish)
+    assert code == 0 and result["state"] == "merged", result
+    assert (tmp / "work/docs/mine.md").read_text() == "Run 0002_mine.sql once.\n"

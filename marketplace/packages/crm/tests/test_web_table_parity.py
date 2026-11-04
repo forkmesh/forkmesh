@@ -1,5 +1,6 @@
 from pathlib import Path
 import os
+import re
 import shutil
 import subprocess
 
@@ -81,7 +82,7 @@ def test_column_headings_sort_and_the_plus_heading_adds_a_column():
     assert 'event.target.closest("[data-crm-add-column]")) { void addCrmCustomColumn(); return; }' in head
     assert "crmSortBy(cell.dataset.crmColumn)" in head
     assert "crmSort.descending = crmSort.field === field ? !crmSort.descending : false;" in _function("crmSortBy")
-    assert "return crmSortContacts(matched);" in _function("crmFilteredContacts")
+    assert "const sorted = crmSortContacts(matched);" in _function("crmFilteredContacts")
     add = _function("addCrmCustomColumn")
     assert "crmCustomColumnKey(label)" in add
     assert "await restoreCrmColumn(key)" in add and "crmShowColumn(key)" in add
@@ -196,3 +197,35 @@ def test_imports_and_the_lists_overview_live_in_the_more_menu():
     assert "<dialog data-crm-lists-dialog" in WEB_VIEW
     for heading in ("List", "File", "Contacts", "Columns", "Shared with", "Owner", "Imported"):
         assert f'font-semibold">{heading}</th>' in WEB_VIEW.split("<dialog data-crm-lists-dialog", 1)[1], heading
+
+
+def test_mastodon_network_list_offers_follow_back_like_the_desktop():
+    render = WEB_SCRIPT.split("function renderCrmContacts()", 1)[1].split("\n  // --- board layout", 1)[0]
+    assert render.count("${follow(contact)}") == 2
+    assert 'crmActiveView()?.network === "mastodon" && !columns.some((column) => column.field === "mastodon")' in render
+    control = _function("crmContactControl")
+    assert 'const follow = profile && !crmActiveShared() ? crmFollowBackButton(contact) : "";' in control
+    assert control.count("${follow}") == 2
+    assert "void loadCrmFollowBack();" in render
+    load = _function("loadCrmFollowBack")
+    assert 'crmRequest(crmOrganizationPath("/mastodon/follow-back"))' in load
+    assert "crmMastodonPluginFollowBack(follower.session)" in load
+    assert "CRM_MASTODON_FRESH_MS" in load and "!crmMastodonFollowShown()" in load
+    shown = _function("crmMastodonFollowShown")
+    assert 'crmVisibleColumns().some((column) => column.field === "mastodon")' in shown
+    follow = _function("crmFollowMastodonBack")
+    assert 'crmOrganizationPath("/mastodon/follow"), "POST", { handle: key }' in follow
+    assert "crmMastodonPluginFollow(follower.session, key)" in follow
+    assert "crmFollowBack.handles.delete(key)" in follow
+    assert "crmFollowBack.followed.add(key)" in follow
+    assert "crmFollowBack.followed = keys(payload.following)" in load
+    assert "renderCrmMastodonBanner();" in render
+    banner = _function("renderCrmMastodonBanner")
+    assert '"Mastodon: not logged in"' in banner and '"Log in to Mastodon"' in banner
+    assert 'crmActiveView()?.network === "mastodon"' in banner
+    assert "<div data-crm-mastodon-banner" in WEB_VIEW
+    click = _function("handleCrmParityClick")
+    assert "crmFollowMastodonBack(follow.dataset.crmFollowBack)" in click
+    mastodon_page = (CRM_PACKAGE.parent / "mastodon" / "content" / "web" / "page.js").read_text()
+    store = re.search(r'const STORE = "([^"]+)"', mastodon_page).group(1)
+    assert f'const CRM_MASTODON_SESSION = "{store}";' in WEB_SCRIPT

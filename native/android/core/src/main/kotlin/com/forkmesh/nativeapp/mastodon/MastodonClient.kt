@@ -304,10 +304,18 @@ class MastodonSignIn(
         return session
     }
 
-    fun signOut() {
+    fun forgetLocally(): MastodonSession? {
         val session = store.session
-        if (session != null) client(session.server, session.token).revoke(MastodonApp(session.clientId, session.clientSecret))
         store.session = null
         store.pending = null
+        return session
+    }
+
+    fun revoke(session: MastodonSession) {
+        client(session.server, session.token).revoke(MastodonApp(session.clientId, session.clientSecret))
+    }
+
+    fun signOut() {
+        forgetLocally()?.let(::revoke)
     }
 }

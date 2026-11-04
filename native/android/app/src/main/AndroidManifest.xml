@@ -107,6 +107,12 @@
             android:exported="false"
             android:taskAffinity=""
             android:theme="@android:style/Theme.DeviceDefault.Dialog.NoActionBar.MinWidth" />
+        <activity
+            android:name=".feature.account.projects.UserPresenceActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.composer.files"

@@ -55,7 +55,7 @@ set. See [Self-hosting](self-hosting.md) and [Mirroring](mirroring.md).
 | [ACME certificate authorities for direct-HTTPS mirrors](#acme-certificate-authority) | certificates | Degrades one feature | mirror-node | The mirror's public hostname and the host's IP address during certificate issuance and renewal. Issued certificates are published in public Certificate Transparency logs. |
 | [GitHub source and release downloads](#github-downloads) | forge-api, package-registry | Degrades one feature | desktop, installer, mirror-node, operator-tools, ci | The downloading host's IP address and the release or repository requested: desktop self-update clones of forkmesh/forkmesh when no source checkout exists, the age binary for the macOS installer, the pinned cloudflared release, and build toolchains. |
 | [GitHub, GitLab, Codeberg, and Gitea APIs for imports, GitHub sync and repository mirrors](#forge-apis) | forge-api | Optional, off unless enabled | app-server, desktop, operator-tools, ci | The owner and repository being imported, the app's egress IP, and a user-supplied access token when the user provides one. The GitHub sync workflow reads and writes issues, discussions, and pull requests of the connected repository. A repository mirror set up in repository settings sends the owner's stored access token with every API call and Git push, and the forge sees the mirrored branches, tags, issues, comments, discussions and releases. The relay's GitHub Actions watcher reads the public workflow runs, jobs and annotations of forkmesh/forkmesh every 5 minutes, with an optional read-only GITHUB_ACTIONS_WATCH_TOKEN. |
-| [Internet Archive public repository backups](#internet-archive) | hosting | Optional, off unless enabled | app-server | The public repository identifier, the ForkMesh app's egress IP, the repository's public Git bundle, and the Internet Archive access key supplied by the repository owner. The owner-provided secret is sent only to the Internet Archive S3 endpoint and is stored encrypted by ForkMesh. |
+| [Internet Archive public repository backups](#internet-archive) | hosting | Optional, off unless enabled | app-server | The public repository identifier, the ForkMesh app's egress IP, the repository's public Git bundle, and the Internet Archive access key supplied by the repository owner. Checking a backup reads the item's public file list (archive.org/metadata) to compare the bundle's SHA-1. The owner-provided secret is sent only to the Internet Archive S3 endpoint and is stored encrypted by ForkMesh. |
 | [GitHub Actions hosted runners](#github-actions) | hosted-runner | Build and release only | ci | The full public repository source, test output, and uploaded evidence artifacts for every run on ubuntu-latest, macos-latest, and windows-latest. Workflows check out with persist-credentials: false. |
 | [Package registries and distribution mirrors](#package-registries) | package-registry | Build and release only | ci, operator-tools | The build host's IP address and the exact package names and versions requested. |
 | [Code-signing timestamp authorities](#code-signing-timestamps) | certificates | Build and release only | ci | A hash of the Windows installer being signed and the release host's IP address. |
@@ -86,6 +86,7 @@ set. See [Self-hosting](self-hosting.md) and [Mirroring](mirroring.md).
 | [Open Food Facts and USDA FoodData Central for the Calories package](#nutrition-data) | infrastructure | Optional, off unless enabled | marketplace-package | For users of the Calories package: the food names and barcodes they look up. |
 | [oEmbed and public APIs for chat link previews](#link-previews) | media-embed, social | Optional, off unless enabled | mobile, app-server | The link a user posted in chat and the device's IP address, when a preview for that site is built. |
 | [GIPHY for GIFs in comments](#giphy) | media-embed, social | Optional, off unless enabled | app-browser, app-server | The app sends GIPHY the trending and search requests a signed-in user makes in the GIF picker, with the administrator's key; every browser that shows a comment with a GIF loads it from GIPHY's media hosts, which see the viewer's IP address. |
+| [dev.to for Home's blog card](#devto-blog-posts) | social | Optional, off unless enabled | app-browser | On an instance whose administrator set a dev.to account, every visitor's browser that opens Home reads that account's newest articles from dev.to without credentials and loads their cover images from media2.dev.to or dev-to-uploads.s3.amazonaws.com; dev.to and Amazon see the visitor's IP address and browser. |
 | [Invidious and YouTube thumbnails for Video Mix DJ Studio](#video-mix-sources) | media-embed | Optional, off unless enabled | marketplace-package, mobile | For users of the package: video searches, the device's IP address and the thumbnails it loads. |
 | [Apple iTunes lookup for the current App Store version](#app-store-lookup) | package-registry | Optional, off unless enabled | mobile, marketplace-package | The device's IP address and the app id being looked up. |
 | [Hugging Face downloads for local voices and models](#hugging-face-models) | ai-provider | Optional, off unless enabled | desktop, mobile | The device's IP address and which voice or model file is downloaded. |
@@ -101,7 +102,7 @@ set. See [Self-hosting](self-hosting.md) and [Mirroring](mirroring.md).
 | ACME certificate authorities for direct-HTTPS mirrors | Existing certificates keep serving until they expire, so clones continue. New direct-HTTPS mirrors cannot obtain a certificate, and a mirror whose renewal keeps failing stops serving HTTPS at expiry; its SSH gateway and other mirrors are unaffected. | Self-host operators may point Caddy at any ACME issuer or their own certificate, or run the mirror node in Cloudflare Tunnel mode. | **gap** |
 | GitHub source and release downloads | Desktop self-update without a local checkout, first-time macOS installs that need age, cloudflared installation, and toolchain bootstraps fail with a download error. Running desktops, mirrors, and the hosted service are unaffected. | Update from a local source checkout or a ForkMesh mirror clone; self-host operators can preinstall age and cloudflared from their distribution. | **gap** |
 | GitHub, GitLab, Codeberg, and Gitea APIs for imports, GitHub sync and repository mirrors | New imports, scheduled GitHub sync and repository mirrors fail with a named provider error; mirror items stay queued and retry. The GitHub Actions watcher sends no pings until GitHub answers again. Imported repositories, clones, and collaboration keep working. | Push the repository directly to a ForkMesh mirror with stock Git; no forge API is needed. | tested |
-| Internet Archive public repository backups | Owners cannot verify archive credentials or upload a scheduled or requested public backup. Existing archive items and all ForkMesh repository, clone, and collaboration operations remain available. | Self-host operators can retain Git bundles or mirror clones on their own storage; a public repository can be recovered from any ForkMesh mirror without the Internet Archive. | tested |
+| Internet Archive public repository backups | Owners cannot verify archive credentials or upload a scheduled or requested public backup, and the Internet Archive plugin cannot confirm the archived copy, though it still compares mirrors with the recorded refs. Existing archive items and all ForkMesh repository, clone, and collaboration operations remain available. | Self-host operators can retain Git bundles or mirror clones on their own storage; a public repository can be recovered from any ForkMesh mirror without the Internet Archive. | tested |
 | GitHub Actions hosted runners | GitHub-hosted conformance evidence stops. Deploys are gated by .forkmesh workflows on the ForkMesh Actions runner, which runs with network egress disabled. | Run tools/quality_gate.py run --profile core locally or on the self-hosted ForkMesh Actions runner. | tested |
 | Package registries and distribution mirrors | Fresh builds that need to download packages fail. Deployed services never contact registries, and the ForkMesh Actions critical suites use preinstalled packages. | Self-host builds may use a local package mirror or cache; the app and mirror node need no third-party packages at runtime. | tested |
 | Code-signing timestamp authorities | Windows release signing falls through to the next timestamp server, and fails only if all three are down. Existing releases are unaffected. | Release without a timestamp and re-sign later, or use another RFC 3161 authority. | **gap** |
@@ -132,6 +133,7 @@ set. See [Self-hosting](self-hosting.md) and [Mirroring](mirroring.md).
 | Open Food Facts and USDA FoodData Central for the Calories package | Food search in the package returns nothing; logged entries are unaffected. | Enter foods by hand. | **gap** |
 | oEmbed and public APIs for chat link previews | The link shows without a rich preview. | Turn off link previews. | **gap** |
 | GIPHY for GIFs in comments | The GIF picker reports the failure and GIFs already in comments do not load; comments, stickers and reactions keep working. | Leave the GIPHY key unset, which hides the GIF buttons; stickers and custom reactions stay on the instance. | tested |
+| dev.to for Home's blog card | Home's blog card shows no posts; the rest of Home keeps working. | Leave the dev.to account unset, so Home shows the instance blog and no visitor contacts dev.to. | **gap** |
 | Invidious and YouTube thumbnails for Video Mix DJ Studio | Video search in the package fails; saved mixes are unaffected. | Add local videos. | **gap** |
 | Apple iTunes lookup for the current App Store version | The update prompt and the Marketing package's App Store figures are not refreshed. | None needed. | **gap** |
 | Hugging Face downloads for local voices and models | A voice or local model that is not yet downloaded cannot be used. | Use a voice or model already on the device. | **gap** |
@@ -224,15 +226,15 @@ set. See [Self-hosting](self-hosting.md) and [Mirroring](mirroring.md).
 - **Kind:** hosting
 - **Components:** app-server
 - **Hosts:** `archive.org`, `s3.us.archive.org`
-- **Observes:** The public repository identifier, the ForkMesh app's egress IP, the repository's public Git bundle, and the Internet Archive access key supplied by the repository owner. The owner-provided secret is sent only to the Internet Archive S3 endpoint and is stored encrypted by ForkMesh.
+- **Observes:** The public repository identifier, the ForkMesh app's egress IP, the repository's public Git bundle, and the Internet Archive access key supplied by the repository owner. Checking a backup reads the item's public file list (archive.org/metadata) to compare the bundle's SHA-1. The owner-provided secret is sent only to the Internet Archive S3 endpoint and is stored encrypted by ForkMesh.
 - **Retention:** The Internet Archive retains uploaded public repository bundles and metadata under the archive account's policy. ForkMesh retains the encrypted sync configuration and recent upload status until the owner disconnects it.
 - **Jurisdiction:** Internet Archive (United States).
 - **Canonical data:** None. The ForkMesh repository and its mirrors remain canonical; an Internet Archive item is an independently recoverable public backup copy.
-- **When it is gone:** Owners cannot verify archive credentials or upload a scheduled or requested public backup. Existing archive items and all ForkMesh repository, clone, and collaboration operations remain available.
+- **When it is gone:** Owners cannot verify archive credentials or upload a scheduled or requested public backup, and the Internet Archive plugin cannot confirm the archived copy, though it still compares mirrors with the recorded refs. Existing archive items and all ForkMesh repository, clone, and collaboration operations remain available.
 - **Recovery:** The next scheduled or requested sync retries after the Internet Archive is reachable; the owner can also download a bundle from a ForkMesh mirror and upload it independently.
 - **Alternative:** Self-host operators can retain Git bundles or mirror clones on their own storage; a public repository can be recovered from any ForkMesh mirror without the Internet Archive.
-- **Failure drills:** `app/tests/test_repository_archive_sync.py::test_bad_input_and_refused_keys_are_reported`, `app/tests/test_repository_archive_sync.py::test_paused_disconnected_or_private_repositories_send_nothing`
-- **Evidence:** `app/src/repository_archive_sync.py`, `app/tests/test_repository_archive_sync.py`
+- **Failure drills:** `marketplace/packages/internet-archive/tests/test_internet_archive.py::test_bad_input_and_refused_keys_are_reported`, `marketplace/packages/internet-archive/tests/test_internet_archive.py::test_paused_disconnected_or_private_repositories_send_nothing`
+- **Evidence:** `marketplace/packages/internet-archive/content/worker/internet_archive.py`, `marketplace/packages/internet-archive/tests/test_internet_archive.py`
 
 <a id="github-actions"></a>
 
@@ -787,6 +789,24 @@ set. See [Self-hosting](self-hosting.md) and [Mirroring](mirroring.md).
 - **Known gap:** The privacy notice does not name GIPHY yet.
 - **Evidence:** `app/src/comment_gifs.py`, `app/public/dashboard/js/09-comment-gifs.js`, `docs/app/comment-reactions.md`
 
+<a id="devto-blog-posts"></a>
+
+### dev.to for Home's blog card
+
+- **Needed:** Optional, off unless enabled
+- **Kind:** social
+- **Components:** app-browser
+- **Hosts:** `dev.to`
+- **Observes:** On an instance whose administrator set a dev.to account, every visitor's browser that opens Home reads that account's newest articles from dev.to without credentials and loads their cover images from media2.dev.to or dev-to-uploads.s3.amazonaws.com; dev.to and Amazon see the visitor's IP address and browser.
+- **Retention:** Set by dev.to (Forem) and Amazon Web Services.
+- **Jurisdiction:** Forem Systems, Inc. (United States); Amazon Web Services, Inc. (United States) for uploaded cover images.
+- **Canonical data:** None; the posts are read on each Home load and not stored.
+- **When it is gone:** Home's blog card shows no posts; the rest of Home keeps working.
+- **Recovery:** None required; the next Home load reads the posts again.
+- **Alternative:** Leave the dev.to account unset, so Home shows the instance blog and no visitor contacts dev.to.
+- **Known gap:** The privacy notice does not name dev.to yet, and no drill covers dev.to being unreachable.
+- **Evidence:** `app/public/dashboard/js/05-repo-list-explorer.js`, `app/src/instance_sidebar.py`, `docs/app/repo-views.md`
+
 <a id="video-mix-sources"></a>
 
 ### Invidious and YouTube thumbnails for Video Mix DJ Studio
@@ -949,6 +969,7 @@ These appear in source as navigation links, share targets, schema namespaces, or
 | `claude.com` | link | Comment describing the login URL Claude CLIs print. |
 | `ollama.com` | link | Gemma package download link. |
 | `duckduckgo.com` | link | CRM package opens a web search in the user's browser. |
+| `calendar.google.com` | link | Booking package's add-to-Google-Calendar link. |
 | `ai.google.dev` | link | Gemma package documentation link. |
 | `developers.cloudflare.com` | documentation | Deploy script help text. |
 | `docs.github.com` | documentation | Import token guidance. |
@@ -958,7 +979,6 @@ These appear in source as navigation links, share targets, schema namespaces, or
 | `about.gitea.com` | documentation | Import provider terms. |
 | `docs.gitea.com` | documentation | Import API usage guidance. |
 | `modelcontextprotocol.io` | documentation | MCP server docstring. |
-| `forkmesh.your-domain` | documentation | Self-host placeholder in the docs landing page. |
 | `www.w3.org` | namespace | XML, SVG, and ActivityStreams namespace identifiers. |
 | `schema.org` | namespace | JSON-LD structured data vocabulary. |
 | `www.ietf.org` | namespace | RTP transport-wide congestion control header-extension URI named in call SDP. |
@@ -969,6 +989,7 @@ These appear in source as navigation links, share targets, schema namespaces, or
 | `docs.oasis-open.org` | namespace | WebFinger/XRD namespace. |
 | `schemas.android.com` | namespace | Android XML namespace. |
 | `www.apple.com` | namespace | Property list DTD identifier. |
+| `schemas.openxmlformats.org` | namespace | Office Open XML namespaces in the Spreadsheets package's .xlsx export. |
 | `www.andymatuschak.org` | namespace | Sparkle appcast XML namespace. |
 | `ads.google.com` | link | Ad manager link in the Marketing package. |
 | `ads.microsoft.com` | link | Ad manager link in the Marketing package. |

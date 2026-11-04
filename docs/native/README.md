@@ -37,6 +37,7 @@ overview of every app is [apps.md](../apps.md). Per-app READMEs:
 | [DESKTOP_PARITY.md](DESKTOP_PARITY.md) | Parity with the Qt desktop, route contract, desktop control families, extension targets |
 | [ANDROID.md](ANDROID.md) | Android design notes, and the "Differences kept on purpose" list |
 | [NAVIGATION.md](NAVIGATION.md) | Tabs, routes, Home grid, bars, the tour, sitemap and URLs |
+| [SCREEN_POLISH.md](SCREEN_POLISH.md) | Depth, headings, titles, rows and empty states on Agents, Inbox, Repos, Projects and Chat |
 | [THEMES.md](THEMES.md) | Accents and contrast, surface families, the theme editor, the background image |
 | [ONBOARDING.md](ONBOARDING.md) | Login and first-run screens, and when each system permission prompt comes up |
 | [DATA_FOLDER.md](DATA_FOLDER.md) | The projects folder that keeps settings, plugin data and the encrypted identity key through a reinstall |
@@ -50,6 +51,7 @@ overview of every app is [apps.md](../apps.md). Per-app READMEs:
 | [NEXUS.md](NEXUS.md) | NEXUS package, permissions, safety policy, host integration and verification |
 | [notes.md](notes.md) | Notes: filters, autosave, conflicts, preview, sharing, links, export |
 | [RSS_READER_IOS.md](RSS_READER_IOS.md) | The local-only RSS Reader on iPhone |
+| [reticulum-android.md](reticulum-android.md) | The Reticulum plugin on Android: mesh map, LXMF messaging, IFAC, and what differs from the desktop |
 | [STATS.md](STATS.md) | The Stats board: every desktop tile over `stats.tiles`, and the release-version tiles |
 | [CAPTURE_MARKUP.md](CAPTURE_MARKUP.md) | Screen capture and markup in the composer, and selectable text |
 | [REFERENCE_LINKS.md](REFERENCE_LINKS.md) | Issue, task, pull request and commit links in messages |

@@ -9,7 +9,7 @@
     <title>Docs · ForkMesh</title>
     <meta
       name="description"
-      content="ForkMesh documentation for encrypted desktop mirrors, direct-HTTPS Git routing, APIs, multiplayer WebSockets, issues, pull requests, accounts, and encrypted rooms."
+      content="ForkMesh documentation: keep the source code and releases of a project reachable and provably authentic when a host, domain, account or network is blocked. Mirroring, threat model, cryptography, self-hosting, testing and APIs."
     />
     <meta name="application-name" content="ForkMesh" />
     <meta name="apple-mobile-web-app-title" content="ForkMesh" />
@@ -22,366 +22,33 @@
     <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
     <link rel="manifest" href="/favicon/site.webmanifest" />
     <link rel="stylesheet" href="/tailwind.css" />
-    <script>window.tailwind = window.tailwind || {};</script>
-    <script>
-      tailwind.config = {
-        darkMode: "class",
-        theme: {
-          extend: {
-            fontFamily: {
-              sans: [
-                "ForkMesh Lato",
-                "-apple-system",
-                "BlinkMacSystemFont",
-                "Segoe UI",
-                "Helvetica",
-                "Arial",
-                "sans-serif",
-              ],
-              mono: [
-                "ForkMesh Mono",
-                "ui-monospace",
-                "SFMono-Regular",
-                "Menlo",
-                "Consolas",
-                "monospace",
-              ],
-            },
-          },
-        },
-      };
-    </script>
+    <link rel="stylesheet" href="/docs-page.css?v=${version}" />
+    <script src="/docs-page.js?v=${version}" defer></script>
+    <script src="/docs-explore.js?v=${version}" defer></script>
     <style>
-      @font-face {
-        font-family: "ForkMesh Lato";
-        src: url("/assets/fonts/Lato-Regular.woff2") format("woff2");
-        font-weight: 400;
-        font-style: normal;
-        font-display: swap;
-      }
-
-      @font-face {
-        font-family: "ForkMesh Lato";
-        src: url("/assets/fonts/Lato-Semibold.woff2") format("woff2");
-        font-weight: 600;
-        font-style: normal;
-        font-display: swap;
-      }
-
-      @font-face {
-        font-family: "ForkMesh Lato";
-        src: url("/assets/fonts/Lato-Bold.woff2") format("woff2");
-        font-weight: 700 900;
-        font-style: normal;
-        font-display: swap;
-      }
-
-      @font-face {
-        font-family: "ForkMesh Mono";
-        src: url("/assets/fonts/DejaVuSansMono.woff2") format("woff2");
-        font-weight: 400;
-        font-style: normal;
-        font-display: swap;
-        unicode-range: U+0100-0130, U+0132-0151, U+0154-02B9, U+02BD-02C1, U+02C7-02D9, U+02DB, U+02DD-0303, U+0305-0307, U+0309-0328, U+032A-06F9, U+0E3F-0ECD, U+10D0-10FC, U+1D02-1FFE, U+2070-20AB, U+20AD-211D, U+2124-2189, U+2200-2211, U+2213, U+2217-225F, U+2261-2263, U+2266-2423, U+2600-2712, U+2718-2E2E, U+A708-A7F9, U+F6C5, U+FB01-FBFF, U+FE70-FEFC, U+FFF9-FFFC, U+1D55A-1D7FF;
-      }
-
-      @font-face {
-        font-family: "ForkMesh Mono";
-        src: url("/assets/fonts/DejaVuSansMono-latin.woff2") format("woff2");
-        font-weight: 400;
-        font-style: normal;
-        font-display: swap;
-        unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2190-21FF, U+2212, U+2215, U+2260, U+2264-2265, U+2500-25FF, U+2713-2717, U+FEFF, U+FFFD;
-      }
-
-      @font-face {
-        font-family: "ForkMesh Mono";
-        src: url("/assets/fonts/DejaVuSansMono-Bold.woff2") format("woff2");
-        font-weight: 600 800;
-        font-style: normal;
-        font-display: swap;
-        unicode-range: U+0100-0130, U+0132-0151, U+0154-02B9, U+02BD-02C1, U+02C7-02D9, U+02DB, U+02DD-0303, U+0305-0307, U+0309-0328, U+032A-06F9, U+0E3F-0ECD, U+10D0-10FC, U+1D02-1FFE, U+2070-20AB, U+20AD-211D, U+2124-2189, U+2200-2211, U+2213, U+2217-225F, U+2261-2263, U+2266-2423, U+2600-2712, U+2718-2E2E, U+A708-A7F9, U+F6C5, U+FB01-FBFF, U+FE70-FEFC, U+FFF9-FFFC, U+1D55A-1D7FF;
-      }
-
       @font-face {
         font-family: "ForkMesh Mono";
         src: url("/assets/fonts/DejaVuSansMono-Bold-latin.woff2") format("woff2");
         font-weight: 600 800;
         font-style: normal;
         font-display: swap;
-        unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2190-21FF, U+2212, U+2215, U+2260, U+2264-2265, U+2500-25FF, U+2713-2717, U+FEFF, U+FFFD;
       }
 
-      :root {
-        color-scheme: light;
-        --docs-bg: #ffffff;
-        --docs-fg: #252525;
-        --docs-muted: #646464;
-        --docs-soft: #898989;
-        --docs-line: #ececea;
-        --docs-line-strong: #dededb;
-        --docs-panel: #ffffff;
-        --docs-panel-soft: #efefed;
-        --docs-hover: #f7f7f5;
-        --docs-button: #4b4b4b;
-        --docs-button-fg: #ffffff;
-        --docs-code: #f6f6f4;
+      [data-forkmesh-header="simple"] {
+        min-height: 3.5rem;
       }
 
-      html.dark {
-        color-scheme: dark;
-        --docs-bg: #101011;
-        --docs-fg: #eeeeee;
-        --docs-muted: #a4a4a4;
-        --docs-soft: #8c8c8c;
-        --docs-line: #202023;
-        --docs-line-strong: #29292d;
-        --docs-panel: #111112;
-        --docs-panel-soft: #242426;
-        --docs-hover: #18181a;
-        --docs-button: #4c4c4f;
-        --docs-button-fg: #f6f6f6;
-        --docs-code: #18181a;
+      .dp-home .dp-article code {
+        font-family: var(--docs-mono);
+        overflow-wrap: anywhere;
       }
 
-      * {
-        box-sizing: border-box;
+      .dp-home .dp-article pre code {
+        overflow-wrap: normal;
       }
 
-      html {
-        scroll-behavior: smooth;
-      }
-
-      body {
-        margin: 0;
-        background: var(--docs-bg);
-        color: var(--docs-fg);
-        font-family:
-          "ForkMesh Lato",
-          -apple-system,
-          BlinkMacSystemFont,
-          "Segoe UI",
-          Helvetica,
-          Arial,
-          sans-serif;
-        font-size: 16px;
-        line-height: 1.5;
-        -webkit-font-smoothing: antialiased;
-      }
-
-      a {
-        color: inherit;
-      }
-
-      svg {
-        display: block;
-        fill: none;
-        stroke: currentColor;
-        stroke-width: 2;
-        stroke-linecap: round;
-        stroke-linejoin: round;
-      }
-
-      code {
-        font-family:
-          "ForkMesh Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
-          monospace;
-      }
-
-      .brand-mark {
-        width: 2rem;
-        height: 2.25rem;
-        object-fit: contain;
-        flex-shrink: 0;
-        display: block;
-      }
-
-      .docs-scrollbar {
-        scrollbar-width: thin;
-        scrollbar-color: var(--docs-line-strong) transparent;
-      }
-
-      .docs-scrollbar::-webkit-scrollbar {
-        width: 8px;
-        height: 8px;
-      }
-
-      .docs-scrollbar::-webkit-scrollbar-thumb {
-        background: var(--docs-line-strong);
-        border-radius: 999px;
-      }
-
-      .tab-active::after {
-        content: "";
-        position: absolute;
-        left: 0;
-        right: 0;
-        bottom: -1px;
-        height: 2px;
-        border-radius: 999px;
-        background: var(--docs-fg);
-      }
-
-      .docs-tab {
-        position: relative;
-        display: inline-flex;
-        height: 3.75rem;
-        flex: none;
-        align-items: center;
-        gap: 0.5rem;
-        font-size: 0.93rem;
-        font-weight: 700;
-        color: var(--docs-muted);
-        text-decoration: none;
-        white-space: nowrap;
-      }
-
-      a.docs-tab:hover {
-        color: var(--docs-fg);
-      }
-
-      .docs-tab.tab-active {
-        color: var(--docs-fg);
-        font-weight: 900;
-      }
-
-      .docs-tabs {
-        gap: clamp(1.15rem, 1.6vw, 2rem);
-      }
-
-      .docs-tab-divider {
-        flex: none;
-        align-self: center;
-        width: 1px;
-        height: 1.5rem;
-        background: var(--docs-line-strong);
-      }
-
-      /* The docs shell spans the full viewport: the section nav hugs the
-         left edge, the "On this page" outline hugs the right edge, and the
-         article takes everything in between. */
-      .docs-shell {
-        width: 100%;
-      }
-
-      @media (min-width: 1024px) {
-        .docs-shell {
-          grid-template-columns: 270px minmax(0, 1fr) 270px;
-        }
-
-        .docs-shell > .docs-sidebar-left {
-          justify-self: start;
-          width: 100%;
-        }
-
-        .docs-shell > .docs-sidebar-right {
-          justify-self: end;
-          width: 100%;
-        }
-      }
-
-      .doc-card {
-        border: 1px solid var(--docs-line-strong);
-        border-radius: 1rem;
-        background: var(--docs-panel);
-      }
-
-      .doc-card:hover {
-        border-color: color-mix(
-          in srgb,
-          var(--docs-fg) 18%,
-          var(--docs-line-strong)
-        );
-      }
-
-      .library-area {
-        margin-top: 2.25rem;
-        scroll-margin-top: 11rem;
-      }
-
-      .library-title {
-        margin: 0 0 0.25rem;
-        font-size: 1.1rem;
-        font-weight: 900;
-        color: var(--docs-fg);
-      }
-
-      .library-blurb {
-        margin: 0 0 1rem;
-        color: var(--docs-muted);
-        font-size: 0.95rem;
-      }
-
-      .library-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-        gap: 0.85rem;
-      }
-
-      .library-card {
-        display: flex;
-        flex-direction: column;
-        gap: 0.35rem;
-        padding: 0.95rem 1.05rem;
-        color: var(--docs-fg);
-        text-decoration: none;
-      }
-
-      .library-card:hover {
-        background: var(--docs-hover);
-      }
-
-      .library-card-title {
-        display: flex;
-        align-items: baseline;
-        gap: 0.5rem;
-        font-size: 0.98rem;
-        font-weight: 800;
-        line-height: 1.3;
-      }
-
-      .library-kind {
-        flex: none;
-        border: 1px solid var(--docs-line-strong);
-        border-radius: 999px;
-        padding: 0.05rem 0.45rem;
-        color: var(--docs-soft);
-        font-family:
-          "ForkMesh Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
-          monospace;
-        font-size: 0.66rem;
-        font-weight: 700;
-      }
-
-      .library-card-body {
-        display: -webkit-box;
-        overflow: hidden;
-        -webkit-box-orient: vertical;
-        -webkit-line-clamp: 3;
-        color: var(--docs-muted);
-        font-size: 0.86rem;
-        line-height: 1.5;
-      }
-
-      .nav-link {
-        display: block;
-        border-radius: 0.85rem;
-        padding: 0.52rem 0.9rem;
-        color: var(--docs-muted);
-        font-size: 0.97rem;
-        font-weight: 600;
-        text-decoration: none;
-      }
-
-      .nav-link:hover {
-        color: var(--docs-fg);
-        background: var(--docs-hover);
-      }
-
-      .nav-link.active {
-        color: var(--docs-fg);
-        background: var(--docs-panel-soft);
-        font-weight: 800;
+      .dp-home .dp-article .grid > * {
+        min-width: 0;
       }
 
       .route-row {
@@ -397,28 +64,22 @@
         border-top: 0;
       }
 
-      .kbd {
-        border: 1px solid var(--docs-line-strong);
-        border-radius: 0.45rem;
-        background: var(--docs-code);
-        padding: 0.08rem 0.42rem;
-        color: var(--docs-muted);
-        font-family:
-          "ForkMesh Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
-          monospace;
-        font-size: 0.74rem;
-      }
-
-      .docs-footer-icon {
-        width: 1.35rem;
-        height: 1.35rem;
-        color: var(--docs-soft);
-      }
-
       @media (max-width: 1180px) {
         .route-row {
-          grid-template-columns: 1fr;
+          grid-template-columns: minmax(0, 1fr);
           gap: 0.35rem;
+        }
+      }
+
+      @media (max-width: 767px) {
+        body > .forkmesh-simple-header {
+          position: sticky;
+          top: 0;
+          z-index: 31;
+        }
+
+        .dp-toolbar {
+          top: 3.5rem;
         }
       }
     </style>
@@ -426,323 +87,353 @@
     <script src="/site-header.js?v=${version}" defer></script>
     <script src="/genie-spider.js?v=${version}" defer></script>
   </head>
-  <body class="min-h-screen bg-[var(--docs-bg)] text-[var(--docs-fg)]">
+  <body class="dp-body dp-home" data-reader-index="/docs/reader-index.json">
     <div data-forkmesh-header="simple"></div>
-    <header
-      class="sticky top-0 z-30 border-b border-[var(--docs-line)] bg-[color-mix(in_srgb,var(--docs-bg)_94%,transparent)] backdrop-blur-xl"
-    >
-      <div
-        class="hidden h-20 w-full grid-cols-1 items-center px-5 sm:px-8 md:grid lg:px-8"
-      >
-        <div class="relative min-w-0 max-w-[560px]">
-          <label
-            class="flex h-11 min-w-0 items-center justify-between gap-4 rounded-2xl border border-[var(--docs-line-strong)] bg-[var(--docs-panel)] px-4 text-left text-[0.92rem] font-semibold text-[var(--docs-soft)] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.01)]"
-            aria-label="Search documentation"
-          >
-            <span class="inline-flex min-w-0 flex-1 items-center gap-3">
-              <svg
-                class="h-5 w-5 flex-none"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-              >
-                <circle cx="11" cy="11" r="7"></circle>
-                <path d="m20 20-3.5-3.5"></path>
-              </svg>
-              <input
-                id="docs-search"
-                class="min-w-0 flex-1 border-0 bg-transparent text-[var(--docs-fg)] outline-none placeholder:text-[var(--docs-soft)]"
-                type="search"
-                placeholder="Search..."
-                autocomplete="off"
-                aria-controls="docs-search-panel"
-                aria-expanded="false"
-              />
-            </span>
+    <header class="dp-toolbar">
+      <div class="dp-toolbar-inner">
+        <div class="dp-search">
+          <label class="dp-search-box" aria-label="Search documentation">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+            <input id="docs-search" type="search" placeholder="Search docs..." autocomplete="off" aria-controls="docs-search-panel" aria-expanded="false" />
             <span class="kbd">⌘K</span>
           </label>
-          <div
-            id="docs-search-panel"
-            class="absolute left-0 right-0 top-[calc(100%+0.55rem)] z-50 hidden overflow-hidden rounded-2xl border border-[var(--docs-line-strong)] bg-[var(--docs-panel)] shadow-2xl"
-            role="listbox"
-            aria-label="Documentation search results"
-          >
-            <div
-              id="docs-search-results"
-              class="max-h-80 overflow-y-auto p-2 docs-scrollbar"
-            ></div>
-            <div
-              id="docs-search-empty"
-              class="hidden px-4 py-5 text-sm font-semibold text-[var(--docs-muted)]"
-            >
-              No results found.
-            </div>
+          <div id="docs-search-panel" class="dp-search-panel" hidden role="listbox" aria-label="Documentation search results">
+            <div id="docs-search-results"></div>
+            <div id="docs-search-empty" hidden>No results found.</div>
+          </div>
+        </div>
+        <nav class="dp-tabs" aria-label="Documentation areas">
+          <a class="active" href="/docs/">Overview</a>
+          <a class="" href="/docs/#pillars">Pillars</a>
+          <a class="" href="/docs/#quickstart">Get started</a>
+          <a class="" href="/docs/#repository">Concepts</a>
+          <a class="" href="/docs/#api-websockets">APIs</a>
+          <a class="" href="/docs/protocol/">Protocol</a>
+          <a class="" href="/docs/library/">Library</a>
+          <a class="" href="/docs/history/">Updates</a>
+          <a class="" href="/blog">Blog</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="dp-shell">
+      <aside class="dp-sidebar">
+        <details class="dp-nav" open>
+          <summary>All documentation</summary>
+          <nav aria-label="Documentation library">
+            <nav class="dp-platforms" aria-label="Platform"><a class="active" href="/docs/">Desktop</a><a class="" href="/docs/browser-extension/">Extension</a><a class="" href="/docs/mobile/">Mobile</a></nav>
+            <!-- forkmesh-docs-sidebar -->
+          </nav>
+        </details>
+      </aside>
+
+      <article class="dp-article">
+        <div class="dp-topline">
+          <nav class="dp-crumbs" aria-label="Breadcrumb">
+            <a href="/docs/" aria-label="Docs home"><svg class="dp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-7 9 7M5 9.5V20h5v-6h4v6h5V9.5"></path></svg></a> <span aria-hidden="true">/</span> <a href="/docs/">Docs</a> <span aria-hidden="true">/</span> <span>Overview</span>
+          </nav>
+          <div class="dp-actions">
+            <button id="copy-page" class="dp-button" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"></rect><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path></svg>
+              <span>Copy link</span>
+            </button>
+            <a class="dp-button" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/www/templates/pages/docs/index.html">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3v4a1 1 0 0 0 1 1h4"></path><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"></path></svg>
+              <span>View source</span>
+            </a>
           </div>
         </div>
 
-      </div>
-
-      <nav
-        class="docs-tabs flex h-[3.75rem] w-full items-end overflow-x-auto border-t border-[var(--docs-line)] px-5 sm:px-8 lg:px-8"
-        aria-label="Product documentation"
-      >
-        <a class="docs-tab tab-active" href="#welcome" aria-current="page">
-          <span>Desktop</span>
-        </a>
-        <span class="docs-tab" aria-disabled="true">
-          <span>Extension</span>
-          <span
-            class="rounded-full border border-[var(--docs-line-strong)] px-2 py-0.5 text-[0.65rem] font-black tracking-normal text-[var(--docs-soft)]"
-            >Coming soon</span
-          >
-        </span>
-        <span class="docs-tab" aria-disabled="true">
-          <span>Mobile</span>
-          <span
-            class="rounded-full border border-[var(--docs-line-strong)] px-2 py-0.5 text-[0.65rem] font-black tracking-normal text-[var(--docs-soft)]"
-            >Coming soon</span
-          >
-        </span>
-        <span class="docs-tab-divider" aria-hidden="true"></span>
-        <a class="docs-tab" href="#install"><span>Install</span></a>
-        <a class="docs-tab" href="#quickstart"><span>Quickstart</span></a>
-        <a class="docs-tab" href="#repository"><span>Concepts</span></a>
-        <a class="docs-tab" href="#api-websockets"><span>APIs</span></a>
-        <a class="docs-tab" href="#self-hosting"><span>Self-hosting</span></a>
-        <a class="docs-tab" href="/docs/protocol"><span>Protocol spec</span></a>
-        <a class="docs-tab" href="/docs/onboarding"><span>Team onboarding</span></a>
-        <a class="docs-tab" href="#library"><span>Library</span></a>
-        <a class="docs-tab" href="/docs/history/"><span>Updates</span></a>
-      </nav>
-    </header>
-
-    <main
-      class="docs-shell grid w-full grid-cols-1 gap-8 px-5 py-8 sm:px-8 lg:gap-12 lg:px-8"
-    >
-      <aside class="docs-sidebar-left hidden lg:block">
-        <nav
-          class="sticky top-[10.5rem] max-h-[calc(100vh-11.5rem)] overflow-y-auto pr-2 docs-scrollbar"
-          aria-label="Documentation sections"
-        >
-          <a class="nav-link active mb-7" href="#welcome">Welcome</a>
-
-          <div class="mb-8">
-            <h2
-              class="mb-3 px-3 text-[0.93rem] font-black text-[var(--docs-fg)]"
-            >
-              Core documentation
-            </h2>
-            <a class="nav-link" href="/docs/architecture/">Architecture and availability</a>
-            <a class="nav-link" href="/docs/encryption/">Encryption and signatures</a>
-            <a class="nav-link" href="/docs/mirroring/">Mirroring and distribution</a>
-            <a class="nav-link" href="/docs/self-hosting/">Self-hosting</a>
-            <a class="nav-link" href="/docs/censorship-resilience/">Censorship resilience</a>
-            <a class="nav-link" href="/docs/protocol/threat-model/">Threat model</a>
-          </div>
-
-          <div class="mb-8">
-            <h2
-              class="mb-3 px-3 text-[0.93rem] font-black text-[var(--docs-fg)]"
-            >
-              Quickstart
-            </h2>
-            <a class="nav-link" href="#install">Install</a>
-            <a class="nav-link" href="#quickstart">Quickstart</a>
-            <a class="nav-link" href="/docs/onboarding">Team onboarding</a>
-            <a class="nav-link" href="/docs/product-promise">Product promise proof</a>
-            <a class="nav-link" href="/docs/business-model">Free protocol / paid services</a>
-          </div>
-
-          <div class="mb-8">
-            <h2
-              class="mb-3 px-3 text-[0.93rem] font-black text-[var(--docs-fg)]"
-            >
-              Concepts
-            </h2>
-            <a class="nav-link" href="#repository">Repository model</a>
-            <a class="nav-link" href="/docs/contributions">Contribution counting</a>
-            <a class="nav-link" href="#https-routing">HTTPS mirror routing</a>
-            <a class="nav-link" href="#git-clone">Git clone</a>
-            <a class="nav-link" href="#issues">Issues</a>
-            <a class="nav-link" href="#pull-requests">Pull requests</a>
-            <a class="nav-link" href="#accounts">Accounts</a>
-            <a class="nav-link" href="#chat">Encrypted rooms</a>
-            <a class="nav-link" href="#api-websockets">APIs and WebSockets</a>
-            <a class="nav-link" href="#bounty-custody">Bounty custody</a>
-            <a class="nav-link" href="#installers-updates">Installers and updates</a>
-            <a class="nav-link" href="#developer-integrations">Developer integrations</a>
-            <a class="nav-link" href="#self-hosting">Self-hosting</a>
-            <a class="nav-link" href="#limitations">Limitations</a>
-          </div>
-
-          <div class="mb-8">
-            <h2
-              class="mb-3 px-3 text-[0.93rem] font-black text-[var(--docs-fg)]"
-            >
-              Developer docs
-            </h2>
-            <a class="nav-link" href="/docs/protocol">Protocol spec</a>
-            <a class="nav-link" href="/docs/git-compatibility">Git compatibility</a>
-            <a class="nav-link" href="/docs/cloudflare-worker">App &amp; relay</a>
-            <a class="nav-link" href="/docs/qt-client">Desktop client</a>
-            <a class="nav-link" href="/mobile">Mobile app</a>
-          </div>
-
-          <div class="mb-8">
-            <h2
-              class="mb-3 px-3 text-[0.93rem] font-black text-[var(--docs-fg)]"
-            >
-              Library
-            </h2>
-            <a class="nav-link" href="/docs/library/">Library overview</a>
-            <a class="nav-link" href="/docs/history/">Recent updates</a>
-            <a class="nav-link" href="/docs/documents/">All documents</a>
-            <!-- forkmesh-docs-library-nav -->
-          </div>
-        </nav>
-      </aside>
-
-      <article class="min-w-0 pb-12">
         <section
           id="welcome"
-          class="scroll-mt-44"
+          class="dh-hero"
           data-search-title="Welcome"
-          data-search-body="ForkMesh desktop documentation overview install quickstart encrypted repository direct HTTPS mirror routing Git clone issues pull requests accounts encrypted rooms"
+          data-search-body="ForkMesh documentation overview censorship resilience mirrors releases install quickstart repository routing Git clone issues pull requests accounts encrypted rooms"
         >
-          <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
-            <div></div>
-            <button
-              id="copy-page"
-              class="inline-flex h-11 items-center gap-3 rounded-2xl border border-[var(--docs-line-strong)] bg-[var(--docs-panel)] px-4 text-[0.93rem] font-bold text-[var(--docs-muted)]"
-              type="button"
-            >
-              <svg class="h-5 w-5" viewBox="0 0 24 24" aria-hidden="true">
-                <rect x="8" y="8" width="12" height="12" rx="2"></rect>
-                <path
-                  d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"
-                ></path>
-              </svg>
-              <span>Copy page</span>
-              <svg class="h-4 w-4" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="m6 9 6 6 6-6"></path>
-              </svg>
-            </button>
+          <div class="dh-hero-text">
+            <p class="dp-kicker"><svg class="dp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM8.5 12l2.5 2.5 4.5-5"></path></svg>ForkMesh documentation</p>
+            <h1>Code that stays reachable, and <em>provably authentic</em>.</h1>
+            <p class="dh-lead">
+              ForkMesh keeps the source code and releases of a project within
+              reach when a hosting provider, a domain, an account or a
+              country's network turns against it. Git stays the source of
+              truth; independent mirrors serve every clone, and every copy is
+              checked against signed records.
+            </p>
+            <div class="dh-actions">
+              <a class="dh-cta primary" href="#pillars"><svg class="dp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l9 5-9 5-9-5zM3 12.5l9 5 9-5M3 16.5l9 5 9-5"></path></svg>Read the six pillars</a>
+              <a class="dh-cta" href="/desktop"><svg class="dp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"></path></svg>Install the desktop</a>
+            </div>
           </div>
+          <div class="dh-hero-art">
+<svg class="dp-art" viewBox="0 0 520 380" aria-hidden="true" focusable="false"><defs><linearGradient id="home-hero-face" x1="0" y1="0" x2="1" y2="1"><stop offset="0" class="a-stop-a"></stop><stop offset="1" class="a-stop-b"></stop></linearGradient><linearGradient id="home-hero-plate" x1="0" y1="0" x2="1" y2="1"><stop offset="0" class="a-stop-plate-a"></stop><stop offset="1" class="a-stop-plate-b"></stop></linearGradient><radialGradient id="home-hero-glow" cx="0.5" cy="0.5" r="0.5"><stop offset="0" class="a-stop-glow"></stop><stop offset="1" class="a-stop-clear"></stop></radialGradient></defs><ellipse class="a-halo" cx="260.0" cy="236.0" rx="182.2" ry="105.2" fill="url(#home-hero-glow)"></ellipse><polygon class="a-slab-left" points="68.8,228.8 260.0,339.2 260.0,346.4 68.8,236.0"></polygon><polygon class="a-slab-right" points="451.2,228.8 260.0,339.2 260.0,346.4 451.2,236.0"></polygon><polygon class="a-slab-top" points="260.0,118.4 451.2,228.8 260.0,339.2 68.8,228.8" fill="url(#home-hero-plate)"></polygon><ellipse class="a-ring-flat" cx="260.0" cy="228.8" rx="99.9" ry="57.7"></ellipse><path class="a-link-soft" d="M310.0,271.1 L210.0,271.1"></path><path class="a-link-soft" d="M210.0,271.1 L160.1,221.1"></path><path class="a-link-soft" d="M160.1,221.1 L210.0,171.2"></path><path class="a-link-soft" d="M210.0,171.2 L310.0,171.2"></path><path class="a-link-soft" d="M310.0,171.2 L359.9,221.1"></path><path class="a-link-soft" d="M359.9,221.1 L310.0,271.1"></path><path class="a-link" d="M210.0,171.2 L260.0,197.6"></path><polygon class="a-cube-left" points="192.6,158.7 210.0,168.8 210.0,188.9 192.6,178.8"></polygon><polygon class="a-cube-right" points="227.5,158.7 210.0,168.8 210.0,188.9 227.5,178.8"></polygon><polygon class="a-cube-top" points="210.0,148.6 227.5,158.7 210.0,168.8 192.6,158.7"></polygon><path class="a-link" d="M310.0,171.2 L260.0,197.6"></path><polygon class="a-cube-left" points="292.5,158.7 310.0,168.8 310.0,188.9 292.5,178.8"></polygon><polygon class="a-cube-right" points="327.4,158.7 310.0,168.8 310.0,188.9 327.4,178.8"></polygon><polygon class="a-cube-top" points="310.0,148.6 327.4,158.7 310.0,168.8 292.5,158.7"></polygon><path class="a-link" d="M359.9,221.1 L260.0,197.6"></path><polygon class="a-cube-left" points="342.5,208.6 359.9,218.7 359.9,238.9 342.5,228.8"></polygon><polygon class="a-cube-right" points="377.4,208.6 359.9,218.7 359.9,238.9 377.4,228.8"></polygon><polygon class="a-cube-top" points="359.9,198.6 377.4,208.6 359.9,218.7 342.5,208.6"></polygon><polygon class="a-slab-left" points="176.9,215.8 260.0,263.8 260.0,269.6 176.9,221.6"></polygon><polygon class="a-slab-right" points="343.1,215.8 260.0,263.8 260.0,269.6 343.1,221.6"></polygon><polygon class="a-slab-top" points="260.0,167.8 343.1,215.8 260.0,263.8 176.9,215.8" fill="url(#home-hero-plate)"></polygon><polygon class="a-slab-left" points="203.9,203.8 260.0,236.2 260.0,241.0 203.9,208.6"></polygon><polygon class="a-slab-right" points="316.1,203.8 260.0,236.2 260.0,241.0 316.1,208.6"></polygon><polygon class="a-slab-top" points="260.0,171.4 316.1,203.8 260.0,236.2 203.9,203.8" fill="url(#home-hero-plate)"></polygon><path class="a-ring" d="M174.8,135.2 A85.2,49.2 0 0 1 345.2,135.2"></path><g transform="translate(260.0 129.8) scale(0.62)"><polygon class="a-deep" points="0,-100 86.6,-50 86.6,50 0,100 -86.6,50 -86.6,-50" transform="translate(10 6)"></polygon><polygon class="a-logo-top" points="0,-100 86.6,-50 0,0 -86.6,-50"></polygon><polygon class="a-logo-left" points="-86.6,-50 0,0 0,100 -86.6,50"></polygon><polygon class="a-logo-right" points="86.6,-50 0,0 0,100 86.6,50"></polygon><g transform="matrix(0.866 -0.5 0.866 0.5 -86.6 -50)" class="a-logo-mesh"><path d="M78 22 L22 78 M40 20 L40 60 M60 80 L60 40"></path><circle cx="78" cy="22" r="7.5"></circle><circle cx="22" cy="78" r="7.5"></circle><circle cx="40" cy="20" r="7.5"></circle><circle cx="60" cy="80" r="7.5"></circle></g><g transform="matrix(0.866 0.5 0 1 -86.6 -50)" class="a-logo-mark"><path d="M7 9 H93 V31 H31 V45 H76 V65 H31 V93 H7 Z"></path></g><g transform="matrix(0.866 -0.5 0 1 0 0)" class="a-logo-mark"><path d="M7 93 V9 H28 L50 42 L72 9 H93 V93 H72 V44 L50 77 L28 44 V93 Z"></path></g></g><path class="a-ring" d="M174.8,135.2 A85.2,49.2 0 0 0 345.2,135.2"></path><path class="a-link" d="M160.1,221.1 L260.0,197.6"></path><polygon class="a-cube-left" points="142.6,208.6 160.1,218.7 160.1,238.9 142.6,228.8"></polygon><polygon class="a-cube-right" points="177.5,208.6 160.1,218.7 160.1,238.9 177.5,228.8"></polygon><polygon class="a-cube-top" points="160.1,198.6 177.5,208.6 160.1,218.7 142.6,208.6"></polygon><path class="a-link" d="M310.0,271.1 L260.0,197.6"></path><polygon class="a-cube-left" points="292.5,258.6 310.0,268.7 310.0,288.8 292.5,278.8"></polygon><polygon class="a-cube-right" points="327.4,258.6 310.0,268.7 310.0,288.8 327.4,278.8"></polygon><polygon class="a-cube-top" points="310.0,248.5 327.4,258.6 310.0,268.7 292.5,258.6"></polygon><path class="a-link" d="M210.0,271.1 L260.0,197.6"></path><polygon class="a-cube-left" points="192.6,258.6 210.0,268.7 210.0,288.8 192.6,278.8"></polygon><polygon class="a-cube-right" points="227.5,258.6 210.0,268.7 210.0,288.8 227.5,278.8"></polygon><polygon class="a-cube-top" points="210.0,248.5 227.5,258.6 210.0,268.7 192.6,258.6"></polygon><g transform="translate(203.9 64.4) scale(0.42)"><path class="a-deep" d="M-26,-38 H26 A12,12 0 0 1 38,-26 V26 A12,12 0 0 1 26,38 H-26 A12,12 0 0 1 -38,26 V-26 A12,12 0 0 1 -26,-38 Z" transform="translate(4.0 1.8)"></path><path class="a-face" d="M-26,-38 H26 A12,12 0 0 1 38,-26 V26 A12,12 0 0 1 26,38 H-26 A12,12 0 0 1 -38,26 V-26 A12,12 0 0 1 -26,-38 Z" fill="url(#home-hero-face)"></path><path class="a-rim" d="M-26,-38 H26 A12,12 0 0 1 38,-26 V26 A12,12 0 0 1 26,38 H-26 A12,12 0 0 1 -38,26 V-26 A12,12 0 0 1 -26,-38 Z" transform="scale(0.86)"></path><g class="a-glyph" transform="translate(-19 -19) scale(1.6)"><path d="M5.5 11h13v10h-13zM8.5 11V7.5a3.5 3.5 0 0 1 7 0V11M12 15v2.5"></path></g></g><g transform="translate(376.4 77.6) scale(0.42)"><path class="a-deep" d="M-26,-38 H26 A12,12 0 0 1 38,-26 V26 A12,12 0 0 1 26,38 H-26 A12,12 0 0 1 -38,26 V-26 A12,12 0 0 1 -26,-38 Z" transform="translate(4.0 1.8)"></path><path class="a-face" d="M-26,-38 H26 A12,12 0 0 1 38,-26 V26 A12,12 0 0 1 26,38 H-26 A12,12 0 0 1 -38,26 V-26 A12,12 0 0 1 -26,-38 Z" fill="url(#home-hero-face)"></path><path class="a-rim" d="M-26,-38 H26 A12,12 0 0 1 38,-26 V26 A12,12 0 0 1 26,38 H-26 A12,12 0 0 1 -38,26 V-26 A12,12 0 0 1 -26,-38 Z" transform="scale(0.86)"></path><g class="a-glyph" transform="translate(-19 -19) scale(1.6)"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM8.5 12l2.5 2.5 4.5-5"></path></g></g><g transform="translate(314.0 197.6) scale(0.42)"><path class="a-deep" d="M-26,-38 H26 A12,12 0 0 1 38,-26 V26 A12,12 0 0 1 26,38 H-26 A12,12 0 0 1 -38,26 V-26 A12,12 0 0 1 -26,-38 Z" transform="translate(4.0 1.8)"></path><path class="a-face" d="M-26,-38 H26 A12,12 0 0 1 38,-26 V26 A12,12 0 0 1 26,38 H-26 A12,12 0 0 1 -38,26 V-26 A12,12 0 0 1 -26,-38 Z" fill="url(#home-hero-face)"></path><path class="a-rim" d="M-26,-38 H26 A12,12 0 0 1 38,-26 V26 A12,12 0 0 1 26,38 H-26 A12,12 0 0 1 -38,26 V-26 A12,12 0 0 1 -26,-38 Z" transform="scale(0.86)"></path><g class="a-glyph" transform="translate(-19 -19) scale(1.6)"><path d="M8 8h11v11H8zM5 16V5h11"></path></g></g><circle class="a-spark" cx="70.0" cy="70.0" r="2.6"></circle><circle class="a-spark" cx="452.0" cy="92.0" r="2.2"></circle><circle class="a-spark" cx="430.0" cy="300.0" r="2.8"></circle><circle class="a-spark" cx="92.0" cy="286.0" r="2.0"></circle><circle class="a-spark" cx="360.0" cy="30.0" r="1.8"></circle><circle class="a-spark" cx="150.0" cy="30.0" r="1.6"></circle></svg>
+          </div>
+          <ul class="dh-stats" aria-label="At a glance">
+            <li><strong>3 equal cores</strong><span>DNS round robin, no proxy in front</span></li>
+            <li><strong>2 of 3 down</strong><span>reads, clones and downloads keep working</span></li>
+            <li><strong>Signed pins</strong><span>a clone goes only to a copy that matches</span></li>
+            <li><strong>Tor · I2P · USB</strong><span>transport profiles and offline bundles</span></li>
+          </ul>
+        </section>
 
-          <h1
-            class="max-w-[760px] text-[2.1rem] font-black leading-[1.08] text-[var(--docs-fg)] sm:text-[2.25rem]"
-          >
-            ForkMesh
-          </h1>
-          <p
-            class="mt-4 max-w-[820px] text-[1.18rem] leading-8 text-[var(--docs-muted)] sm:text-[1.38rem]"
-          >
-            Host, mirror, inspect, and collaborate on Git repositories across
-            local desktop nodes, signed inboxes, encrypted rooms, and live clone
-            routes.
+        <section
+          id="who-it-is-for"
+          class="dh-audience"
+          data-search-title="Who it is for"
+          data-search-body="maintainers circumvention privacy security tools censorship surveillance blocked takedown"
+        >
+          <span class="dp-callout-icon"><svg class="dp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM2 21v-1a6 6 0 0 1 6-6h2a6 6 0 0 1 6 6v1M16 3.5a4 4 0 0 1 0 7M22 21v-1a6 6 0 0 0-4-5.6"></path></svg></span>
+          <div>
+            <h2>Who it is for</h2>
+            <p>
+              Maintainers of tools people rely on under censorship or
+              surveillance: circumvention, privacy and security projects whose
+              repositories and downloads are blocked or taken down, and whose
+              users need to know the copy they get is the real one. The goal is
+              continuity of access and integrity of the code, not another
+              general-purpose forge. Project at risk now? Start with
+              <a href="/docs/crisis-preservation/">crisis preservation</a>.
+            </p>
+            <ul class="dh-chips" aria-label="What it keeps working">
+              <li>Repository takedowns</li>
+              <li>Blocked domains and addresses</li>
+              <li>Suspended accounts</li>
+              <li>Tampered downloads</li>
+              <li>Network shutdowns</li>
+            </ul>
+          </div>
+        </section>
+
+        <section
+          id="pillars"
+          class="dh-section"
+          data-search-title="The six pillars"
+          data-search-body="mirroring distribution threat model cryptography self-hosting censorship testing workflow integration GitHub"
+        >
+          <p class="dh-eyebrow"><svg class="dp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l9 5-9 5-9-5zM3 12.5l9 5 9-5M3 16.5l9 5 9-5"></path></svg>Built for internet freedom</p>
+          <h2>The six pillars</h2>
+          <p class="dh-intro">
+            Each pillar answers one question a maintainer under pressure asks
+            before trusting a tool with their project, and links the pages that
+            answer it in full, limits included.
           </p>
-
-          <div
-            class="mt-12 grid gap-8 text-[1.02rem] leading-8 text-[var(--docs-muted)]"
+          <ol class="dh-pillars">
+          <li
+            class="dh-pillar"
+            id="pillar-distribution"
+            data-search-title="Resilient mirroring and distribution"
+            data-search-body="mirrors failover releases signed downloads distribution checksums alternate mirrors offline bundles"
           >
-            <p>
-              ForkMesh is a distributed Git collaboration protocol where code
-              remains on local mirrors while the relay coordinates discovery,
-              routing, identities, and collaboration records.
-            </p>
-            <p>
-              You organize work around encrypted mirrors, direct-HTTPS
-              Git-over-HTTP routes, issues, pull requests, accounts, and
-              encrypted rooms. The relay is service discovery and a bounded
-              in-place proxy, not canonical Git storage.
-            </p>
-          </div>
-
-          <a
-            id="install"
-            class="doc-card mt-10 grid min-h-[6.7rem] scroll-mt-44 grid-cols-[2.25rem_minmax(0,1fr)] items-center gap-5 p-6 no-underline"
-            href="/desktop"
+            <div class="dh-pillar-art">
+<svg class="dp-art" viewBox="0 0 240 200" aria-hidden="true" focusable="false"><defs><linearGradient id="pillar-mirror-face" x1="0" y1="0" x2="1" y2="1"><stop offset="0" class="a-stop-a"></stop><stop offset="1" class="a-stop-b"></stop></linearGradient><linearGradient id="pillar-mirror-plate" x1="0" y1="0" x2="1" y2="1"><stop offset="0" class="a-stop-plate-a"></stop><stop offset="1" class="a-stop-plate-b"></stop></linearGradient><radialGradient id="pillar-mirror-glow" cx="0.5" cy="0.5" r="0.5"><stop offset="0" class="a-stop-glow"></stop><stop offset="1" class="a-stop-clear"></stop></radialGradient></defs><ellipse class="a-halo" cx="120.0" cy="136.0" rx="87.1" ry="50.3" fill="url(#pillar-mirror-glow)"></ellipse><polygon class="a-slab-left" points="28.7,131.6 120.0,184.3 120.0,188.7 28.7,136.0"></polygon><polygon class="a-slab-right" points="211.3,131.6 120.0,184.3 120.0,188.7 211.3,136.0"></polygon><polygon class="a-slab-top" points="120.0,78.9 211.3,131.6 120.0,184.3 28.7,131.6" fill="url(#pillar-mirror-plate)"></polygon><polygon class="a-slab-left" points="52.5,123.1 120.0,162.1 120.0,165.5 52.5,126.5"></polygon><polygon class="a-slab-right" points="187.5,123.1 120.0,162.1 120.0,165.5 187.5,126.5"></polygon><polygon class="a-slab-top" points="120.0,84.1 187.5,123.1 120.0,162.1 52.5,123.1" fill="url(#pillar-mirror-plate)"></polygon><polygon class="a-slab-left" points="70.0,114.6 120.0,143.4 120.0,146.8 70.0,118.0"></polygon><polygon class="a-slab-right" points="170.0,114.6 120.0,143.4 120.0,146.8 170.0,118.0"></polygon><polygon class="a-slab-top" points="120.0,85.7 170.0,114.6 120.0,143.4 70.0,114.6" fill="url(#pillar-mirror-plate)"></polygon><ellipse class="a-shadow" cx="120.0" cy="114.6" rx="21.9" ry="12.6"></ellipse><circle class="a-spark" cx="36.0" cy="40.0" r="2.2"></circle><circle class="a-spark" cx="206.0" cy="58.0" r="1.8"></circle><circle class="a-spark" cx="196.0" cy="120.0" r="2.4"></circle><circle class="a-spark" cx="44.0" cy="104.0" r="1.6"></circle><circle class="a-spark" cx="176.0" cy="22.0" r="1.4"></circle><g transform="translate(90.0 52.6) scale(0.72)"><path class="a-deep" d="M-26,-38 H26 A12,12 0 0 1 38,-26 V26 A12,12 0 0 1 26,38 H-26 A12,12 0 0 1 -38,26 V-26 A12,12 0 0 1 -26,-38 Z" transform="translate(5.0 2.2)"></path><path class="a-face" d="M-26,-38 H26 A12,12 0 0 1 38,-26 V26 A12,12 0 0 1 26,38 H-26 A12,12 0 0 1 -38,26 V-26 A12,12 0 0 1 -26,-38 Z" fill="url(#pillar-mirror-face)"></path><path class="a-rim" d="M-26,-38 H26 A12,12 0 0 1 38,-26 V26 A12,12 0 0 1 26,38 H-26 A12,12 0 0 1 -38,26 V-26 A12,12 0 0 1 -26,-38 Z" transform="scale(0.86)"></path><g class="a-glyph" transform="translate(-19 -19) scale(1.6)"><path d="M8 8h11v11H8zM5 16V5h11"></path></g></g><g transform="translate(146.0 66.6) scale(0.86)"><path class="a-deep" d="M-26,-38 H26 A12,12 0 0 1 38,-26 V26 A12,12 0 0 1 26,38 H-26 A12,12 0 0 1 -38,26 V-26 A12,12 0 0 1 -26,-38 Z" transform="translate(6.0 2.7)"></path><path class="a-face" d="M-26,-38 H26 A12,12 0 0 1 38,-26 V26 A12,12 0 0 1 26,38 H-26 A12,12 0 0 1 -38,26 V-26 A12,12 0 0 1 -26,-38 Z" fill="url(#pillar-mirror-face)"></path><path class="a-rim" d="M-26,-38 H26 A12,12 0 0 1 38,-26 V26 A12,12 0 0 1 26,38 H-26 A12,12 0 0 1 -38,26 V-26 A12,12 0 0 1 -26,-38 Z" transform="scale(0.86)"></path><g class="a-glyph" transform="translate(-19 -19) scale(1.6)"><path d="M6 3.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM6 7.5V21M18 14.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM6 9.5c0 5 12 3 12 5"></path></g></g><path class="a-flow" d="M68.0,96.6 C80.0,126.6 124.0,128.6 134.0,108.6"></path><polygon class="a-cube-left" points="122.2,134.1 128.8,138.0 128.8,145.6 122.2,141.8"></polygon><polygon class="a-cube-right" points="135.5,134.1 128.8,138.0 128.8,145.6 135.5,141.8"></polygon><polygon class="a-cube-top" points="128.8,130.3 135.5,134.1 128.8,138.0 122.2,134.1"></polygon></svg>
+            </div>
+            <h3><a href="/docs/mirroring/">Resilient mirroring and distribution</a></h3>
+            <p class="dh-question">Can people still clone the code and download releases when the main service is blocked?</p>
+            <ul>
+              <li>Independent mirrors serve clones on their own; Git goes only to a copy whose refs match the signed pin.</li>
+              <li>Releases are content-addressed and signed, so any copy can serve them and none can alter them.</li>
+              <li>Signed, resumable bundles move a repository over a USB stick or a slow link.</li>
+            </ul>
+            <nav class="dh-pillar-links" aria-label="Resilient mirroring and distribution">
+              <a href="/docs/mirroring/">Mirroring and distribution</a>
+              <a href="/docs/crisis-preservation/">Crisis preservation</a>
+              <a href="/docs/offline-sync/">Offline sync</a>
+            </nav>
+          </li>
+          <li
+            class="dh-pillar"
+            id="pillar-threat-model"
+            data-search-title="Censorship and security threat model"
+            data-search-body="threat model adversaries DNS interference IP blocking account suspension malicious mirrors metadata leakage impersonation tampering relay compromise"
           >
-            <svg
-              class="h-8 w-8 text-[var(--docs-fg)]"
-              viewBox="0 0 24 24"
-              aria-hidden="true"
-            >
-              <path d="M12 3v12"></path>
-              <path d="m7 10 5 5 5-5"></path>
-              <path d="M5 19h14"></path>
-            </svg>
-            <span>
-              <strong
-                class="block text-[1.1rem] font-black text-[var(--docs-fg)]"
-                >Install ForkMesh Desktop</strong
-              >
-              <span class="mt-1 block text-[0.95rem] text-[var(--docs-muted)]"
-                >Download the desktop app, connect a mirror, then continue to
-                the Quickstart.</span
-              >
-            </span>
-          </a>
-
-          <a
-            class="doc-card mt-5 grid min-h-[6.7rem] grid-cols-[2.25rem_minmax(0,1fr)] items-center gap-5 p-6 no-underline"
-            href="/docs/onboarding"
+            <div class="dh-pillar-art">
+<svg class="dp-art" viewBox="0 0 240 200" aria-hidden="true" focusable="false"><defs><linearGradient id="pillar-radar-face" x1="0" y1="0" x2="1" y2="1"><stop offset="0" class="a-stop-a"></stop><stop offset="1" class="a-stop-b"></stop></linearGradient><linearGradient id="pillar-radar-plate" x1="0" y1="0" x2="1" y2="1"><stop offset="0" class="a-stop-plate-a"></stop><stop offset="1" class="a-stop-plate-b"></stop></linearGradient><radialGradient id="pillar-radar-glow" cx="0.5" cy="0.5" r="0.5"><stop offset="0" class="a-stop-glow"></stop><stop offset="1" class="a-stop-clear"></stop></radialGradient></defs><ellipse class="a-halo" cx="120.0" cy="136.0" rx="87.1" ry="50.3" fill="url(#pillar-radar-glow)"></ellipse><polygon class="a-slab-left" points="28.7,131.6 120.0,184.3 120.0,188.7 28.7,136.0"></polygon><polygon class="a-slab-right" points="211.3,131.6 120.0,184.3 120.0,188.7 211.3,136.0"></polygon><polygon class="a-slab-top" points="120.0,78.9 211.3,131.6 120.0,184.3 28.7,131.6" fill="url(#pillar-radar-plate)"></polygon><polygon class="a-slab-left" points="52.5,123.1 120.0,162.1 120.0,165.5 52.5,126.5"></polygon><polygon class="a-slab-right" points="187.5,123.1 120.0,162.1 120.0,165.5 187.5,126.5"></polygon><polygon class="a-slab-top" points="120.0,84.1 187.5,123.1 120.0,162.1 52.5,123.1" fill="url(#pillar-radar-plate)"></polygon><polygon class="a-slab-left" points="70.0,114.6 120.0,143.4 120.0,146.8 70.0,118.0"></polygon><polygon class="a-slab-right" points="170.0,114.6 120.0,143.4 120.0,146.8 170.0,118.0"></polygon><polygon class="a-slab-top" points="120.0,85.7 170.0,114.6 120.0,143.4 70.0,114.6" fill="url(#pillar-radar-plate)"></polygon><ellipse class="a-shadow" cx="120.0" cy="114.6" rx="21.9" ry="12.6"></ellipse><circle class="a-spark" cx="36.0" cy="40.0" r="2.2"></circle><circle class="a-spark" cx="206.0" cy="58.0" r="1.8"></circle><circle class="a-spark" cx="196.0" cy="120.0" r="2.4"></circle><circle class="a-spark" cx="44.0" cy="104.0" r="1.6"></circle><circle class="a-spark" cx="176.0" cy="22.0" r="1.4"></circle><ellipse class="a-ring-flat" cx="120.0" cy="114.6" rx="18.7" ry="10.8"></ellipse><ellipse class="a-ring-flat" cx="120.0" cy="114.6" rx="33.3" ry="19.2"></ellipse><ellipse class="a-ring-flat" cx="120.0" cy="114.6" rx="47.9" ry="27.6"></ellipse><g transform="translate(120.0 62.6) scale(0.95)"><path class="a-deep" d="M0,-40 A40,40 0 1 1 0,40 A40,40 0 1 1 0,-40 Z" transform="translate(7.0 3.1)"></path><path class="a-face" d="M0,-40 A40,40 0 1 1 0,40 A40,40 0 1 1 0,-40 Z" fill="url(#pillar-radar-face)"></path><path class="a-rim" d="M0,-40 A40,40 0 1 1 0,40 A40,40 0 1 1 0,-40 Z" transform="scale(0.86)"></path><g class="a-glyph" transform="translate(-19 -19) scale(1.6)"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"></path></g></g><polygon class="a-cube-left" points="125.6,128.7 131.8,132.3 131.8,139.4 125.6,135.8"></polygon><polygon class="a-cube-right" points="138.0,128.7 131.8,132.3 131.8,139.4 138.0,135.8"></polygon><polygon class="a-cube-top" points="131.8,125.1 138.0,128.7 131.8,132.3 125.6,128.7"></polygon><polygon class="a-cube-left" points="125.0,81.3 130.3,84.3 130.3,90.4 125.0,87.4"></polygon><polygon class="a-cube-right" points="135.6,81.3 130.3,84.3 130.3,90.4 135.6,87.4"></polygon><polygon class="a-cube-top" points="130.3,78.2 135.6,81.3 130.3,84.3 125.0,81.3"></polygon></svg>
+            </div>
+            <h3><a href="/docs/protocol/threat-model/">Censorship and security threat model</a></h3>
+            <p class="dh-question">What does ForkMesh protect against, from which adversaries, and what is still open?</p>
+            <ul>
+              <li>Blocked hosts, domains, addresses and accounts, tampering mirrors and compromised relays, each with its mitigation.</li>
+              <li>Open risks are written down, not hidden: discovery, visible traffic, metadata and withheld events.</li>
+            </ul>
+            <nav class="dh-pillar-links" aria-label="Censorship and security threat model">
+              <a href="/docs/protocol/threat-model/">Threat model</a>
+              <a href="/docs/censorship-resilience/#what-is-not-solved">What is not solved</a>
+            </nav>
+          </li>
+          <li
+            class="dh-pillar"
+            id="pillar-cryptography"
+            data-search-title="Security and cryptography"
+            data-search-body="encryption signing key management identity verification replay impersonation Ed25519 ML-KEM AES audit review"
           >
-            <svg class="h-8 w-8 text-[var(--docs-fg)]" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
-              <circle cx="9" cy="7" r="4"></circle>
-              <path d="M19 8v6"></path>
-              <path d="M22 11h-6"></path>
-            </svg>
-            <span>
-              <strong class="block text-[1.1rem] font-black text-[var(--docs-fg)]">Start by role: QA, developers, and marketing</strong>
-              <span class="mt-1 block text-[0.95rem] text-[var(--docs-muted)]">Join the World, use the desktop app, submit a pull request, get an independent review, and share links for rewards.</span>
-            </span>
-          </a>
+            <div class="dh-pillar-art">
+<svg class="dp-art" viewBox="0 0 240 200" aria-hidden="true" focusable="false"><defs><linearGradient id="pillar-lock-face" x1="0" y1="0" x2="1" y2="1"><stop offset="0" class="a-stop-a"></stop><stop offset="1" class="a-stop-b"></stop></linearGradient><linearGradient id="pillar-lock-plate" x1="0" y1="0" x2="1" y2="1"><stop offset="0" class="a-stop-plate-a"></stop><stop offset="1" class="a-stop-plate-b"></stop></linearGradient><radialGradient id="pillar-lock-glow" cx="0.5" cy="0.5" r="0.5"><stop offset="0" class="a-stop-glow"></stop><stop offset="1" class="a-stop-clear"></stop></radialGradient></defs><ellipse class="a-halo" cx="120.0" cy="136.0" rx="87.1" ry="50.3" fill="url(#pillar-lock-glow)"></ellipse><polygon class="a-slab-left" points="28.7,131.6 120.0,184.3 120.0,188.7 28.7,136.0"></polygon><polygon class="a-slab-right" points="211.3,131.6 120.0,184.3 120.0,188.7 211.3,136.0"></polygon><polygon class="a-slab-top" points="120.0,78.9 211.3,131.6 120.0,184.3 28.7,131.6" fill="url(#pillar-lock-plate)"></polygon><polygon class="a-slab-left" points="52.5,123.1 120.0,162.1 120.0,165.5 52.5,126.5"></polygon><polygon class="a-slab-right" points="187.5,123.1 120.0,162.1 120.0,165.5 187.5,126.5"></polygon><polygon class="a-slab-top" points="120.0,84.1 187.5,123.1 120.0,162.1 52.5,123.1" fill="url(#pillar-lock-plate)"></polygon><polygon class="a-slab-left" points="70.0,114.6 120.0,143.4 120.0,146.8 70.0,118.0"></polygon><polygon class="a-slab-right" points="170.0,114.6 120.0,143.4 120.0,146.8 170.0,118.0"></polygon><polygon class="a-slab-top" points="120.0,85.7 170.0,114.6 120.0,143.4 70.0,114.6" fill="url(#pillar-lock-plate)"></polygon><ellipse class="a-shadow" cx="120.0" cy="114.6" rx="21.9" ry="12.6"></ellipse><circle class="a-spark" cx="36.0" cy="40.0" r="2.2"></circle><circle class="a-spark" cx="206.0" cy="58.0" r="1.8"></circle><circle class="a-spark" cx="196.0" cy="120.0" r="2.4"></circle><circle class="a-spark" cx="44.0" cy="104.0" r="1.6"></circle><circle class="a-spark" cx="176.0" cy="22.0" r="1.4"></circle><path class="a-ring" d="M72.1,77.2 A47.9,27.6 0 0 1 167.9,77.2"></path><g transform="translate(120.0 62.6) scale(1.00)"><path class="a-deep" d="M-26,-38 H26 A12,12 0 0 1 38,-26 V26 A12,12 0 0 1 26,38 H-26 A12,12 0 0 1 -38,26 V-26 A12,12 0 0 1 -26,-38 Z" transform="translate(7.0 3.1)"></path><path class="a-face" d="M-26,-38 H26 A12,12 0 0 1 38,-26 V26 A12,12 0 0 1 26,38 H-26 A12,12 0 0 1 -38,26 V-26 A12,12 0 0 1 -26,-38 Z" fill="url(#pillar-lock-face)"></path><path class="a-rim" d="M-26,-38 H26 A12,12 0 0 1 38,-26 V26 A12,12 0 0 1 26,38 H-26 A12,12 0 0 1 -38,26 V-26 A12,12 0 0 1 -26,-38 Z" transform="scale(0.86)"></path><g class="a-glyph" transform="translate(-19 -19) scale(1.6)"><path d="M5.5 11h13v10h-13zM8.5 11V7.5a3.5 3.5 0 0 1 7 0V11M12 15v2.5"></path></g></g><path class="a-ring" d="M72.1,77.2 A47.9,27.6 0 0 0 167.9,77.2"></path><circle class="a-node" cx="99.8" cy="52.1" r="4.2"></circle><circle class="a-node" cx="167.7" cy="79.6" r="4.2"></circle><circle class="a-node" cx="92.5" cy="99.8" r="4.2"></circle></svg>
+            </div>
+            <h3><a href="/docs/encryption/">Security and cryptography</a></h3>
+            <p class="dh-question">Which protocols does it use, what is each one for, and where are the gaps?</p>
+            <ul>
+              <li>Ed25519 node identities sign every issue, pull request, review and release.</li>
+              <li>Chat is sealed device to device with an X25519 + ML-KEM-768 hybrid and AES-256-GCM.</li>
+              <li>Each layer lists what it does not protect, next to the design.</li>
+            </ul>
+            <nav class="dh-pillar-links" aria-label="Security and cryptography">
+              <a href="/docs/encryption/">Encryption and signatures</a>
+              <a href="/docs/protocol/signatures-and-authentication/">Signatures and authentication</a>
+            </nav>
+          </li>
+          <li
+            class="dh-pillar"
+            id="pillar-self-hosting"
+            data-search-title="Self-hosting a small team can run"
+            data-search-body="self-hosting install instance mirror node requirements CPU RAM disk backups upgrades recovery hardening"
+          >
+            <div class="dh-pillar-art">
+<svg class="dp-art" viewBox="0 0 240 200" aria-hidden="true" focusable="false"><defs><linearGradient id="pillar-server-face" x1="0" y1="0" x2="1" y2="1"><stop offset="0" class="a-stop-a"></stop><stop offset="1" class="a-stop-b"></stop></linearGradient><linearGradient id="pillar-server-plate" x1="0" y1="0" x2="1" y2="1"><stop offset="0" class="a-stop-plate-a"></stop><stop offset="1" class="a-stop-plate-b"></stop></linearGradient><radialGradient id="pillar-server-glow" cx="0.5" cy="0.5" r="0.5"><stop offset="0" class="a-stop-glow"></stop><stop offset="1" class="a-stop-clear"></stop></radialGradient></defs><ellipse class="a-halo" cx="120.0" cy="136.0" rx="87.1" ry="50.3" fill="url(#pillar-server-glow)"></ellipse><polygon class="a-slab-left" points="28.7,131.6 120.0,184.3 120.0,188.7 28.7,136.0"></polygon><polygon class="a-slab-right" points="211.3,131.6 120.0,184.3 120.0,188.7 211.3,136.0"></polygon><polygon class="a-slab-top" points="120.0,78.9 211.3,131.6 120.0,184.3 28.7,131.6" fill="url(#pillar-server-plate)"></polygon><polygon class="a-slab-left" points="52.5,123.1 120.0,162.1 120.0,165.5 52.5,126.5"></polygon><polygon class="a-slab-right" points="187.5,123.1 120.0,162.1 120.0,165.5 187.5,126.5"></polygon><polygon class="a-slab-top" points="120.0,84.1 187.5,123.1 120.0,162.1 52.5,123.1" fill="url(#pillar-server-plate)"></polygon><polygon class="a-slab-left" points="70.0,114.6 120.0,143.4 120.0,146.8 70.0,118.0"></polygon><polygon class="a-slab-right" points="170.0,114.6 120.0,143.4 120.0,146.8 170.0,118.0"></polygon><polygon class="a-slab-top" points="120.0,85.7 170.0,114.6 120.0,143.4 70.0,114.6" fill="url(#pillar-server-plate)"></polygon><ellipse class="a-shadow" cx="120.0" cy="114.6" rx="21.9" ry="12.6"></ellipse><circle class="a-spark" cx="36.0" cy="40.0" r="2.2"></circle><circle class="a-spark" cx="206.0" cy="58.0" r="1.8"></circle><circle class="a-spark" cx="196.0" cy="120.0" r="2.4"></circle><circle class="a-spark" cx="44.0" cy="104.0" r="1.6"></circle><circle class="a-spark" cx="176.0" cy="22.0" r="1.4"></circle><polygon class="a-cube-left" points="89.1,99.3 120.0,117.1 120.0,130.7 89.1,112.9"></polygon><polygon class="a-cube-right" points="150.9,99.3 120.0,117.1 120.0,130.7 150.9,112.9"></polygon><polygon class="a-cube-top" points="120.0,81.4 150.9,99.3 120.0,117.1 89.1,99.3"></polygon><circle class="a-led" cx="127.4" cy="119.7" r="2.3"></circle><path class="a-slot" d="M94.2,109.1 L110.4,118.4"></path><polygon class="a-cube-left" points="89.1,83.1 120.0,101.0 120.0,114.6 89.1,96.7"></polygon><polygon class="a-cube-right" points="150.9,83.1 120.0,101.0 120.0,114.6 150.9,96.7"></polygon><polygon class="a-cube-top" points="120.0,65.3 150.9,83.1 120.0,101.0 89.1,83.1"></polygon><circle class="a-led" cx="127.4" cy="103.5" r="2.3"></circle><path class="a-slot" d="M94.2,92.9 L110.4,102.3"></path><polygon class="a-cube-left" points="89.1,67.0 120.0,84.8 120.0,98.4 89.1,80.6"></polygon><polygon class="a-cube-right" points="150.9,67.0 120.0,84.8 120.0,98.4 150.9,80.6"></polygon><polygon class="a-cube-top" points="120.0,49.1 150.9,67.0 120.0,84.8 89.1,67.0"></polygon><circle class="a-led" cx="127.4" cy="87.4" r="2.3"></circle><path class="a-slot" d="M94.2,76.8 L110.4,86.1"></path><polygon class="a-cube-left" points="165.6,107.8 173.0,112.0 173.0,120.5 165.6,116.3"></polygon><polygon class="a-cube-right" points="180.4,107.8 173.0,112.0 173.0,120.5 180.4,116.3"></polygon><polygon class="a-cube-top" points="173.0,103.5 180.4,107.8 173.0,112.0 165.6,107.8"></polygon><polygon class="a-cube-left" points="58.2,106.1 64.1,109.5 64.1,116.3 58.2,112.9"></polygon><polygon class="a-cube-right" points="69.9,106.1 64.1,109.5 64.1,116.3 69.9,112.9"></polygon><polygon class="a-cube-top" points="64.1,102.7 69.9,106.1 64.1,109.5 58.2,106.1"></polygon></svg>
+            </div>
+            <h3><a href="/docs/self-hosting/">Self-hosting a small team can run</a></h3>
+            <p class="dh-question">Can a small organization run it without deep infrastructure skills?</p>
+            <ul>
+              <li>Four levels: a desktop node, a mirror, a whole instance or a fleet.</li>
+              <li>An instance needs Debian 13 or Ubuntu 24.04, 1 GB RAM and 6 GB disk, and installs in about 15 minutes.</li>
+              <li>Everything ForkMesh runs is open source.</li>
+            </ul>
+            <nav class="dh-pillar-links" aria-label="Self-hosting a small team can run">
+              <a href="/docs/self-hosting/">Self-hosting</a>
+              <a href="/docs/start-your-own-instance/">Start your own instance</a>
+              <a href="/docs/operations/mirror-node/">Mirror node</a>
+            </nav>
+          </li>
+          <li
+            class="dh-pillar"
+            id="pillar-testing"
+            data-search-title="Tested under real blocking"
+            data-search-body="censorship testing DNS manipulation IP blocking relay unavailability degraded connectivity recovery time retrieval success"
+          >
+            <div class="dh-pillar-art">
+<svg class="dp-art" viewBox="0 0 240 200" aria-hidden="true" focusable="false"><defs><linearGradient id="pillar-activity-face" x1="0" y1="0" x2="1" y2="1"><stop offset="0" class="a-stop-a"></stop><stop offset="1" class="a-stop-b"></stop></linearGradient><linearGradient id="pillar-activity-plate" x1="0" y1="0" x2="1" y2="1"><stop offset="0" class="a-stop-plate-a"></stop><stop offset="1" class="a-stop-plate-b"></stop></linearGradient><radialGradient id="pillar-activity-glow" cx="0.5" cy="0.5" r="0.5"><stop offset="0" class="a-stop-glow"></stop><stop offset="1" class="a-stop-clear"></stop></radialGradient></defs><ellipse class="a-halo" cx="120.0" cy="136.0" rx="87.1" ry="50.3" fill="url(#pillar-activity-glow)"></ellipse><polygon class="a-slab-left" points="28.7,131.6 120.0,184.3 120.0,188.7 28.7,136.0"></polygon><polygon class="a-slab-right" points="211.3,131.6 120.0,184.3 120.0,188.7 211.3,136.0"></polygon><polygon class="a-slab-top" points="120.0,78.9 211.3,131.6 120.0,184.3 28.7,131.6" fill="url(#pillar-activity-plate)"></polygon><polygon class="a-slab-left" points="52.5,123.1 120.0,162.1 120.0,165.5 52.5,126.5"></polygon><polygon class="a-slab-right" points="187.5,123.1 120.0,162.1 120.0,165.5 187.5,126.5"></polygon><polygon class="a-slab-top" points="120.0,84.1 187.5,123.1 120.0,162.1 52.5,123.1" fill="url(#pillar-activity-plate)"></polygon><polygon class="a-slab-left" points="70.0,114.6 120.0,143.4 120.0,146.8 70.0,118.0"></polygon><polygon class="a-slab-right" points="170.0,114.6 120.0,143.4 120.0,146.8 170.0,118.0"></polygon><polygon class="a-slab-top" points="120.0,85.7 170.0,114.6 120.0,143.4 70.0,114.6" fill="url(#pillar-activity-plate)"></polygon><ellipse class="a-shadow" cx="120.0" cy="114.6" rx="21.9" ry="12.6"></ellipse><circle class="a-spark" cx="36.0" cy="40.0" r="2.2"></circle><circle class="a-spark" cx="206.0" cy="58.0" r="1.8"></circle><circle class="a-spark" cx="196.0" cy="120.0" r="2.4"></circle><circle class="a-spark" cx="44.0" cy="104.0" r="1.6"></circle><circle class="a-spark" cx="176.0" cy="22.0" r="1.4"></circle><path class="a-ring" d="M74.2,77.2 A45.8,26.4 0 0 1 165.8,77.2"></path><g transform="translate(120.0 62.6) scale(0.95)"><path class="a-deep" d="M0,-40 A40,40 0 1 1 0,40 A40,40 0 1 1 0,-40 Z" transform="translate(7.0 3.1)"></path><path class="a-face" d="M0,-40 A40,40 0 1 1 0,40 A40,40 0 1 1 0,-40 Z" fill="url(#pillar-activity-face)"></path><path class="a-rim" d="M0,-40 A40,40 0 1 1 0,40 A40,40 0 1 1 0,-40 Z" transform="scale(0.86)"></path><g class="a-glyph" transform="translate(-19 -19) scale(1.6)"><path d="M3 12h4l3-8 4 16 3-8h4"></path></g></g><path class="a-ring" d="M74.2,77.2 A45.8,26.4 0 0 0 165.8,77.2"></path><polygon class="a-cube-left" points="124.1,133.8 130.3,137.4 130.3,144.5 124.1,140.9"></polygon><polygon class="a-cube-right" points="136.5,133.8 130.3,137.4 130.3,144.5 136.5,140.9"></polygon><polygon class="a-cube-top" points="130.3,130.2 136.5,133.8 130.3,137.4 124.1,133.8"></polygon></svg>
+            </div>
+            <h3><a href="/docs/censorship-resilience/#how-we-test-it">Tested under real blocking</a></h3>
+            <p class="dh-question">Is resilience measured, rather than only claimed?</p>
+            <ul>
+              <li>The promise drill: collaborate, add a mirror, take the source offline, clone again.</li>
+              <li>The cores keep serving reads, clones and downloads with two of three stopped.</li>
+              <li>Transport profiles for Tor, I2P and overlays refuse forbidden routes and trace leaks.</li>
+            </ul>
+            <nav class="dh-pillar-links" aria-label="Tested under real blocking">
+              <a href="/docs/censorship-resilience/#how-we-test-it">How we test it</a>
+              <a href="/docs/availability-proof/">Availability proofs</a>
+              <a href="/docs/transports/">Transports</a>
+            </nav>
+          </li>
+          <li
+            class="dh-pillar"
+            id="pillar-workflows"
+            data-search-title="Fits the workflow you already have"
+            data-search-body="GitHub GitLab import migration mirror coexistence workflow release publishing forge sync backup"
+          >
+            <div class="dh-pillar-art">
+<svg class="dp-art" viewBox="0 0 240 200" aria-hidden="true" focusable="false"><defs><linearGradient id="pillar-merge-face" x1="0" y1="0" x2="1" y2="1"><stop offset="0" class="a-stop-a"></stop><stop offset="1" class="a-stop-b"></stop></linearGradient><linearGradient id="pillar-merge-plate" x1="0" y1="0" x2="1" y2="1"><stop offset="0" class="a-stop-plate-a"></stop><stop offset="1" class="a-stop-plate-b"></stop></linearGradient><radialGradient id="pillar-merge-glow" cx="0.5" cy="0.5" r="0.5"><stop offset="0" class="a-stop-glow"></stop><stop offset="1" class="a-stop-clear"></stop></radialGradient></defs><ellipse class="a-halo" cx="120.0" cy="136.0" rx="87.1" ry="50.3" fill="url(#pillar-merge-glow)"></ellipse><polygon class="a-slab-left" points="28.7,131.6 120.0,184.3 120.0,188.7 28.7,136.0"></polygon><polygon class="a-slab-right" points="211.3,131.6 120.0,184.3 120.0,188.7 211.3,136.0"></polygon><polygon class="a-slab-top" points="120.0,78.9 211.3,131.6 120.0,184.3 28.7,131.6" fill="url(#pillar-merge-plate)"></polygon><polygon class="a-slab-left" points="52.5,123.1 120.0,162.1 120.0,165.5 52.5,126.5"></polygon><polygon class="a-slab-right" points="187.5,123.1 120.0,162.1 120.0,165.5 187.5,126.5"></polygon><polygon class="a-slab-top" points="120.0,84.1 187.5,123.1 120.0,162.1 52.5,123.1" fill="url(#pillar-merge-plate)"></polygon><polygon class="a-slab-left" points="70.0,114.6 120.0,143.4 120.0,146.8 70.0,118.0"></polygon><polygon class="a-slab-right" points="170.0,114.6 120.0,143.4 120.0,146.8 170.0,118.0"></polygon><polygon class="a-slab-top" points="120.0,85.7 170.0,114.6 120.0,143.4 70.0,114.6" fill="url(#pillar-merge-plate)"></polygon><ellipse class="a-shadow" cx="120.0" cy="114.6" rx="21.9" ry="12.6"></ellipse><circle class="a-spark" cx="36.0" cy="40.0" r="2.2"></circle><circle class="a-spark" cx="206.0" cy="58.0" r="1.8"></circle><circle class="a-spark" cx="196.0" cy="120.0" r="2.4"></circle><circle class="a-spark" cx="44.0" cy="104.0" r="1.6"></circle><circle class="a-spark" cx="176.0" cy="22.0" r="1.4"></circle><path class="a-ring" d="M74.2,77.2 A45.8,26.4 0 0 1 165.8,77.2"></path><g transform="translate(120.0 62.6) scale(0.95)"><path class="a-deep" d="M-26,-38 H26 A12,12 0 0 1 38,-26 V26 A12,12 0 0 1 26,38 H-26 A12,12 0 0 1 -38,26 V-26 A12,12 0 0 1 -26,-38 Z" transform="translate(7.0 3.1)"></path><path class="a-face" d="M-26,-38 H26 A12,12 0 0 1 38,-26 V26 A12,12 0 0 1 26,38 H-26 A12,12 0 0 1 -38,26 V-26 A12,12 0 0 1 -26,-38 Z" fill="url(#pillar-merge-face)"></path><path class="a-rim" d="M-26,-38 H26 A12,12 0 0 1 38,-26 V26 A12,12 0 0 1 26,38 H-26 A12,12 0 0 1 -38,26 V-26 A12,12 0 0 1 -26,-38 Z" transform="scale(0.86)"></path><g class="a-glyph" transform="translate(-19 -19) scale(1.6)"><path d="M6 3.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM6 7.5V21M18 14.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM6 9.5c0 5 12 3 12 5"></path></g></g><path class="a-ring" d="M74.2,77.2 A45.8,26.4 0 0 0 165.8,77.2"></path><polygon class="a-cube-left" points="124.1,133.8 130.3,137.4 130.3,144.5 124.1,140.9"></polygon><polygon class="a-cube-right" points="136.5,133.8 130.3,137.4 130.3,144.5 136.5,140.9"></polygon><polygon class="a-cube-top" points="130.3,130.2 136.5,133.8 130.3,137.4 124.1,133.8"></polygon></svg>
+            </div>
+            <h3><a href="/docs/forge-sync/">Fits the workflow you already have</a></h3>
+            <p class="dh-question">Can a project keep GitHub, plain Git and its release flow?</p>
+            <ul>
+              <li>Branches and tags stay in step with GitHub, fast-forward only, every 15 minutes.</li>
+              <li>Issues sync both ways with GitHub, Gitea, Forgejo and Codeberg.</li>
+              <li>Stock Git clones and pushes: no new tool is needed to read the code.</li>
+            </ul>
+            <nav class="dh-pillar-links" aria-label="Fits the workflow you already have">
+              <a href="/docs/forge-sync/">Forge sync</a>
+              <a href="/docs/repository-imports/">Repository imports</a>
+              <a href="/docs/back-up-a-github-repository/">Back up a GitHub repository</a>
+            </nav>
+          </li>
+          </ol>
         </section>
 
         <section
           id="core-documentation"
-          class="mt-16 scroll-mt-44"
+          class="dh-section"
           data-search-title="Core documentation"
           data-search-body="architecture availability encryption signatures mirroring distribution self-hosting censorship resilience threat model"
         >
-          <h2
-            class="text-[1.78rem] font-black leading-tight text-[var(--docs-fg)]"
-          >
-            Core documentation
-          </h2>
-          <p class="mt-3 text-[0.95rem] leading-7 text-[var(--docs-muted)]">
+          <p class="dh-eyebrow"><svg class="dp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM15.5 8.5l-2 5-5 2 2-5z"></path></svg>Reading path</p>
+          <h2>Core documentation</h2>
+          <p class="dh-intro">
             Six short pages explain how ForkMesh works and what it protects.
-            Everything else in the <a href="/docs/library/">documentation library</a>
-            links back to them.
+            Read them in order; everything else in the
+            <a href="/docs/library/">documentation library</a> links back to them.
           </p>
-          <div class="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-            <a class="doc-card p-6 no-underline" href="/docs/architecture/">
-              <h3 class="text-[1.05rem] font-black text-[var(--docs-fg)]">Architecture and availability</h3>
-              <p class="mt-2 text-[0.93rem] leading-7 text-[var(--docs-muted)]">Equal core nodes behind DNS round robin, independent mirrors, read-only survival, and what is still a single dependency.</p>
-            </a>
-            <a class="doc-card p-6 no-underline" href="/docs/encryption/">
-              <h3 class="text-[1.05rem] font-black text-[var(--docs-fg)]">Encryption and signatures</h3>
-              <p class="mt-2 text-[0.93rem] leading-7 text-[var(--docs-muted)]">Every signing and encryption layer, the algorithms behind it, and the known gaps.</p>
-            </a>
-            <a class="doc-card p-6 no-underline" href="/docs/mirroring/">
-              <h3 class="text-[1.05rem] font-black text-[var(--docs-fg)]">Mirroring and distribution</h3>
-              <p class="mt-2 text-[0.93rem] leading-7 text-[var(--docs-muted)]">How copies stay in step, how a clone is verified, and how signed releases reach users.</p>
-            </a>
-            <a class="doc-card p-6 no-underline" href="/docs/self-hosting/">
-              <h3 class="text-[1.05rem] font-black text-[var(--docs-fg)]">Self-hosting</h3>
-              <p class="mt-2 text-[0.93rem] leading-7 text-[var(--docs-muted)]">Run a desktop node, a mirror, a whole instance or a fleet of your own.</p>
-            </a>
-            <a class="doc-card p-6 no-underline" href="/docs/censorship-resilience/">
-              <h3 class="text-[1.05rem] font-black text-[var(--docs-fg)]">Censorship resilience</h3>
-              <p class="mt-2 text-[0.93rem] leading-7 text-[var(--docs-muted)]">What still works when a host, domain, account or network is blocked, and how it is tested.</p>
-            </a>
-            <a class="doc-card p-6 no-underline" href="/docs/protocol/threat-model/">
-              <h3 class="text-[1.05rem] font-black text-[var(--docs-fg)]">Threat model</h3>
-              <p class="mt-2 text-[0.93rem] leading-7 text-[var(--docs-muted)]">What the protocol defends against and which threats are still open.</p>
-            </a>
+          <ol class="dh-path">
+          <li>
+            <a href="/docs/architecture/"><span><strong>Architecture and availability</strong><span>Equal core nodes behind DNS round robin, independent mirrors, read-only survival, and what is still a single dependency.</span></span><svg class="dp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg></a>
+          </li>
+          <li>
+            <a href="/docs/encryption/"><span><strong>Encryption and signatures</strong><span>Every signing and encryption layer, the algorithms behind it, and the known gaps.</span></span><svg class="dp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg></a>
+          </li>
+          <li>
+            <a href="/docs/mirroring/"><span><strong>Mirroring and distribution</strong><span>How copies stay in step, how a clone is verified, and how signed releases reach users.</span></span><svg class="dp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg></a>
+          </li>
+          <li>
+            <a href="/docs/self-hosting/"><span><strong>Self-hosting</strong><span>Run a desktop node, a mirror, a whole instance or a fleet of your own.</span></span><svg class="dp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg></a>
+          </li>
+          <li>
+            <a href="/docs/censorship-resilience/"><span><strong>Censorship resilience</strong><span>What still works when a host, domain, account or network is blocked, and how it is tested.</span></span><svg class="dp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg></a>
+          </li>
+          <li>
+            <a href="/docs/protocol/threat-model/"><span><strong>Threat model</strong><span>What the protocol defends against and which threats are still open.</span></span><svg class="dp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg></a>
+          </li>
+          </ol>
+        </section>
+
+        <section
+          id="quickstart"
+          class="dh-section"
+          data-search-title="Get started"
+          data-search-body="install desktop quickstart onboarding product promise back up GitHub repository"
+        >
+          <p class="dh-eyebrow"><svg class="dp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19c.8-2.6 2.4-4.4 4.5-5.5M14 4.5c3 0 5.5 2.5 5.5 5.5-1.6 4-5.6 7-8.8 8L6 13.3c1-3.2 4-7.2 8-8.8zM14.5 9.5h.01"></path></svg>Get started</p>
+          <h2>Start in minutes</h2>
+          <div class="dh-start">
+          <a id="install" href="/desktop">
+            <span class="dh-start-icon"><svg class="dp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"></path></svg></span>
+            <strong>Install ForkMesh Desktop</strong>
+            <span>Download the desktop app, connect a mirror, then continue with the guides below.</span>
+          </a>
+          <a href="/docs/onboarding">
+            <span class="dh-start-icon"><svg class="dp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM2 21v-1a6 6 0 0 1 6-6h2a6 6 0 0 1 6 6v1M16 3.5a4 4 0 0 1 0 7M22 21v-1a6 6 0 0 0-4-5.6"></path></svg></span>
+            <strong>Start by role</strong>
+            <span>QA, developers and marketing: join the World, open a pull request and get an independent review.</span>
+          </a>
+          <a href="/docs/product-promise">
+            <span class="dh-start-icon"><svg class="dp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM8.5 12l2.5 2.5 4.5-5"></path></svg></span>
+            <strong>See the promise work</strong>
+            <span>Collaborate, add a mirror, take the source host offline and clone again.</span>
+          </a>
+          <a href="/docs/back-up-a-github-repository/">
+            <span class="dh-start-icon"><svg class="dp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 8h11v11H8zM5 16V5h11"></path></svg></span>
+            <strong>Back up a GitHub repository</strong>
+            <span>Keep a safe, signed copy of a project without changing anything on GitHub.</span>
+          </a>
           </div>
         </section>
+
+        <section class="dh-band" aria-labelledby="dh-band-title">
+          <div>
+            <h2 id="dh-band-title">Maintain a tool that people depend on?</h2>
+            <p>
+              Tell us what gets blocked, taken down or tampered with, and we
+              will help you put a signed, mirrored copy in place before you
+              need it.
+            </p>
+          </div>
+          <div class="dh-actions">
+            <a class="dh-cta" href="/docs/crisis-preservation/"><svg class="dp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"></path></svg>Preserve a project</a>
+            <a class="dh-cta ghost" href="https://app.forkmesh.com/chat"><svg class="dp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"></path></svg>Talk to us</a>
+          </div>
+        </section>
+
+        <h2 class="dh-heading dh-reference-title">Reference</h2>
+        <p class="dh-intro">How the pieces fit: repositories, routing, Git, APIs and operations, how <a href="/docs/contributions">contributions are counted</a>, and <a href="/docs/business-model">what stays free and which services are paid</a>.</p>
 
         <section
           id="mental-model"
@@ -844,10 +535,10 @@
         </section>
 
         <section
-          id="quickstart"
+          id="find-what-you-need"
           class="mt-16 scroll-mt-44"
           data-search-title="Find What You Need"
-          data-search-body="Concepts Git terminal account extension mobile coming soon quickstart"
+          data-search-body="Concepts Git terminal account browser extension mobile phone apps quickstart"
         >
           <h2
             class="text-[1.78rem] font-black leading-tight text-[var(--docs-fg)]"
@@ -908,7 +599,7 @@
                 storage, and sync boundaries.
               </p>
             </a>
-            <a class="doc-card p-7 no-underline" href="#limitations">
+            <div class="doc-card p-7">
               <svg
                 class="h-8 w-8 text-[var(--docs-fg)]"
                 viewBox="0 0 24 24"
@@ -922,10 +613,12 @@
                 Extension and mobile
               </h3>
               <p class="mt-2 text-[0.95rem] leading-7 text-[var(--docs-muted)]">
-                Extension and mobile application docs are preserved as coming
-                soon areas for future releases.
+                Use ForkMesh in your browser with the
+                <a class="underline" href="/docs/browser-extension/">browser extension</a>,
+                or on your phone with the
+                <a class="underline" href="/docs/mobile/">phone apps</a>.
               </p>
-            </a>
+            </div>
           </div>
         </section>
 
@@ -1940,476 +1633,97 @@ sudo apt install forkmesh</code></pre>
 
         <section
           id="library"
-          class="mt-20 scroll-mt-44 border-t border-[var(--docs-line)] pt-10"
+          class="dh-section"
           data-search-title="Documentation library"
           data-search-body="Every guide, design note, engineering policy, security contract, operations runbook, mobile spec, plan and JSON schema from the ForkMesh source tree, rendered from docs"
         >
-          <h2 class="text-[1.5rem] font-black text-[var(--docs-fg)]">
-            Documentation library
-          </h2>
-          <p class="mt-4 max-w-[820px] text-[1.02rem] leading-8 text-[var(--docs-muted)]">
-            Every Markdown document and JSON schema in the ForkMesh source tree's
-            <code>docs</code> tree, rendered with cross-links, an outline,
-            and previous/next navigation. Browse the
-            <a href="/docs/library/">library overview</a> or jump to an area
-            below. Each page links to its source file and to every page that
-            references it.
+          <p class="dh-eyebrow"><svg class="dp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"></path></svg>Everything else</p>
+          <h2>Documentation library</h2>
+          <p class="dh-intro">
+            Every Markdown document and JSON schema in the ForkMesh source
+            tree's <code>docs</code> folder, rendered with cross-links, an
+            outline and previous/next navigation. Browse the
+            <a href="/docs/library/">library overview</a> or jump to an area.
           </p>
+          <nav class="dp-library-jump" aria-label="Library areas">
+            <!-- forkmesh-docs-library-nav -->
+          </nav>
           <div class="library">
             <!-- forkmesh-docs-library -->
           </div>
         </section>
 
-        <section
-          class="mt-20 flex flex-wrap items-center justify-between gap-5 border-t border-[var(--docs-line)] pt-10"
-        >
-          <p
-            class="text-[0.95rem] font-semibold text-[var(--docs-muted)]"
-            data-feedback-status
-          >
-            Was this page helpful?
-          </p>
-          <div class="flex gap-3">
-            <button
-              class="inline-flex h-10 items-center gap-2 rounded-2xl border border-[var(--docs-line-strong)] px-4 text-[0.95rem] font-bold text-[var(--docs-muted)]"
-              type="button"
-              data-feedback-like
-            >
-              <svg class="h-5 w-5" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M7 10v11"></path>
-                <path
-                  d="M15 5.5 14 10h5.7a1.8 1.8 0 0 1 1.7 2.3l-2 6.4A3 3 0 0 1 16.5 21H7"
-                ></path>
-                <path d="M7 10H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3"></path>
-              </svg>
+        <section class="dp-feedback">
+          <p data-feedback-status>Was this page helpful?</p>
+          <div>
+            <button class="dp-button" type="button" data-feedback-like>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10v11"></path><path d="M15 5.5 14 10h5.7a1.8 1.8 0 0 1 1.7 2.3l-2 6.4A3 3 0 0 1 16.5 21H7"></path><path d="M7 10H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3"></path></svg>
               Yes
             </button>
-            <button
-              class="inline-flex h-10 items-center gap-2 rounded-2xl border border-[var(--docs-line-strong)] px-4 text-[0.95rem] font-bold text-[var(--docs-muted)]"
-              type="button"
-              data-feedback-dislike
-            >
-              <svg class="h-5 w-5" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M17 14V3"></path>
-                <path
-                  d="M9 18.5 10 14H4.3a1.8 1.8 0 0 1-1.7-2.3l2-6.4A3 3 0 0 1 7.5 3H17"
-                ></path>
-                <path d="M17 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-3"></path>
-              </svg>
+            <button class="dp-button" type="button" data-feedback-dislike>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 14V3"></path><path d="M9 18.5 10 14H4.3a1.8 1.8 0 0 1-1.7-2.3l2-6.4A3 3 0 0 1 7.5 3H17"></path><path d="M17 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-3"></path></svg>
               No
             </button>
           </div>
         </section>
-
-        <footer class="mt-16 border-t border-[var(--docs-line)] pt-10">
-          <div
-            class="flex flex-wrap items-center justify-between gap-5 text-[0.95rem] text-[var(--docs-soft)]"
-          >
-            <div class="flex items-center gap-5">
-              <a
-                class="docs-footer-icon"
-                href="https://app.forkmesh.com/chat"
-                aria-label="ForkMesh chat"
-              >
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path
-                    d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"
-                  ></path>
-                </svg>
-              </a>
-              <a
-                class="docs-footer-icon"
-                href="/network"
-                aria-label="ForkMesh network"
-              >
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <circle cx="12" cy="12" r="10"></circle>
-                  <path d="M2 12h20"></path>
-                  <path d="M12 2a15.3 15.3 0 0 1 0 20"></path>
-                  <path d="M12 2a15.3 15.3 0 0 0 0 20"></path>
-                </svg>
-              </a>
-            </div>
-            <p>
-              Powered by
-              <strong class="font-black text-[var(--docs-muted)]"
-                >ForkMesh</strong
-              >
-            </p>
-          </div>
+        <footer class="dp-footer">
+          <a href="/docs/">Docs home</a>
+          <a href="/docs/#pillars">Pillars</a>
+          <a href="/docs/library/">Library</a>
+          <a href="https://app.forkmesh.com/chat">Chat</a>
+          <a href="/network">Network</a>
+          <p>Powered by <strong>ForkMesh</strong></p>
         </footer>
       </article>
 
-      <aside class="docs-sidebar-right hidden lg:block">
-        <nav
-          class="sticky top-[10.5rem] max-h-[calc(100vh-11.5rem)] overflow-y-auto text-[0.92rem] docs-scrollbar"
-          aria-label="On this page"
-        >
-          <h2
-            class="mb-4 flex items-center gap-3 font-black text-[var(--docs-fg)]"
-          >
-            <svg class="h-4 w-4" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M8 6h13"></path>
-              <path d="M8 12h13"></path>
-              <path d="M8 18h13"></path>
-              <path d="M3 6h.01"></path>
-              <path d="M3 12h.01"></path>
-              <path d="M3 18h.01"></path>
-            </svg>
-            On this page
-          </h2>
-          <a
-            class="mb-4 block font-bold text-[var(--docs-fg)] no-underline"
-            href="#mental-model"
-            >The ForkMesh Mental Model</a
-          >
-          <a
-            class="mb-4 block font-bold text-[var(--docs-muted)] no-underline"
-            href="#quickstart"
-            >Find What You Need</a
-          >
-          <a
-            class="mb-4 block font-bold text-[var(--docs-muted)] no-underline"
-            href="#repository"
-            >Repository model</a
-          >
-          <a
-            class="mb-4 block font-bold text-[var(--docs-muted)] no-underline"
-            href="#https-routing"
-            >HTTPS mirror routing</a
-          >
-          <a
-            class="mb-4 block font-bold text-[var(--docs-muted)] no-underline"
-            href="#git-clone"
-            >Git clone</a
-          >
-          <a
-            class="mb-4 block font-bold text-[var(--docs-muted)] no-underline"
-            href="#api-websockets"
-            >APIs and WebSockets</a
-          >
-          <a
-            class="mb-4 block font-bold text-[var(--docs-muted)] no-underline"
-            href="#bounty-custody"
-            >Bounty custody</a
-          >
-          <a
-            class="mb-4 block font-bold text-[var(--docs-muted)] no-underline"
-            href="#installers-updates"
-            >Installers and updates</a
-          >
-          <a
-            class="mb-4 block font-bold text-[var(--docs-muted)] no-underline"
-            href="#developer-integrations"
-            >Developer integrations</a
-          >
-          <a
-            class="mb-4 block font-bold text-[var(--docs-muted)] no-underline"
-            href="#self-hosting"
-            >Self-hosting</a
-          >
-          <a
-            class="mb-4 block font-bold text-[var(--docs-muted)] no-underline"
-            href="#library"
-            >Documentation library</a
-          >
-          <div class="ml-3 border-l border-[var(--docs-line)] pl-3">
+      <aside class="dp-rail">
+        <div class="dp-rail-stack">
+          <nav class="dp-outline" aria-label="On this page">
+            <h2>On this page</h2>
+            <a class="dp-outline-link level-2" href="#welcome">Overview</a>
+            <a class="dp-outline-link level-2" href="#who-it-is-for">Who it is for</a>
+            <a class="dp-outline-link level-2" href="#pillars">The six pillars</a>
+            <a class="dp-outline-link level-2" href="#core-documentation">Core documentation</a>
+            <a class="dp-outline-link level-2" href="#quickstart">Get started</a>
+            <a class="dp-outline-link level-2" href="#mental-model">The ForkMesh Mental Model</a>
+            <a class="dp-outline-link level-3" href="#find-what-you-need">Find What You Need</a>
+            <a class="dp-outline-link level-3" href="#repository">Repository model</a>
+            <a class="dp-outline-link level-3" href="#https-routing">HTTPS mirror routing</a>
+            <a class="dp-outline-link level-3" href="#git-clone">Git clone</a>
+            <a class="dp-outline-link level-3" href="#api-websockets">APIs and WebSockets</a>
+            <a class="dp-outline-link level-3" href="#bounty-custody">Bounty custody</a>
+            <a class="dp-outline-link level-3" href="#installers-updates">Installers and updates</a>
+            <a class="dp-outline-link level-3" href="#developer-integrations">Developer integrations</a>
+            <a class="dp-outline-link level-3" href="#self-hosting">Self-hosting</a>
+            <a class="dp-outline-link level-2" href="#library">Documentation library</a>
             <!-- forkmesh-docs-library-toc -->
-          </div>
-        </nav>
+          </nav>
+          <section class="dp-rail-card dp-rail-path" aria-label="Core documentation">
+            <h2><svg class="dp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l9 5-9 5-9-5zM3 12.5l9 5 9-5M3 16.5l9 5 9-5"></path></svg>Core documentation</h2>
+            <ol>
+              <li><a href="/docs/architecture/"><span class="dp-step">1</span>Architecture</a></li>
+              <li><a href="/docs/encryption/"><span class="dp-step">2</span>Encryption</a></li>
+              <li><a href="/docs/mirroring/"><span class="dp-step">3</span>Mirroring</a></li>
+              <li><a href="/docs/self-hosting/"><span class="dp-step">4</span>Self-hosting</a></li>
+              <li><a href="/docs/censorship-resilience/"><span class="dp-step">5</span>Censorship resilience</a></li>
+              <li><a href="/docs/protocol/threat-model/"><span class="dp-step">6</span>Threat model</a></li>
+            </ol>
+          </section>
+        </div>
       </aside>
     </main>
 
-    <div
-      class="fixed inset-0 z-50 hidden items-center justify-center bg-black/45 px-4 py-6"
-      data-feedback-modal
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="feedback-modal-title"
-    >
-      <div class="absolute inset-0" data-feedback-close aria-hidden="true"></div>
-      <form
-        class="relative w-full max-w-md rounded-2xl border border-[var(--docs-line-strong)] bg-[var(--docs-panel)] p-5 shadow-2xl"
-        data-feedback-form
-      >
-        <div class="flex items-start justify-between gap-4">
-          <div>
-            <h2
-              class="text-[1.1rem] font-black text-[var(--docs-fg)]"
-              id="feedback-modal-title"
-            >
-              What was confusing, missing, or could be improved?
-            </h2>
-            <p class="mt-2 text-sm font-semibold text-[var(--docs-muted)]">
-              Optional, but useful for improving the docs.
-            </p>
-          </div>
-          <button
-            class="-mr-2 -mt-2 grid h-10 w-10 flex-none cursor-pointer place-items-center rounded-full text-[var(--docs-soft)] hover:bg-[var(--docs-hover)] hover:text-[var(--docs-fg)]"
-            type="button"
-            data-feedback-close
-            aria-label="Close feedback"
-          >
-            <svg class="h-4 w-4" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M18 6 6 18"></path>
-              <path d="m6 6 12 12"></path>
-            </svg>
-          </button>
-        </div>
-        <textarea
-          class="mt-4 min-h-32 w-full resize-y rounded-2xl border border-[var(--docs-line-strong)] bg-[var(--docs-bg)] p-3 text-sm font-semibold text-[var(--docs-fg)] outline-none focus:border-[var(--docs-fg)]"
-          data-feedback-message
-          maxlength="2000"
-          placeholder="Tell us what would have helped."
-        ></textarea>
-        <div class="mt-4 flex justify-end gap-3">
-          <button
-            class="inline-flex h-10 items-center rounded-2xl border border-[var(--docs-line-strong)] px-4 text-sm font-bold text-[var(--docs-muted)]"
-            type="button"
-            data-feedback-close
-          >
-            Cancel
-          </button>
-          <button
-            class="inline-flex h-10 items-center rounded-2xl bg-[var(--docs-button)] px-4 text-sm font-bold text-[var(--docs-button-fg)]"
-            type="submit"
-          >
-            Send feedback
-          </button>
+    <div class="dp-modal" data-feedback-modal hidden role="dialog" aria-modal="true" aria-labelledby="feedback-modal-title">
+      <div class="dp-modal-backdrop" data-feedback-close aria-hidden="true"></div>
+      <form class="dp-modal-card" data-feedback-form>
+        <h2 id="feedback-modal-title">What was confusing, missing, or could be improved?</h2>
+        <p>Optional, but useful for improving the docs.</p>
+        <textarea data-feedback-message maxlength="2000" placeholder="Tell us what would have helped."></textarea>
+        <div class="dp-modal-actions">
+          <button class="dp-button" type="button" data-feedback-close>Cancel</button>
+          <button class="dp-button primary" type="submit">Send feedback</button>
         </div>
       </form>
     </div>
-
-    <script>
-      (() => {
-        const docsSearch = document.querySelector("#docs-search");
-        const docsSearchPanel = document.querySelector("#docs-search-panel");
-        const docsSearchResults = document.querySelector(
-          "#docs-search-results",
-        );
-        const docsSearchEmpty = document.querySelector("#docs-search-empty");
-        const docsSearchIndex = Array.from(
-          document.querySelectorAll("[data-search-title]"),
-        ).map((section) => ({
-          title: section.getAttribute("data-search-title") || "",
-          body: section.getAttribute("data-search-body") || "",
-          target:
-            section.getAttribute("data-search-href") || `#${section.id}`,
-        }));
-
-        function setDocsSearchPanel(open) {
-          if (!docsSearch || !docsSearchPanel) return;
-          docsSearchPanel.classList.toggle("hidden", !open);
-          docsSearch.setAttribute("aria-expanded", open ? "true" : "false");
-        }
-
-        function renderDocsSearchResults(query) {
-          if (!docsSearchResults || !docsSearchEmpty) return;
-          const normalized = query.trim().toLowerCase();
-          const matches = (
-            normalized
-              ? docsSearchIndex
-                  .map((item) => {
-                    const title = item.title.toLowerCase();
-                    const body = item.body.toLowerCase();
-                    const matched =
-                      title.includes(normalized) || body.includes(normalized);
-                    const score = title.includes(normalized) ? 0 : 1;
-                    return { ...item, matched, score };
-                  })
-                  .filter((item) => item.matched)
-                  .sort(
-                    (a, b) =>
-                      a.score - b.score || a.title.localeCompare(b.title),
-                  )
-              : docsSearchIndex
-          ).slice(0, 8);
-
-          docsSearchResults.textContent = "";
-          docsSearchEmpty.classList.toggle("hidden", matches.length > 0);
-
-          matches.forEach((item) => {
-            const link = document.createElement("a");
-            link.href = item.target;
-            link.className =
-              "block rounded-xl px-3 py-3 text-sm font-semibold text-[var(--docs-fg)] no-underline hover:bg-[var(--docs-hover)]";
-            link.setAttribute("role", "option");
-
-            const title = document.createElement("span");
-            title.className = "block";
-            title.textContent = item.title;
-
-            const body = document.createElement("span");
-            body.className =
-              "mt-1 block truncate text-xs font-semibold text-[var(--docs-muted)]";
-            body.textContent = item.body;
-
-            link.append(title, body);
-            link.addEventListener("click", () => {
-              setDocsSearchPanel(false);
-              docsSearch.value = "";
-            });
-            docsSearchResults.append(link);
-          });
-        }
-
-        if (docsSearch && docsSearchPanel) {
-          docsSearch.addEventListener("focus", () => {
-            renderDocsSearchResults(docsSearch.value);
-            setDocsSearchPanel(true);
-          });
-
-          docsSearch.addEventListener("input", () => {
-            renderDocsSearchResults(docsSearch.value);
-            setDocsSearchPanel(true);
-          });
-
-          docsSearch.addEventListener("keydown", (event) => {
-            if (event.key === "Escape") {
-              setDocsSearchPanel(false);
-              docsSearch.blur();
-              return;
-            }
-            if (event.key === "Enter") {
-              const firstResult = docsSearchPanel.querySelector("a");
-              if (firstResult) {
-                event.preventDefault();
-                firstResult.click();
-              }
-            }
-          });
-
-          document.addEventListener("keydown", (event) => {
-            if (
-              (event.metaKey || event.ctrlKey) &&
-              event.key.toLowerCase() === "k"
-            ) {
-              event.preventDefault();
-              docsSearch.focus();
-              docsSearch.select();
-            }
-          });
-
-          document.addEventListener("click", (event) => {
-            if (
-              !docsSearchPanel.contains(event.target) &&
-              event.target !== docsSearch
-            ) {
-              setDocsSearchPanel(false);
-            }
-          });
-        }
-
-        const copyButton = document.querySelector("#copy-page");
-        if (copyButton) {
-          const copyLabel = copyButton.querySelector("span");
-          copyButton.addEventListener("click", async () => {
-            const text = window.location.href.split("#")[0];
-            try {
-              await navigator.clipboard.writeText(text);
-            } catch (error) {
-              const area = document.createElement("textarea");
-              area.value = text;
-              area.style.position = "fixed";
-              area.style.left = "-9999px";
-              document.body.append(area);
-              area.select();
-              document.execCommand("copy");
-              area.remove();
-            }
-            if (!copyLabel) return;
-            const original = copyLabel.textContent;
-            copyLabel.textContent = "Copied";
-            setTimeout(() => {
-              copyLabel.textContent = original;
-            }, 1400);
-          });
-        }
-
-        const feedbackLike = document.querySelector("[data-feedback-like]");
-        const feedbackDislike = document.querySelector(
-          "[data-feedback-dislike]",
-        );
-        const feedbackStatus = document.querySelector("[data-feedback-status]");
-        const feedbackModal = document.querySelector("[data-feedback-modal]");
-        const feedbackForm = document.querySelector("[data-feedback-form]");
-        const feedbackMessage = document.querySelector(
-          "[data-feedback-message]",
-        );
-        const feedbackCloseButtons = document.querySelectorAll(
-          "[data-feedback-close]",
-        );
-
-        function setFeedbackStatus(message) {
-          if (feedbackStatus) feedbackStatus.textContent = message;
-        }
-
-        function setFeedbackDisabled(disabled) {
-          [feedbackLike, feedbackDislike].forEach((button) => {
-            if (button) button.disabled = disabled;
-          });
-        }
-
-        function setFeedbackModal(open) {
-          if (!feedbackModal) return;
-          feedbackModal.classList.toggle("hidden", !open);
-          feedbackModal.classList.toggle("flex", open);
-          if (open && feedbackMessage) feedbackMessage.focus();
-        }
-
-        async function submitFeedback({ vote, message = "" }) {
-          setFeedbackDisabled(true);
-          try {
-            const response = await fetch("/api/feedback", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({
-                source: "docs",
-                vote,
-                path: window.location.pathname + window.location.hash,
-                message,
-              }),
-              keepalive: true,
-            });
-            if (!response.ok) throw new Error("feedback failed");
-            setFeedbackStatus("Thanks for the feedback.");
-            setFeedbackModal(false);
-          } catch (error) {
-            setFeedbackStatus("Was this page helpful?");
-            setFeedbackDisabled(false);
-          }
-        }
-
-        if (feedbackLike) {
-          feedbackLike.addEventListener("click", () => {
-            submitFeedback({ vote: "like" });
-          });
-        }
-
-        if (feedbackDislike) {
-          feedbackDislike.addEventListener("click", () => {
-            setFeedbackModal(true);
-          });
-        }
-
-        if (feedbackForm) {
-          feedbackForm.addEventListener("submit", (event) => {
-            event.preventDefault();
-            submitFeedback({
-              vote: "dislike",
-              message: feedbackMessage ? feedbackMessage.value : "",
-            });
-          });
-        }
-
-        feedbackCloseButtons.forEach((button) => {
-          button.addEventListener("click", () => setFeedbackModal(false));
-        });
-
-        document.addEventListener("keydown", (event) => {
-          if (event.key === "Escape") setFeedbackModal(false);
-        });
-      })();
-    </script>
   </body>
 </html>

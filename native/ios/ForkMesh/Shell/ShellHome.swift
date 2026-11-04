@@ -32,7 +32,6 @@ struct ShellHome: View {
     @Environment(\.fmPalette) var fm
     @Environment(\.accessibilityReduceMotion) var reduceMotion
     @Environment(\.accessibilityVoiceOverEnabled) var voiceOver
-    @Environment(\.displayScale) var displayScale
 
     let groups: [ShellMenuGroup]
     let prefs: ShellBarPrefs
@@ -358,18 +357,14 @@ struct ShellHome: View {
     private func sectionHeader(_ group: ShellMenuGroup) -> some View {
         let title: String = group.title
         return HStack(spacing: FmSpace.x2) {
-            Text(title.uppercased())
-                .fmText(.labelSmall, color: fm.textTertiary, weight: FmType.emphasis)
+            Text(title)
+                .fmText(.labelLarge, color: fm.textSecondary)
                 .lineLimit(1)
                 .fixedSize()
-            Capsule()
-                .fill(fm.border)
-                .frame(height: max(1, 1 / displayScale))
-                .accessibilityHidden(true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.top, FmSpace.x2)
-        .padding(.bottom, FmSpace.x2)
+        .padding(.top, FmSpace.x4)
+        .padding(.bottom, FmSpace.x1)
         .padding(.horizontal, FmSpace.x2)
         .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { (height: CGFloat) in
             headerHeight = height

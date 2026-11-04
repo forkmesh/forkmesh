@@ -33,13 +33,20 @@ Part of the core documentation: [architecture](architecture.md) ·
 | Mirror | A headless server that carries copies of repositories and serves `git clone` and `git fetch` | `server/` ([mirror node](operations/mirror-node.md)) |
 | Core node | Accounts, the web app and API, Git over HTTPS, chat, the World, the routing catalog of mirrors | `app/`, `app/host/`, `server/` |
 | Runner | Runs agent jobs and Actions in a per-job sandbox with a short-lived, single-branch push grant | `server/` |
-| Phone apps | Access clients over the same API; they do not hold Git data | `native/` |
+| Phone apps | Mobile nodes with their own key and Git engine: they clone, commit and publish, and drive desktop agents; they never host or serve repositories to others ([phone apps](mobile/README.md)) | `native/` |
 
 Collaboration records (issues, pull requests, reviews, discussions, releases)
 are signed files under `.forkmesh/` in the repository, so every clone carries
 them ([protocol](protocol/README.md)).
 
 ## No single point of failure
+
+```flow
+title: How a request reaches a core
+Browser, desktop or git -> DNS round robin -> Any healthy core -> Caddy -> Python app -> rqlite member
+Health loop, /readyz every 30 s -> DNS round robin
+rqlite member -> Raft majority across the cores
+```
 
 - **Equal cores, no leader in the request path.** Each core runs Caddy, the
   Python app, an rqlite (Raft) database member and the Go Git gateway. Any core

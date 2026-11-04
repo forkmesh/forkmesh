@@ -152,3 +152,25 @@ def test_the_browser_spec_covers_hostile_posts_and_remote_requests():
     for needle in ("<script>window.__pwned", "onerror=", "srcset=", "javascript:", "other.example",
                    "expect(outside", "window.__pwned)).toBeUndefined()"):
         assert needle in spec
+
+
+HOSTILE_SOURCE_HARNESS = r"""
+const fs = require("fs");
+const source = fs.readFileSync(process.argv[2], "utf8");
+const body = source.slice(source.indexOf("function forumOriginUrl"), source.indexOf("function forumLink"));
+const forumOriginUrl = new Function(body + "; return forumOriginUrl;")();
+process.stdout.write(JSON.stringify(
+  ['x"><img src=x onerror=alert(1)>', "javascript:alert(1)", "https://forum.example.org/t/a/1"]
+    .map((value) => { const url = forumOriginUrl(value); return url ? url.href : null; })));
+"""
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_committed_topic_source_cannot_break_out_of_its_links(tmp_path):
+    harness = tmp_path / "harness.js"
+    harness.write_text(HOSTILE_SOURCE_HARNESS, encoding="utf-8")
+    result = subprocess.run([NODE, str(harness), str(SOURCE)], capture_output=True, text=True, check=True)
+    assert json.loads(result.stdout) == [None, None, "https://forum.example.org/t/a/1"]
+    code = SOURCE.read_text(encoding="utf-8")
+    assert "`${topic.source}/" not in code and 'href="${escapeHtml(topic.source)}"' not in code
+    assert code.count("forumOriginUrl(topic.source)") == 2

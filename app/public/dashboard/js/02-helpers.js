@@ -432,9 +432,13 @@
       const nodeName = String(account?.nodeName || "").trim();
       if (!payload?.portable || !nodeName) return null;
 
+      const stored = readSession();
+      const storedCase = String(stored?.nodeName || "").toLowerCase() === nodeName.toLowerCase()
+        ? stored?.nameCase : "";
       const hydrated = {
         ...account,
         nodeName,
+        nameCase: account.nameCase || storedCase || "",
         sessionToken: "cookie",
         portable: true,
         controllerIndependent: payload.controllerIndependent === true,

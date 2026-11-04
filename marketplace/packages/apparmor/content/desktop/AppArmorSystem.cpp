@@ -205,13 +205,21 @@ QString adminLiveScript()
 
 QString adminInstallScript()
 {
-    return scriptWrap(QStringLiteral("src=$1; dest=$2; backups=$3; load=$4\n"
+    return scriptWrap(QStringLiteral("src=$1; dest=$2; backups=$3; load=$4; sum=$5\n"
                                      "stamp=$(date +%Y%m%d-%H%M%S)\n"
                                      "label=$(printf '%s' \"$dest\" | tr / _)\n"
                                      "backup=\n"
+                                     "stage=\n"
                                      "mkdir -p \"$backups\" || rc=1\n"
+                                     "if [ $rc = 0 ]; then\n"
+                                     "  if [ -L \"$src\" ] || [ ! -f \"$src\" ]; then rc=4; fi\n"
+                                     "fi\n"
+                                     "if [ $rc = 0 ]; then stage=$(mktemp \"$backups/.stage.XXXXXX\") || rc=1; fi\n"
+                                     "if [ $rc = 0 ]; then cp -- \"$src\" \"$stage\" || rc=4; fi\n"
+                                     "if [ $rc = 0 ] && [ \"$(sha256sum < \"$stage\" | cut -d' ' -f1)\" != \"$sum\" ]; then rc=4; fi\n"
                                      "if [ $rc = 0 ] && [ -e \"$dest\" ]; then backup=\"$backups/$label.$stamp\"; cp -p \"$dest\" \"$backup\" || rc=1; fi\n"
-                                     "if [ $rc = 0 ]; then install -D -m 0644 \"$src\" \"$dest\" || rc=1; fi\n"
+                                     "if [ $rc = 0 ]; then install -D -m 0644 \"$stage\" \"$dest\" || rc=1; fi\n"
+                                     "if [ -n \"$stage\" ]; then rm -f -- \"$stage\"; fi\n"
                                      "if [ $rc = 0 ] && [ -n \"$load\" ]; then\n"
                                      "  if ! \"$parser\" -r -W \"$load\"; then\n"
                                      "    rc=3\n"

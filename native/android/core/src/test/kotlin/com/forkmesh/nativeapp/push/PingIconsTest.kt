@@ -15,6 +15,10 @@ class PingIconsTest {
         assertEq("🤖", pingIcon("desktop_ping", mapOf("category" to "agent-finished")))
         assertEq("⚠️", pingIcon("desktop_ping", mapOf("category" to "agent-failed")))
         assertEq("💻", pingIcon("desktop_ping"))
+        assertEq("❌", pingIcon("desktop_ping", mapOf("category" to "ci-failed")))
+        assertEq("✅", pingIcon("operational_alert", mapOf("state" to "up")))
+        assertEq("📟", pingIcon("operational_alert", mapOf("state" to "down")))
+        assertEq("⚠️", pingIcon("pull_attention", mapOf("reason" to "conflict")))
     }
 
     fun testTheIconSitsBeforeTheHeadlineOnce() {

@@ -4946,32 +4946,71 @@ void MainWindow::refreshDirectRoute()
     m_directRouteLabel->setVisible(!route.isEmpty());
 }
 
+QStringList MainWindow::pendingDirectDevices(const QString &conversation) const
+{
+    QStringList kids;
+    if (!m_officeChannelMirror ||
+        !forkmesh::office::isDirectOfficeConversation(conversation))
+        return kids;
+    for (const OfficeChannelMirror::DirectDevice &device :
+         m_officeChannelMirror->directDevices(conversation))
+        if (device.state == forkmesh::chatv3::TrustState::Pending)
+            kids.append(device.kid);
+    return kids;
+}
+
+void MainWindow::decideDirectDevices(const QString conversation,
+                                     const QStringList kids, bool approve)
+{
+    if (m_officeChannelMirror)
+        for (const QString &kid : kids) {
+            if (approve)
+                m_officeChannelMirror->approveDirectDevice(conversation, kid);
+            else
+                m_officeChannelMirror->blockDirectDevice(conversation, kid);
+        }
+    refreshDevicePendingBanner();
+}
+
 void MainWindow::refreshDevicePendingBanner()
 {
     if (!m_devicePendingBanner)
         return;
-    m_devicePendingKid.clear();
-    QString owner;
+    m_devicePendingKids.clear();
+    bool own = false;
+    bool peer = false;
     if (m_officeChannelMirror &&
         forkmesh::office::isDirectOfficeConversation(m_currentConversation)) {
         for (const OfficeChannelMirror::DirectDevice &device :
              m_officeChannelMirror->directDevices(m_currentConversation)) {
             if (device.state != forkmesh::chatv3::TrustState::Pending)
                 continue;
-            m_devicePendingKid = device.kid;
-            owner = device.own ? QStringLiteral("your account")
-                               : directPeerLabel(m_currentConversation);
-            break;
+            m_devicePendingKids.append(device.kid);
+            (device.own ? own : peer) = true;
         }
     }
-    if (m_devicePendingKid.isEmpty()) {
+    if (m_devicePendingKids.isEmpty()) {
         m_devicePendingBanner->hide();
         return;
     }
+    const QString owner = own && peer ? QString()
+                          : own       ? QStringLiteral(" for your account")
+                                      : QStringLiteral(" for ") +
+                                      directPeerLabel(m_currentConversation);
+    const bool single = m_devicePendingKids.size() == 1;
     m_devicePendingLabel->setText(
-        QStringLiteral("A new device for %1 wants to join this chat (device %2). "
-                       "Check the safety number, then approve or block.")
-            .arg(owner, m_devicePendingKid));
+        (single ? QStringLiteral("A new device%1 wants to join this chat (device %2). ")
+                      .arg(owner, m_devicePendingKids.first())
+                : QStringLiteral("%1 new devices%2 want to join this chat. ")
+                      .arg(m_devicePendingKids.size())
+                      .arg(owner)) +
+        QStringLiteral("Check the safety number, then approve or block."));
+    if (m_devicePendingApprove)
+        m_devicePendingApprove->setText(single ? QStringLiteral("Approve")
+                                               : QStringLiteral("Approve all"));
+    if (m_devicePendingBlock)
+        m_devicePendingBlock->setText(single ? QStringLiteral("Block")
+                                             : QStringLiteral("Block all"));
     m_devicePendingBanner->show();
 }
 
@@ -4993,6 +5032,11 @@ void MainWindow::addChatSecurityLine(const QString &conversation, const QString 
 
 void MainWindow::noteDirectDevicePending(const QString &conversation, const QString &kid)
 {
+    if (pendingDirectDevices(conversation).size() > 1) {
+        if (conversation == m_currentConversation)
+            refreshDevicePendingBanner();
+        return;
+    }
     QString owner = directPeerLabel(conversation);
     if (m_officeChannelMirror)
         for (const OfficeChannelMirror::DirectDevice &device :
@@ -5100,27 +5144,34 @@ void MainWindow::showDirectDetails(const QString &conversation)
                                                          : device.acct,
                                               device.kid, state));
             rowLayout->addWidget(label, 1);
-            if (device.state == forkmesh::chatv3::TrustState::Pending) {
-                auto *approve = new QPushButton(QStringLiteral("Approve"));
-                approve->setObjectName(QStringLiteral("primaryButton"));
-                auto *block = new QPushButton(QStringLiteral("Block"));
-                block->setObjectName(QStringLiteral("ghostButton"));
-                const QString kid = device.kid;
-                connect(approve, &QPushButton::clicked, dialog, [this, conversation, kid, refresh] {
-                    if (m_officeChannelMirror)
-                        m_officeChannelMirror->approveDirectDevice(conversation, kid);
-                    refreshDevicePendingBanner();
-                    (*refresh)();
-                });
-                connect(block, &QPushButton::clicked, dialog, [this, conversation, kid, refresh] {
-                    if (m_officeChannelMirror)
-                        m_officeChannelMirror->blockDirectDevice(conversation, kid);
-                    refreshDevicePendingBanner();
-                    (*refresh)();
-                });
-                rowLayout->addWidget(block);
-                rowLayout->addWidget(approve);
-            }
+            devicesLayout->addWidget(row);
+        }
+        const QStringList pending = pendingDirectDevices(conversation);
+        if (!pending.isEmpty()) {
+            auto *row = new QWidget;
+            auto *rowLayout = new QHBoxLayout(row);
+            rowLayout->setContentsMargins(0, 4, 0, 0);
+            rowLayout->addStretch(1);
+            const bool single = pending.size() == 1;
+            auto *approve = new QPushButton(
+                single ? QStringLiteral("Approve")
+                       : QStringLiteral("Approve all %1").arg(pending.size()));
+            approve->setObjectName(QStringLiteral("primaryButton"));
+            auto *block = new QPushButton(single ? QStringLiteral("Block")
+                                                 : QStringLiteral("Block all"));
+            block->setObjectName(QStringLiteral("ghostButton"));
+            connect(approve, &QPushButton::clicked, dialog,
+                    [this, conversation, pending, refresh] {
+                        decideDirectDevices(conversation, pending, true);
+                        (*refresh)();
+                    });
+            connect(block, &QPushButton::clicked, dialog,
+                    [this, conversation, pending, refresh] {
+                        decideDirectDevices(conversation, pending, false);
+                        (*refresh)();
+                    });
+            rowLayout->addWidget(block);
+            rowLayout->addWidget(approve);
             devicesLayout->addWidget(row);
         }
     };

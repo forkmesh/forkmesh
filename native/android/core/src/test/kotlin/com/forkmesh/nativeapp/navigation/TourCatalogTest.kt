@@ -27,6 +27,25 @@ class TourCatalogTest {
         }
     }
 
+    fun testEverySceneHasShortCopy() {
+        val icons = java.io.File("../app/src/main/assets/fonts/MaterialIcons.codepoints").readLines().map { it.substringBefore(' ') }.toSet()
+        for (scene in TourScene.entries) {
+            val short = TourCatalog.short[scene]
+            expect(short != null, scene.raw)
+            if (short == null) continue
+            expect(short.headline.split(" ").size <= 6, scene.raw)
+            expect(short.line.split(" ").size <= 12, scene.raw)
+            assertEq(short.emblem == null, short.emblemBefore == null, scene.raw)
+            val before = short.emblemBefore
+            if (before != null) expect(before in short.headline.split(" "), scene.raw)
+            val emblem = short.emblem
+            if (emblem != null) expect(emblem in icons || "${emblem}_baseline" in icons, scene.raw)
+        }
+        expect(TourCatalog.short.values.count { it.emblem != null } <= 3)
+        val stop = TourCatalog.stops.first { it.scene == TourScene.HOME }
+        assertEq("Home holds everything", stop.short.headline)
+    }
+
     fun testMissingTabDropsItsStop() {
         val installed = setOf("inbox", "code", "chat")
         val ids = TourCatalog.stops(TourTrack.EVERYTHING, installed::contains).map { it.id }

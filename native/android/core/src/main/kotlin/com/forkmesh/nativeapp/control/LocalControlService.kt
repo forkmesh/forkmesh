@@ -25,7 +25,7 @@ import java.util.TimerTask
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.Executors
 
-enum class LocalControlStatus { Idle, Connecting, AwaitingApproval, Connected, Failed }
+enum class LocalControlStatus { Idle, Connecting, AwaitingApproval, ConfirmingCode, Connected, Failed }
 
 data class PairedDesktop(val key: String, val name: String = "", val user: String = "", val pairedAtMs: Long = 0) {
     fun toJson(): Map<String, Any?> = linkedMapOf("key" to key, "name" to name, "user" to user, "pairedAtMs" to pairedAtMs)
@@ -56,16 +56,9 @@ data class MeshControlHost(
 fun automaticControlTarget(
     hosts: List<MeshControlHost>,
     paired: Set<String>,
-    account: String,
-    tried: Set<String>,
     accountDesktops: Set<String> = emptySet(),
-): MeshControlHost? {
-    hosts.firstOrNull { it.nodeId in paired }?.let { return it }
-    hosts.firstOrNull { it.nodeId in accountDesktops }?.let { return it }
-    val me = account.trim().lowercase()
-    if (me.isEmpty()) return null
-    return hosts.firstOrNull { it.nodeId !in tried && it.ownerUser.trim().lowercase() == me }
-}
+): MeshControlHost? =
+    hosts.firstOrNull { it.nodeId in paired } ?: hosts.firstOrNull { it.nodeId in accountDesktops }
 
 interface ControlHostSource {
     val displayName: String
@@ -464,7 +457,6 @@ class LocalControlService(
     private var connectionTap: Any? = null
     private var autoConnectHeld = false
     private var dialQueued = false
-    private val accountDesktopsTried = HashSet<String>()
 
     @Volatile
     private var accountDesktopKeys: Set<String> = emptySet()
@@ -524,6 +516,7 @@ class LocalControlService(
     fun setAccountDesktops(keys: Set<String>) {
         if (keys == accountDesktopKeys) return
         accountDesktopKeys = keys
+        if (status == LocalControlStatus.ConfirmingCode && desktopKey in keys) confirmDesktop(desktopKey)
         onMeshChanged()
     }
 
@@ -573,8 +566,7 @@ class LocalControlService(
         val pairedKeys = paired.map { it.key }.toSet()
         val candidate = synchronized(lock) {
             if (autoConnectHeld || dialQueued || connection != null || status == LocalControlStatus.Connecting || retryTask != null) return
-            val target = automaticControlTarget(hosts, pairedKeys, userName(), accountDesktopsTried, accountDesktopKeys) ?: return
-            if (!isKnown(target.nodeId)) accountDesktopsTried.add(target.nodeId)
+            val target = automaticControlTarget(hosts, pairedKeys, accountDesktopKeys) ?: return
             dialQueued = true
             target
         }
@@ -663,17 +655,19 @@ class LocalControlService(
     }
 
     private fun onEvent(source: LocalControlConnection, event: ControlEvent) {
+        if (event.event != "session" && event.event != "pairing-denied" && !connected) return
         val data = event.data
         when (event.event) {
             "session" -> {
                 jsonText(data["name"]).takeIf { it.isNotEmpty() }?.let { desktopName = it }
                 jsonText(data["user"]).takeIf { it.isNotEmpty() }?.let { desktopUser = it }
                 if (data["paired"] == true) {
-                    pairingCode = ""
-                    rememberPaired()
-                    host?.let { rememberAddress(desktopKey, it.address) }
-                    setStatus(LocalControlStatus.Connected)
-                    worker.execute { refreshAgentsNow() }
+                    if (isKnown(desktopKey)) {
+                        acceptDesktop()
+                    } else {
+                        pairingCode = source.pairingCode
+                        setStatus(LocalControlStatus.ConfirmingCode)
+                    }
                 } else {
                     pairingCode = jsonText(data["code"]).ifEmpty { source.pairingCode }
                     setStatus(LocalControlStatus.AwaitingApproval)
@@ -691,6 +685,20 @@ class LocalControlService(
             "file.cancel" -> endIncoming(data, complete = false)
         }
         for ((_, tap) in tapListeners) runCatching { tap(event) }
+    }
+
+    fun confirmDesktop(key: String) {
+        worker.execute {
+            if (status == LocalControlStatus.ConfirmingCode && key == desktopKey && currentConnection != null) acceptDesktop()
+        }
+    }
+
+    private fun acceptDesktop() {
+        pairingCode = ""
+        rememberPaired()
+        host?.let { rememberAddress(desktopKey, it.address) }
+        setStatus(LocalControlStatus.Connected)
+        worker.execute { refreshAgentsNow() }
     }
 
     private fun rememberPaired() {

@@ -172,3 +172,17 @@ def test_projection_omits_blocked_instances_but_keeps_other_replies():
     )
     assert [item["sourceInstance"] for item in projected] == ["lemmy.example"]
     assert all(item["nativeEvent"] is False for item in projected)
+
+
+def test_a_server_cannot_claim_a_note_id_on_another_server():
+    actor = {"id": "https://evil.example/u/mallory", "handle": "mallory@evil.example",
+             "name": "mallory", "url": "https://evil.example/u/mallory",
+             "instance": "evil.example", "software": "lemmy"}
+    result = threads.normalize_activity(
+        {"type": "Create", "actor": actor["id"],
+         "object": {"type": "Note", "id": "https://real.example/comment/1",
+                    "attributedTo": actor["id"], "content": "x"}},
+        remote_actor=actor,
+        context={"kind": "issue", "owner": "ada", "repo": "tool", "number": 1},
+        received_ms=1)
+    assert result == {"ok": False, "reason": "foreign_object_id"}

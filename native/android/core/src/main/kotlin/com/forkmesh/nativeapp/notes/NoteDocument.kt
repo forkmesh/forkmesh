@@ -61,6 +61,7 @@ object NoteDocument {
     const val MENU_LABEL = "Export PDF"
     private val PAGE_BREAK = Regex("^\\s*<!--\\s*pagebreak\\s*-->\\s*$", RegexOption.IGNORE_CASE)
     private val LAYOUT = Regex("^\\s*<!--\\s*page:(.*?)-->\\s*$", RegexOption.IGNORE_CASE)
+    private val IMAGE_OPTIONS = Regex("^\\s*<!--\\s*image:([\\s\\S]*?)-->\\s*$", RegexOption.IGNORE_CASE)
     private val PROLOG = Regex("^(?:\\s+|<\\?xml[\\s\\S]*?\\?>|<!--[\\s\\S]*?-->)*")
     private val SVG_START = Regex("^<svg[\\s>/]", RegexOption.IGNORE_CASE)
     private val SVG_TAG = Regex("^<svg\\b[^>]*>", RegexOption.IGNORE_CASE)
@@ -118,6 +119,8 @@ object NoteDocument {
     fun isPageBreak(line: String): Boolean = PAGE_BREAK.matches(line)
 
     fun isLayoutLine(line: String): Boolean = LAYOUT.matches(line)
+
+    fun isImageOptions(line: String): Boolean = IMAGE_OPTIONS.matches(line)
 
     fun layout(markdown: String): NoteLayout {
         val all = lines(markdown)
@@ -196,7 +199,7 @@ object NoteDocument {
                     flush()
                     out += NoteSegment.PageBreak
                 }
-                isLayoutLine(line) -> Unit
+                isLayoutLine(line) || isImageOptions(line) -> Unit
                 else -> buffer += line
             }
             i++

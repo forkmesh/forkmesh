@@ -130,6 +130,7 @@ enum NavigationRoutes {
         fallback(routes, .glassesAlert) { _ in AnyView(GlassesAlertScreen()) }
         fallback(routes, .phoneSecurity) { _ in AnyView(PhoneSecurityScreen()) }
         fallback(routes, .eyeControl) { _ in AnyView(EyeControlScreen()) }
+        fallback(routes, .silentSpeech) { _ in AnyView(SilentSpeechScreen()) }
         fallback(routes, .ember) { route in
             guard case let .ember(repo) = route else { return AnyView(RoutePlaceholderView(route: route)) }
             return AnyView(CodeInsightScreen(plugin: .ember, repo: repo) { EmberPage(context: $0) })
@@ -143,6 +144,7 @@ enum NavigationRoutes {
             return AnyView(CodeInsightScreen(plugin: .synapse, repo: repo) { SynapsePage(context: $0) })
         }
         fallback(routes, .openWrtRouter) { _ in AnyView(OpenWrtScreen()) }
+        fallback(routes, .reticulum) { _ in AnyView(ReticulumScreen()) }
         fallback(routes, .fileExplorer) { _ in AnyView(FilesScreen()) }
         fallback(routes, .nexus) { _ in
             AnyView(NexusRootView(onClose: { Services.get(AppRouter.self)?.dismissPresented() }))

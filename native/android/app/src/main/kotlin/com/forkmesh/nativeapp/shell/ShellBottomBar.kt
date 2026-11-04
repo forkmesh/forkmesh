@@ -73,6 +73,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.coerceAtLeast
 import androidx.compose.ui.unit.sp
 import com.forkmesh.nativeapp.api.PrefStore
 import com.forkmesh.nativeapp.core.Services
@@ -445,23 +446,30 @@ internal fun ShellBarRows(
     interactive: Boolean,
     cells: List<ShellBarCell> = emptyList(),
     onSettings: () -> Unit = {},
+    plain: Boolean = false,
 ) {
     val lensed = style.selection == ShellBarSelection.lens
     val inset = if (lensed && !style.shape.separate && style.width == ShellBarWidth.full) 4.dp else 0.dp
     val metrics = style.metrics(available.value.toDouble() - 2 * inset.value, slots.size, ShellBarBase.CELL_WIDTH, ShellBarBase.CELL_HEIGHT + if (lensed) 2.0 else 0.0)
     val side = metrics.height.dp
-    val slot = metrics.slot.dp
+    val columns = maxOf(1, metrics.columns)
+    val slot = if (plain) {
+        ((available - inset * 2 - metrics.padding.dp * 2 - metrics.gap.dp * (columns - 1)) / columns).coerceAtLeast(1.dp)
+    } else {
+        metrics.slot.dp
+    }
+    val scrolls = metrics.scrolls && !plain
     val lines = style.rowSplit(slots)
     val shape = barShape(style, side, metrics.rows)
     val backed = if (style.shape.separate) Modifier else Modifier.shellBarBackdrop(shape, style.fill)
-    val sized = if (style.width == ShellBarWidth.fit) Modifier.width(metrics.width.dp) else Modifier.fillMaxWidth()
+    val sized = if (style.width == ShellBarWidth.fit && !plain) Modifier.width(metrics.width.dp) else Modifier.fillMaxWidth()
     val rowsWidth = slot * metrics.columns + metrics.gap.dp * (metrics.columns - 1)
-    val sideInset = if (inset > 0.dp && !metrics.scrolls) maxOf(metrics.padding.dp, (available - rowsWidth) / 2) else metrics.padding.dp
+    val sideInset = if (inset > 0.dp && !scrolls) maxOf(metrics.padding.dp, (available - rowsWidth) / 2) else metrics.padding.dp
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         Box(
             sized
                 .then(backed)
-                .then(if (metrics.scrolls) Modifier.horizontalScroll(rememberScrollState()) else Modifier)
+                .then(if (scrolls) Modifier.horizontalScroll(rememberScrollState()) else Modifier)
                 .padding(vertical = metrics.padding.dp, horizontal = sideInset),
         ) {
             val spot = if (lensed && !style.shape.separate) lensSpot(lines) else null

@@ -1648,6 +1648,7 @@ void MainWindow::wireSettingsVmActions(SettingsSectionParts &parts)
         notice->setWordWrap(true);
         layout->addWidget(notice);
         auto *terminal = new TerminalWidget(dialog);
+        terminal->setOpensSignInLinks(true);
         layout->addWidget(terminal, 1);
         auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, dialog);
         connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::close);
@@ -1741,8 +1742,10 @@ void MainWindow::buildSettingsAgentBehaviourParts(SettingsSectionParts &parts)
     claudeDesktopSessionsCheck->setChecked(claudeDesktopSessionsEnabled());
     claudeDesktopSessionsCheck->setToolTip(
         "When a Claude Code agent finishes, add its session to the Claude "
-        "desktop app's Code tab so it can be read and resumed there. The Claude "
-        "app switches to each session it adds. Codex agents stay in ForkMesh.");
+        "desktop app's Code tab so it can be read and resumed there. This opens "
+        "the Claude app and switches it to each session it adds, even when you "
+        "did not ask for it. Off by default; \"Open in Claude app\" in an "
+        "agent's menu works either way. Codex agents stay in ForkMesh.");
     connect(claudeDesktopSessionsCheck, &QCheckBox::toggled, this, [this](bool enabled) {
         QSettings().setValue(kClaudeDesktopSessionsSetting, enabled);
         if (enabled)

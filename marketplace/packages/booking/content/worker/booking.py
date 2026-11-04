@@ -2,7 +2,9 @@ from datetime import date, datetime, time as dtime, timedelta, timezone
 from html import escape
 from urllib.parse import quote as _quote
 from zoneinfo import ZoneInfo
+import hashlib
 import hmac
+import ipaddress
 import re
 
 
@@ -11,6 +13,7 @@ PLUGIN_ID = "booking"
 REQUEST_PROOF = "forkmesh-booking-request-v1"
 PAGE_PATH = "/dashboard/booking"
 PUBLIC_PATH = "/meet"
+ROOM_PATH = "/call"
 MAX_BODY_BYTES = 64 * 1024
 KEY_VERSION = 1
 MINUTE_MS = 60 * 1000
@@ -26,8 +29,49 @@ PAGE_DAILY_BOOKINGS = 40
 VISITOR_HOURLY_BOOKINGS = 6
 VISITOR_DAILY_BOOKINGS = 20
 VISITOR_HOURLY_CHANGES = 12
+MAIL_PER_BOOKING_DAILY = 6
+MAIL_PER_GUEST_DAILY = 10
+MAIL_PER_OWNER_ADDRESS_DAILY = 100
 REMINDER_LEAD_MS = DAY_MS
 REMINDER_BATCH = 25
+MAX_VISITS = 2000
+MAX_RECENT_VISITS = 50
+VISIT_RETAIN_MS = 90 * DAY_MS
+VISIT_SUMMARY_MS = 30 * DAY_MS
+VISITOR_HOURLY_EVENTS = 120
+PAGE_HOURLY_EVENTS = 1500
+ROOM_OPEN_LEAD_MS = 30 * MINUTE_MS
+ROOM_CLOSE_LAG_MS = 2 * HOUR_MS
+ROOM_HOURLY_TICKETS = 240
+VISITOR_HOURLY_TICKETS = 90
+ROOM_HOURLY_SIGNALS = 6000
+VISITOR_HOURLY_SIGNALS = 1500
+ROOM_SIGNALS_KEPT = 400
+ROOM_SIGNALS_LISTED = 200
+ROOM_SIGNAL_RETAIN_MS = 6 * HOUR_MS
+MAX_SIGNAL_BOX = 6000
+PAGE_HOURLY_VISIT_PINGS = 10
+TRACK_KINDS = ("view", "type", "month", "day", "slot", "form", "field", "submit", "prefs",
+               "link", "leave")
+TRACK_CHOICES = {
+    "field": frozenset({"name", "email", "phone", "notes"}),
+    "prefs": frozenset({"timezone", "12h", "24h"}),
+    "link": frozenset({"google", "outlook", "ics", "copy", "manage", "forkmesh"}),
+    "leave": frozenset({"types", "calendar", "form"}),
+}
+TRACK_PATTERNS = {
+    "month": re.compile(r"^20\d{2}-(?:0[1-9]|1[0-2])$"),
+    "day": re.compile(r"^20\d{2}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])$"),
+    "slot": re.compile(r"^[1-9]\d{11,13}$"),
+}
+TRACK_START_KINDS = frozenset({"day", "slot", "form", "field"})
+TRACK_LINK_LABELS = {
+    "google": "Google Calendar", "outlook": "Outlook", "ics": "the .ics download",
+    "copy": "Copy private link", "manage": "Reschedule or cancel", "forkmesh": "the ForkMesh link",
+}
+TRACK_VIEW_LABELS = {"types": "the meeting list", "calendar": "the calendar",
+                     "form": "the details form"}
+TRACK_FIELD_LABELS = {"name": "name", "email": "email", "phone": "phone number", "notes": "notes"}
 DURATIONS = (10, 15, 20, 25, 30, 45, 50, 60, 75, 90, 120, 180, 240)
 STEPS = (0, 5, 10, 15, 20, 30, 60)
 BUFFERS = (0, 5, 10, 15, 30, 45, 60)
@@ -66,6 +110,7 @@ DEFAULT_ORIGIN = "https://forkmesh.com"
 SLUG_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 TYPE_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$")
 ID_RE = re.compile(r"^[0-9a-f]{32}$")
+BOX_RE = re.compile(r"^[A-Za-z0-9_-]{40,%d}$" % MAX_SIGNAL_BOX)
 TOKEN_RE = re.compile(r"^([0-9a-f]{32})\.([0-9a-f]{24})$")
 CLOCK_RE = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$|^24:00$")
 TIMEZONE_RE = re.compile(r"^[A-Za-z0-9_+-]+(?:/[A-Za-z0-9_+-]+){0,3}$")
@@ -76,6 +121,7 @@ EMAIL_RE = re.compile(
     r"[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?\.[A-Za-z]{2,63}$"
 )
 PHONE_RE = re.compile(r"^\+?[0-9 ().-]{6,32}$")
+SESSION_RE = re.compile(r"^[0-9a-f]{32}$")
 DEFAULT_AVAILABILITY = {
     day: ([["09:00", "17:00"]] if day not in ("sat", "sun") else []) for day in WEEKDAYS
 }
@@ -91,7 +137,7 @@ STORED_KEYS = (
     "displayName", "headline", "welcome", "timezone", "timeFormat", "accent",
     "availability", "minNoticeMinutes", "maxDaysAhead", "bufferMinutes",
     "slotStepMinutes", "dailyLimit", "replyTo", "notifyEmail", "emailOwner",
-    "addToCalendar", "checkCalendar", "types",
+    "addToCalendar", "checkCalendar", "notifyVisits", "types",
 )
 
 
@@ -137,9 +183,48 @@ DATA_SCHEMA_UP = [
         count INTEGER NOT NULL DEFAULT 0,
         expires_at INTEGER NOT NULL)""",
     "CREATE INDEX IF NOT EXISTS idx_booking_rate_expires ON booking_rate(expires_at)",
+    """CREATE TABLE IF NOT EXISTS booking_visits (
+        visit_id TEXT PRIMARY KEY,
+        account_bi TEXT NOT NULL,
+        visitor_key TEXT NOT NULL DEFAULT '',
+        kind TEXT NOT NULL,
+        type_id TEXT NOT NULL DEFAULT '',
+        detail TEXT NOT NULL DEFAULT '',
+        pinged INTEGER NOT NULL DEFAULT 0 CHECK(pinged IN (0,1,2)),
+        created_at INTEGER NOT NULL CHECK(created_at >= 0))""",
+    "CREATE INDEX IF NOT EXISTS idx_booking_visits_account "
+    "ON booking_visits(account_bi,created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_booking_visits_visitor "
+    "ON booking_visits(account_bi,visitor_key,created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_booking_visits_created ON booking_visits(created_at)",
+    """CREATE TABLE IF NOT EXISTS booking_rooms (
+        room_bi TEXT PRIMARY KEY,
+        booking_id TEXT NOT NULL UNIQUE,
+        account_bi TEXT NOT NULL,
+        created_at INTEGER NOT NULL CHECK(created_at >= 0))""",
+    "CREATE INDEX IF NOT EXISTS idx_booking_rooms_account ON booking_rooms(account_bi)",
+    """CREATE TABLE IF NOT EXISTS booking_room_signals (
+        seq INTEGER PRIMARY KEY AUTOINCREMENT,
+        room_bi TEXT NOT NULL,
+        account_bi TEXT NOT NULL,
+        box TEXT NOT NULL,
+        created_at INTEGER NOT NULL CHECK(created_at >= 0))""",
+    "CREATE INDEX IF NOT EXISTS idx_booking_room_signals_room "
+    "ON booking_room_signals(room_bi,seq)",
+    "CREATE INDEX IF NOT EXISTS idx_booking_room_signals_created "
+    "ON booking_room_signals(created_at)",
 ]
 
 DATA_SCHEMA_DOWN = [
+    "DROP INDEX IF EXISTS idx_booking_room_signals_created",
+    "DROP INDEX IF EXISTS idx_booking_room_signals_room",
+    "DROP TABLE IF EXISTS booking_room_signals",
+    "DROP INDEX IF EXISTS idx_booking_rooms_account",
+    "DROP TABLE IF EXISTS booking_rooms",
+    "DROP INDEX IF EXISTS idx_booking_visits_created",
+    "DROP INDEX IF EXISTS idx_booking_visits_visitor",
+    "DROP INDEX IF EXISTS idx_booking_visits_account",
+    "DROP TABLE IF EXISTS booking_visits",
     "DROP INDEX IF EXISTS idx_booking_rate_expires",
     "DROP TABLE IF EXISTS booking_rate",
     "DROP INDEX IF EXISTS idx_booking_bookings_guest",
@@ -325,6 +410,7 @@ def _settings_data(data, existing=None, account_name="", account_email=""):
         "emailOwner": True,
         "addToCalendar": True,
         "checkCalendar": True,
+        "notifyVisits": True,
         "types": [dict(item) for item in DEFAULT_TYPES],
     }
     existing = existing if isinstance(existing, dict) else {}
@@ -359,7 +445,7 @@ def _settings_data(data, existing=None, account_name="", account_email=""):
     for key in ("replyTo", "notifyEmail"):
         if key in data:
             result[key] = _email(data.get(key))
-    for key in ("emailOwner", "addToCalendar", "checkCalendar"):
+    for key in ("emailOwner", "addToCalendar", "checkCalendar", "notifyVisits"):
         if key in data:
             result[key] = bool(data.get(key))
     if "types" in data:
@@ -378,6 +464,9 @@ def _route(path):
         return ("owner",)
     if not clean.startswith(PREFIX + "/"):
         return None
+    match = re.fullmatch(r"/api/booking/-/p/([a-z0-9-]{1,63})/track", clean)
+    if match:
+        return ("page", match.group(1), "", "track")
     match = re.fullmatch(
         r"/api/booking/-/p/([a-z0-9-]{1,63})(?:/([a-z0-9-]{1,32})/(slots|book))?", clean)
     if match:
@@ -386,6 +475,9 @@ def _route(path):
         r"/api/booking/-/b/([0-9a-f]{32}\.[0-9a-f]{24})(?:/(cancel|reschedule|slots))?", clean)
     if match:
         return ("manage", match.group(1), match.group(2) or "")
+    match = re.fullmatch(r"/api/booking/-/call/([0-9a-f]{32})(?:/(ticket|signal))?", clean)
+    if match:
+        return ("room", match.group(1), match.group(2) or "")
     parts = tuple(part for part in clean[len(PREFIX) + 1:].split("/") if part)
     if any(len(part) > 64 for part in parts):
         return None
@@ -395,9 +487,11 @@ def _route(path):
 def _allowed(route):
     kind = route[0]
     if kind == "page":
-        return ("POST",) if route[3] == "book" else ("GET",)
+        return ("POST",) if route[3] in ("book", "track") else ("GET",)
     if kind == "manage":
         return ("POST",) if route[2] in ("cancel", "reschedule") else ("GET",)
+    if kind == "room":
+        return {"ticket": ("POST",), "signal": ("GET", "POST")}.get(route[2], ("GET",))
     parts = route[1:]
     if not parts:
         return ("GET",)
@@ -498,11 +592,10 @@ def _site_origin(runtime):
     configured = str(secret("LINK_ORIGIN") if secret else "").rstrip("/").lower()
     if ORIGIN_RE.fullmatch(configured):
         return configured
-    for source in ("request_origin", "public_origin"):
-        reader = getattr(runtime, source, None)
-        origin = str(reader() if reader else "").rstrip("/").lower()
-        if ORIGIN_RE.fullmatch(origin) and (origin.startswith("https://") or "localhost" in origin):
-            return SITE_ORIGINS.get(origin, origin)
+    reader = getattr(runtime, "public_origin", None)
+    origin = str(reader() if reader else "").rstrip("/").lower()
+    if ORIGIN_RE.fullmatch(origin) and (origin.startswith("https://") or "localhost" in origin):
+        return SITE_ORIGINS.get(origin, origin)
     return DEFAULT_ORIGIN
 
 
@@ -511,11 +604,10 @@ def _app_origin(runtime):
     configured = str(secret("APP_ORIGIN") if secret else "").rstrip("/").lower()
     if ORIGIN_RE.fullmatch(configured):
         return configured
-    for source in ("request_origin", "public_origin"):
-        reader = getattr(runtime, source, None)
-        origin = str(reader() if reader else "").rstrip("/").lower()
-        if ORIGIN_RE.fullmatch(origin) and (origin.startswith("https://") or "localhost" in origin):
-            return APP_ORIGINS.get(origin, origin)
+    reader = getattr(runtime, "public_origin", None)
+    origin = str(reader() if reader else "").rstrip("/").lower()
+    if ORIGIN_RE.fullmatch(origin) and (origin.startswith("https://") or "localhost" in origin):
+        return APP_ORIGINS.get(origin, origin)
     return APP_ORIGINS[DEFAULT_ORIGIN]
 
 
@@ -810,6 +902,8 @@ def _location_text(location, guest_phone=""):
     if kind == "phone":
         return ("Phone call: " + detail) if detail else (
             ("Phone call to " + guest_phone) if guest_phone else "Phone call")
+    if kind == "video" and detail and location.get("room"):
+        return "ForkMesh video call, end-to-end encrypted: " + detail
     if kind == "video":
         return ("Video call: " + detail) if detail else "Video call (link to follow)"
     if kind == "place":
@@ -910,6 +1004,7 @@ async def _overview(runtime, row, account_bi, actor):
         "upcoming": upcoming,
         "past": past,
         "stats": await _stats(runtime, account_bi, now),
+        "activity": await _activity(runtime, account_bi, settings, now),
     })
 
 
@@ -1049,10 +1144,22 @@ def _link_html(url, label=""):
     return '<a href="%s" style="color:#2563eb">%s</a>' % (escape(url, quote=True), escape(label or url))
 
 
-async def _send(runtime, account_bi, recipient, reply_to, subject, message, variables):
+async def _mail_allowed(runtime, recipient, variables, recipient_limit):
+    now = runtime.now()
+    if not await _spend(runtime, "mail-booking:%s:%s" % (
+            variables["forkmesh_booking_mail"].rsplit(":", 1)[-1], variables["forkmesh_booking_id"]),
+            DAY_MS, MAIL_PER_BOOKING_DAILY, now):
+        return False
+    return await _spend(runtime, "mail-to:" + recipient.lower(), DAY_MS, recipient_limit, now)
+
+
+async def _send(runtime, account_bi, recipient, reply_to, subject, message, variables,
+                recipient_limit=MAIL_PER_GUEST_DAILY):
     sender = getattr(runtime, "send_mailtrap", None)
     if sender is None or not recipient:
         return {"accepted": False, "error": "mail_unavailable"}
+    if not await _mail_allowed(runtime, recipient, variables, recipient_limit):
+        return {"accepted": False, "error": "mail_limited"}
     try:
         result = await sender("", {
             "from": {"email": reply_to or "", "name": ""},
@@ -1063,7 +1170,7 @@ async def _send(runtime, account_bi, recipient, reply_to, subject, message, vari
             "category": "Booking",
             "tracked": True,
             "organization": account_bi,
-            "account": account_bi,
+            "account": await runtime.blind("booking-mail:" + account_bi),
             "custom_variables": dict(variables, forkmesh_package=PLUGIN_ID),
         })
     except Exception as error:
@@ -1086,7 +1193,10 @@ def _detail_rows(booking, settings, zone_name, fmt, for_owner):
     location = booking["location"] or {}
     where = _location_text(location, booking["guest"]["phone"])
     where_html = None
-    if location.get("kind") == "video" and location.get("detail"):
+    if location.get("kind") == "video" and location.get("detail") and location.get("room"):
+        where_html = "ForkMesh video call, end-to-end encrypted: " + _link_html(
+            location["detail"], "Join the video call")
+    elif location.get("kind") == "video" and location.get("detail"):
         where_html = "Video call: " + _link_html(location["detail"])
     rows = [
         ("What", "%s (%d min)" % (booking["typeTitle"], booking["minutes"]), None),
@@ -1105,7 +1215,7 @@ def _detail_rows(booking, settings, zone_name, fmt, for_owner):
             rows.append(("Their time", guest_when["label"], None))
     else:
         rows.insert(0, ("With", settings["displayName"], None))
-    if booking["guest"]["notes"]:
+    if for_owner and booking["guest"]["notes"]:
         rows.append(("Notes", booking["guest"]["notes"], None))
     return rows
 
@@ -1114,6 +1224,11 @@ def _calendar_title(booking, settings, for_owner):
     if for_owner:
         return "%s with %s" % (booking["typeTitle"], booking["guest"]["name"])
     return "%s with %s" % (booking["typeTitle"], settings["displayName"])
+
+
+def _greeting_name(name):
+    first = str(name or "").split(" ")[0]
+    return first if re.fullmatch(r"[^\W\d_][\w'-]{0,39}", first) else "there"
 
 
 async def _email_booking(runtime, account_bi, settings, booking, kind, origin, owner_name):
@@ -1127,6 +1242,8 @@ async def _email_booking(runtime, account_bi, settings, booking, kind, origin, o
     guest_when = _when(booking["startAt"], booking["endAt"], guest["timezone"], fmt)
     owner_when = _when(booking["startAt"], booking["endAt"], settings["timezone"], fmt)
     location = _location_text(booking["location"] or {}, guest["phone"])
+    room = (booking["location"] or {}).get("detail") if (booking["location"] or {}).get("room") else ""
+    join = [("Join the video call", room, True)] if room else []
     reason = booking.get("cancelReason") or ""
     results = {}
     guest_title = _calendar_title(booking, settings, False)
@@ -1137,11 +1254,11 @@ async def _email_booking(runtime, account_bi, settings, booking, kind, origin, o
         heading = "You're booked with %s" % settings["displayName"] if kind == "confirmed" else (
             "Your meeting with %s has moved" % settings["displayName"])
         intro = "Hi %s, your %s is %s for %s." % (
-            guest["name"].split(" ")[0] or "there", booking["typeTitle"],
+            _greeting_name(guest["name"]), booking["typeTitle"],
             "confirmed" if kind == "confirmed" else "now", guest_when["label"])
-        buttons = [("Add to Google Calendar", links["google"], True),
-                   ("Add to Outlook", links["outlook"], False),
-                   ("Reschedule or cancel", manage, False)]
+        buttons = join + [("Add to Google Calendar", links["google"], not join),
+                          ("Add to Outlook", links["outlook"], False),
+                          ("Reschedule or cancel", manage, False)]
         subject = "%s: %s with %s on %s" % (
             "Confirmed" if kind == "confirmed" else "Rescheduled", booking["typeTitle"],
             settings["displayName"], guest_when["day"])
@@ -1150,7 +1267,7 @@ async def _email_booking(runtime, account_bi, settings, booking, kind, origin, o
     elif kind == "reminder":
         heading = "Coming up: %s with %s" % (booking["typeTitle"], settings["displayName"])
         intro = "A reminder that you are meeting %s on %s." % (settings["displayName"], guest_when["label"])
-        buttons = [("Reschedule or cancel", manage, False)]
+        buttons = join + [("Reschedule or cancel", manage, False)]
         subject = "Reminder: %s with %s on %s" % (booking["typeTitle"], settings["displayName"],
                                                   guest_when["day"])
         eyebrow = "Reminder"
@@ -1160,7 +1277,7 @@ async def _email_booking(runtime, account_bi, settings, booking, kind, origin, o
         heading = "Your meeting with %s was cancelled" % settings["displayName"]
         intro = ("%s cancelled this meeting." % settings["displayName"]) if by_owner else (
             "You cancelled this meeting.")
-        if reason:
+        if reason and by_owner:
             intro += "\n\n“%s”" % reason
         buttons = [("Book a new time", page, True)] if settings.get("_slug") else []
         subject = "Cancelled: %s with %s on %s" % (booking["typeTitle"], settings["displayName"],
@@ -1177,6 +1294,8 @@ async def _email_booking(runtime, account_bi, settings, booking, kind, origin, o
     owner_rows = _detail_rows(booking, settings, settings["timezone"], fmt, True)
     owner_buttons = [("Open your bookings", _app_origin(runtime) + PAGE_PATH + "?booking="
                       + booking["id"], True)]
+    if room and kind != "cancelled":
+        owner_buttons.append(("Join the video call", room, False))
     owner_footer = "Your ForkMesh booking page sent this to you. Reply to write to %s." % guest["name"]
     if kind == "confirmed":
         owner_subject = "New booking: %s, %s" % (guest["name"], owner_when["label"])
@@ -1201,7 +1320,7 @@ async def _email_booking(runtime, account_bi, settings, booking, kind, origin, o
         _message(accent, owner_eyebrow, owner_heading, owner_intro, owner_rows, owner_buttons,
                  owner_footer, owner_tone),
         {"forkmesh_booking_id": booking["id"], "forkmesh_booking_mail": kind + ":owner",
-         "forkmesh_sender": owner_name})
+         "forkmesh_sender": owner_name}, MAIL_PER_OWNER_ADDRESS_DAILY)
     return results
 
 
@@ -1277,10 +1396,20 @@ async def _calendar_remove(runtime, account_bi, event_id):
         return
 
 
+def _source_key(address):
+    try:
+        parsed = ipaddress.ip_address(address)
+    except ValueError:
+        return address
+    if parsed.version == 4:
+        return address
+    return str(parsed.ipv4_mapped or ipaddress.ip_network(address + "/64", strict=False))
+
+
 def _visitor_key(runtime):
     reader = getattr(runtime, "request_visitor", None)
     visitor = reader() if reader else {}
-    return str((visitor or {}).get("ip") or "")
+    return _source_key(str((visitor or {}).get("ip") or "").strip())
 
 
 async def _spend(runtime, bucket, window_ms, limit, now):
@@ -1293,6 +1422,163 @@ async def _spend(runtime, bucket, window_ms, limit, now):
         "ON CONFLICT(bucket) DO UPDATE SET count=count+1",
         key, (now // window_ms + 1) * window_ms)
     return True
+
+
+def _track_detail(kind, value):
+    detail = _clean(value, 32).lower()
+    if kind in TRACK_CHOICES:
+        return detail if detail in TRACK_CHOICES[kind] else None
+    if kind in TRACK_PATTERNS:
+        return detail if TRACK_PATTERNS[kind].fullmatch(detail) else None
+    return "" if not detail else None
+
+
+async def _visit_key(runtime, account_bi, session):
+    address = _visitor_key(runtime)
+    if address:
+        return (await runtime.blind("booking-visitor:%s:%s" % (account_bi, address)))[:32]
+    session = str(session or "").lower()
+    if SESSION_RE.fullmatch(session):
+        return (await runtime.blind("booking-visitor-session:%s:%s" % (account_bi, session)))[:32]
+    return ""
+
+
+async def _notify_visit(runtime, owner, title, body, dedupe, push):
+    notify = getattr(runtime, "notify", None)
+    if notify is None or not owner:
+        return False
+    try:
+        return bool(await notify(owner, "plugin_activity", title, body=body,
+                                 href=PAGE_PATH + "?tab=visits", dedupe=dedupe, push=push))
+    except Exception:
+        return False
+
+
+async def _visit_ping(runtime, row, settings, key, kind, item, now):
+    stage = 1 if kind == "view" else 2 if kind in TRACK_START_KINDS else 0
+    if not stage or not key or not settings.get("notifyVisits"):
+        return 0
+    account_bi = row["account_bi"]
+    hour = now - now % HOUR_MS
+    prior = await runtime.d1_first(
+        "SELECT COALESCE(MAX(pinged),0) AS stage FROM booking_visits "
+        "WHERE account_bi=? AND visitor_key=? AND created_at>=?", account_bi, key, hour)
+    prior = _integer((prior or {}).get("stage"))
+    if prior >= stage:
+        return 0
+    sent = await runtime.d1_first(
+        "SELECT COUNT(*) AS n FROM booking_visits WHERE account_bi=? AND pinged>0 "
+        "AND created_at>=?", account_bi, hour)
+    if _integer((sent or {}).get("n")) >= PAGE_HOURLY_VISIT_PINGS:
+        return 0
+    title = ("👀 Someone opened your booking page" if stage == 1
+             else "🗓️ Someone is picking a time on your booking page")
+    body = ("Looking at %s. " % item["title"]) if item else ""
+    body += "You get another ping if they book."
+    if not await _notify_visit(runtime, row["account_name"], title, body,
+                               "booking-visit:%s:%d" % (key, hour // HOUR_MS), prior == 0):
+        return 0
+    return stage
+
+
+async def _track(runtime, row, settings, data):
+    now = runtime.now()
+    kind = _clean(data.get("kind"), 16).lower()
+    detail = _track_detail(kind, data.get("detail")) if kind in TRACK_KINDS else None
+    if detail is None:
+        return _response(runtime, {"error": "invalid_event"}, 400)
+    requested = _clean(data.get("type"), 32).lower()
+    item = _type(settings, requested) if requested else None
+    if kind == "type" and not item:
+        return _response(runtime, {"error": "invalid_event"}, 400)
+    account_bi = row["account_bi"]
+    key = await _visit_key(runtime, account_bi, data.get("session"))
+    connection = _visitor_key(runtime) or key
+    if connection and not await _spend(runtime, "track-visitor:" + connection, HOUR_MS,
+                                       VISITOR_HOURLY_EVENTS, now):
+        return _response(runtime, {"error": "rate_limited"}, 429)
+    if not await _spend(runtime, "track-page:" + account_bi, HOUR_MS, PAGE_HOURLY_EVENTS, now):
+        return _response(runtime, {"error": "rate_limited"}, 429)
+    pinged = await _visit_ping(runtime, row, settings, key, kind, item, now)
+    await runtime.d1_run(
+        "INSERT INTO booking_visits(visit_id,account_bi,visitor_key,kind,type_id,detail,pinged,"
+        "created_at) VALUES(?,?,?,?,?,?,?,?)",
+        runtime.new_id(), account_bi, key, kind, item["id"] if item else "", detail, pinged, now)
+    if kind == "view":
+        await runtime.d1_run(
+            "DELETE FROM booking_visits WHERE account_bi=? AND (created_at<? OR visit_id NOT IN ("
+            "SELECT visit_id FROM booking_visits WHERE account_bi=? "
+            "ORDER BY created_at DESC,visit_id DESC LIMIT ?))",
+            account_bi, now - VISIT_RETAIN_MS, account_bi, MAX_VISITS)
+    return _response(runtime, {"ok": True}, 202)
+
+
+def _visit_label(row, settings, titles):
+    kind, detail = str(row.get("kind") or ""), str(row.get("detail") or "")
+    title = titles.get(str(row.get("type_id") or ""), "")
+    if kind == "view":
+        return "Opened your page" + (" at " + title if title else "")
+    if kind == "type":
+        return "Chose " + (title or "a meeting type")
+    if kind == "month":
+        year, month = detail.split("-") if "-" in detail else ("", "0")
+        return "Looked at %s %s" % (MONTH_NAMES[max(1, min(12, _integer(month))) - 1], year)
+    if kind == "day":
+        try:
+            day = date.fromisoformat(detail)
+        except ValueError:
+            return "Picked a day"
+        return "Picked %s, %d %s" % (WEEKDAY_NAMES[day.weekday()], day.day, MONTH_NAMES[day.month - 1])
+    if kind == "slot":
+        start = _integer(detail)
+        when = _when(start, start, settings["timezone"], settings["timeFormat"])
+        return "Picked %s, %s" % (when["time"].split(" – ")[0], when["day"])
+    if kind == "form":
+        return "Opened the details form"
+    if kind == "field":
+        return "Filled in their " + TRACK_FIELD_LABELS.get(detail, "details")
+    if kind == "submit":
+        return "Sent the booking form"
+    if kind == "prefs":
+        return "Changed the time zone" if detail == "timezone" else "Switched to the %s clock" % detail
+    if kind == "link":
+        return "Clicked " + TRACK_LINK_LABELS.get(detail, "a link")
+    if kind == "leave":
+        return "Left on " + TRACK_VIEW_LABELS.get(detail, "the page")
+    return kind
+
+
+async def _activity(runtime, account_bi, settings, now, limit=MAX_RECENT_VISITS):
+    row = await runtime.d1_first(
+        "SELECT SUM(kind='view') AS views,"
+        "SUM(kind NOT IN ('view','leave')) AS interactions,"
+        "SUM(kind='form') AS starts,SUM(kind='submit') AS submits,SUM(kind='leave') AS leaves,"
+        "COUNT(DISTINCT CASE WHEN visitor_key<>'' THEN visitor_key END) AS visitors,"
+        "COALESCE(MAX(created_at),0) AS last FROM booking_visits "
+        "WHERE account_bi=? AND created_at>=?", account_bi, now - VISIT_SUMMARY_MS)
+    row = row or {}
+    rows = await runtime.d1_all(
+        "SELECT kind,type_id,detail,visitor_key,created_at FROM booking_visits "
+        "WHERE account_bi=? ORDER BY created_at DESC,visit_id DESC LIMIT ?", account_bi, limit)
+    titles = {item["id"]: item["title"] for item in settings.get("types") or []}
+    return {
+        "days": VISIT_SUMMARY_MS // DAY_MS,
+        "views": _integer(row.get("views")),
+        "visitors": _integer(row.get("visitors")),
+        "interactions": _integer(row.get("interactions")),
+        "starts": _integer(row.get("starts")),
+        "submits": _integer(row.get("submits")),
+        "leaves": _integer(row.get("leaves")),
+        "lastActivityAt": _integer(row.get("last")),
+        "recent": [{
+            "kind": str(item.get("kind") or ""),
+            "type": str(item.get("type_id") or ""),
+            "detail": str(item.get("detail") or ""),
+            "label": _visit_label(item, settings, titles),
+            "visitor": str(item.get("visitor_key") or "")[:6],
+            "at": _integer(item.get("created_at")),
+        } for item in rows or []],
+    }
 
 
 def _guest_input(data, item):
@@ -1342,8 +1628,13 @@ async def _book(runtime, row, settings, item, data):
         return _response(runtime, {"error": "page_busy"}, 429)
     booking_id = runtime.new_id()
     end_at = start_at + item["minutes"] * MINUTE_MS
+    location, room = dict(item["location"]), ""
+    if location["kind"] == "video" and not location["detail"]:
+        room = runtime.new_id()
+        location = {"kind": "video", "room": True,
+                    "detail": _room_link(_app_origin(runtime), room, _room_key(runtime))}
     stored = {
-        "typeTitle": item["title"], "minutes": item["minutes"], "location": item["location"],
+        "typeTitle": item["title"], "minutes": item["minutes"], "location": location,
         "guestName": guest["name"], "guestEmail": guest["email"], "guestPhone": guest["phone"],
         "guestTimezone": guest["timezone"], "notes": guest["notes"],
     }
@@ -1358,6 +1649,10 @@ async def _book(runtime, row, settings, item, data):
         if "unique" in str(failure).lower() or "constraint" in str(failure).lower():
             return _response(runtime, {"error": "slot_unavailable"}, 409)
         raise
+    if room:
+        await runtime.d1_run(
+            "INSERT INTO booking_rooms(room_bi,booking_id,account_bi,created_at) VALUES(?,?,?,?)",
+            await _room_bi(runtime, room), booking_id, account_bi, now)
     booking = await _project_booking(runtime, await _booking_row(runtime, booking_id), stored)
     event_id = await _calendar_add(runtime, row, settings, booking)
     if event_id:
@@ -1397,7 +1692,8 @@ async def _guest_booking(runtime, booking, row, settings, token):
         "location": {"kind": location.get("kind") or "none",
                      "label": LOCATION_LABELS.get(location.get("kind") or "none", ""),
                      "text": _location_text(location, booking["guest"]["phone"]),
-                     "url": location.get("detail") if location.get("kind") == "video" else ""},
+                     "url": location.get("detail") if location.get("kind") == "video" else "",
+                     "room": bool(location.get("room"))},
         "cancelledBy": booking["cancelledBy"],
         "cancelReason": booking["cancelReason"],
         "canChange": booking["status"] == "confirmed" and booking["startAt"] > runtime.now(),
@@ -1522,6 +1818,8 @@ async def _public_page_route(runtime, route, method, data):
     if not _integer(row.get("enabled")):
         return _response(runtime, {"error": "page_paused"}, 404)
     settings = await _settings(runtime, row)
+    if action == "track":
+        return await _track(runtime, row, settings, data)
     if not type_id:
         return _response(runtime, {"ok": True, "page": _public_page(row, settings)})
     item = _type(settings, type_id)
@@ -1563,6 +1861,126 @@ async def _manage_route(runtime, route, method, data):
         runtime, booking, page, settings, token)})
 
 
+def _room_link(origin, room, key):
+    return "%s%s?%s#%s" % (origin, ROOM_PATH, room, key)
+
+
+def _room_key(runtime):
+    return hashlib.sha256(("booking-room-key\n" + str(runtime.new_secret())).encode()).hexdigest()
+
+
+async def _room_bi(runtime, room):
+    return await runtime.blind("booking-room:" + room)
+
+
+def _room_state(row, now):
+    if row.get("status") != "confirmed":
+        return "cancelled"
+    if now < _integer(row.get("start_at")) - ROOM_OPEN_LEAD_MS:
+        return "early"
+    if now > _integer(row.get("end_at")) + ROOM_CLOSE_LAG_MS:
+        return "ended"
+    return "open"
+
+
+async def _room_info(runtime, row, settings, now):
+    data = await runtime.open_for(row["account_bi"], row.get("data"))
+    start_at, end_at = _integer(row.get("start_at")), _integer(row.get("end_at"))
+    return {
+        "state": _room_state(row, now),
+        "title": str(data.get("typeTitle") or "Meeting"),
+        "host": settings["displayName"],
+        "accent": ACCENT_HEX.get(settings["accent"], ACCENT_HEX["blue"]),
+        "minutes": _integer(data.get("minutes")),
+        "startAt": start_at,
+        "endAt": end_at,
+        "opensAt": start_at - ROOM_OPEN_LEAD_MS,
+        "closesAt": end_at + ROOM_CLOSE_LAG_MS,
+        "timezone": settings["timezone"],
+        "now": now,
+    }
+
+
+async def _room_ticket(runtime, room, room_bi, now):
+    visitor = _visitor_key(runtime)
+    if visitor and not await _spend(runtime, "room-ticket-visitor:" + visitor, HOUR_MS,
+                                    VISITOR_HOURLY_TICKETS, now):
+        return _response(runtime, {"error": "rate_limited"}, 429)
+    if not await _spend(runtime, "room-ticket:" + room_bi, HOUR_MS, ROOM_HOURLY_TICKETS, now):
+        return _response(runtime, {"error": "rate_limited"}, 429)
+    issue = getattr(runtime, "call_ticket", None)
+    ticket = await issue(room) if issue else None
+    if not isinstance(ticket, dict) or not ticket.get("ticket") or not ticket.get("url"):
+        return _response(runtime, {"error": "calls_unavailable"}, 503)
+    return _response(runtime, {"ok": True, "ticket": str(ticket["ticket"]),
+                               "room": str(ticket.get("room") or ""),
+                               "peer": str(ticket.get("peer") or ""), "url": str(ticket["url"])})
+
+
+async def _room_signal_post(runtime, room_bi, account_bi, data, now):
+    box = str((data or {}).get("box") or "")
+    if not BOX_RE.fullmatch(box):
+        return _response(runtime, {"error": "invalid_signal"}, 400)
+    visitor = _visitor_key(runtime)
+    if visitor and not await _spend(runtime, "room-signal-visitor:" + visitor, HOUR_MS,
+                                    VISITOR_HOURLY_SIGNALS, now):
+        return _response(runtime, {"error": "rate_limited"}, 429)
+    if not await _spend(runtime, "room-signal:" + room_bi, HOUR_MS, ROOM_HOURLY_SIGNALS, now):
+        return _response(runtime, {"error": "rate_limited"}, 429)
+    await runtime.d1_run(
+        "INSERT INTO booking_room_signals(room_bi,account_bi,box,created_at) VALUES(?,?,?,?)",
+        room_bi, account_bi, box, now)
+    await runtime.d1_run(
+        "DELETE FROM booking_room_signals WHERE room_bi=? AND seq<=(SELECT seq FROM "
+        "booking_room_signals WHERE room_bi=? ORDER BY seq DESC LIMIT 1 OFFSET ?)",
+        room_bi, room_bi, ROOM_SIGNALS_KEPT)
+    return _response(runtime, {"ok": True}, 202)
+
+
+async def _room_signal_list(runtime, room_bi, now):
+    params = runtime.query_params() if hasattr(runtime, "query_params") else {}
+    after = _integer(params.get("after"), 0)
+    if after > 0:
+        rows = await runtime.d1_all(
+            "SELECT seq,box FROM booking_room_signals WHERE room_bi=? AND seq>? "
+            "ORDER BY seq LIMIT ?", room_bi, after, ROOM_SIGNALS_LISTED)
+    else:
+        rows = list(reversed(await runtime.d1_all(
+            "SELECT seq,box FROM booking_room_signals WHERE room_bi=? AND created_at>? "
+            "ORDER BY seq DESC LIMIT ?", room_bi, now - 2 * MINUTE_MS, ROOM_SIGNALS_LISTED) or []))
+    frames = [{"seq": _integer(row.get("seq")), "box": str(row.get("box") or "")}
+              for row in rows or []]
+    latest = frames[-1]["seq"] if frames else after
+    if not frames and after <= 0:
+        top = await runtime.d1_first(
+            "SELECT MAX(seq) AS seq FROM booking_room_signals WHERE room_bi=?", room_bi)
+        latest = _integer((top or {}).get("seq"), 0)
+    return _response(runtime, {"ok": True, "frames": frames, "seq": latest})
+
+
+async def _room_route(runtime, route, method, data):
+    _, room, action = route
+    room_bi = await _room_bi(runtime, room)
+    link = await runtime.d1_first(
+        "SELECT booking_id,account_bi FROM booking_rooms WHERE room_bi=?", room_bi)
+    row = await _booking_row(runtime, link["booking_id"]) if link else None
+    page = await _page_row(runtime, row["account_bi"]) if row else None
+    if not row or not page or row.get("account_bi") != link.get("account_bi"):
+        return _response(runtime, {"error": "room_not_found"}, 404)
+    now = runtime.now()
+    state = _room_state(row, now)
+    if not action or state != "open":
+        info = await _room_info(runtime, row, await _settings(runtime, page), now)
+        if not action:
+            return _response(runtime, {"ok": True, "room": info})
+        return _response(runtime, {"error": "room_" + state, "room": info}, 409)
+    if action == "ticket":
+        return await _room_ticket(runtime, room, room_bi, now)
+    if method == "POST":
+        return await _room_signal_post(runtime, room_bi, row["account_bi"], data, now)
+    return await _room_signal_list(runtime, room_bi, now)
+
+
 async def account_has_data(runtime, account_bi):
     row = await runtime.d1_first(
         "SELECT account_bi FROM booking_pages WHERE account_bi=?", account_bi)
@@ -1576,6 +1994,7 @@ async def export_account_data(runtime, account_bi, account_name=""):
     runtime = _vault(runtime)
     await _ensure_tables(runtime)
     row = await _page_row(runtime, account_bi)
+    settings = await _settings(runtime, row) if row else _settings_data({}, None, account_name)
     rows = await runtime.d1_all(
         "SELECT " + BOOKING_COLUMNS + " FROM booking_bookings WHERE account_bi=? "
         "ORDER BY start_at LIMIT 20000", account_bi)
@@ -1585,13 +2004,15 @@ async def export_account_data(runtime, account_bi, account_name=""):
         "account": account_name,
         "exportedAt": runtime.now(),
         "slug": row["slug"] if row else "",
-        "settings": _owner_settings(await _settings(runtime, row)) if row else {},
+        "settings": _owner_settings(settings) if row else {},
         "bookings": [await _project_booking(runtime, item) for item in rows or []],
+        "activity": await _activity(runtime, account_bi, settings, runtime.now(), MAX_VISITS),
     }
 
 
 async def purge_account_data(runtime, account_bi, account_name=""):
-    for table in ("booking_bookings", "booking_pages", "booking_keys"):
+    for table in ("booking_room_signals", "booking_rooms", "booking_visits", "booking_bookings",
+                  "booking_pages", "booking_keys"):
         await runtime.d1_run("DELETE FROM " + table + " WHERE account_bi=?", account_bi)
     if isinstance(runtime, _Vault):
         runtime.forget(account_bi)
@@ -1613,6 +2034,9 @@ async def deliver_reminders(runtime):
     await _ensure_tables(runtime)
     now = runtime.now()
     await runtime.d1_run("DELETE FROM booking_rate WHERE expires_at<?", now)
+    await runtime.d1_run("DELETE FROM booking_visits WHERE created_at<?", now - VISIT_RETAIN_MS)
+    await runtime.d1_run("DELETE FROM booking_room_signals WHERE created_at<?",
+                         now - ROOM_SIGNAL_RETAIN_MS)
     rows = await runtime.d1_all(
         "SELECT " + BOOKING_COLUMNS + " FROM booking_bookings WHERE status='confirmed' "
         "AND reminded_at=0 AND start_at>? AND start_at<=? ORDER BY start_at LIMIT ?",
@@ -1648,7 +2072,7 @@ async def handle(runtime, path):
         method = "GET"
     if method not in allowed:
         return _response(runtime, {"error": "method_not_allowed"}, 405, ", ".join(allowed))
-    public = route[0] in ("page", "manage")
+    public = route[0] in ("page", "manage", "room")
     if method != "GET" and not public and not runtime.same_origin():
         return _response(runtime, {"error": "origin_not_allowed"}, 403)
     data = {}
@@ -1662,6 +2086,8 @@ async def handle(runtime, path):
         return await _public_page_route(runtime, route, method, data)
     if route[0] == "manage":
         return await _manage_route(runtime, route, method, data)
+    if route[0] == "room":
+        return await _room_route(runtime, route, method, data)
     account_bi, actor, email = await _actor(runtime, data)
     if not account_bi or not actor:
         return _response(runtime, {"error": "invalid_session"}, 401)

@@ -132,6 +132,7 @@ public enum RouteCatalog {
         case .thread: return "Thread"
         case .dm: return "Direct message"
         case .discord: return "Discord"
+        case .meeting: return "Meeting"
         case .profile: return "Profile"
         case .people: return "People"
         case .docs: return "Docs"
@@ -179,10 +180,12 @@ public enum RouteCatalog {
         case .glassesAlert: return "Glasses Alert"
         case .phoneSecurity: return "Phone Security"
         case .eyeControl: return "Eye Control"
+        case .silentSpeech: return "Silent Speech"
         case .ember: return "Ember"
         case .strata: return "Strata"
         case .synapse: return "Synapse"
         case .openWrtRouter: return "Router"
+        case .reticulum: return "Reticulum"
         case .fileExplorer: return "Files"
         case .nexus: return "NEXUS"
         case .faceChanger: return "Face Changer"
@@ -238,6 +241,7 @@ public enum RouteCatalog {
         case .chat, .channel, .thread: return "bubble.left.and.bubble.right"
         case .dm: return "envelope"
         case .discord: return "gamecontroller"
+        case .meeting: return "video"
         case .profile: return "person.crop.circle"
         case .people: return "person.3"
         case .docs: return "book"
@@ -274,10 +278,12 @@ public enum RouteCatalog {
         case .glassesAlert: return "eyeglasses"
         case .phoneSecurity: return "checkmark.shield"
         case .eyeControl: return "eye"
+        case .silentSpeech: return "airpodspro"
         case .ember: return "flame"
         case .strata: return "square.3.layers.3d"
         case .synapse: return "brain"
         case .openWrtRouter: return "wifi.router"
+        case .reticulum: return "antenna.radiowaves.left.and.right"
         case .fileExplorer: return "folder"
         case .nexus: return "network"
         case .faceChanger: return "theatermasks"
@@ -426,7 +432,9 @@ public enum HubCatalog {
         .destination(.glassesAlert),
         .destination(.phoneSecurity),
         .destination(.eyeControl),
+        .destination(.silentSpeech),
         .destination(.openWrtRouter),
+        .destination(.reticulum),
         .destination(.faceChanger),
         .destination(.videoMixDjStudio),
         .destination(.poker(table: nil)),

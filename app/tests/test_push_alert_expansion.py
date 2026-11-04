@@ -371,6 +371,10 @@ def test_every_ping_kind_gets_a_little_icon_beside_its_headline():
     assert push_icons.alert_icon("no_such_kind") == push_icons.PUSH_DEFAULT_ICON
     assert push_icons.alert_icon(
         "desktop_ping", {"category": "agent-failed"}) == "⚠️"
+    assert push_icons.alert_icon("desktop_ping", {"category": "ci-failed"}) == "❌"
+    assert push_icons.alert_icon("operational_alert", {"state": "up"}) == "✅"
+    assert push_icons.alert_icon("operational_alert", {"state": "down"}) == (
+        push_icons.PUSH_KIND_ICONS["operational_alert"])
     assert push_icons.alert_icon(
         "desktop_ping", {"alarm": "power", "category": "agent-failed"}) == (
         "\U0001FAAB")

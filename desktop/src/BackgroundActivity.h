@@ -187,8 +187,8 @@ private:
 
     static State &state()
     {
-        static State s;
-        return s;
+        static State *s = new State;
+        return *s;
     }
 
     static ActionTelemetry::Context telemetryContext(const BackgroundTicket &ticket)

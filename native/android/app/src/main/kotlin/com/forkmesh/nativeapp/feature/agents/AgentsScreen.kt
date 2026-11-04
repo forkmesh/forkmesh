@@ -63,6 +63,12 @@ import com.forkmesh.nativeapp.shell.ShellLoadingOverlay
 import com.forkmesh.nativeapp.ui.kit.FmIconButton
 import com.forkmesh.nativeapp.ui.kit.FmInlineStatus
 import com.forkmesh.nativeapp.ui.kit.FmNeedsDesktopNote
+import com.forkmesh.nativeapp.ui.kit.fmGlass
+import com.forkmesh.nativeapp.ui.kit.FmDropdownMenu
+import com.forkmesh.nativeapp.ui.kit.FmDropdownMenuItem
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import com.forkmesh.nativeapp.ui.kit.FmPullToRefreshBox
 import com.forkmesh.nativeapp.ui.kit.FmSegmentTab
 import com.forkmesh.nativeapp.ui.kit.FmSegmentTabBar
@@ -248,54 +254,79 @@ internal class AgentsScreen : Screen() {
         val stopTargets = AgentStopAll.targets(AgentsFeature.control.rows)
         Column(Modifier.fillMaxWidth().padding(FmSpace.x4)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Agents", style = Fm.text.displaySmall.copy(color = c.textPrimary))
-                    Spacer(Modifier.height(FmSpace.x1))
-                    Text(
-                        if (hasDesktopNode) "Send a prompt to a mirror and follow it to its branch, pull request and merge."
-                        else "Send a prompt to a mirror; with no node to take it, it runs on this phone.",
-                        style = Fm.text.bodyMedium.copy(color = c.textSecondary),
-                    )
-                }
-                if (stoppingAll || stopTargets.isNotEmpty()) {
-                    FmIconButton("stop_circle_outlined", "Stop all agents", onPressed = if (stoppingAll) null else ({
-                        stopCount = stopTargets.size
-                        confirmStopAll = true
-                    }), color = c.danger)
-                }
-                FmIconButton("add", "Start an agent", onPressed = { headerScope.launch { showAgentQuickStartSheet(headerMessenger, navigator, onStarted = { reload() }) } }, color = c.accent)
+                Text("Agents", Modifier.weight(1f).semantics { heading() }, style = Fm.text.displaySmall.copy(color = c.textPrimary))
                 val watch = AgentWatchEntry.openAll
-                if (watch != null && (shown.any { it.sessions.isNotEmpty() } || AgentsFeature.control.rows.isNotEmpty())) {
-                    FmIconButton("graphic_eq", "Watch, hear and feel agents", onPressed = { watch(navigator, shown) }, color = c.accent)
+                val desktopTools = AgentsFeature.control.hub.desktop != null
+                var more by remember { mutableStateOf(false) }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    val tool = Modifier.size(36.dp).fmGlass(RoundedCornerShape(FmRadius.md), shadow = false)
+                    if (stoppingAll || stopTargets.isNotEmpty()) {
+                        FmIconButton("stop_circle_outlined", "Stop all agents", onPressed = if (stoppingAll) null else ({
+                            stopCount = stopTargets.size
+                            confirmStopAll = true
+                        }), modifier = tool, color = c.danger, iconSize = 20.dp)
+                    }
+                    FmIconButton("add", "Start an agent", onPressed = { headerScope.launch { showAgentQuickStartSheet(headerMessenger, navigator, onStarted = { reload() }) } }, modifier = tool, color = c.accent, iconSize = 20.dp)
+                    if (watch != null && (shown.any { it.sessions.isNotEmpty() } || AgentsFeature.control.rows.isNotEmpty())) {
+                        FmIconButton("graphic_eq", "Watch, hear and feel agents", onPressed = { watch(navigator, shown) }, modifier = tool, iconSize = 20.dp)
+                    }
+                    FmIconButton(
+                        when (listView) {
+                            AgentListView.Compact -> "view_list_outlined"
+                            AgentListView.Zen -> "dark_mode_outlined"
+                            AgentListView.Full -> "visibility_outlined"
+                            AgentListView.Eagle -> "flutter_dash"
+                        },
+                        "Agent list view: ${listView.caption}",
+                        onPressed = onNextView,
+                        modifier = tool,
+                        iconSize = 20.dp,
+                    )
+                    Box {
+                        FmIconButton("more_horiz", "More agent actions", onPressed = { more = true }, modifier = tool, iconSize = 20.dp)
+                        FmDropdownMenu(expanded = more, onDismissRequest = { more = false }) {
+                            FmDropdownMenuItem("All agents", icon = "devices_outlined", onClick = {
+                                more = false
+                                navigator.push(AllAgentsScreen())
+                            })
+                            if (desktopTools) {
+                                FmDropdownMenuItem("Terminal", icon = "terminal", onClick = {
+                                    more = false
+                                    navigator.push(DesktopTerminalScreen())
+                                })
+                                FmDropdownMenuItem("Deleted agents on the desktop", icon = "delete_outline", onClick = {
+                                    more = false
+                                    navigator.push(AgentOpsFeature.recycleBinScreen())
+                                })
+                            }
+                            FmDropdownMenuItem("Refresh agents", icon = "refresh", onClick = {
+                                more = false
+                                reload()
+                            })
+                        }
+                    }
                 }
-                FmIconButton(
-                    when (listView) {
-                        AgentListView.Compact -> "view_list_outlined"
-                        AgentListView.Zen -> "dark_mode_outlined"
-                        AgentListView.Full -> "visibility_outlined"
-                        AgentListView.Eagle -> "flutter_dash"
-                    },
-                    "Agent list view: ${listView.caption}",
-                    onPressed = onNextView,
-                    color = c.textSecondary,
-                )
-                if (AgentsFeature.control.hub.desktop != null) {
-                    FmIconButton("terminal", "Terminal", onPressed = { navigator.push(DesktopTerminalScreen()) }, color = c.textSecondary)
-                    FmIconButton("delete_outline", "Deleted agents on the desktop", onPressed = { navigator.push(AgentOpsFeature.recycleBinScreen()) }, color = c.textSecondary)
-                }
-                FmIconButton("devices_outlined", "All agents", onPressed = { navigator.push(AllAgentsScreen()) }, color = c.textSecondary)
-                FmIconButton("refresh", "Refresh agents", onPressed = { reload() }, color = c.textSecondary)
             }
-            Spacer(Modifier.height(FmSpace.x3))
             val running = AgentsList.running(shown)
             val cloud = AgentsList.cloudRunning(shown)
             val sessions = AgentsList.sessionCount(shown)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(FmSpace.x3), verticalArrangement = Arrangement.spacedBy(FmSpace.x2)) {
+            val active = running + liveDesktopRows().count { it.isActive }
+            val counted = active > 0 || sessions > 0 || shown.isNotEmpty()
+            FlowRow(
+                Modifier.padding(top = if (counted) FmSpace.x2 else 0.dp),
+                horizontalArrangement = Arrangement.spacedBy(FmSpace.x3),
+                verticalArrangement = Arrangement.spacedBy(FmSpace.x2),
+            ) {
                 val style = Fm.text.bodySmall.copy(color = c.textSecondary)
-                Text("${running + liveDesktopRows().count { it.isActive }} running", style = style)
-                if (cloud > 0) Text("$cloud in the cloud", style = style)
-                Text("$sessions session${if (sessions == 1) "" else "s"}", style = style)
-                Text("${shown.size} repo${if (shown.size == 1) "" else "s"}", style = style)
+                if (counted) {
+                    Text("$active running", style = style)
+                    if (cloud > 0) Text("$cloud in the cloud", style = style)
+                    Text("$sessions session${if (sessions == 1) "" else "s"}", style = style)
+                    Text("${shown.size} repo${if (shown.size == 1) "" else "s"}", style = style)
+                }
                 LocalDesktopChip(navigator)
             }
             FmInlineStatus(agentsNotice, Modifier.padding(top = FmSpace.x2))
@@ -375,25 +406,7 @@ internal class AgentsScreen : Screen() {
             item {
                 if (Pending()) return@item
                 if (entries.isEmpty() && sealed == 0 && live.isEmpty()) {
-                    Column {
-                        Box(Modifier.fillMaxWidth().height(260.dp)) {
-                            FmEmptyState(
-                                icon = "smart_toy_outlined",
-                                title = "No agent sessions yet",
-                                message = "Send a prompt from the New tab and follow it here from the mirror that runs it to " +
-                                    "its branch, pull request and merge.",
-                            )
-                        }
-                        if (!hasDesktopNode) {
-                            Spacer(Modifier.height(FmSpace.x3))
-                            FmNeedsDesktopNote(
-                                icon = "smart_toy_outlined",
-                                detail = "This account has no desktop or server node enrolled. A prompt still goes to a mirror " +
-                                    "of the repository when one can run agents; otherwise it runs on this phone, against a " +
-                                    "mirror of the repository, on your own provider key.",
-                            )
-                        }
-                    }
+                    AgentsEmptyState(hasDesktopNode)
                 }
             }
             items(entries, key = { entryKey(it) }) { entry ->

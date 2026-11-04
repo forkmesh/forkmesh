@@ -1005,6 +1005,7 @@ def self_deploy_settings(fleet):
         "buildMemoryMax": str(settings.get("build_memory_max") or "450M"),
         "buildCPUQuota": str(settings.get("build_cpu_quota") or "60%"),
         "buildUser": "fmnext-build",
+        "repositoryUser": "forkmesh-node",
         "rollDaemon": bool(settings.get("roll_daemon", True)),
         "daemonBuildMemoryMax": str(settings.get("daemon_build_memory_max")
                                     or "700M"),

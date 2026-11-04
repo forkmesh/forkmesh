@@ -471,6 +471,16 @@
       .fm-merge-method { display: flex; min-width: 0; flex: 1 1 14rem; max-width: 100%; align-items: center; gap: 8px; font-size: 12px; color: rgb(var(--dashboard-muted-foreground-rgb)); }
       .fm-merge-method > span { white-space: nowrap; }
       .fm-merge-method select { width: 0; min-width: 0; flex: 1 1 auto; max-width: 18rem; height: var(--dashboard-control-height-sm); padding: 0 8px; border: 1px solid rgb(var(--dashboard-border-rgb)); border-radius: var(--dashboard-control-radius); background: rgb(var(--dashboard-background-rgb)); color: rgb(var(--dashboard-foreground-rgb)); font-size: 12px; }
+      .fm-merge-files { margin-top: 16px; }
+      .fm-merge-files-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 16px; border-bottom: 1px solid rgb(var(--dashboard-border-rgb)); }
+      .fm-merge-files-title { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; color: rgb(var(--dashboard-foreground-rgb)); }
+      .fm-merge-files-title svg, .fm-merge-files-title i { width: 16px; height: 16px; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+      .fm-merge-files-blockers { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 10px 16px 0; list-style: none; }
+      .fm-merge-files-blockers li { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border: 1px solid rgb(var(--dashboard-border-rgb)); border-radius: 999px; font-size: 12px; color: rgb(var(--dashboard-foreground-rgb)); }
+      .fm-merge-files-blockers li svg, .fm-merge-files-blockers li i { width: 14px; height: 14px; }
+      .fm-merge-files-blockers li[data-tone="bad"] svg { color: rgb(var(--dashboard-destructive-rgb)); }
+      .fm-merge-files-blockers li[data-tone="warn"] svg { color: rgb(var(--dashboard-attention-rgb)); }
+      .fm-merge-files-blockers li[data-tone="pending"] svg { color: rgb(var(--dashboard-muted-foreground-rgb)); }
       .fm-merge-buttons { display: flex; flex: 1 1 auto; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
       @media (max-width: 639px) {
         .fm-merge-buttons { flex-basis: 100%; }
@@ -4124,6 +4134,7 @@
             <a data-nav="agents" data-nav-link href="/dashboard/agents" data-plugin-entry="agents"><span class="dashboard-nav-icon"><i data-lucide="bot"></i></span>Agents</a>
             <a data-nav="apps" data-nav-link href="/dashboard/apps"><span class="dashboard-nav-icon"><i data-lucide="blocks"></i></span>Apps</a>
             <a data-nav="runners" data-nav-link href="/dashboard/runners"><span class="dashboard-nav-icon"><i data-lucide="server"></i></span>Runners</a>
+            <a data-nav="plugins" data-nav-link data-admin-only class="hidden" href="/dashboard/plugins"><span class="dashboard-nav-icon"><i data-lucide="puzzle"></i></span>Plugins</a>
             <a href="/dashboard/settings"><span class="dashboard-nav-icon"><i data-lucide="settings"></i></span>Settings</a>
           </div>
           <!-- forkmesh:plugin-navigation -->
@@ -4318,9 +4329,108 @@
             .notes-banner { margin: .75rem 1rem 0; }
             [data-view="notes"] .fm-flash { align-items: center; }
             .notes-body { position: relative; display: flex; flex: 1; min-height: 0; }
+            .notes-outline { display: none; width: 13rem; flex: none; min-height: 0; overflow-y: auto; border-right: 1px solid var(--nt-soft); padding: 1rem .5rem; }
+            .notes-body[data-outline="open"] .notes-outline { display: block; }
+            .notes-outline-entry { display: block; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: .375rem; padding: .25rem .5rem .25rem calc(.5rem + var(--depth, 0) * .8rem); text-align: left; font-size: .78rem; color: var(--nt-muted); }
+            .notes-outline-entry:hover { background: var(--nt-hover); color: rgb(var(--dashboard-foreground-rgb)); }
+            .notes-outline-entry[aria-current="true"] { background: var(--nt-selected); color: var(--nt-accent); }
+            .notes-outline-empty { padding: .25rem .5rem; font-size: .75rem; color: var(--nt-faint); }
             .notes-work { display: grid; min-width: 0; flex: 1; min-height: 0; grid-template-columns: 1fr 1fr; }
-            .notes-work[data-mode="write"], .notes-work[data-mode="preview"] { grid-template-columns: 1fr; }
-            .notes-work[data-mode="write"] [data-note-preview-pane], .notes-work[data-mode="preview"] [data-note-write-pane] { display: none; }
+            .notes-work[data-mode="write"], .notes-work[data-mode="preview"], .notes-work[data-mode="live"], .notes-work[data-mode="pages"] { grid-template-columns: 1fr; }
+            .notes-pages-pane { display: none; }
+            .notes-work[data-mode="pages"] [data-note-write-pane], .notes-work[data-mode="pages"] [data-note-preview-pane] { display: none; }
+            .notes-work[data-mode="pages"] .notes-pages-pane { display: flex; min-height: 0; flex-direction: column; }
+            .notes-pages-bar { display: flex; flex: none; align-items: center; gap: .5rem; border-bottom: 1px solid var(--nt-soft); padding: .4rem .75rem; }
+            .notes-pages-bar select { height: var(--dashboard-control-height-sm); border: 1px solid var(--nt-border); border-radius: var(--dashboard-control-radius); background: rgb(var(--dashboard-secondary-rgb)); padding: 0 .4rem; font-size: 12px; }
+            .notes-pages-count { font-size: 12px; color: var(--nt-muted); }
+            .notes-pages-spacer { flex: 1; }
+            .notes-pages-frame { display: block; width: 100%; min-height: 0; flex: 1; border: 0; background: #e8eaed; }
+            .notes-preview .note-image[data-wrap="wrap"] { float: left; margin: .25rem var(--note-image-margin) var(--note-image-margin) 0; }
+            .notes-preview .note-image[data-wrap="wrap"][data-align="right"] { float: right; margin: .25rem 0 var(--note-image-margin) var(--note-image-margin); }
+            .notes-preview .note-image[data-wrap="break"], .notes-preview .note-image[data-wrap="behind"], .notes-preview .note-image[data-wrap="front"] { display: block; }
+            .notes-preview .note-image[data-wrap="break"][data-align="center"] { margin-left: auto; margin-right: auto; }
+            .notes-preview .note-image[data-wrap="break"][data-align="right"] { margin-left: auto; margin-right: 0; }
+            .notes-preview .note-image[data-wrap="behind"], .notes-preview .note-image[data-wrap="front"] { outline: 1px dashed var(--nt-faint); outline-offset: 2px; }
+            .notes-work[data-mode="live"] .notes-preview img[data-note-image-line] { cursor: pointer; }
+            .notes-image-select { position: absolute; z-index: 14; border: 2px solid var(--nt-primary); pointer-events: none; }
+            .notes-image-select span { position: absolute; right: -6px; bottom: -6px; width: 10px; height: 10px; border: 2px solid #fff; background: var(--nt-primary); pointer-events: auto; cursor: nwse-resize; }
+            .notes-image-toolbar { position: absolute; z-index: 16; display: flex; align-items: center; gap: 2px; border: 1px solid var(--nt-border); border-radius: 999px; background: rgb(var(--dashboard-popover-rgb)); padding: 3px; box-shadow: 0 4px 12px rgb(1 4 9 / .3); }
+            .notes-image-toolbar button { display: inline-flex; align-items: center; gap: 4px; height: 28px; border-radius: 999px; padding: 0 8px; font-size: 12px; }
+            .notes-image-toolbar button:hover, .notes-image-toolbar button:focus-visible { background: var(--nt-hover); }
+            .notes-image-toolbar-sep { width: 1px; height: 18px; margin: 0 2px; background: var(--nt-soft); }
+            .notes-image-wrap-menu { z-index: 17; width: 13rem; }
+            .notes-image-wrap-menu [aria-checked="true"]::after { content: "✓"; margin-left: auto; color: var(--nt-accent); }
+            .notes-image-panel { position: absolute; top: 0; right: 0; bottom: 0; z-index: 18; width: 19rem; overflow-y: auto; border-left: 1px solid var(--nt-border); background: rgb(var(--dashboard-popover-rgb)); padding: .75rem .9rem 1.5rem; font-size: 12px; box-shadow: -4px 0 16px rgb(1 4 9 / .2); }
+            .notes-work[data-mode="pages"] ~ .notes-image-panel { top: calc(var(--dashboard-control-height-sm) + .8rem + 1px); }
+            .notes-image-panel header { display: flex; align-items: center; gap: .5rem; margin-bottom: .5rem; font-size: 14px; font-weight: 600; }
+            .notes-image-panel header button { margin-left: auto; }
+            .notes-image-panel details { border-top: 1px solid var(--nt-soft); padding: .55rem 0; }
+            .notes-image-panel summary { cursor: pointer; font-weight: 600; }
+            .notes-image-panel fieldset { min-width: 0; margin: 0; border: 0; padding: 0; }
+            .notes-image-panel fieldset[data-disabled="true"] { opacity: .5; }
+            .notes-image-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem .75rem; margin-top: .55rem; }
+            .notes-image-panel label { display: grid; gap: .2rem; color: var(--nt-muted); }
+            .notes-image-panel .notes-image-check { display: flex; align-items: center; gap: .4rem; color: inherit; }
+            .notes-image-unit-field { display: flex; align-items: center; gap: .3rem; }
+            .notes-image-panel input[type="number"], .notes-image-panel input[type="text"], .notes-image-panel textarea, .notes-image-panel select { width: 100%; min-width: 0; height: var(--dashboard-control-height-sm); border: 1px solid var(--nt-border); border-radius: var(--dashboard-control-radius); background: rgb(var(--dashboard-background-rgb)); padding: 0 .4rem; color: inherit; font-size: 12px; }
+            .notes-image-panel textarea { height: 4rem; padding: .3rem .4rem; resize: vertical; }
+            .notes-image-panel input[type="range"] { width: 100%; accent-color: var(--nt-primary); }
+            .notes-image-choices { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .55rem; }
+            .notes-image-choices button { display: inline-flex; align-items: center; gap: .3rem; height: var(--dashboard-control-height-sm); border: 1px solid var(--nt-border); border-radius: var(--dashboard-control-radius); padding: 0 .5rem; font-size: 12px; }
+            .notes-image-choices button[aria-pressed="true"] { border-color: var(--nt-primary); background: rgb(var(--dashboard-primary-rgb) / .12); color: var(--nt-accent); }
+            .notes-image-choices button:disabled { opacity: .45; }
+            .notes-image-hint { margin-top: .4rem; color: var(--nt-faint); }
+            .notes-work[data-mode="write"] [data-note-preview-pane], .notes-work[data-mode="preview"] [data-note-write-pane], .notes-work[data-mode="live"] [data-note-write-pane] { display: none; }
+            .notes-work[data-mode="live"] .notes-preview { flex: 1; cursor: text; }
+            .notes-work[data-mode="live"] [data-note-preview-title][contenteditable] { outline: none; cursor: text; }
+            .notes-work[data-mode="live"] [data-note-preview-title]:empty::before { content: "Untitled note"; color: var(--nt-faint); }
+            .notes-live-block { position: relative; margin: 0 -.5rem; border-radius: .375rem; padding: 0 .5rem; }
+            .notes-live-block > :first-child { margin-top: 0; }
+            .notes-live-block > :last-child { margin-bottom: 0; }
+            .notes-live-block + .notes-live-block { margin-top: .85rem; }
+            .notes-live-block:hover { background: var(--nt-hover); }
+            .notes-live-block[data-editing="true"] { background: transparent; box-shadow: inset 0 0 0 1px var(--nt-primary); }
+            .notes-live-input { display: block; width: 100%; overflow: hidden; resize: none; border: 0; background: transparent; padding: .25rem 0; font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; font-size: .84rem; line-height: 1.75; color: rgb(var(--dashboard-foreground-rgb)); outline: none; }
+            .notes-live-empty { color: var(--nt-faint); font-style: italic; }
+            [data-follow-name] { box-shadow: inset 3px 0 0 var(--follow-color, var(--nt-primary)); }
+            [data-peer-editing] { position: relative; box-shadow: inset 3px 0 0 var(--peer-color, var(--nt-primary)); }
+            [data-peer-editing]::after { content: attr(data-peer-editing); position: absolute; top: -.6rem; right: .25rem; z-index: 2; max-width: 12rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: .25rem; background: var(--peer-color, var(--nt-primary)); padding: 0 .35rem; font-size: .66rem; font-weight: 600; line-height: 1.15rem; color: #fff; pointer-events: none; }
+            .notes-reactions { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem; margin: .35rem 0 .15rem; }
+            .notes-reactions-note { margin: -.35rem 0 .9rem; }
+            .notes-reaction-quote { max-width: 14rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: .15rem; font-size: .7rem; color: var(--nt-faint); }
+            .notes-reaction { display: inline-flex; align-items: center; gap: .25rem; height: 1.5rem; border: 1px solid var(--nt-soft); border-radius: 999px; background: var(--nt-hover); padding: 0 .45rem; font-size: .75rem; line-height: 1; color: rgb(var(--dashboard-foreground-rgb) / .85); }
+            .notes-reaction:hover { border-color: var(--nt-faint); }
+            .notes-reaction[aria-pressed="true"] { border-color: rgb(var(--dashboard-accent-rgb) / .6); background: rgb(var(--dashboard-accent-rgb) / .14); color: var(--nt-accent); }
+            .notes-reaction-count { font-weight: 600; font-variant-numeric: tabular-nums; }
+            .notes-reaction-add { padding: 0 .35rem; color: var(--nt-muted); }
+            .notes-reaction-add svg.lucide { width: .85rem; height: .85rem; }
+            .notes-reaction-picker { display: flex; gap: .15rem; padding: .25rem; }
+            .notes-reaction-picker button { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: .375rem; font-size: 1.1rem; }
+            .notes-reaction-picker button:hover, .notes-reaction-picker button:focus-visible { background: var(--nt-hover); }
+            .notes-follow-tag { position: absolute; z-index: 14; border-radius: .25rem; padding: 0 .35rem; font-size: .66rem; font-weight: 600; line-height: 1.2rem; color: #fff; pointer-events: none; }
+            .notes-follow { display: inline-flex; align-items: center; gap: .4rem; color: var(--nt-accent); }
+            .notes-follow button { border-radius: .25rem; padding: 0 .3rem; color: var(--nt-muted); }
+            .notes-follow button:hover { color: rgb(var(--dashboard-foreground-rgb)); }
+            .notes-panel-tabs { display: flex; flex: 1; min-width: 0; gap: 1px; }
+            .notes-panel-tabs button { display: inline-flex; align-items: center; gap: .3rem; height: var(--dashboard-control-height-sm); border-radius: var(--dashboard-control-radius); padding: 0 .4rem; white-space: nowrap; font-size: 13px; font-weight: 600; color: var(--nt-muted); }
+            .notes-panel-tabs button:hover { color: rgb(var(--dashboard-foreground-rgb)); }
+            .notes-panel-tabs button[aria-selected="true"] { background: var(--nt-selected); color: rgb(var(--dashboard-foreground-rgb)); box-shadow: inset 0 -2px 0 var(--nt-primary); }
+            .notes-panel-body { display: flex; flex: 1; min-height: 0; flex-direction: column; }
+            .notes-panel-body[hidden] { display: none; }
+            .notes-unread { display: inline-grid; min-width: 1rem; height: 1rem; place-items: center; border-radius: 999px; background: var(--nt-primary); padding: 0 .25rem; font-size: .62rem; font-weight: 600; line-height: 1; color: #fff; font-variant-numeric: tabular-nums; }
+            .notes-unread[hidden] { display: none; }
+            .notes-chat-list { display: flex; flex: 1; min-height: 0; flex-direction: column; gap: .55rem; margin: 0; overflow-y: auto; padding: .4rem .75rem .75rem; list-style: none; }
+            .notes-chat-msg { display: grid; grid-template-columns: 1.25rem minmax(0, 1fr); gap: .1rem .45rem; font-size: .78rem; }
+            .notes-chat-msg .notes-avatar { width: 1.25rem; height: 1.25rem; font-size: .5rem; }
+            .notes-chat-head { display: flex; align-items: center; gap: .4rem; min-width: 0; }
+            .notes-chat-msg[data-follow-up="true"] .notes-avatar, .notes-chat-msg[data-follow-up="true"] .notes-chat-head { visibility: hidden; height: 0; }
+            .notes-chat-msg[data-follow-up="true"] { margin-top: -.4rem; }
+            .notes-chat-body { grid-column: 2; overflow-wrap: anywhere; white-space: pre-wrap; line-height: 1.45; }
+            .notes-chat-msg .notes-comment-tools .notes-icon-btn { width: 1.3rem; height: 1.3rem; }
+            .notes-chat-msg:hover .notes-comment-tools, .notes-chat-msg .notes-comment-tools:focus-within { opacity: 1; }
+            .notes-chat-form { display: flex; align-items: flex-end; gap: .35rem; border-top: 1px solid var(--nt-soft); padding: .5rem .6rem; }
+            .notes-chat-form textarea { width: 100%; min-height: 2.1rem; max-height: 8rem; resize: none; border: 1px solid var(--nt-border); border-radius: .375rem; background: rgb(var(--dashboard-background-rgb)); padding: .35rem .5rem; font-size: .78rem; line-height: 1.4; outline: none; }
+            .notes-chat-form textarea:focus { border-color: var(--nt-primary); box-shadow: inset 0 0 0 1px var(--nt-primary); }
             .notes-pane { min-height: 0; overflow-y: auto; }
             .notes-work[data-mode="split"] [data-note-write-pane] { border-right: 1px solid var(--nt-soft); }
             .notes-doc { display: flex; min-height: 100%; width: 100%; max-width: 48rem; flex-direction: column; margin: 0 auto; padding: 1.75rem 2rem 3rem; }
@@ -4399,12 +4509,28 @@
             .notes-menu { top: 2.9rem; right: .75rem; width: 14rem; padding: 4px; }
             .notes-people-pop { top: 2.9rem; right: .75rem; width: 16rem; padding: .4rem; }
             .notes-people-pop h2 { margin: .2rem .4rem .4rem; font-size: 13px; }
-            .notes-here { display: grid; grid-template-columns: 1.5rem minmax(0, 1fr) auto; align-items: center; gap: .5rem; border-radius: .375rem; padding: .3rem .4rem; font-size: .78rem; }
+            .notes-here { display: grid; grid-template-columns: 1.5rem minmax(0, 1fr) auto auto; align-items: center; gap: .5rem; border-radius: .375rem; padding: .3rem .4rem; font-size: .78rem; }
             .notes-here .notes-avatar { width: 1.5rem; height: 1.5rem; font-size: .55rem; }
             .notes-here-state { display: inline-flex; align-items: center; gap: .25rem; font-size: .7rem; color: var(--nt-muted); }
             .notes-here-state[data-state="editing"] { color: var(--nt-accent); }
             [data-view="notes"] .notes-here-state svg.lucide { width: .75rem; height: .75rem; }
+            .notes-here-follow { border-radius: .25rem; padding: 0 .35rem; font-size: .7rem; font-weight: 500; color: var(--nt-accent); }
+            .notes-here-follow:hover { background: var(--nt-hover); }
+            .notes-here-follow[aria-pressed="true"] { background: var(--nt-selected); }
             .notes-comment-float { position: absolute; z-index: 15; box-shadow: 0 4px 12px rgb(1 4 9 / .3); }
+            .notes-assist-float { position: absolute; z-index: 15; box-shadow: 0 4px 12px rgb(1 4 9 / .3); }
+            .notes-assist { width: min(26rem, calc(100% - 1rem)); }
+            .notes-assist h2 { display: flex; align-items: center; gap: .4rem; }
+            [data-view="notes"] .notes-assist h2 svg.lucide { width: 15px; height: 15px; color: var(--nt-accent); }
+            .notes-assist-source { display: -webkit-box; overflow: hidden; margin: 0 0 .6rem; border-left: 3px solid rgb(var(--dashboard-accent-rgb) / .55); padding: 0 .45rem; font-size: .72rem; line-height: 1.4; color: var(--nt-muted); overflow-wrap: anywhere; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+            .notes-assist-form { display: flex; gap: .4rem; }
+            .notes-assist-actions { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .6rem; }
+            .notes-assist-actions .notes-btn[aria-pressed="true"] { border-color: var(--nt-primary); background: var(--nt-selected); }
+            .notes-assist-result { display: block; width: 100%; min-height: 6rem; max-height: 18rem; resize: vertical; border: 1px solid var(--nt-border); border-radius: .375rem; background: rgb(var(--dashboard-background-rgb)); padding: .45rem .55rem; font-size: .8rem; line-height: 1.5; color: rgb(var(--dashboard-foreground-rgb)); }
+            .notes-assist-result:focus { outline: none; border-color: var(--nt-primary); box-shadow: inset 0 0 0 1px var(--nt-primary); }
+            .notes-assist-buttons { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .55rem; }
+            .notes-assist-apply { border-color: var(--nt-primary); color: var(--nt-primary); }
+            .notes-assist-hint { margin: 0; padding: 0 1rem .75rem; font-size: .68rem; color: var(--nt-faint); }
             .notes-thread-list { display: grid; flex: 1; min-height: 0; align-content: start; gap: .5rem; margin: 0; overflow-y: auto; padding: .15rem .6rem 1rem; list-style: none; }
             .notes-thread { border: 1px solid var(--nt-soft); border-radius: .5rem; padding: .55rem .6rem; background: rgb(var(--dashboard-card-rgb)); }
             .notes-thread[data-focus="true"] { border-color: var(--nt-primary); box-shadow: inset 0 0 0 1px var(--nt-primary); }
@@ -4459,7 +4585,7 @@
             .notes-version button { align-self: center; font-size: .75rem; font-weight: 500; color: var(--nt-accent); opacity: 0; }
             .notes-version:hover button, .notes-version button:focus-visible { opacity: 1; }
             .notes-version-tag { align-self: center; font-size: .7rem; color: var(--nt-primary); }
-            .notes-activity { display: flex; width: 18rem; flex: none; min-height: 0; flex-direction: column; border-left: 1px solid var(--nt-soft); background: rgb(var(--dashboard-card-rgb)); }
+            .notes-activity { display: flex; width: 22rem; flex: none; min-height: 0; flex-direction: column; border-left: 1px solid var(--nt-soft); background: rgb(var(--dashboard-card-rgb)); }
             .notes-activity-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding: .6rem .6rem .35rem 1rem; }
             .notes-activity-head h2 { margin: 0; flex: 1; font-size: 13px; font-weight: 600; }
             .notes-activity-head button[data-note-activity-all] { font-size: .72rem; color: var(--nt-accent); }
@@ -4468,7 +4594,19 @@
             .notes-activity-stat:hover { color: rgb(var(--dashboard-foreground-rgb)); }
             .notes-activity-stat[aria-pressed="true"] { background: rgb(var(--dashboard-card-rgb)); color: rgb(var(--dashboard-foreground-rgb)); box-shadow: 0 0 0 1px var(--nt-primary); }
             .notes-activity-num { font-size: 1rem; font-weight: 600; line-height: 1.3; color: rgb(var(--dashboard-foreground-rgb)); font-variant-numeric: tabular-nums; }
-            .notes-activity-link { margin: 0 1rem .35rem; align-self: flex-start; font-size: .72rem; font-weight: 500; color: var(--nt-accent); }
+            .notes-activity-links { display: flex; justify-content: space-between; gap: .5rem; margin: 0 1rem; }
+            .notes-activity-link { margin-bottom: .35rem; font-size: .72rem; font-weight: 500; color: var(--nt-accent); }
+            .notes-activity-link[hidden] { display: none; }
+            .notes-side-column .notes-versions { flex: 1; min-height: 0; }
+            .notes-side-column .notes-versions[hidden] { display: none; }
+            .notes-version-actions { display: flex; align-self: center; gap: .6rem; }
+            .notes-version-view { display: flex; flex: 1; min-height: 0; flex-direction: column; }
+            .notes-version-view[hidden] { display: none; }
+            .notes-version-view-head { display: flex; align-items: center; gap: .5rem; border-bottom: 1px solid var(--nt-soft); padding: .35rem .75rem .5rem; }
+            .notes-version-view-head > div { flex: 1; min-width: 0; }
+            .notes-version-view-head button[data-note-restore] { font-size: .75rem; font-weight: 500; color: var(--nt-accent); }
+            .notes-version-view-body { flex: 1; min-height: 0; overflow-y: auto; padding: .75rem 1rem 1rem; font-size: .85rem; }
+            .notes-version-view-body h1 { margin: 0 0 .5rem; font-size: 1.05rem; font-weight: 600; }
             .notes-act-list { flex: 1; min-height: 0; margin: 0; overflow-y: auto; padding: .15rem .5rem 1rem; list-style: none; }
             .notes-act { display: grid; grid-template-columns: 1.5rem minmax(0, 1fr); gap: .5rem; border-radius: .375rem; padding: .4rem .5rem; }
             .notes-act:hover { background: var(--nt-hover); }
@@ -4565,13 +4703,14 @@
             .notes-page-drawer .notes-banner { margin: .75rem 1.1rem 0; }
             .notes-page-include { margin-top: .7rem; }
             @media (max-width: 1100px) { .notes-bar [data-note-mode-group] { display: none; } }
-            @media (max-width: 1279px) { .notes-activity { position: absolute; z-index: 20; top: 0; right: 0; bottom: 0; width: min(20rem, 100%); border-left-color: var(--nt-border); box-shadow: -8px 0 24px rgb(1 4 9 / .3); } }
+            @media (max-width: 1279px) { .notes-activity { position: absolute; z-index: 20; top: 0; right: 0; bottom: 0; width: min(22rem, 100%); border-left-color: var(--nt-border); box-shadow: -8px 0 24px rgb(1 4 9 / .3); } }
             @media (max-width: 767px) {
               .notes-app { grid-template-columns: minmax(0, 1fr); }
               .notes-filters button { padding-inline: .25rem; }
               .notes-app[data-mobile="editor"] .notes-side, .notes-app[data-mobile="list"] .notes-main { display: none; }
               .notes-side { border-right: 0; }
               .notes-crumb [data-note-back] { display: inline-grid; }
+              .notes-bar .notes-outline-toggle, .notes-body[data-outline="open"] .notes-outline { display: none; }
               .notes-work[data-mode="split"] { grid-template-columns: 1fr; }
               .notes-work[data-mode="split"] [data-note-preview-pane] { display: none; }
               .notes-work[data-mode="split"] [data-note-write-pane] { border-right: 0; }
@@ -4638,10 +4777,14 @@
                     <button type="button" data-note-mode="write" aria-pressed="false">Write</button>
                     <button type="button" data-note-mode="split" aria-pressed="true">Split</button>
                     <button type="button" data-note-mode="preview" aria-pressed="false">Preview</button>
+                    <button type="button" data-note-mode="live" aria-pressed="false" title="Edit the formatted note">Live</button>
+                    <button type="button" data-note-mode="pages" aria-pressed="false" title="See the note on pages, as it prints">Pages</button>
                   </div>
+                  <button data-note-outline-toggle type="button" class="notes-icon-btn notes-outline-toggle" title="Outline" aria-label="Show outline" aria-pressed="false" aria-controls="note-outline"><i data-lucide="list-tree"></i></button>
                   <button data-note-comments-toggle type="button" class="notes-btn" title="Comments" aria-label="Show comments" aria-pressed="false" aria-controls="note-comments"><i data-lucide="message-square"></i><span data-note-comments-count class="notes-count">Comments</span></button>
+                  <button data-note-chat-toggle type="button" class="notes-btn" title="Chat" aria-label="Show chat" aria-pressed="false" aria-controls="note-comments"><i data-lucide="messages-square"></i>Chat<span data-note-chat-badge class="notes-unread" hidden></span></button>
                   <button data-note-share-open type="button" class="notes-btn" aria-haspopup="dialog" aria-expanded="false"><i data-lucide="user-plus"></i>Share</button>
-                  <button data-note-activity-toggle type="button" class="notes-icon-btn" title="Activity" aria-label="Show activity" aria-pressed="false" aria-controls="note-activity"><i data-lucide="activity"></i></button>
+                  <button data-note-activity-toggle type="button" class="notes-icon-btn" title="Activity and history" aria-label="Show activity" aria-pressed="false" aria-controls="note-comments"><i data-lucide="activity"></i></button>
                   <button data-note-menu-open type="button" class="notes-icon-btn" aria-label="More actions" aria-haspopup="menu" aria-expanded="false"><i data-lucide="ellipsis"></i></button>
                 </header>
 
@@ -4658,6 +4801,7 @@
                 </div>
 
                 <div class="notes-body">
+                <nav data-note-outline id="note-outline" class="notes-outline" aria-label="Outline"></nav>
                 <div data-note-work class="notes-work" data-mode="split">
                   <div data-note-write-pane class="notes-pane">
                     <div class="notes-doc">
@@ -4678,47 +4822,202 @@
                         <button type="button" class="notes-icon-btn" data-note-format="link" title="Link" aria-label="Link"><i data-lucide="link"></i></button>
                         <span class="notes-toolbar-sep"></span>
                         <button type="button" class="notes-icon-btn" data-note-comment-selection title="Comment on selection (⌘⌥M)" aria-label="Comment on selection"><i data-lucide="message-square-plus"></i></button>
+                        <button type="button" class="notes-icon-btn" data-note-assist-open title="Write with AI (⌘J)" aria-label="Write with AI" aria-haspopup="dialog" aria-expanded="false"><i data-lucide="sparkles"></i></button>
                       </div>
                       <textarea data-note-markdown class="notes-markdown" spellcheck="true" placeholder="Start writing in Markdown…" aria-label="Note body"></textarea>
                     </div>
                   </div>
+                  <div data-note-pages-pane class="notes-pages-pane">
+                    <div class="notes-pages-bar">
+                      <select data-note-pages-zoom aria-label="Zoom">
+                        <option value="fit">Fit width</option><option value="50">50%</option><option value="75">75%</option><option value="100">100%</option><option value="125">125%</option><option value="150">150%</option>
+                      </select>
+                      <span data-note-pages-count class="notes-pages-count"></span>
+                      <span class="notes-pages-spacer"></span>
+                      <button data-note-insert-image="image" type="button" class="notes-btn"><i data-lucide="image-plus"></i>Image</button>
+                      <button data-note-insert-image="background" type="button" class="notes-btn" title="Add an image behind every page"><i data-lucide="wallpaper"></i>Background</button>
+                      <button data-note-pages-export type="button" class="notes-btn"><i data-lucide="file-down"></i>Export PDF</button>
+                    </div>
+                    <iframe data-note-pages-frame class="notes-pages-frame" sandbox="allow-same-origin" title="The note on pages"></iframe>
+                  </div>
                   <div data-note-preview-pane class="notes-pane">
                     <div class="notes-doc">
                       <h1 class="notes-preview-title"><span data-note-preview-emoji class="notes-emoji" hidden></span><span data-note-preview-title></span></h1>
+                      <div data-note-reactions-note class="notes-reactions notes-reactions-note" hidden></div>
                       <article data-note-preview class="notes-preview"></article>
                     </div>
                   </div>
                 </div>
-                <aside data-note-activity id="note-activity" class="notes-activity" aria-label="Activity" hidden>
+                <aside data-note-comments id="note-comments" class="notes-activity notes-side-column" aria-label="Comments, chat, activity and history" hidden>
                   <div class="notes-activity-head">
-                    <h2>Activity</h2>
-                    <button data-note-activity-all data-note-activity-tab="all" type="button" hidden>Show all</button>
-                    <button data-note-activity-close type="button" class="notes-icon-btn" aria-label="Close activity"><i data-lucide="x"></i></button>
-                  </div>
-                  <div data-note-activity-summary class="notes-activity-sum" role="group" aria-label="Filter activity"></div>
-                  <button data-note-activity-history type="button" class="notes-activity-link" hidden>Open version history</button>
-                  <ol data-note-activity-list class="notes-act-list" aria-live="polite"></ol>
-                </aside>
-                <aside data-note-comments id="note-comments" class="notes-activity" aria-label="Comments" hidden>
-                  <div class="notes-activity-head">
-                    <h2>Comments</h2>
+                    <div class="notes-panel-tabs" role="tablist" aria-label="Comments, chat, activity and history">
+                      <button type="button" role="tab" data-note-panel-tab="comments" aria-selected="true" aria-controls="note-panel-comments">Comments</button>
+                      <button type="button" role="tab" data-note-panel-tab="chat" aria-selected="false" aria-controls="note-panel-chat">Chat<span data-note-chat-unread class="notes-unread" hidden></span></button>
+                      <button type="button" role="tab" data-note-panel-tab="activity" aria-selected="false" aria-controls="note-panel-activity">Activity</button>
+                      <button type="button" role="tab" data-note-panel-tab="history" aria-selected="false" aria-controls="note-panel-history">History</button>
+                    </div>
                     <button data-note-comment-general type="button" class="notes-icon-btn" title="Comment on the whole note" aria-label="Comment on the whole note"><i data-lucide="message-square-plus"></i></button>
-                    <button data-note-comments-close type="button" class="notes-icon-btn" aria-label="Close comments"><i data-lucide="x"></i></button>
+                    <button data-note-comments-close type="button" class="notes-icon-btn" aria-label="Close panel"><i data-lucide="x"></i></button>
                   </div>
-                  <p data-note-notice="comments" class="notes-notice" role="status" hidden></p>
-                  <div data-note-comment-composer></div>
-                  <ol data-note-comment-list class="notes-thread-list" aria-live="polite"></ol>
-                  <details data-note-comment-resolved class="notes-resolved" hidden>
-                    <summary data-note-comment-resolved-label></summary>
-                    <ol data-note-comment-resolved-list class="notes-thread-list"></ol>
-                  </details>
+                  <div data-note-panel="comments" id="note-panel-comments" class="notes-panel-body" role="tabpanel">
+                    <p data-note-notice="comments" class="notes-notice" role="status" hidden></p>
+                    <div data-note-comment-composer></div>
+                    <ol data-note-comment-list class="notes-thread-list" aria-live="polite"></ol>
+                    <details data-note-comment-resolved class="notes-resolved" hidden>
+                      <summary data-note-comment-resolved-label></summary>
+                      <ol data-note-comment-resolved-list class="notes-thread-list"></ol>
+                    </details>
+                  </div>
+                  <div data-note-panel="chat" id="note-panel-chat" class="notes-panel-body" role="tabpanel" hidden>
+                    <p data-note-notice="chat" class="notes-notice" role="status" hidden></p>
+                    <ol data-note-chat-list class="notes-chat-list" aria-live="polite"></ol>
+                    <form data-note-chat-form class="notes-chat-form">
+                      <textarea data-note-chat-input rows="2" maxlength="2000" placeholder="Message everyone in this note" aria-label="Chat message"></textarea>
+                      <button type="submit" class="notes-btn" aria-label="Send message"><i data-lucide="send"></i></button>
+                    </form>
+                  </div>
+                  <div data-note-panel="activity" id="note-panel-activity" class="notes-panel-body" role="tabpanel" hidden>
+                    <div data-note-activity-summary class="notes-activity-sum" role="group" aria-label="Filter activity"></div>
+                    <div class="notes-activity-links">
+                      <button data-note-activity-history type="button" class="notes-activity-link" hidden>Open version history</button>
+                      <button data-note-activity-all data-note-activity-tab="all" type="button" class="notes-activity-link" hidden>Show all</button>
+                    </div>
+                    <ol data-note-activity-list class="notes-act-list" aria-live="polite"></ol>
+                  </div>
+                  <div data-note-panel="history" id="note-panel-history" class="notes-panel-body" role="tabpanel" hidden>
+                    <p data-note-notice="versions" class="notes-notice" role="status" hidden></p>
+                    <div data-note-versions class="notes-versions" aria-live="polite"></div>
+                    <div data-note-version-view class="notes-version-view" hidden></div>
+                  </div>
                   <div data-note-mention-list class="notes-suggest notes-mention-list" role="listbox" aria-label="People to mention" hidden></div>
                 </aside>
                 <button data-note-comment-float type="button" class="notes-btn notes-comment-float" hidden><i data-lucide="message-square-plus"></i>Comment</button>
+                <button data-note-react-float type="button" class="notes-btn notes-comment-float" hidden><i data-lucide="smile-plus"></i>React</button>
+                <button data-note-assist-float type="button" class="notes-btn notes-assist-float" hidden><i data-lucide="sparkles"></i>Ask AI</button>
+                <div data-note-reaction-picker class="notes-pop notes-reaction-picker" role="menu" aria-label="React" hidden></div>
+                <div data-note-assist-panel class="notes-pop notes-assist" role="dialog" aria-label="Write with AI" hidden>
+                  <div class="notes-pop-sec">
+                    <h2><i data-lucide="sparkles"></i><span data-note-assist-heading>Write with AI</span></h2>
+                    <p data-note-assist-source class="notes-assist-source" hidden></p>
+                    <form data-note-assist-form class="notes-assist-form">
+                      <div class="notes-field"><input data-note-assist-prompt maxlength="500" autocomplete="off" placeholder="Tell AI what to write or change…" aria-label="Instruction for AI" /></div>
+                      <button data-note-assist-ask type="submit" class="notes-btn">Ask</button>
+                    </form>
+                    <div data-note-assist-actions class="notes-assist-actions" role="group" aria-label="Quick actions"></div>
+                  </div>
+                  <div data-note-assist-result-sec class="notes-pop-sec" hidden>
+                    <textarea data-note-assist-result class="notes-assist-result" rows="6" spellcheck="true" aria-label="AI suggestion"></textarea>
+                    <div class="notes-assist-buttons">
+                      <button data-note-assist-apply="replace" type="button" class="notes-btn notes-assist-apply"><i data-lucide="replace"></i>Replace selection</button>
+                      <button data-note-assist-apply="below" type="button" class="notes-btn"><i data-lucide="text-cursor-input"></i>Insert below</button>
+                      <button data-note-assist-retry type="button" class="notes-btn"><i data-lucide="refresh-cw"></i>Try again</button>
+                      <button data-note-assist-discard type="button" class="notes-btn">Discard</button>
+                    </div>
+                  </div>
+                  <p data-note-notice="assist" class="notes-notice" role="status" hidden></p>
+                  <p class="notes-assist-hint">The selected text and your instruction go to this site's AI provider to write the suggestion; nothing is stored.</p>
+                </div>
+                <span data-note-follow-tag class="notes-follow-tag" hidden></span>
+                <input data-note-image-file type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden />
+                <div data-note-image-select class="notes-image-select" hidden><span title="Drag to resize"></span></div>
+                <div data-note-image-toolbar class="notes-image-toolbar" role="toolbar" aria-label="Image" hidden>
+                  <button data-note-image-options-open type="button" title="Image options"><i data-lucide="pencil"></i>Edit</button>
+                  <button data-note-image-wrap-open type="button" title="Text wrapping" aria-label="Text wrapping" aria-haspopup="menu"><i data-lucide="wrap-text"></i><i data-lucide="chevron-down"></i></button>
+                  <span class="notes-image-toolbar-sep"></span>
+                  <button data-note-image-comment type="button" title="Comment" aria-label="Comment"><i data-lucide="message-square-plus"></i></button>
+                  <button data-note-image-react type="button" title="React" aria-label="React"><i data-lucide="smile-plus"></i></button>
+                  <span class="notes-image-toolbar-sep"></span>
+                  <button data-note-image-delete type="button" title="Delete image (Delete)" aria-label="Delete image"><i data-lucide="trash-2"></i></button>
+                </div>
+                <div data-note-image-wrap-menu class="notes-pop notes-menu notes-image-wrap-menu" role="menu" aria-label="Text wrapping" hidden>
+                  <button type="button" role="menuitemradio" data-note-image-wrap="inline" aria-checked="false"><i data-lucide="image"></i>In line</button>
+                  <button type="button" role="menuitemradio" data-note-image-wrap="wrap" aria-checked="false"><i data-lucide="wrap-text"></i>Wrap text</button>
+                  <button type="button" role="menuitemradio" data-note-image-wrap="break" aria-checked="false"><i data-lucide="separator-horizontal"></i>Break text</button>
+                  <button type="button" role="menuitemradio" data-note-image-wrap="behind" aria-checked="false"><i data-lucide="layers-2"></i>Behind text</button>
+                  <button type="button" role="menuitemradio" data-note-image-wrap="front" aria-checked="false"><i data-lucide="layers"></i>In front of text</button>
+                </div>
+                <aside data-note-image-panel class="notes-image-panel" aria-label="Image options" hidden>
+                  <header><i data-lucide="image"></i>Image options<button data-note-image-panel-close type="button" class="notes-icon-btn" aria-label="Close image options"><i data-lucide="x"></i></button></header>
+                  <details open>
+                    <summary>Size &amp; rotation</summary>
+                    <div class="notes-image-grid">
+                      <label>Width<span class="notes-image-unit-field"><input data-note-image-field="width" type="number" min="0.1" step="0.01" /><span data-note-image-unit></span></span></label>
+                      <label>Height<span class="notes-image-unit-field"><input data-note-image-field="height" type="number" min="0.1" step="0.01" /><span data-note-image-unit></span></span></label>
+                      <label>Width scale<span class="notes-image-unit-field"><input data-note-image-field="widthScale" type="number" min="1" step="1" />%</span></label>
+                      <label>Height scale<span class="notes-image-unit-field"><input data-note-image-field="heightScale" type="number" min="1" step="1" />%</span></label>
+                    </div>
+                    <label class="notes-image-check" style="margin-top:.5rem"><input data-note-image-field="lock" type="checkbox" checked />Lock aspect ratio</label>
+                    <div class="notes-image-grid">
+                      <label>Angle<span class="notes-image-unit-field"><input data-note-image-field="rotate" type="number" min="-360" max="360" step="1" />°</span></label>
+                      <div class="notes-image-choices"><button type="button" data-note-image-action="rotate90" title="Rotate 90°"><i data-lucide="rotate-cw"></i>90°</button><button type="button" data-note-image-action="reset-size">Reset</button></div>
+                    </div>
+                  </details>
+                  <details open>
+                    <summary>Text wrapping</summary>
+                    <div class="notes-image-choices">
+                      <button type="button" data-note-image-wrap="inline" aria-pressed="false">In line</button>
+                      <button type="button" data-note-image-wrap="wrap" aria-pressed="false">Wrap text</button>
+                      <button type="button" data-note-image-wrap="break" aria-pressed="false">Break text</button>
+                      <button type="button" data-note-image-wrap="behind" aria-pressed="false">Behind text</button>
+                      <button type="button" data-note-image-wrap="front" aria-pressed="false">In front of text</button>
+                    </div>
+                    <div data-note-image-align-row class="notes-image-choices">
+                      <button type="button" data-note-image-align="left" aria-pressed="false"><i data-lucide="align-left"></i>Left</button>
+                      <button type="button" data-note-image-align="center" aria-pressed="false"><i data-lucide="align-center"></i>Center</button>
+                      <button type="button" data-note-image-align="right" aria-pressed="false"><i data-lucide="align-right"></i>Right</button>
+                    </div>
+                    <div data-note-image-margin-row class="notes-image-grid">
+                      <label>Margin from text<span class="notes-image-unit-field"><input data-note-image-field="margin" type="number" min="0" step="0.01" /><span data-note-image-unit></span></span></label>
+                    </div>
+                  </details>
+                  <details open>
+                    <summary>Position</summary>
+                    <fieldset data-note-image-position>
+                      <div class="notes-image-grid">
+                        <label>X from page left<span class="notes-image-unit-field"><input data-note-image-field="x" type="number" step="0.01" /><span data-note-image-unit></span></span></label>
+                        <label>Y from page top<span class="notes-image-unit-field"><input data-note-image-field="y" type="number" step="0.01" /><span data-note-image-unit></span></span></label>
+                      </div>
+                      <div class="notes-image-grid">
+                        <label>Show on<select data-note-image-field="pages"><option value="anchor">This page</option><option value="all">Every page</option><option value="first">First page</option><option value="rest">All but the first</option></select></label>
+                      </div>
+                      <div class="notes-image-choices">
+                        <button type="button" data-note-image-action="fill"><i data-lucide="maximize"></i>Fill the page</button>
+                        <button type="button" data-note-image-action="center"><i data-lucide="align-center-vertical"></i>Center on page</button>
+                      </div>
+                    </fieldset>
+                    <p class="notes-image-hint">Behind text and In front of text place the image anywhere on the page. Drag it in Pages to move it.</p>
+                  </details>
+                  <details>
+                    <summary>Recolor</summary>
+                    <div class="notes-image-choices">
+                      <button type="button" data-note-image-recolor="none" aria-pressed="false">No recolor</button>
+                      <button type="button" data-note-image-recolor="grayscale" aria-pressed="false">Grayscale</button>
+                      <button type="button" data-note-image-recolor="sepia" aria-pressed="false">Sepia</button>
+                      <button type="button" data-note-image-recolor="negative" aria-pressed="false">Negative</button>
+                    </div>
+                  </details>
+                  <details>
+                    <summary>Adjustments</summary>
+                    <div class="notes-image-grid" style="grid-template-columns:1fr">
+                      <label>Transparency<input data-note-image-field="transparency" type="range" min="0" max="100" step="1" /></label>
+                      <label>Brightness<input data-note-image-field="brightness" type="range" min="-100" max="100" step="1" /></label>
+                      <label>Contrast<input data-note-image-field="contrast" type="range" min="-100" max="100" step="1" /></label>
+                    </div>
+                    <div class="notes-image-choices"><button type="button" data-note-image-action="reset-adjust">Reset adjustments</button></div>
+                  </details>
+                  <details>
+                    <summary>Alt text</summary>
+                    <div class="notes-image-grid" style="grid-template-columns:1fr">
+                      <label>Title<input data-note-image-field="title" type="text" maxlength="200" /></label>
+                      <label>Description<textarea data-note-image-field="alt" maxlength="1000"></textarea></label>
+                    </div>
+                  </details>
+                </aside>
                 </div>
 
                 <footer class="notes-status">
                   <button data-note-live type="button" aria-haspopup="dialog">Offline</button>
+                  <span data-note-follow class="notes-follow" hidden><span data-note-follow-label></span><button data-note-follow-stop type="button">Stop following</button></span>
                   <span data-note-counts></span>
                 </footer>
 
@@ -4777,15 +5076,6 @@
                   <hr data-note-delete-sep />
                   <button data-note-delete type="button" role="menuitem"><i data-lucide="trash-2"></i>Delete note</button>
                 </div>
-
-                <aside data-note-versions-panel class="notes-drawer" aria-label="Version history" hidden>
-                  <div class="notes-drawer-head">
-                    <h2>Version history</h2>
-                    <button data-note-versions-close type="button" class="notes-icon-btn" aria-label="Close version history"><i data-lucide="x"></i></button>
-                  </div>
-                  <p data-note-notice="versions" class="notes-notice" role="status" hidden></p>
-                  <div data-note-versions class="notes-versions"></div>
-                </aside>
               </div>
 
               <div data-note-page-view class="notes-main" style="flex:1" hidden>

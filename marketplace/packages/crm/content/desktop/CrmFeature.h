@@ -7,6 +7,7 @@
 #include <QIcon>
 #include <QImage>
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QJsonObject>
 #include <QList>
 #include <QPair>
@@ -199,8 +200,30 @@ struct NextContact
     QString reason;
     int row = -1;
     int due = 0;
-    QStringList upcoming;
     QStringList ranked;
+};
+
+struct CleanupPerson
+{
+    QString id;
+    QString name;
+    QString email;
+    QString leadId;
+    QList<QJsonObject> records;
+    QList<QStringList> recordLists;
+    QStringList lists;
+    qint64 contacted = 0;
+    qint64 updated = 0;
+};
+
+struct CleanupPlan
+{
+    QString keepId;
+    QString keepLabel;
+    QString listName;
+    bool pipeline = false;
+    QStringList merge;
+    QJsonObject edit;
 };
 
 struct NoteDraft
@@ -262,6 +285,9 @@ public:
     static QStringList pictureSources(const QJsonObject &contact);
     static bool parseEmailDraft(const QString &reply, const QString &deckUrl,
                                 QString *subject, QString *body);
+    static int mastodonLength(const QString &text);
+    static QString leaderboardLine(const QJsonObject &activity);
+    static QString mastodonShareUrl(const QString &account, const QString &text);
 
 protected:
     void changeEvent(QEvent *event) override;
@@ -308,14 +334,23 @@ private:
     // so a tab of thousands of contacts keeps the window answering meanwhile.
     void renderContacts();
     void fillContactRows();
+    void scheduleRowWidgets();
+    void attachVisibleRowWidgets();
+    void attachRowWidgets(int row);
     bool contactRowShown(const ContactRow &row) const;
     // The chevron header over the open tab: its pipeline's stages in order,
     // each with how many of the tab's contacts sit there.
     void renderStageStrip();
     NextContact nextContact(NextMode mode) const;
     void renderNextContact();
-    QWidget *nextContactCard(NextMode mode);
-    QLabel *nextPostLabel(const QJsonObject &contact, bool compact) const;
+    QWidget *nextContactCard(NextMode mode, const NextContact &next);
+    QLabel *nextPostLabel(const QJsonObject &contact) const;
+    void selectNextMode(NextMode mode);
+    void showEmailPanel(const QString &contactId, const QString &mode, const QString &reason);
+    void writeEmailDraft();
+    void fillEmailDraft(const QString &subject, const QString &body, const QString &model);
+    void sendEmailPanel();
+    void closeEmailPanel();
     void queueReachMastodon(const QStringList &ranked);
     void scheduleNextRender();
     void selectFirstStage();
@@ -334,7 +369,6 @@ private:
                            const QList<QToolButton *> &mailButtons,
                            QToolButton *extensionButton, QToolButton *refreshButton);
     void applyNextStyle();
-    void syncHeaderTabs();
     void showPeople();
     void renderPeople();
     QIcon contactPicture(const ContactRow &row, int side);
@@ -459,6 +493,50 @@ private:
     // thing that reads a contact's instance.
     void refreshMastodonNow(const QString &key);
     void fetchMastodonLatest(const QString &key);
+    struct MastodonFollower {
+        QString account;
+        QString instance;
+        QString token;
+        bool plugin = false;
+    };
+    MastodonFollower mastodonFollower() const;
+    using MastodonReplyHandler =
+        std::function<void(int, const QJsonDocument &, const QUrl &)>;
+    void mastodonSignedCall(const QByteArray &verb, const QUrl &url, const QString &token,
+                            MastodonReplyHandler done, const QByteArray &body = QByteArray(),
+                            const QByteArray &idempotencyKey = QByteArray());
+    using MastodonHandlesHandler =
+        std::function<void(const QSet<QString> &, const QString &)>;
+    void readMastodonHandles(const QUrl &url, const MastodonFollower &follower, int pages,
+                             const QSet<QString> &found, MastodonHandlesHandler done);
+    void loadPluginFollowBack(const QString &org, const MastodonFollower &follower);
+    void followFromPlugin(const QString &key, const MastodonFollower &follower);
+    void finishMastodonFollow(const QString &key, bool ok, const QJsonObject &payload,
+                              const QString &error);
+    void loadMastodonFollowBack();
+    void followMastodonBack(const QString &key);
+    void rebuildFollowBackRows(const QString &key);
+    bool mastodonColumnShown() const;
+    QPushButton *mastodonFollowButton(const QString &key, QWidget *parent);
+    void updateMastodonBar();
+    void loadMastodonOutreach(bool checkReplies);
+    void renderMastodonOutreach();
+    QFrame *mastodonOutreachCard(const QJsonObject &item);
+    QJsonObject mastodonOutreachItem(const QString &contactId) const;
+    void replaceMastodonOutreachItem(const QJsonObject &item);
+    void dropMastodonOutreachItem(const QString &contactId);
+    void setMastodonCardState(const QString &contactId, const QString &error, bool busy);
+    void prepareMoreMastodon();
+    void sendMastodonDraft(const QString &contactId);
+    void postMastodonDraft(const QString &contactId, const MastodonFollower &follower,
+                           const QString &draft);
+    void logMastodonDraft(const QString &contactId, const QString &url, const QString &draft);
+    void saveMastodonFields(const QString &contactId, const QJsonObject &fields,
+                            std::function<void(bool, const QString &)> done);
+    void skipMastodonDraft(const QString &contactId);
+    void followMastodonDraft(const QString &contactId);
+    void checkMastodonReplies(bool automatic);
+    void renderLeaderboardStrip();
     void applyMastodonLatest(const QString &key);
     void fillMastodonItem(QTableWidgetItem *item, const QString &key) const;
     // Contact pictures beside the name: queued once per load (opening the page
@@ -471,6 +549,7 @@ private:
     void queueAvatars();
     void pumpAvatars();
     void fetchAvatar(const QString &source);
+    void fetchAvatarRemote(const QString &source);
     void fetchAvatarImage(const QString &source, const QUrl &url);
     void finishAvatar(const QString &source, const QImage &image);
     void applyAvatars();
@@ -577,6 +656,11 @@ private:
     void syncNoteDrafts();
     void showNoteDrafts();
     void fillNoteDrafts();
+    QList<CleanupPerson> cleanupPeople() const;
+    CleanupPlan cleanupPlan(const CleanupPerson &person, const QJsonObject &list) const;
+    void showListCleanup();
+    void fillListCleanup();
+    void keepPeopleOnList(const QStringList &personIds, const QString &listId);
     void sendNoteDraft(const NoteDraft &draft);
     void markNoteDraftSent(const QString &contactId, bool stampContacted);
     void importCsv();
@@ -631,6 +715,27 @@ private:
     std::function<QString(const QUrl &)> m_accountSessionToken;
     std::function<bool(const QString &, const QString &, QString *, QString *, QString *)> m_signProof;
     std::function<void(const QString &)> m_openWebPage;
+    std::function<QJsonObject()> m_mastodonSignIn;
+    std::function<bool(const QString &, const QJsonObject &)> m_windowCommand;
+    QWidget *m_teamPage = nullptr;
+    QLabel *m_leaderStrip = nullptr;
+    QWidget *m_mastodonPage = nullptr;
+    QLabel *m_mastodonHeader = nullptr;
+    QLabel *m_mastodonNote = nullptr;
+    QPushButton *m_mastodonPrepare = nullptr;
+    QPushButton *m_mastodonReplies = nullptr;
+    QWidget *m_mastodonCardList = nullptr;
+    QTableWidget *m_mastodonStrategy = nullptr;
+    QJsonObject m_mastodonOutreach;
+    QString m_mastodonOutreachOrg;
+    QString m_mastodonOutreachState;
+    QHash<QString, QPointer<QFrame>> m_mastodonCards;
+    QHash<QString, QString> m_mastodonDrafts;
+    QHash<QString, QString> m_mastodonCardErrors;
+    QHash<QString, QString> m_mastodonFollowCards;
+    QSet<QString> m_mastodonSending;
+    bool m_mastodonOutreachLoading = false;
+    bool m_mastodonRepliesChecking = false;
     QJsonArray m_decks;
     QSet<QString> m_drafting;
     QSet<QString> m_autoSending;
@@ -639,6 +744,8 @@ private:
     bool m_grantsLoading = false;
     QComboBox *m_organization = nullptr;
     QLabel *m_status = nullptr;
+    quint64 m_statusGeneration = 0;
+    qint64 m_statusHeldUntil = 0;
     QProgressBar *m_importProgress = nullptr;
     QPlainTextEdit *m_importErrors = nullptr;
     CsvImportJob m_import;
@@ -649,6 +756,29 @@ private:
     QComboBox *m_sheet = nullptr;
     CrmStageStrip *m_stageStrip = nullptr;
     QFrame *m_nextCard = nullptr;
+    QWidget *m_nextCardHolder = nullptr;
+    QWidget *m_nextTabs = nullptr;
+    QWidget *m_nextScroll = nullptr;
+    QFrame *m_emailPanel = nullptr;
+    QLabel *m_emailTitle = nullptr;
+    QLabel *m_emailTo = nullptr;
+    QLabel *m_emailStatus = nullptr;
+    QLineEdit *m_emailSubject = nullptr;
+    QPlainTextEdit *m_emailBody = nullptr;
+    QWidget *m_emailOffers = nullptr;
+    QPushButton *m_emailSend = nullptr;
+    QPushButton *m_emailRewrite = nullptr;
+    QString m_emailContactId;
+    QString m_emailMode;
+    QString m_emailReason;
+    QString m_emailPrompt;
+    QString m_emailModel;
+    quint64 m_emailGeneration = 0;
+    QToolButton *m_reachTab = nullptr;
+    QToolButton *m_followTab = nullptr;
+    NextMode m_nextMode = NextMode::ReachOut;
+    QStringList m_nextRanked;
+    QStringList m_tableRanked;
     QHash<QString, QPointer<QLabel>> m_nextPhotos;
     QSet<QString> m_nextSkipped;
     QTableWidget *m_contactsTable = nullptr;
@@ -662,9 +792,19 @@ private:
     QWidget *m_zohoBar = nullptr;
     QLabel *m_zohoBarLabel = nullptr;
     QList<QPushButton *> m_zohoStepButtons;
+    QWidget *m_mastodonBar = nullptr;
+    QLabel *m_mastodonBarLabel = nullptr;
+    QPushButton *m_mastodonBarButton = nullptr;
     QToolButton *m_noteDraftsButton = nullptr;
     QPointer<QTableWidget> m_noteDraftsTable;
     QPointer<QLabel> m_noteDraftsCount;
+    QToolButton *m_cleanupButton = nullptr;
+    QPointer<QTableWidget> m_cleanupTable;
+    QPointer<QLabel> m_cleanupNote;
+    QPointer<QLineEdit> m_cleanupSearch;
+    QPointer<QComboBox> m_cleanupList;
+    QPointer<QPushButton> m_cleanupKeepAll;
+    bool m_cleanupBusy = false;
     QToolButton *m_importButton = nullptr;
     QToolButton *m_githubButton = nullptr;
     QToolButton *m_usersButton = nullptr;
@@ -679,7 +819,7 @@ private:
     QWidget *m_menuHolder = nullptr;
     QToolButton *m_importMenuButton = nullptr;
     QToolButton *m_mailMenuButton = nullptr;
-    QToolButton *m_overviewTab = nullptr;
+    QToolButton *m_moreMenuButton = nullptr;
     QListWidget *m_sheetList = nullptr;
     QWidget *m_body = nullptr;
     QWidget *m_peoplePage = nullptr;
@@ -717,6 +857,9 @@ private:
     QList<ContactRow> m_fillSource;
     QVector<int> m_fillRows;
     QVector<int> m_tableRows; // table row -> m_fillSource index
+    QSet<int> m_widgetRows;
+    bool m_rowWidgetsQueued = false;
+    QString m_sheetListSignature;
     int m_fillNext = 0;
     quint64 m_fillGeneration = 0;
     bool m_filling = false;
@@ -764,6 +907,14 @@ private:
     QStringList m_mastodonQueue;
     QHash<QString, QString> m_mastodonIds;
     QHash<QString, qint64> m_mastodonBackoff;
+    QSet<QString> m_mastodonFollowBack;
+    QSet<QString> m_mastodonFollowing;
+    QSet<QString> m_mastodonFollowed;
+    QString m_mastodonFollowError;
+    QString m_mastodonFollowBackOrg;
+    QString m_mastodonFollowBackAccount;
+    qint64 m_mastodonFollowBackAt = 0;
+    bool m_mastodonFollowBackLoading = false;
     bool m_nextRenderQueued = false;
     MastodonFollowersJob m_followers;
     GithubContributorsJob m_contributors;

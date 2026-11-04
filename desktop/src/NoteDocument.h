@@ -190,6 +190,12 @@ inline bool isPageBreakLine(const QString &line)
     return body && body->trimmed().toLower() == QLatin1String("pagebreak");
 }
 
+inline bool isImageOptionsLine(const QString &line)
+{
+    const std::optional<QString> body = noteCommentBody(line);
+    return body && body->trimmed().left(6).toLower() == QLatin1String("image:");
+}
+
 inline PageLayout parsePageLayoutSettings(const QString &settings)
 {
     PageLayout layout;
@@ -488,7 +494,7 @@ inline QList<NotePart> noteParts(const QString &markdown)
         if (isPageBreakLine(line)) {
             flush();
             parts.append({NotePartKind::PageBreak, QString(), {}});
-        } else if (!isPageLayoutLine(line)) {
+        } else if (!isPageLayoutLine(line) && !isImageOptionsLine(line)) {
             buffer.append(line);
         }
         ++index;

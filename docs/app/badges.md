@@ -219,9 +219,12 @@ The hourly `badge-sweep` phase first runs `sweep_badge_records`:
    again; an open pull is re-read on later sweeps of that repository. A
    repository's `state_ts` only advances when every pending record fit in the
    batch, every read answered and every review check ran, so a large or
-   unreachable repository comes back on the next run. A failed read of the
-   pull tree alone counts as "no pull ledger", because the gateway answers a
-   missing `forkmesh/pulls` branch the same way it answers an outage.
+   unreachable repository comes back on the next run. The three tree reads go
+   through `_badge_record_tree`, which asks the gateway with `allow_missing`:
+   a folder or `forkmesh/pulls` branch that was never committed answers 404
+   with a body `_forkbot_missing_tree` recognises and counts as an empty
+   listing, so a repository without pulls, closed issues or discussions
+   finishes its sweep. Only a read no host answered keeps it pending.
 
 Each record is one `badge_pull_facts` row keyed by `(repo_bi, kind, number)`
 (issues share the table despite its name), so reading a record twice never

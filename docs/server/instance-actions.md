@@ -270,7 +270,7 @@ the runner without a maintainer agreeing.
 | Anyone can open a pull request and use the runner | Runs start only for approved authors: the repository owner, an account owning its node, organization writers, and the per-repository allowlist `repo_action_trusted_authors`. Others are queued as `waiting` (awaiting approval). |
 | An approval is reused for code the maintainer never saw | Approval names the head commit (`POST .../pulls/<n>/checks {action: "approve", head}`), answers `409 stale_head` for any other commit, and a new head cancels the older `waiting`/`queued` jobs and needs a new approval unless the author is trusted. |
 | A claimed author name | The author is the account the pull's signing key belongs to (`_git_push_account_for_pubkey`), never `authorName`. An unknown key is untrusted and cannot be allowlisted from the pull. |
-| Resource abuse | The same job sandbox as every Actions job (job user, systemd scope memory/CPU/task limits, no loopback or private networks, per-run `HOME`/`TMPDIR`, work tree removed after the run), the 90-minute lease and per-workflow `timeout-minutes` cap, one active job per workflow, at most 16 workflows per head, unapproved runs expire after 7 days. |
+| Resource abuse | The same job sandbox as every Actions job (job user, systemd scope memory/CPU/task limits, no loopback or private networks, per-run `HOME`/`TMPDIR`, work tree removed after the run), the 90-minute lease and per-workflow `timeout-minutes` cap, one active job per workflow, at most 16 workflows per head, unapproved runs expire after 7 days, and a queued job no runner takes expires a day after it became queued (`MAX(created_at, updated_at)`, so an approval starts a fresh day). |
 
 Residual risk: an approved or trusted run executes arbitrary code as the
 runner's job user with public network access; a sandbox escape is out of scope
@@ -323,6 +323,10 @@ an allowlisted author's Checks tab offers *Stop running automatically*. The
 Actions tab shows a runner card (running / queued / awaiting-approval counts),
 a pull request chip on pull request runs, Approve and Reject on a waiting run,
 and on a fork without workflows a pointer to the parent repository.
+Approve and *Always run for* ask first in the dashboard's in-page dialog
+(`confirmAccountAction`), not `window.confirm()`, which returns false without
+showing anything where native dialogs are suppressed (embedded webviews,
+automated browsers) and left the button doing nothing.
 
 Required checks are separate: `.forkmesh/required-checks.json` needs signed
 `forkmesh-check-v1` attestations, which instance runners do not produce yet, so

@@ -388,7 +388,7 @@ class SurveyDetailScreen(private val model: SurveysModel, val surveyId: String) 
                         SurveyAction.REOPEN -> "Survey reopened."
                         else -> "Survey open. Share the link to collect answers."
                     }
-                    survey = next.copy(questions = next.questions ?: survey?.questions, results = next.results ?: survey?.results)
+                    survey = next.copy(questions = next.questions ?: survey?.questions, results = next.results ?: survey?.results, activity = survey?.activity ?: next.activity)
                     fetch()
                 }
             }
@@ -442,6 +442,7 @@ class SurveyDetailScreen(private val model: SurveysModel, val surveyId: String) 
                             else -> act(action)
                         }
                     }, onExport = { export() })
+                    if (current.questions != null) PageActivityCard(current.activity)
                     if (current.canShare) {
                         Column {
                             CrmSection("Share link") {
@@ -749,6 +750,7 @@ class SurveyEditorScreen(private val model: SurveysModel, private val original: 
                 FmSectionHeader("Settings", Modifier.padding(top = 6.dp))
                 SurveySwitchRow("One response per person", "A second answer from the same connection is refused.", edit.oneResponsePerPerson) { draft = edit.copy(oneResponsePerPerson = it) }
                 SurveySwitchRow("Ping me on new responses", "At most one Ping per survey an hour.", edit.notifyOnResponse) { draft = edit.copy(notifyOnResponse = it) }
+                SurveySwitchRow("Ping me when someone opens or starts it", "At most 10 visit Pings per survey an hour.", edit.notifyOnVisit) { draft = edit.copy(notifyOnVisit = it) }
                 SurveySwitchRow("Shuffle choice options", "Each respondent sees the options in a random order.", edit.shuffleOptions) { draft = edit.copy(shuffleOptions = it) }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FmTextField(edit.opens, { draft = edit.copy(opens = it) }, Modifier.weight(1f), hint = "Opens (YYYY-MM-DD HH:MM)")

@@ -6,6 +6,7 @@ import UIKit
 struct NoteTextPalette: Equatable {
     let text: UIColor
     let mark: UIColor
+    let reacted: UIColor
     let tint: UIColor
 }
 
@@ -15,17 +16,21 @@ struct NoteTextView: UIViewRepresentable {
     @Binding var text: String
     let editable: Bool
     let highlight: Range<Int>?
+    var marks: [Range<Int>] = []
     let request: NoteSelectionRequest?
     let canComment: Bool
     let onSelect: (Range<Int>) -> Void
     let onComment: () -> Void
+    var onReact: ((String) -> Void)? = nil
 
     func makeCoordinator() -> NoteTextCoordinator {
         NoteTextCoordinator(parent: self)
     }
 
     var palette: NoteTextPalette {
-        NoteTextPalette(text: UIColor(fm.textPrimary), mark: UIColor(fm.accent).withAlphaComponent(0.22), tint: UIColor(fm.accent))
+        NoteTextPalette(
+            text: UIColor(fm.textPrimary), mark: UIColor(fm.accent).withAlphaComponent(0.22),
+            reacted: UIColor(fm.accent).withAlphaComponent(0.10), tint: UIColor(fm.accent))
     }
 
     func makeUIView(context: Context) -> UITextView {
@@ -68,7 +73,7 @@ struct NoteTextView: UIViewRepresentable {
             view.selectedRange = NSRange(location: location, length: min(selection.length, length - location))
             changed = true
         }
-        if changed || coordinator.appliedHighlight != highlight {
+        if changed || coordinator.appliedHighlight != highlight || coordinator.appliedMarks != marks {
             coordinator.restyle(view)
         }
         if let request = request, request.serial != coordinator.appliedRequest {
@@ -87,6 +92,7 @@ final class NoteTextCoordinator: NSObject, UITextViewDelegate {
     var parent: NoteTextView
     var applying = false
     var appliedHighlight: Range<Int>?
+    var appliedMarks: [Range<Int>] = []
     var appliedRequest = 0
     var palette: NoteTextPalette?
 
@@ -120,6 +126,14 @@ final class NoteTextCoordinator: NSObject, UITextViewDelegate {
         let selection: NSRange = view.selectedRange
         storage.beginEditing()
         storage.setAttributes(attributes, range: full)
+        let marks: [Range<Int>] = parent.marks
+        if let reacted = palette?.reacted {
+            for mark in marks where mark.upperBound <= storage.length {
+                storage.addAttribute(
+                    NSAttributedString.Key.backgroundColor, value: reacted,
+                    range: NSRange(location: mark.lowerBound, length: mark.count))
+            }
+        }
         let highlight: Range<Int>? = parent.highlight
         if let highlight = highlight, let mark = palette?.mark, highlight.upperBound <= storage.length {
             storage.addAttribute(
@@ -131,6 +145,7 @@ final class NoteTextCoordinator: NSObject, UITextViewDelegate {
         view.typingAttributes = attributes
         view.tintColor = palette?.tint
         appliedHighlight = highlight
+        appliedMarks = marks
     }
 
     func textViewDidChange(_ textView: UITextView) {
@@ -162,7 +177,20 @@ final class NoteTextCoordinator: NSObject, UITextViewDelegate {
             self.parent.onSelect(range.location..<(range.location + range.length))
             self.parent.onComment()
         }
-        return UIMenu(children: [comment] + suggestedActions)
+        guard parent.onReact != nil else {
+            return UIMenu(children: [comment] + suggestedActions)
+        }
+        let choices: [UIMenuElement] = NoteReactions.quickSet.map { (choice: NoteReactionChoice) -> UIMenuElement in
+            UIAction(title: "\(choice.emoji)  \(choice.label)") { [weak self] (_: UIAction) in
+                guard let self = self else {
+                    return
+                }
+                self.parent.onSelect(range.location..<(range.location + range.length))
+                self.parent.onReact?(choice.emoji)
+            }
+        }
+        let react = UIMenu(title: NoteReactions.react, image: UIImage(systemName: "face.smiling"), children: choices)
+        return UIMenu(children: [comment, react] + suggestedActions)
     }
 }
 
@@ -289,6 +317,7 @@ struct NoteCommentsSheet: View {
 
     var body: some View {
         let list: NoteThreadList = comments.threads(markdown: editor.markdown)
+        let groups: [NoteReactionGroup] = comments.reactionGroups(markdown: editor.markdown)
         VStack(alignment: .leading, spacing: 0) {
             FmPanelHeader(
                 title: NoteCommentsModel.title,
@@ -305,6 +334,9 @@ struct NoteCommentsSheet: View {
                     LazyVStack(alignment: .leading, spacing: FmSpace.x3) {
                         if comments.composing {
                             composer
+                        }
+                        if comments.loaded && !groups.isEmpty {
+                            reactionsSection(groups)
                         }
                         content(list)
                     }
@@ -395,6 +427,29 @@ struct NoteCommentsSheet: View {
             onDelete: { (comment: NoteComment) in pendingDelete = comment },
             onReport: report)
             .id(thread.id)
+    }
+
+    private func reactionsSection(_ groups: [NoteReactionGroup]) -> some View {
+        VStack(alignment: .leading, spacing: FmSpace.x3) {
+            Text(NoteReactions.title)
+                .fmText(.labelMedium, color: fm.textSecondary)
+                .accessibilityAddTraits(.isHeader)
+            ForEach(groups) { (group: NoteReactionGroup) in
+                NoteReactionGroupRow(
+                    group: group, comments: comments,
+                    onPick: {
+                        editor.pick(group)
+                        editor.commentsOpen = false
+                    },
+                    onReport: report)
+            }
+        }
+        .padding(FmSpace.x3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(fm.bgRaised)
+        .clipShape(FmRoundedShape(radius: FmRadius.lg))
+        .overlay { FmRoundedShape(radius: FmRadius.lg).strokeBorder(fm.border, lineWidth: 1) }
+        .accessibilityIdentifier("note-reactions")
     }
 
     private var composer: some View {
@@ -640,5 +695,133 @@ private struct NoteMentionChips: View {
             }
             .accessibilityIdentifier("note-mention-suggestions")
         }
+    }
+}
+
+struct NoteReactionMenu<MenuLabel: View>: View {
+    let onPick: (String) -> Void
+    @ViewBuilder let label: () -> MenuLabel
+
+    var body: some View {
+        Menu {
+            ForEach(NoteReactions.quickSet) { (choice: NoteReactionChoice) in
+                Button("\(choice.emoji)  \(choice.label)") { onPick(choice.emoji) }
+            }
+        } label: {
+            label()
+        }
+    }
+}
+
+private struct NoteReactionGroupRow: View {
+    @Environment(\.fmPalette) private var fm
+    let group: NoteReactionGroup
+    let comments: NoteCommentsModel
+    let onPick: () -> Void
+    let onReport: (ToolsOutcome) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: FmSpace.x2) {
+            if group.whole {
+                Text(NoteReactions.wholeNote)
+                    .fmText(.bodySmall, color: fm.textTertiary)
+            } else {
+                Button(action: onPick) {
+                    NoteQuoteBlock(text: group.quote, removed: false)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint(Text("Selects this passage in the note"))
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: FmSpace.x2) {
+                    ForEach(group.chips) { (chip: NoteReactionChip) in
+                        NoteReactionChipButton(chip: chip, enabled: !comments.busy) {
+                            Task { onReport(await comments.toggle(chip, in: group)) }
+                        }
+                    }
+                    NoteReactionMenu(onPick: { (emoji: String) in
+                        Task { onReport(await comments.add(emoji, to: group)) }
+                    }) {
+                        FmIcon("add_reaction_outlined", size: 18, color: fm.textSecondary)
+                            .padding(.horizontal, 11)
+                            .frame(minHeight: 34)
+                            .background(Capsule().fill(fm.bgOverlay))
+                            .overlay(Capsule().stroke(fm.border, lineWidth: 1))
+                    }
+                    .disabled(comments.busy)
+                    .accessibilityLabel(Text(NoteReactions.addLabel))
+                    .accessibilityIdentifier("note-reaction-add-\(group.id)")
+                }
+                .padding(.vertical, 1)
+            }
+        }
+        .accessibilityIdentifier("note-reaction-group-\(group.id)")
+    }
+}
+
+private struct NoteReactionChipButton: View {
+    @Environment(\.fmPalette) private var fm
+    let chip: NoteReactionChip
+    let enabled: Bool
+    let onPressed: () -> Void
+
+    var body: some View {
+        Button(action: onPressed) {
+            HStack(spacing: 6) {
+                Text(chip.emoji).font(.system(size: 17))
+                Text("\(chip.count)")
+                    .font(.system(size: 15, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(chip.reacted ? fm.accent : fm.textPrimary)
+            }
+            .padding(.horizontal, 11)
+            .frame(minHeight: 34)
+            .background(Capsule().fill(chip.reacted ? fm.accentSubtle : fm.bgOverlay))
+            .overlay(Capsule().stroke(chip.reacted ? fm.accent.opacity(0.7) : fm.border, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .contextMenu {
+            Text(chip.label)
+        }
+        .accessibilityLabel(Text(chip.label))
+        .accessibilityHint(Text(chip.reacted ? "Removes your reaction" : "Adds your reaction"))
+        .accessibilityAddTraits(chip.reacted ? .isSelected : [])
+    }
+}
+
+struct NoteReactionSummary: View {
+    @Environment(\.fmPalette) private var fm
+    let groups: [NoteReactionGroup]
+    let onPressed: (() -> Void)?
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            summaries
+        }
+        .accessibilityIdentifier("note-reaction-summary")
+    }
+
+    private var summaries: some View {
+        HStack(spacing: FmSpace.x1) {
+            ForEach(groups) { (group: NoteReactionGroup) in
+                let mine: Bool = group.chips.contains(where: \.reacted)
+                Button {
+                    onPressed?()
+                } label: {
+                    Text(group.summary)
+                        .fmText(.labelSmall, color: mine ? fm.accent : fm.textSecondary, tabular: true)
+                        .padding(.horizontal, FmSpace.x2)
+                        .frame(minHeight: 24)
+                        .background(Capsule().fill(mine ? fm.accentSubtle : fm.bgOverlay))
+                        .overlay(Capsule().stroke(mine ? fm.accent.opacity(0.7) : fm.border, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .disabled(onPressed == nil)
+                .accessibilityLabel(Text("\(group.quote): \(group.label)"))
+                .accessibilityHint(Text("Opens the reactions"))
+            }
+        }
+        .padding(.vertical, 1)
     }
 }

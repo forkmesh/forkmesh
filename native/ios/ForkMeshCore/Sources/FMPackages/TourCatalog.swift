@@ -118,6 +118,24 @@ public struct TourStop: Identifiable, Hashable, Sendable {
     }
 }
 
+public struct TourShort: Hashable, Sendable {
+    public let headline: String
+    public let line: String
+    public let emblem: String?
+    public let emblemBefore: String?
+
+    public init(_ headline: String, _ line: String, emblem: String? = nil, before: String? = nil) {
+        self.headline = headline
+        self.line = line
+        self.emblem = emblem
+        self.emblemBefore = before
+    }
+}
+
+extension TourStop {
+    public var short: TourShort { TourCatalog.short[scene] ?? TourShort(title, message) }
+}
+
 public struct TourPlace: Equatable, Sendable {
     public let track: TourTrack
     public let stop: String
@@ -236,6 +254,29 @@ public enum TourCatalog {
             message: "Pick outline, filled, accent or tile icons, how many fit in a row, and the app's theme and wallpaper in Settings.",
             tips: ["Home screen settings also hide categories you never use.", "Reduce Motion and Reduce Transparency calm the effects."],
             tryIt: "Tap to change the icons", jump: .route(.settings(section: nil)), jumpLabel: "Open Settings"),
+    ]
+
+    public static let short: [TourScene: TourShort] = [
+        .home: TourShort("Home holds everything", "Every place in ForkMesh, with live counts."),
+        .agents: TourShort("Agents that need you, first", "Approve, follow and stop every agent from one list."),
+        .newAgent: TourShort(
+            "One tap starts an agent", "Each star in the button is an agent running now.", emblem: "sparkles",
+            before: "agent"),
+        .inbox: TourShort("One inbox for what needs you", "Tap the title to see only reviews, approvals or mentions."),
+        .hub: TourShort("Your avatar is your hub", "Status, Pocket mode, Settings and signing out live here."),
+        .voice: TourShort("Hold to talk", "Say what to change. Let go and the agent starts.", emblem: "waveform", before: "to"),
+        .code: TourShort("Review and merge from your phone", "Read the diff, approve it and merge in one place."),
+        .palette: TourShort("Commands for everything", "Run any action or jump anywhere by name.", emblem: "command", before: "for"),
+        .search: TourShort("Search everywhere at once", "Repos, people, code and chat in one field."),
+        .bar: TourShort("Make the bar yours", "Hold an icon to move it, hide it or fold it away."),
+        .chat: TourShort("Chat where the work lives", "Channels, messages and #mesh, encrypted when private."),
+        .projects: TourShort("Projects keep work apart", "Each has its own account, repos and layout."),
+        .desktops: TourShort("Your desktops in your pocket", "See and run what your desktop is doing."),
+        .workspace: TourShort("Notes, tasks and your calendar", "The work around the code, as plugins."),
+        .market: TourShort("Add more from the Market", "Plugins add icons to Home. Remove them just as fast."),
+        .personal: TourShort("Private tools for you", "Secrets, files and trackers that stay yours."),
+        .system: TourShort("Outside the app", "Approve, reply and merge from notifications and widgets."),
+        .looks: TourShort("Make it look like yours", "Icons, theme and wallpaper in Settings."),
     ]
 
     public static func stops(for track: TourTrack, installed: (String) -> Bool = { _ in true }) -> [TourStop] {

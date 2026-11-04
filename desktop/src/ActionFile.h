@@ -31,6 +31,7 @@ struct ActionWorkflow {
     QString error;
 
     bool triggersOnPush() const { return on.contains(QStringLiteral("push")); }
+    bool mayStartFromEvent() const { return valid && sandbox; }
     bool triggersOnRelease() const
     {
         return on.contains(QStringLiteral("release"));

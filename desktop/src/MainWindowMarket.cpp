@@ -1180,15 +1180,14 @@ QWidget *marketNextPermissionList(const PackageManifest &manifest, qreal ratio)
     return list;
 }
 
-QLabel *marketFootprintLabel(const PackageManifest &manifest, bool installed,
-                             const QHash<QString, qint64> &resident)
+bool marketFootprintText(const PackageManifest &manifest, bool installed,
+                         const QHash<QString, qint64> &resident, QString *textOut,
+                         QString *tipOut)
 {
-    if (!manifest.entrypoints.contains(QStringLiteral("desktop")))
-        return nullptr;
     const std::optional<forkmesh::market::modules::Module> module =
         forkmesh::market::modules::moduleForPackage(manifest.id);
-    QString text;
-    QString tip;
+    QString &text = *textOut;
+    QString &tip = *tipOut;
     if (module) {
         const QString file = QFileInfo(module->path).fileName();
         if (module->loaded) {
@@ -1225,10 +1224,23 @@ QLabel *marketFootprintLabel(const PackageManifest &manifest, bool installed,
                   "apart from the app's.")
                   .arg(manifest.name);
     }
+    return module.has_value();
+}
+
+QLabel *marketFootprintLabel(const PackageManifest &manifest, bool installed,
+                             const QHash<QString, qint64> &resident)
+{
+    if (!manifest.entrypoints.contains(QStringLiteral("desktop")))
+        return nullptr;
+    QString text;
+    QString tip;
+    const bool separate =
+        marketFootprintText(manifest, installed, resident, &text, &tip);
     auto *label = new QLabel(text);
     label->setObjectName(QStringLiteral("marketPackageFootprint"));
     label->setProperty("packageId", manifest.id);
-    label->setProperty("separate", module.has_value());
+    label->setProperty("separate", separate);
+    label->setProperty("installed", installed);
     label->setTextFormat(Qt::PlainText);
     label->setWordWrap(true);
     label->setToolTip(tip);
@@ -2321,6 +2333,10 @@ QPixmap MainWindow::marketPreviewPixmap(const QString &path, const QSize &box,
             (image.width() > box.width() || image.height() > box.height()))
             image = image.scaled(box, Qt::KeepAspectRatio,
                                  Qt::SmoothTransformation);
+        if (!image.isNull())
+            image.convertTo(image.hasAlphaChannel()
+                                ? QImage::Format_ARGB32_Premultiplied
+                                : QImage::Format_RGB32);
         return image;
     }));
     return QPixmap();
@@ -2329,7 +2345,8 @@ QPixmap MainWindow::marketPreviewPixmap(const QString &path, const QSize &box,
 void MainWindow::applyMarketPreview(const QString &key, const QImage &image)
 {
     const QPixmap pixmap =
-        image.isNull() ? QPixmap() : QPixmap::fromImage(image);
+        image.isNull() ? QPixmap()
+                       : QPixmap::fromImage(image, Qt::NoOpaqueDetection);
     m_marketPreviewCache.insert(key, pixmap);
     const bool flushQueued = !m_marketPreviewArrived.isEmpty();
     m_marketPreviewArrived.insert(key, pixmap);
@@ -2427,8 +2444,9 @@ void MainWindow::refreshMarketPage()
     const int settingsTabIndex =
         settingsManifest && m_marketTabs ? m_marketTabs->currentIndex() : -1;
 
-    const QHash<QString, qint64> resident =
-        forkmesh::market::modules::residentBytesByPackage();
+    const MarketPageInputs inputs = marketPageInputs();
+    const QHash<QString, qint64> resident = m_marketResidentBytes;
+    queueMarketResidentRead();
     const bool projectOwned = m_packageRegistry->projectOwnsInstalls();
     const QString activeThemeSetting =
         QSettings().value(forkmesh::ui::kThemeSetting).toString();
@@ -2832,6 +2850,7 @@ void MainWindow::refreshMarketPage()
         if (nextPane)
             nextPane->dismiss();
         applyMarketSearch();
+        m_marketPageInputs = inputs;
         return;
     }
 
@@ -2841,6 +2860,99 @@ void MainWindow::refreshMarketPage()
     if (nextPane)
         nextPane->restore();
     applyMarketSearch();
+    m_marketPageInputs = inputs;
+}
+
+MainWindow::MarketPageInputs MainWindow::marketPageInputs() const
+{
+    MarketPageInputs inputs;
+    inputs.built = true;
+    for (const PackageManifest &manifest : m_packageRegistry->packages()) {
+        QString entry = manifest.id + QLatin1Char(' ') + manifest.version +
+                        (m_packageRegistry->isInstalled(manifest.id)
+                             ? QLatin1String(" 1")
+                             : QLatin1String(" 0"));
+        if (manifest.accountSync)
+            entry += QLatin1Char(' ') +
+                     m_packageRegistry->places(manifest.id).join(QLatin1Char(','));
+        inputs.packages.append(entry);
+    }
+    for (const NativePackagePage &page : m_nativePackagePages) {
+        if (page.widget)
+            inputs.packages.append(QStringLiteral("page ") + page.id);
+    }
+    for (const forkmesh::market::modules::Module &module :
+         forkmesh::market::modules::modules())
+        inputs.packages.append(QStringLiteral("module %1 %2 %3")
+                                   .arg(module.id)
+                                   .arg(module.loaded ? 1 : 0)
+                                   .arg(module.error));
+    inputs.counts = m_packageInstallCounts;
+    inputs.scores = m_packageMarketScores;
+    inputs.theme = QSettings().value(forkmesh::ui::kThemeSetting).toString();
+    inputs.next = Theme::isNext();
+    inputs.settingsPackage = m_marketSettingsPackageId;
+    if (!m_marketSettingsPackageId.isEmpty() && m_marketTabs)
+        inputs.settingsTab = m_marketTabs->currentIndex();
+    inputs.sort = m_marketSort ? m_marketSort->currentIndex() : -1;
+    inputs.modelRunning =
+        !m_marketModelPackageId.isEmpty() && m_marketModelProcess &&
+        m_marketModelProcess->state() != QProcess::NotRunning;
+    if (inputs.modelRunning)
+        inputs.settingsPackage += QLatin1Char(' ') + m_marketModelPackageId;
+    return inputs;
+}
+
+void MainWindow::refreshMarketPageIfChanged()
+{
+    if (!m_marketPageInputs.built || !m_packageRegistry ||
+        !m_packageRegistry->isReady() ||
+        !(m_marketPageInputs == marketPageInputs())) {
+        refreshMarketPage();
+        return;
+    }
+    queueMarketResidentRead();
+}
+
+void MainWindow::queueMarketResidentRead()
+{
+    if (m_marketResidentPending)
+        return;
+    m_marketResidentPending = true;
+    runOffThread<QHash<QString, qint64>>(
+        [] { return forkmesh::market::modules::residentBytesByPackage(); },
+        [this](QHash<QString, qint64> resident) {
+            m_marketResidentPending = false;
+            applyMarketResidentBytes(resident);
+        });
+}
+
+void MainWindow::applyMarketResidentBytes(const QHash<QString, qint64> &resident)
+{
+    if (resident == m_marketResidentBytes)
+        return;
+    m_marketResidentBytes = resident;
+    if (!m_marketTabs || !m_packageRegistry)
+        return;
+    const QList<QLabel *> labels = m_marketTabs->findChildren<QLabel *>(
+        QStringLiteral("marketPackageFootprint"));
+    for (QLabel *label : labels) {
+        if (!label->property("separate").toBool())
+            continue;
+        const PackageManifest *manifest =
+            m_packageRegistry->package(label->property("packageId").toString());
+        if (!manifest)
+            continue;
+        QString text;
+        QString tip;
+        marketFootprintText(*manifest, label->property("installed").toBool(),
+                            resident, &text, &tip);
+        if (label->text() == text)
+            continue;
+        label->setText(text);
+        label->setToolTip(tip);
+        label->setAccessibleName(text);
+    }
 }
 
 void MainWindow::applyMarketSearch()
@@ -4594,6 +4706,7 @@ void MainWindow::syncPackageSurfaces()
          on(QStringLiteral("network")) || on(QStringLiteral("hosts"))},
         {m_teamNavButton, on(QStringLiteral("special-agents"))},
         {m_statsNavButton, on(QStringLiteral("stats"))},
+        {m_filesNavButton, on(QStringLiteral("files"))},
         {m_repoIssuesTab, on(QStringLiteral("issues"))},
         {m_repoPullsTab, on(QStringLiteral("pull-requests"))},
         {m_repoDiscussionsTab, on(QStringLiteral("discussions"))},
@@ -4663,6 +4776,7 @@ void MainWindow::syncPackageSurfaces()
             {3, QStringLiteral("inbox")},
             {kTeamSectionIndex, QStringLiteral("special-agents")},
             {kStatsSectionIndex, QStringLiteral("stats")},
+            {kFilesSectionIndex, QStringLiteral("files")},
         };
         const bool networkGone =
             section == kNetworkDiagnosticsSectionIndex &&
@@ -4788,6 +4902,7 @@ forkmesh::market::NativePackageHost MainWindow::nativePackageHost(
     host.accountName = [this] {
         return AccountCapability::normalizedAccount(m_accountName);
     };
+    host.accountSignedIn = [this] { return hasActiveAccountSession(); };
     host.openDirectMessage = [this](const QString &account) {
         const QString name = account.trimmed().toLower();
         if (forkmesh::ui::isValidNodeName(name))
@@ -4834,6 +4949,8 @@ forkmesh::market::NativePackageHost MainWindow::nativePackageHost(
         openNetworkShareLocation(url, guest);
     };
     host.openWebPage = [this](const QString &path) {
+        if (openNativePackageWebPage(path))
+            return;
         const QUrl url = forkmesh::market::nativePackageWebPageUrl(
             catalogApiUrl(), path);
         if (!url.isValid()) {
@@ -4851,6 +4968,10 @@ forkmesh::market::NativePackageHost MainWindow::nativePackageHost(
         return forkmesh::market::nativePackageWebPageUrl(catalogApiUrl(), path)
             .toString(QUrl::FullyEncoded);
     };
+    if (permissionIds.contains(QStringLiteral("network.socket.connect")))
+        host.authorizeConnection = [this](const QString &method, const QUrl &url) {
+            return authorizeFirewallConnection(method, url);
+        };
     if (permissionIds.contains(QStringLiteral("desktop.models.usage.read")))
         host.agentUsagePage = [this](QWidget *parent) {
             return buildAgentUsagePage(parent);
@@ -4881,6 +5002,40 @@ forkmesh::market::NativePackageHost MainWindow::nativePackageHost(
                 done({false, false, QStringLiteral("No password manager is installed."), {}});
         };
     }
+    if (permissionIds.contains(QStringLiteral("social.mastodon.signin")))
+        host.mastodonSignIn = [this] {
+            const QString mastodon = QStringLiteral("mastodon");
+            if (!m_packageRegistry || !m_packageRegistry->isInstalledHere(mastodon))
+                return QJsonObject();
+            const QJsonArray accounts =
+                QJsonDocument::fromJson(m_packageRegistry
+                                            ->packageSetting(mastodon, QStringLiteral("accounts"))
+                                            .toString()
+                                            .toUtf8())
+                    .array();
+            const QString active =
+                m_packageRegistry->packageSetting(mastodon, QStringLiteral("active")).toString();
+            QJsonObject chosen;
+            for (const QJsonValue &value : accounts) {
+                const QJsonObject account = value.toObject();
+                const QString instance = account.value(QStringLiteral("instance")).toString();
+                const QString id = account.value(QStringLiteral("id")).toString();
+                const QString acct = account.value(QStringLiteral("acct")).toString();
+                if (instance.isEmpty() || acct.isEmpty() ||
+                    account.value(QStringLiteral("token")).toString().isEmpty())
+                    continue;
+                const bool isActive =
+                    instance + QLatin1Char('|') + (id.isEmpty() ? acct : id) == active;
+                if (chosen.isEmpty() || isActive)
+                    chosen = QJsonObject{
+                        {QStringLiteral("instance"), instance},
+                        {QStringLiteral("token"), account.value(QStringLiteral("token"))},
+                        {QStringLiteral("acct"), acct}};
+                if (isActive)
+                    break;
+            }
+            return chosen;
+        };
     if (permissionIds.contains(QStringLiteral("repository.read")) ||
         permissionIds.contains(QStringLiteral("repository.activity.read"))) {
         host.repositories = [this] { return nativePackageRepositories(); };
@@ -4949,8 +5104,15 @@ forkmesh::market::NativePackageHost MainWindow::nativePackageHost(
             if (url.scheme() != base.scheme() || url.host() != base.host() ||
                 url.port() != base.port())
                 return QString();
-            return accountSessionTokenForUrl(url);
+            const QString token = accountSessionTokenForUrl(url);
+            if (token.isEmpty() && hasActiveAccountSession())
+                QTimer::singleShot(0, this, [this] { ensureAccountSession(); });
+            return token;
         };
+        host.requestAccountSession =
+            [this](std::function<void(const QString &)> done) {
+                ensureAccountSession(std::move(done));
+            };
         host.signProof = [this, contributionCopy](
                              const QString &proof, const QString &resource,
                              QString *signer, QString *ts, QString *sig) {
@@ -5017,8 +5179,21 @@ void MainWindow::syncNativePackagePages()
     if (desired == m_nativePackagePagesWanted)
         return;
 
+    const auto built = [this](const QString &id, const QString &entrypoint) {
+        for (const NativePackagePage &page : std::as_const(m_nativePackagePages)) {
+            if (page.id == id && page.entrypoint == entrypoint)
+                return true;
+        }
+        return false;
+    };
+    QList<NativePackagePage> removed;
+    for (qsizetype i = m_nativePackagePages.size() - 1; i >= 0; --i) {
+        const NativePackagePage &page = m_nativePackagePages.at(i);
+        if (!desired.contains(qMakePair(page.id, page.entrypoint)))
+            removed.prepend(m_nativePackagePages.takeAt(i));
+    }
     bool removingCurrent = false;
-    for (const NativePackagePage &page : std::as_const(m_nativePackagePages)) {
+    for (const NativePackagePage &page : std::as_const(removed)) {
         removingCurrent = removingCurrent ||
             (page.widget && m_sectionStack->currentWidget() == page.widget) ||
             (page.placeholder &&
@@ -5026,7 +5201,7 @@ void MainWindow::syncNativePackagePages()
     }
     if (removingCurrent)
         showSection(kMarketSectionIndex);
-    for (const NativePackagePage &page : std::as_const(m_nativePackagePages)) {
+    for (const NativePackagePage &page : std::as_const(removed)) {
         if (page.window) {
             page.window->removeEventFilter(this);
             page.window->hide();
@@ -5046,16 +5221,24 @@ void MainWindow::syncNativePackagePages()
             page.widget->deleteLater();
         }
     }
-    m_nativePackagePages.clear();
     m_nativePackagePagesWanted = desired;
     const quint64 generation = ++m_nativePackagePagesGeneration;
-    if (m_staggerNativePackagePages) {
+    QList<QPair<QString, QString>> missing;
+    for (const auto &[id, entrypoint] : desired) {
+        if (!built(id, entrypoint))
+            missing.append({id, entrypoint});
+    }
+    if (m_staggerNativePackagePages ||
+        (missing.size() > 1 && !m_nativePackagePages.isEmpty())) {
+        if (!removed.isEmpty())
+            finishNativePackagePages();
         buildNextNativePackagePage(generation, 0);
         return;
     }
-    for (const auto &[id, entrypoint] : desired)
+    for (const auto &[id, entrypoint] : missing)
         addNativePackagePage(id, entrypoint);
-    finishNativePackagePages();
+    if (!removed.isEmpty() || !missing.isEmpty())
+        finishNativePackagePages();
 }
 
 void MainWindow::buildDeferredNativePackagePages()
@@ -5107,6 +5290,13 @@ void MainWindow::buildNextNativePackagePage(quint64 generation, int index)
         return;
     }
     const auto [id, entrypoint] = m_nativePackagePagesWanted.at(index);
+    bool built = false;
+    for (const NativePackagePage &page : std::as_const(m_nativePackagePages))
+        built = built || (page.id == id && page.entrypoint == entrypoint);
+    if (built) {
+        buildNextNativePackagePage(generation, index + 1);
+        return;
+    }
     addNativePackagePage(id, entrypoint);
     finishNativePackagePages();
     QTimer::singleShot(0, this, [this, generation, index] {
@@ -5244,6 +5434,22 @@ void MainWindow::openNativePackageLink(const QString &id)
         return;
     }
     QDesktopServices::openUrl(url);
+}
+
+bool MainWindow::openNativePackageWebPage(const QString &path)
+{
+    const QString command = QStringLiteral("webPage.open");
+    const QJsonObject args{{QStringLiteral("path"), path}};
+    QList<QPointer<forkmesh::market::NativePackageWidget>> widgets;
+    for (const NativePackagePage &page : std::as_const(m_nativePackagePages))
+        widgets.append(page.widget);
+    for (const QPointer<forkmesh::market::NativePackageWidget> &widget :
+         std::as_const(widgets)) {
+        if (widget && widget->acceptsHostCommand(command) &&
+            widget->hostCommand(command, args))
+            return true;
+    }
+    return false;
 }
 
 // The top search box answers from each package's loaded records, and a page

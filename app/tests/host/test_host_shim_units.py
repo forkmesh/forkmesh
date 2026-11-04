@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import math
+from pathlib import Path
 
 import pytest
 
@@ -284,6 +285,22 @@ def test_static_assets_html_handling(tmp_path):
     assert assets.serve("/app.js").headers.get("content-type").startswith(
         "text/javascript") or assets.serve("/app.js").headers.get(
         "content-type").startswith("application/javascript")
+
+
+def test_static_assets_refuse_double_decoded_paths(tmp_path):
+    (tmp_path / "chat.html").write_text("chat")
+    (tmp_path / "pitch-deck").mkdir()
+    (tmp_path / "pitch-deck" / "deck.html").write_text("deck")
+    assets = StaticAssets(tmp_path, "drop-trailing-slash", "404-page")
+    assert assets.resolve("/chat/") == ("redirect", "/chat")
+    for path in ("/%5Cevil.com%2F..%2Fchat%2F", "/%2F%2Fevil.com%2F..%2Fchat%2F",
+                 "/%255Cevil.com%252F..%252Fchat%252F",
+                 "/\\evil.com/../chat/", "//evil.com/../chat/"):
+        assert assets.resolve(path) == (None, None), path
+        assert assets.serve(path).headers.get("location") is None, path
+    asgi = (Path(__file__).resolve().parents[2] / "host" / "forkmesh_host" / "asgi.py").read_text()
+    gate = asgi[asgi.index("if (self.serve_assets and method in"):]
+    assert '"%" not in path' in gate[:gate.index("assets.exists(path)")]
 
 
 def test_static_assets_apply_headers_file_and_hide_control_files(tmp_path):

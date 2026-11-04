@@ -529,8 +529,10 @@ def main():
         "create_cloud_note", "read_chat_messages", "post_chat_message", "crm_list_organizations",
         "crm_get_pipeline", "crm_list_contacts", "crm_get_contact",
         "crm_list_activity", "crm_update_contact", "crm_find_duplicates",
-        "crm_merge_contacts", "crm_check_accounts", "marketing_x_context",
-        "marketing_save_ready_post", "list_tasks", "get_task",
+        "crm_merge_contacts", "crm_check_accounts", "crm_mastodon_outreach",
+        "crm_save_mastodon_drafts", "marketing_x_context",
+        "marketing_save_ready_post", "booking_get_page", "booking_update_page",
+        "list_tasks", "get_task",
         "create_task", "update_task", "complete_task", "reopen_task",
         "attach_work_item", "detach_work_item", "delete_task",
         "restore_task", "create_agent", "show_window", "read_window",
@@ -1185,6 +1187,7 @@ def main():
             {"id": "m2", "from": "someone@else.test", "subject": "Other"}],
     }
     crm_requests = []
+    booking_state = {"installed": False, "settings": {}}
 
     class FakeHTTPResponse(io.BytesIO):
         def __enter__(self):
@@ -1202,7 +1205,9 @@ def main():
         if body is not None:
             resource += "\n" + hashlib.sha256(body).hexdigest()
         proof = ("forkmesh-marketing-request-v1"
-                 if url.path.startswith("/api/marketing") else "forkmesh-crm-request-v1")
+                 if url.path.startswith("/api/marketing") else
+                 "forkmesh-booking-request-v1"
+                 if url.path.startswith("/api/booking") else "forkmesh-crm-request-v1")
         canonical = "\n".join((proof, params["node"], resource, params["ts"]))
         crm_requests.append({
             "origin": f"{url.scheme}://{url.netloc}", "method": method,
@@ -1210,7 +1215,30 @@ def main():
             "signed": _verify(pub_b64, params["sig"], canonical.encode()),
             "body": json.loads(body) if body else None})
         path = url.path
-        if path == "/api/marketing":
+        booking_overview = lambda: {
+            "ok": True, "installed": True, "slug": "seller",
+            "enabled": booking_state.get("enabled", True),
+            "link": "https://forkmesh.com/meet/seller",
+            "links": {}, "settings": booking_state["settings"],
+            "options": {"durations": [15, 30], "steps": [0, 15],
+                        "buffers": [0, 5], "notices": [0, 240],
+                        "horizons": [30, 60]},
+            "upcoming": [{"id": "b" * 32, "typeTitle": "Interview",
+                          "minutes": 15, "startAt": 1, "endAt": 2,
+                          "guest": {"email": "guest@example.test"}}]}
+        if path == "/api/booking":
+            payload = (booking_overview() if booking_state["installed"] else
+                       {"ok": True, "installed": False, "suggestedSlug": "seller"})
+        elif path == "/api/booking/install":
+            booking_state["installed"] = True
+            booking_state["settings"] = json.loads(body)
+            payload = booking_overview()
+        elif path == "/api/booking/page":
+            changes = json.loads(body)
+            booking_state["enabled"] = changes.pop("enabled", booking_state.get("enabled", True))
+            booking_state["settings"].update(changes)
+            payload = booking_overview()
+        elif path == "/api/marketing":
             payload = {"ok": True, "organizations": [
                 {"name": "acme", "installed": True}, {"name": "other", "installed": False}]}
         elif path == "/api/marketing/acme":
@@ -1271,6 +1299,18 @@ def main():
         elif path == "/api/crm/acme/contacts/evidence":
             payload = {"ok": True, "checked": 2, "accounts": 1, "paying": 1,
                        "trial": 0, "ahead": 1, "changed": 2}
+        elif path == "/api/crm/acme/mastodon":
+            payload = {"ok": True, "queue": [
+                {"id": crm_contact_a, "handle": "ada@hachyderm.io",
+                 "mastodon_status": "ready", "mastodon_draft": "@ada@hachyderm.io Hi"}],
+                "stats": {"today": {"sent": 3, "replied": 1}}, "dailyTarget": 25,
+                "dailyLimit": 40, "canSend": False, "account": "",
+                "bookingLink": "https://forkmesh.com/meet?alice", "strategyNote": "Mastodon outreach strategy",
+                "prompt": "long prompt"}
+        elif path == "/api/crm/acme/mastodon/drafts":
+            saved = json.loads(body)["drafts"]
+            payload = {"ok": True, "created": len(saved), "updated": 0, "skipped": [],
+                       "ids": [crm_contact_a] * len(saved)}
         elif path == "/api/crm/acme/contacts/merge":
             merged = json.loads(body)
             gone = crm_state["contacts"].pop(merged["from"])
@@ -1435,6 +1475,24 @@ def main():
               json.loads(text) == {"organization": "acme", "checked": 2,
                                    "accounts": 1, "paying": 1, "trial": 0,
                                    "ahead": 1, "changed": 2})
+        text, err = call("crm_mastodon_outreach", {"organization": "acme"})
+        outreach = json.loads(text) if not err else {}
+        check("crm_mastodon_outreach reads the queue and counts without the prompt",
+              not err and crm_requests[-1]["signed"] and
+              outreach["queued"] == 1 and outreach["queue"][0]["handle"] == "ada@hachyderm.io"
+              and outreach["dailyTarget"] == 25 and "prompt" not in outreach)
+        _, err = call("crm_save_mastodon_drafts", {"organization": "acme", "drafts": []})
+        check("crm_save_mastodon_drafts needs drafts", err)
+        text, err = call("crm_save_mastodon_drafts", {"organization": "acme", "drafts": [{
+            "handle": "ada@hachyderm.io", "draft": "@ada@hachyderm.io Hi", "segment": "tor",
+            "ask": "interview", "extra": "dropped"}]})
+        check("crm_save_mastodon_drafts posts the known keys and is a gated write",
+              not err and crm_requests[-1]["method"] == "POST" and
+              crm_requests[-1]["body"] == {"drafts": [{
+                  "handle": "ada@hachyderm.io", "draft": "@ada@hachyderm.io Hi",
+                  "segment": "tor", "ask": "interview"}]} and
+              json.loads(text)["created"] == 1 and
+              "crm_save_mastodon_drafts" in srv.WRITE_TOOLS)
         check("crm_merge_contacts is a destructive connector-gated write",
               "crm_merge_contacts" in srv.WRITE_TOOLS and
               "crm_merge_contacts" in srv.DESTRUCTIVE_TOOLS)
@@ -1470,6 +1528,54 @@ def main():
         check("marketing_save_ready_post is a connector-gated write, not destructive",
               "marketing_save_ready_post" in srv.WRITE_TOOLS and
               "marketing_save_ready_post" not in srv.DESTRUCTIVE_TOOLS)
+
+        text, err = call("booking_get_page", {})
+        check("booking_get_page reports an account with no page yet",
+              not err and json.loads(text) == {"installed": False,
+                                               "suggestedSlug": "seller"})
+        week = {day: [["11:00", "23:00"]]
+                for day in ("mon", "tue", "wed", "thu", "fri", "sat", "sun")}
+        interview = {"title": "Interview", "minutes": 15,
+                     "location": {"kind": "video"}}
+        text, err = call("booking_update_page", {"changes": {
+            "timezone": "America/New_York", "availability": week,
+            "types": [interview]}})
+        page = json.loads(text) if not err else {}
+        writes = [r for r in crm_requests if r["path"].startswith("/api/booking/")]
+        check("booking_update_page sets the page up, then saves with signed requests",
+              not err and page["created"] and
+              [(r["method"], r["path"]) for r in writes] ==
+              [("POST", "/api/booking/install"), ("PUT", "/api/booking/page")] and
+              all(r["signed"] for r in writes) and
+              writes[-1]["body"]["availability"]["sun"] == [["11:00", "23:00"]] and
+              writes[-1]["body"]["types"][0]["minutes"] == 15 and
+              page["settings"]["timezone"] == "America/New_York")
+        check("booking_get_page leaves guest details out",
+              not err and page["upcomingCount"] == 1 and
+              "guest" not in page["upcoming"][0] and "guest@" not in text)
+        sent = len(crm_requests)
+        for changes, why in (
+                ({"timezone": "Eastern"}, "an unknown time zone"),
+                ({"availability": {"mon": [["23:00", "11:00"]]}}, "a window that ends first"),
+                ({"availability": {"monday": [["11:00", "23:00"]]}}, "a day name"),
+                ({"types": [dict(interview, minutes=20)]}, "a length the page does not offer"),
+                ({"types": []}, "no meeting types"),
+                ({"bufferMinutes": 7}, "a buffer the page does not offer"),
+                ({"slug": "other"}, "a setting it does not handle"),
+                ({}, "an empty change")):
+            text, err = call("booking_update_page", {"changes": changes})
+            check(f"booking_update_page refuses {why}", err)
+        check("booking_update_page saves nothing it refused",
+              all(r["method"] == "GET" for r in crm_requests[sent:]))
+        text, err = call("booking_update_page", {"changes": {"enabled": False}})
+        check("booking_update_page can turn the page off without setting it up again",
+              not err and not json.loads(text)["created"] and
+              not json.loads(text)["enabled"] and
+              crm_requests[-1]["path"] == "/api/booking/page")
+        check("booking_update_page is a connector-gated write, not destructive",
+              "booking_update_page" in srv.WRITE_TOOLS and
+              "booking_update_page" not in srv.DESTRUCTIVE_TOOLS and
+              srv.BOOKING_TOOLS == {"booking_get_page", "booking_update_page"})
     finally:
         srv.urllib.request.urlopen = real_urlopen
 

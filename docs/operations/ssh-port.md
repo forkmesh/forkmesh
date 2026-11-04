@@ -17,6 +17,7 @@ map: [fleet tooling](fleet-tooling.md).
 | IDS | `ssh.port` and the `listeners.tcp` set in `ids.json`; the lockdown table (`ids.firewall_ruleset`) keeps SSH open on that port |
 | fail2ban | `/etc/fail2ban/jail.d/fmnext-sshd.local` (`[sshd] port = 822`) |
 | Operator tools | `next_common.Ssh`: `-o Port=822 -o HostKeyAlias=<ipv4>`; `next_git_host.py` push; `next_aws.py` security group (22 and 822, so a fresh instance is reachable before its `ssh-port` step) |
+| Release blobs, ad hoc iPhone builds | `seed_targets` in `tools/forkmesh-release-host.py` gives each core `-o Port=<ssh_port> -o HostKeyAlias=<ipv4>`; `tools/mac_adhoc_publish.py` seeds, looks up testers, mails and Pings through it. Mirror hosts stay on 22. Until this, publishing failed with `early iOS tester lookup gave no JSON: ''` |
 | Desktop log feed | `CoreNodeLogs.cpp` reads `ssh_port` from `~/projects/forkmesh/src/deploy/fleet.toml` (`FMNEXT_FLEET_TOML`, `FMNEXT_SSH_PORT` override) |
 | Autoscale snapshot | `next_fleet.ssh_port_image_script` writes the drop-in into the image (no reload: the builder keeps its session) |
 

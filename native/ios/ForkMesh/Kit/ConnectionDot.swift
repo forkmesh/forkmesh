@@ -138,11 +138,11 @@ struct AvatarWithDot: View {
 
     var body: some View {
         if rounded {
-            FmAvatar(name: label, avatarPng: avatarPng, size: size, corner: size * 0.28)
+            FmAvatar(name: label, avatarPng: avatarPng, size: size + 2, corner: size * 0.28 + 1)
                 .overlay {
                     RoundedRectangle(cornerRadius: size * 0.28 + 3, style: .continuous)
                         .strokeBorder(dotColor, lineWidth: 2)
-                        .padding(-3)
+                        .padding(-2)
                 }
                 .overlay(alignment: .bottomLeading) { badge }
                 .accessibilityElement(children: .ignore)

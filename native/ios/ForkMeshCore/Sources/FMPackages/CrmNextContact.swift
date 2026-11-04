@@ -74,12 +74,16 @@ public struct CrmNextContact: Equatable, Sendable {
         for message in activity where !message.contactId.isEmpty { linked[message.contactId, default: []].append(message) }
         var best = CrmNextContact()
         var bestKey: [Double] = []
-        for contact in contacts where !skipped.contains(contact.id) && reachable(contact) {
-            let last = contact.lastContactedAt
+        let people = CrmPeople.of(contacts)
+        var duePeople: Set<String> = []
+        for contact in contacts where reachable(contact) {
+            let members = people[contact.id] ?? [contact]
+            if members.contains(where: { skipped.contains($0.id) }) { continue }
+            let last = members.map(\.lastContactedAt).max() ?? 0
             var heardAt: Int64 = 0
             var wroteAt: Int64 = 0
             var heardSubject = ""
-            for message in linked[contact.id] ?? [] {
+            for message in members.flatMap({ linked[$0.id] ?? [] }) {
                 if message.incoming {
                     if message.at > heardAt {
                         heardAt = message.at
@@ -89,10 +93,9 @@ public struct CrmNextContact: Equatable, Sendable {
                     wroteAt = max(wroteAt, message.at)
                 }
             }
-            let stage = contact.stage.lowercased()
             let step = contact.nextStep.trimmingCharacters(in: .whitespacesAndNewlines)
             let waiting = heardAt >= now - replyDays * dayMs && heardAt > wroteAt && heardAt >= last
-            let closed = wonStages.contains(stage) || endedStages.contains(stage)
+            let closed = members.contains { wonStages.contains($0.stage.lowercased()) || endedStages.contains($0.stage.lowercased()) }
             var reason: String
             var key: [Double]
             switch mode {
@@ -129,7 +132,12 @@ public struct CrmNextContact: Equatable, Sendable {
                 }
                 if !step.isEmpty { reason += " Next step on the record: \(step)." }
             }
-            best.due += 1
+            if members.count > 1 {
+                let others = members.count - 1
+                reason += " Same person as \(others) other record\(others == 1 ? "" : "s") (\(CrmPeople.keysLabel(members))), so they come up once."
+            }
+            duePeople.insert(members[0].id)
+            best.due = duePeople.count
             let better = best.contact == nil || key.lexicographicallyPrecedes(bestKey)
                 || (key == bestKey && contact.id < (best.contact?.id ?? ""))
             if better {
@@ -139,5 +147,41 @@ public struct CrmNextContact: Equatable, Sendable {
             }
         }
         return best
+    }
+}
+
+public enum CrmPeople {
+    public static func of(_ contacts: [CrmContact]) -> [String: [CrmContact]] {
+        var parent: [String: String] = [:]
+        var holder: [String: String] = [:]
+        func root(_ start: String) -> String {
+            var id = start
+            while let up = parent[id], up != id {
+                parent[id] = parent[up] ?? up
+                id = parent[id] ?? up
+            }
+            return id
+        }
+        for contact in contacts where parent[contact.id] == nil {
+            parent[contact.id] = contact.id
+            for key in contact.personKeys {
+                if let held = holder[key] { parent[root(contact.id)] = root(held) } else { holder[key] = contact.id }
+            }
+        }
+        var groups: [String: [CrmContact]] = [:]
+        var placed: Set<String> = []
+        for contact in contacts where placed.insert(contact.id).inserted { groups[root(contact.id), default: []].append(contact) }
+        var people: [String: [CrmContact]] = [:]
+        for members in groups.values {
+            let sorted = members.sorted { $0.id < $1.id }
+            for contact in sorted { people[contact.id] = sorted }
+        }
+        return people
+    }
+
+    public static func keysLabel(_ members: [CrmContact]) -> String {
+        Set(members.flatMap(\.personKeys)).sorted()
+            .map { $0.hasPrefix("x:") ? "@\($0.dropFirst(2)) on X" : String($0.dropFirst($0.hasPrefix("email:") ? 6 : 0)) }
+            .joined(separator: ", ")
     }
 }

@@ -4,16 +4,19 @@ import Foundation
 public struct BookingLocation: Equatable, Hashable, Sendable {
     public var kind: String
     public var detail: String
+    public var room: Bool
 
-    public init(kind: String = "video", detail: String = "") {
+    public init(kind: String = "video", detail: String = "", room: Bool = false) {
         self.kind = kind
         self.detail = detail
+        self.room = room
     }
 
     public init(json: JSONObject) {
         let raw = json.str("kind").trimmingCharacters(in: .whitespaces).lowercased()
         kind = BookingText.locationKinds.contains(raw) ? raw : "video"
         detail = json.str("detail")
+        room = json.bool("room")
     }
 
     public var body: JSONObject { ["kind": .string(kind), "detail": .string(detail.trimmingCharacters(in: .whitespacesAndNewlines))] }
@@ -98,7 +101,13 @@ public struct Booking: Identifiable, Equatable, Hashable, Sendable {
         return out
     }
 
+    public var joinURL: URL? {
+        guard location.kind == "video", location.room, !isCancelled, location.detail.hasPrefix("https://") else { return nil }
+        return URL(string: location.detail)
+    }
+
     public var whereText: String {
+        if joinURL != nil { return "ForkMesh video call, end-to-end encrypted" }
         switch location.kind {
         case "phone": return location.detail.isEmpty ? (guest.phone.isEmpty ? "Phone call" : guest.phone) : location.detail
         case "none": return ""
@@ -173,6 +182,7 @@ public struct BookingSettings: Equatable, Sendable {
     public var emailOwner = true
     public var addToCalendar = true
     public var checkCalendar = true
+    public var notifyVisits = true
     public var types: [BookingType] = []
 
     public init() {}
@@ -203,6 +213,7 @@ public struct BookingSettings: Equatable, Sendable {
         emailOwner = json.optBool("emailOwner") ?? true
         addToCalendar = json.optBool("addToCalendar") ?? true
         checkCalendar = json.optBool("checkCalendar") ?? true
+        notifyVisits = json.optBool("notifyVisits") ?? true
         types = json.maps("types").map(BookingType.init(json:))
     }
 }
@@ -306,6 +317,7 @@ public struct BookingOverview: Equatable, Sendable {
     public var upcoming: [Booking]
     public var past: [Booking]
     public var stats: BookingStats
+    public var activity: PageActivity
 
     public init(json: JSONObject) {
         installed = json.optBool("installed") ?? true
@@ -323,6 +335,7 @@ public struct BookingOverview: Equatable, Sendable {
         upcoming = json.maps("upcoming").map(Booking.init(json:)).filter { PackagesText.isHexId($0.id) }
         past = json.maps("past").map(Booking.init(json:)).filter { PackagesText.isHexId($0.id) }
         stats = BookingStats(json: json.obj("stats"))
+        activity = PageActivity(json: json.obj("activity"))
     }
 
     public var displayLink: String { BookingText.displayLink(link) }
@@ -449,7 +462,7 @@ public enum BookingText {
 
     public static func locationHint(_ kind: String) -> String {
         switch kind {
-        case "video": return "https://meet.example.com/you"
+        case "video": return "Leave empty for a private ForkMesh video room"
         case "phone": return "Leave empty to ask the guest for their number"
         case "place": return "Address"
         case "custom": return "Shown after booking"
@@ -544,6 +557,7 @@ public struct BookingDraft: Equatable, Sendable {
     public var emailOwner: Bool
     public var addToCalendar: Bool
     public var checkCalendar: Bool
+    public var notifyVisits: Bool
     public var types: [BookingType]
 
     public static let lastMinute = "23:59"
@@ -575,6 +589,7 @@ public struct BookingDraft: Equatable, Sendable {
         emailOwner = settings.emailOwner
         addToCalendar = settings.addToCalendar
         checkCalendar = settings.checkCalendar
+        notifyVisits = settings.notifyVisits
         types = settings.types
     }
 
@@ -659,6 +674,7 @@ public struct BookingDraft: Equatable, Sendable {
             "emailOwner": .bool(emailOwner),
             "addToCalendar": .bool(addToCalendar),
             "checkCalendar": .bool(checkCalendar),
+            "notifyVisits": .bool(notifyVisits),
             "types": .array(types.map { .object($0.body) }),
         ]
     }

@@ -10,6 +10,7 @@ import re
 import unicodedata
 
 from organization_rbac import ORG_INSIDER_ROLE_SQL
+import notes_assist
 
 
 PREFIX = "/api/notes"
@@ -17,6 +18,8 @@ MAX_BODY_BYTES = 1024 * 1024
 MAX_TITLE = 200
 MAX_MARKDOWN = 512 * 1024
 MAX_NOTES = 500
+MAX_OWNED_NOTES = 2000
+MAX_OWNED_PAGES = 2000
 MAX_VERSIONS = 100
 BIND_CHUNK = 90
 NOTE_ID_RE = re.compile(r"^[0-9a-f]{32}$")
@@ -40,7 +43,12 @@ MAX_PEOPLE = 200
 MENTION_RE = re.compile(r"(?<![\w@])@([a-z](?:[a-z0-9-]{0,61}[a-z0-9])?)", re.IGNORECASE)
 CLIENT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 PRESENCE_STATES = frozenset({"viewing", "editing", "left"})
+MAX_CHAT = 500
+MAX_CHAT_BODY = 2000
+MAX_LINE = 1000000
+MAX_REACTIONS = 2000
 PAGES = PREFIX + "/pages"
+ASSIST = PREFIX + "/assist"
 PAGE_ACCENTS = ("blue", "purple", "pink", "red", "orange", "yellow", "teal", "gray")
 PAGE_LAYOUTS = ("outline", "continuous")
 PAGE_KINDS = frozenset({"note", "section", "link"})
@@ -99,13 +107,15 @@ def _route(path):
         return "collection", "", "", ""
     if clean == PAGES:
         return "pages", "", "", ""
+    if clean == ASSIST:
+        return "assist", "", "", ""
     page = re.fullmatch(r"/api/notes/pages/([0-9a-f]{32})(?:/(shares))?", clean)
     if page:
         return "pages", page.group(1), page.group(2) or "", ""
     match = re.fullmatch(
-        r"/api/notes/([0-9a-f]{32})(?:/(versions|shares|links|activity|ws|presence|comments)"
+        r"/api/notes/([0-9a-f]{32})(?:/(versions|shares|links|activity|ws|presence|comments|chat|reactions)"
         r"(?:/([0-9a-f]{32}))?)?", clean)
-    if not match or (match.group(3) and match.group(2) != "comments"):
+    if not match or (match.group(3) and match.group(2) not in ("comments", "chat", "reactions")):
         return None
     return "note", match.group(1), match.group(2) or "", match.group(3) or ""
 
@@ -455,6 +465,9 @@ async def _list(runtime, account_bi, query="", actor=""):
 
 
 async def _create(runtime, account_bi, actor, data):
+    owned = await runtime.d1_first("SELECT COUNT(*) AS n FROM notes WHERE owner_bi=?", account_bi)
+    if int((owned or {}).get("n") or 0) >= MAX_OWNED_NOTES:
+        return _response(runtime, {"error": "note_limit_reached"}, status=409)
     title = _title(data.get("title")) or "Untitled note"
     markdown = _markdown(data.get("markdown"))
     visibility = "public" if data.get("visibility") == "public" else "private"
@@ -559,10 +572,37 @@ async def _author_names(runtime, note_id, rows, account_bi, actor):
     return names
 
 
+async def _version(runtime, row, account_bi, actor, role):
+    if role == "public":
+        return _response(runtime, {"error": "note_not_found"}, status=404)
+    try:
+        target = int(runtime.query_params().get("version"))
+    except (TypeError, ValueError, OverflowError):
+        return _response(runtime, {"error": "invalid_version"}, status=400)
+    item = await runtime.d1_first(
+        "SELECT version,author_bi,created_at,data FROM note_versions "
+        "WHERE note_id=? AND version=?", row["note_id"], target)
+    if not item:
+        return _response(runtime, {"error": "version_not_found"}, status=404)
+    names = await _author_names(runtime, row["note_id"], [item], account_bi, actor)
+    stored = await runtime.open(item.get("data"))
+    stored = stored if isinstance(stored, dict) else {}
+    return _response(runtime, {"ok": True, "version": {
+        "version": int(item.get("version") or 0),
+        "createdAt": int(item.get("created_at") or 0),
+        "author": names.get(str(item.get("author_bi") or ""), ""),
+        "title": str(stored.get("title") or "Untitled note"),
+        "markdown": str(stored.get("markdown") or ""),
+        "emoji": str(stored.get("emoji") or ""),
+    }})
+
+
 async def _versions(runtime, row, account_bi, actor, method, data):
     role = await _role(runtime, row, account_bi)
     if not role:
         return _response(runtime, {"error": "note_not_found"}, status=404)
+    if method == "GET" and "version" in runtime.query_params():
+        return await _version(runtime, row, account_bi, actor, role)
     if method == "GET":
         rows = await runtime.d1_all(
             "SELECT version,author_bi,created_at FROM note_versions "
@@ -807,7 +847,21 @@ async def _comments_key(runtime, note_id):
     row = await runtime.d1_first(
         "SELECT COUNT(*) AS total,COALESCE(MAX(updated_at),0) AS latest "
         "FROM note_comments WHERE note_id=?", note_id) or {}
-    return "%d:%d" % (int(row.get("total") or 0), int(row.get("latest") or 0))
+    reactions = await runtime.d1_first(
+        "SELECT COUNT(*) AS total,COALESCE(MAX(created_at),0) AS latest "
+        "FROM note_reactions WHERE note_id=?", note_id) or {}
+    key = "%d:%d" % (int(row.get("total") or 0), int(row.get("latest") or 0))
+    if int(reactions.get("total") or 0):
+        key += ":%d:%d" % (int(reactions.get("total") or 0),
+                           int(reactions.get("latest") or 0))
+    return key
+
+
+async def _reaction_rows(runtime, note_id):
+    return await runtime.d1_all(
+        "SELECT reaction_id,author_bi,anchor_start,anchor_end,created_at,data "
+        "FROM note_reactions WHERE note_id=? ORDER BY created_at,reaction_id",
+        note_id) or []
 
 
 async def _collaborator(runtime, row, account_bi):
@@ -832,9 +886,10 @@ async def _mentions(runtime, row, body):
 async def _comment_payload(runtime, row, account_bi, actor, role):
     note_id = row["note_id"]
     rows = await _comment_rows(runtime, note_id)
+    reaction_rows = await _reaction_rows(runtime, note_id)
     owner_bi = str(row.get("owner_bi") or "")
     wanted = (list(rows) + [{"author_bi": item.get("resolved_bi")} for item in rows]
-              + [{"author_bi": owner_bi}])
+              + list(reaction_rows) + [{"author_bi": owner_bi}])
     names = await _author_names(runtime, note_id, wanted, account_bi, actor)
     comments = []
     for item in rows:
@@ -859,6 +914,21 @@ async def _comment_payload(runtime, row, account_bi, actor, role):
             "resolvedBy": names.get(str(item.get("resolved_bi") or ""), "")
             if int(item.get("resolved_at") or 0) else "",
         })
+    reactions = []
+    for item in reaction_rows:
+        data = await runtime.open(item.get("data"))
+        data = data if isinstance(data, dict) else {}
+        reactions.append({
+            "id": str(item.get("reaction_id") or ""),
+            "author": names.get(str(item.get("author_bi") or ""), ""),
+            "emoji": _comment_text(data.get("emoji"), 16),
+            "quote": _comment_text(data.get("quote"), MAX_QUOTE),
+            "prefix": _comment_text(data.get("prefix"), MAX_CONTEXT),
+            "suffix": _comment_text(data.get("suffix"), MAX_CONTEXT),
+            "start": int(item.get("anchor_start") or 0),
+            "end": int(item.get("anchor_end") or 0),
+            "createdAt": int(item.get("created_at") or 0),
+        })
     people = [names.get(owner_bi, "")]
     for share in await runtime.d1_all(
             "SELECT principal_name FROM note_shares WHERE note_id=? "
@@ -871,8 +941,8 @@ async def _comment_payload(runtime, row, account_bi, actor, role):
         if name and name not in seen:
             seen.add(name)
             unique.append(name)
-    return {"ok": True, "comments": comments, "people": unique[:MAX_PEOPLE],
-            "canResolve": role in ("owner", "editor")}
+    return {"ok": True, "comments": comments, "reactions": reactions,
+            "people": unique[:MAX_PEOPLE], "canResolve": role in ("owner", "editor")}
 
 
 async def _comment_ping(runtime, row, comment_id, parent_id, account_bi,
@@ -1012,6 +1082,145 @@ async def _comments(runtime, row, account_bi, actor, role, method, comment_id, d
     return _response(runtime, _with_comment(payload, comment_id))
 
 
+async def _reactions(runtime, row, account_bi, actor, role, method, reaction_id, data):
+    if role not in ("owner", "editor", "viewer"):
+        return _response(runtime, {"error": "note_not_found"}, status=404)
+    note_id = row["note_id"]
+    if method == "POST":
+        emoji = _emoji(data.get("emoji"))
+        if not emoji:
+            return _response(runtime, {"error": "invalid_reaction"}, status=400)
+        quote = _comment_text(data.get("quote"), MAX_QUOTE)
+        prefix, suffix, start, end = "", "", 0, 0
+        if quote:
+            prefix = _comment_text(data.get("prefix"), MAX_OFFSET)[-MAX_CONTEXT:]
+            suffix = _comment_text(data.get("suffix"), MAX_CONTEXT)
+            start = _offset(data.get("start"))
+            end = max(start, _offset(data.get("end")))
+        anchor = {"emoji": emoji, "quote": quote, "prefix": prefix, "suffix": suffix}
+        for item in await runtime.d1_all(
+                "SELECT reaction_id,data FROM note_reactions WHERE note_id=? "
+                "AND author_bi=?", note_id, account_bi) or []:
+            old = await runtime.open(item.get("data"))
+            if isinstance(old, dict) and all(
+                    str(old.get(key) or "") == value for key, value in anchor.items()):
+                payload = await _comment_payload(runtime, row, account_bi, actor, role)
+                payload["reaction"] = next(
+                    (entry for entry in payload["reactions"]
+                     if entry["id"] == item.get("reaction_id")), None)
+                return _response(runtime, payload)
+        total = await runtime.d1_first(
+            "SELECT COUNT(*) AS total FROM note_reactions WHERE note_id=?", note_id) or {}
+        if int(total.get("total") or 0) >= MAX_REACTIONS:
+            return _response(runtime, {"error": "too_many_reactions"}, status=409)
+        reaction_id = runtime.new_id()
+        await runtime.d1_run(
+            "INSERT INTO note_reactions(reaction_id,note_id,author_bi,anchor_start,"
+            "anchor_end,created_at,data) VALUES(?,?,?,?,?,?,?)",
+            reaction_id, note_id, account_bi, start, end, runtime.now(),
+            await runtime.seal(anchor))
+        await runtime.broadcast(note_id, {"type": "note-comments", "actor": actor})
+        payload = await _comment_payload(runtime, row, account_bi, actor, role)
+        payload["reaction"] = next((entry for entry in payload["reactions"]
+                                    if entry["id"] == reaction_id), None)
+        return _response(runtime, payload, status=201)
+    existing = await runtime.d1_first(
+        "SELECT author_bi FROM note_reactions WHERE note_id=? AND reaction_id=?",
+        note_id, reaction_id)
+    if not existing:
+        return _response(runtime, {"error": "reaction_not_found"}, status=404)
+    if str(existing.get("author_bi") or "") != account_bi and role != "owner":
+        return _response(runtime, {"error": "reaction_author_required"}, status=403)
+    await runtime.d1_run(
+        "DELETE FROM note_reactions WHERE note_id=? AND reaction_id=?",
+        note_id, reaction_id)
+    await runtime.broadcast(note_id, {"type": "note-comments", "actor": actor})
+    return _response(runtime, await _comment_payload(runtime, row, account_bi, actor, role))
+
+
+async def _chat_key(runtime, note_id):
+    row = await runtime.d1_first(
+        "SELECT COUNT(*) AS total,COALESCE(MAX(created_at),0) AS latest "
+        "FROM note_chat WHERE note_id=?", note_id) or {}
+    return "%d:%d" % (int(row.get("total") or 0), int(row.get("latest") or 0))
+
+
+async def _activity_key(runtime, row):
+    events = await runtime.d1_first(
+        "SELECT COUNT(*) AS total,COALESCE(MAX(last_at),0) AS latest,"
+        "COALESCE(SUM(hits),0) AS hits FROM note_events WHERE note_id=?",
+        row["note_id"]) or {}
+    return "%d:%d:%d:%d" % (int(row.get("version") or 1),
+                            int(events.get("total") or 0),
+                            int(events.get("hits") or 0),
+                            int(events.get("latest") or 0))
+
+
+async def _chat_payload(runtime, row, account_bi, actor):
+    note_id = row["note_id"]
+    rows = await runtime.d1_all(
+        "SELECT message_id,author_bi,created_at,data FROM note_chat "
+        "WHERE note_id=? ORDER BY created_at,message_id", note_id) or []
+    names = await _author_names(runtime, note_id, rows, account_bi, actor)
+    messages = []
+    for item in rows:
+        data = await runtime.open(item.get("data"))
+        data = data if isinstance(data, dict) else {}
+        messages.append({
+            "id": str(item.get("message_id") or ""),
+            "author": names.get(str(item.get("author_bi") or ""), ""),
+            "body": _comment_text(data.get("body"), MAX_CHAT_BODY),
+            "createdAt": int(item.get("created_at") or 0),
+        })
+    return {"ok": True, "messages": messages,
+            "canModerate": str(row.get("owner_bi") or "") == account_bi}
+
+
+async def _chat(runtime, row, account_bi, actor, role, method, message_id, data):
+    if role not in ("owner", "editor", "viewer"):
+        return _response(runtime, {"error": "note_not_found"}, status=404)
+    note_id = row["note_id"]
+    if method == "GET":
+        return _response(runtime, await _chat_payload(runtime, row, account_bi, actor))
+    if method == "POST":
+        body = _comment_text(data.get("body"), MAX_CHAT_BODY + 1).strip()
+        if not body or len(body) > MAX_CHAT_BODY:
+            return _response(runtime, {"error": "invalid_message"}, status=400)
+        message_id = runtime.new_id()
+        await runtime.d1_run(
+            "INSERT INTO note_chat(message_id,note_id,author_bi,created_at,data) "
+            "VALUES(?,?,?,?,?)", message_id, note_id, account_bi, runtime.now(),
+            await runtime.seal({"body": body}))
+        await runtime.d1_run(
+            "DELETE FROM note_chat WHERE note_id=? AND message_id NOT IN ("
+            "SELECT message_id FROM note_chat WHERE note_id=? "
+            "ORDER BY created_at DESC,message_id DESC LIMIT ?)",
+            note_id, note_id, MAX_CHAT)
+        await runtime.broadcast(note_id, {"type": "note-chat", "actor": actor})
+        payload = await _chat_payload(runtime, row, account_bi, actor)
+        payload["message"] = next((item for item in payload["messages"]
+                                   if item["id"] == message_id), None)
+        return _response(runtime, payload, status=201)
+    existing = await runtime.d1_first(
+        "SELECT author_bi FROM note_chat WHERE note_id=? AND message_id=?",
+        note_id, message_id)
+    if not existing:
+        return _response(runtime, {"error": "message_not_found"}, status=404)
+    if str(existing.get("author_bi") or "") != account_bi and role != "owner":
+        return _response(runtime, {"error": "message_author_required"}, status=403)
+    await runtime.d1_run(
+        "DELETE FROM note_chat WHERE note_id=? AND message_id=?", note_id, message_id)
+    await runtime.broadcast(note_id, {"type": "note-chat", "actor": actor})
+    return _response(runtime, await _chat_payload(runtime, row, account_bi, actor))
+
+
+def _line(value):
+    try:
+        return max(0, min(MAX_LINE, int(value or 0)))
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
 async def _presence(runtime, row, actor, role, method, data):
     if role not in ("owner", "editor", "viewer"):
         return _response(runtime, {"error": "note_not_found"}, status=404)
@@ -1025,6 +1234,9 @@ async def _presence(runtime, row, actor, role, method, data):
         if state == "editing" and role not in ("owner", "editor"):
             state = "viewing"
         frame = {"clientId": client_id, "name": actor, "state": state}
+        if _line(data.get("line")):
+            frame.update({"line": _line(data.get("line")),
+                          "column": _line(data.get("column"))})
     try:
         peers = await runtime.presence(row["note_id"], frame)
     except Exception:
@@ -1033,7 +1245,9 @@ async def _presence(runtime, row, actor, role, method, data):
              if isinstance(peer, dict) and peer.get("clientId") != client_id]
     return _response(runtime, {
         "ok": True, "peers": peers,
-        "commentsKey": await _comments_key(runtime, row["note_id"])})
+        "commentsKey": await _comments_key(runtime, row["note_id"]),
+        "chatKey": await _chat_key(runtime, row["note_id"]),
+        "activityKey": await _activity_key(runtime, row)})
 
 
 async def _page_row(runtime, page_id):
@@ -1249,6 +1463,9 @@ async def _page_unknown_notes(runtime, outline, known, account_bi):
 
 
 async def _page_create(runtime, account_bi, data):
+    owned = await runtime.d1_first("SELECT COUNT(*) AS n FROM note_pages WHERE owner_bi=?", account_bi)
+    if int((owned or {}).get("n") or 0) >= MAX_OWNED_PAGES:
+        return _response(runtime, {"error": "page_limit_reached"}, status=409)
     fields, error = _page_fields(data, {})
     if error:
         return _response(runtime, {"error": error}, status=400)
@@ -1380,12 +1597,14 @@ async def handle(runtime, path):
         return _response(runtime, {"error": "not_found"}, status=404)
     method = runtime.method()
     kind, note_id, action, comment_id = route
-    allowed = (("GET", "POST") if kind == "pages" and not note_id else
+    allowed = (("GET", "POST") if kind in ("pages", "assist") and not note_id else
                ("GET", "POST", "DELETE") if kind == "pages" and action == "shares" else
                ("GET", "PATCH", "DELETE") if kind == "pages" else
                ("GET", "POST") if not note_id else
+               ("DELETE",) if comment_id and action == "reactions" else
                ("PATCH", "DELETE") if comment_id else
-               ("GET", "POST") if action in ("versions", "activity", "presence", "comments") else
+               ("POST",) if action == "reactions" else
+               ("GET", "POST") if action in ("versions", "activity", "presence", "comments", "chat") else
                ("GET", "POST", "DELETE") if action in ("shares", "links") else
                ("GET",) if action == "ws" else
                ("GET", "PATCH", "DELETE"))
@@ -1401,6 +1620,10 @@ async def handle(runtime, path):
             return _response(runtime, {"error": error}, status=413 if error == "payload_too_large" else 400)
     await runtime.ensure_schema()
     account_bi, actor = await _actor(runtime, data)
+    if kind == "assist":
+        return await notes_assist.handle(
+            runtime, lambda payload, status=200: _response(runtime, payload, status=status),
+            method, account_bi, data)
     if kind == "pages":
         return await _pages(runtime, method, note_id, action, account_bi, actor, data)
     if not note_id:
@@ -1441,6 +1664,16 @@ async def handle(runtime, path):
             return _response(runtime, {"error": "invalid_session"}, status=401)
         return await _comments(runtime, row, account_bi, actor, role, method,
                                comment_id, data)
+    if action == "reactions":
+        if not account_bi:
+            return _response(runtime, {"error": "invalid_session"}, status=401)
+        return await _reactions(runtime, row, account_bi, actor, role, method,
+                                comment_id, data)
+    if action == "chat":
+        if not account_bi:
+            return _response(runtime, {"error": "invalid_session"}, status=401)
+        return await _chat(runtime, row, account_bi, actor, role, method,
+                           comment_id, data)
     if action == "presence":
         if not account_bi:
             return _response(runtime, {"error": "invalid_session"}, status=401)

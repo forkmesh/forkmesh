@@ -4,6 +4,7 @@
 
 #include <QApplication>
 #include <QElapsedTimer>
+#include <QFontMetrics>
 #include <QFrame>
 #include <QHeaderView>
 #include <QImage>
@@ -77,6 +78,26 @@ int main(int argc, char **argv)
     const QString emojiCut = kit::cellDisplayText(emoji);
     check(!emojiCut.at(emojiCut.size() - 2).isHighSurrogate(),
           "the cut never splits a surrogate pair");
+
+    {
+        const QFontMetrics metrics(QApplication::font());
+        check(kit::elideRightToWidth(QStringLiteral("short"), metrics, 400) ==
+                  QStringLiteral("short"),
+              "a line that fits is not elided");
+        QString line;
+        while (line.size() < 2'000'000)
+            line += QStringLiteral("step done ") + QString::fromUtf8("\xE2\x9C\x85 ");
+        QElapsedTimer timer;
+        timer.start();
+        const QString shown = kit::elideRightToWidth(line, metrics, 300);
+        check(timer.elapsed() < 250,
+              "eliding a two-million-character line shapes only what the width can show");
+        check(shown.endsWith(QChar(0x2026)) && metrics.horizontalAdvance(shown) <= 300 &&
+                  line.startsWith(shown.chopped(1)),
+              "the elided line is the start of the text with an ellipsis, within the width");
+        check(kit::elideRightToWidth(line.left(40), metrics, 2000) == line.left(40),
+              "a short prefix that fits a wide row is shown whole");
+    }
 
     Theme::setActiveDesign(Theme::Design::Next, true);
     kit::installStockPolish();

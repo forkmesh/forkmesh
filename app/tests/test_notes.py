@@ -158,6 +158,16 @@ def test_note_lifecycle_acl_versions_and_repository_links():
                     f"/api/notes/{note_id}/versions")
     assert outsider["status"] == 200
     assert all("author" not in item for item in outsider["data"]["versions"])
+    one = call(runtime.use("GET", "bob", query={"version": "1"}),
+               f"/api/notes/{note_id}/versions")["data"]["version"]
+    assert (one["version"], one["author"], one["title"], one["markdown"]) == (
+        1, "alice", "Launch plan", "# One")
+    assert call(runtime.use("GET", "carol", query={"version": "1"}),
+                f"/api/notes/{note_id}/versions")["status"] == 404
+    assert call(runtime.use("GET", "bob", query={"version": "9"}),
+                f"/api/notes/{note_id}/versions")["status"] == 404
+    assert call(runtime.use("GET", "bob", query={"version": "x"}),
+                f"/api/notes/{note_id}/versions")["status"] == 400
     restored = call(runtime.use("POST", "bob", {
         "version": 1, "baseVersion": 2,
     }), f"/api/notes/{note_id}/versions")
@@ -412,3 +422,14 @@ def test_activity_keeps_the_latest_events_per_note():
     runtime.db.execute("PRAGMA foreign_keys=ON")
     call(runtime.use("DELETE", "alice"), f"/api/notes/{note_id}")
     assert runtime.db.execute("SELECT COUNT(*) FROM note_events").fetchone()[0] == 0
+
+
+def test_an_account_cannot_create_past_the_note_and_page_caps(monkeypatch):
+    monkeypatch.setattr(notes, "MAX_OWNED_NOTES", 1)
+    runtime = FakeRuntime()
+    assert call(runtime.use("POST", "alice", {"title": "One", "markdown": "x"}), "/api/notes")["status"] == 201
+    refused = call(runtime.use("POST", "alice", {"title": "Two", "markdown": "y"}), "/api/notes")
+    assert refused["status"] == 409 and refused["data"]["error"] == "note_limit_reached"
+    assert call(runtime.use("POST", "bob", {"title": "Bob", "markdown": "z"}), "/api/notes")["status"] == 201
+    source = (ROOT / "src" / "notes.py").read_text(encoding="utf-8")
+    assert "MAX_OWNED_PAGES" in source and '"page_limit_reached"' in source

@@ -40,6 +40,8 @@ LOGO_UNSAFE_RE = re.compile(
     rb"javascript:|<!entity", re.IGNORECASE)
 MAX_LAUNCHES_PER_HOUR = 4
 MAX_RUNNING = 5
+MAX_PROBES_PER_HOUR = 20
+MAX_PROBES_RUNNING = 8
 HOUR_MS = 60 * 60 * 1000
 FETCH_TIMEOUT_SECONDS = 8
 KEEP_MS = 7 * 24 * 60 * 60 * 1000
@@ -438,22 +440,50 @@ async def handle(runtime, route):
         data.clear()
 
 
+def _unavailable(runtime):
+    return _error(runtime, "launch_unavailable", 503,
+                  "Instance setup is not available on this server right "
+                  "now. Try again in a few minutes.")
+
+
+_probes_running = 0
+
+
+async def _probes_this_hour(runtime, client, now):
+    row = await runtime.d1_first(
+        "SELECT COUNT(*) AS n FROM instance_launches WHERE client_key=? AND "
+        "project='' AND created_at>=?", client, now - HOUR_MS)
+    return int((row or {}).get("n") or 0)
+
+
+async def _charge_probe(runtime, client, now):
+    if await _probes_this_hour(runtime, client, now) >= MAX_PROBES_PER_HOUR:
+        return None
+    probe = runtime.new_id()
+    await runtime.d1_run(
+        "INSERT INTO instance_launches (id,client_key,project,domain,owner,admin,"
+        "address,port,state,created_at,updated_at) VALUES (?,?,'','','','','',0,"
+        "'failed',?,?)", probe, client, now, now)
+    if await _probes_this_hour(runtime, client, now) > MAX_PROBES_PER_HOUR:
+        return None
+    return probe
+
+
 async def _launch(runtime, data):
     helper = ssh_setup._helper(runtime)
     if helper is None:
-        return _error(runtime, "launch_unavailable", 503,
-                      "Instance setup is not available on this server right "
-                      "now. Try again in a few minutes.")
+        return _unavailable(runtime)
     form, problem = validate(data)
     if problem:
         return _error(runtime, problem[0], 400, problem[1], problem[2])
     now = runtime.now()
     await runtime.d1_run(
-        "DELETE FROM instance_launches WHERE updated_at<?", now - KEEP_MS)
+        "DELETE FROM instance_launches WHERE updated_at<? OR (project='' AND "
+        "updated_at<?)", now - KEEP_MS, now - HOUR_MS)
     client = await runtime.client_key()
     recent = await runtime.d1_first(
         "SELECT COUNT(*) AS n FROM instance_launches WHERE client_key=? AND "
-        "created_at>=?", client, now - HOUR_MS)
+        "project<>'' AND created_at>=?", client, now - HOUR_MS)
     if int((recent or {}).get("n") or 0) >= MAX_LAUNCHES_PER_HOUR:
         return _error(runtime, "rate_limited", 429, "That is a lot of launches "
                       "in one hour. Try again a little later.")
@@ -463,28 +493,43 @@ async def _launch(runtime, data):
     if int((running or {}).get("n") or 0) >= MAX_RUNNING:
         return _error(runtime, "busy", 503, "Several instances are being set "
                       "up right now. Try again in a few minutes.")
-    addresses = await runtime.resolve_host(form["host"])
-    checked = [ssh_setup.public_address(item) for item in addresses or []]
-    if not checked or any(item is None for item in checked):
-        return _error(runtime, "address_not_public", 400,
-                      "That server does not have a public address ForkMesh "
-                      "can reach. Use its public IP.", "host")
-    address = str(sorted(checked, key=lambda item: item.version)[0])
-    keys, scan_error = [], ""
-    async for message in helper({"op": "keyscan", "address": address,
-                                 "port": form["port"]}):
-        if message.get("error"):
-            scan_error = str(message["error"])[:200]
-        for item in message.get("keys") or []:
-            key_type = str((item or {}).get("type") or "")
-            blob = str((item or {}).get("key") or "")
-            print_ = ssh_setup.fingerprint(blob)
-            if key_type in ssh_setup.KEY_TYPES and \
-                    ssh_setup.KEY_BLOB_RE.fullmatch(blob) and print_:
-                keys.append({"type": key_type, "key": blob,
-                             "fingerprint": print_})
+    global _probes_running
+    if _probes_running >= MAX_PROBES_RUNNING:
+        return _error(runtime, "busy", 503, "Several servers are being checked "
+                      "right now. Try again in a few minutes.")
+    probe = await _charge_probe(runtime, client, now)
+    if probe is None:
+        return _error(runtime, "rate_limited", 429, "That is a lot of servers "
+                      "to check in one hour. Try again a little later.")
+    _probes_running += 1
+    try:
+        addresses = await runtime.resolve_host(form["host"])
+        checked = [ssh_setup.public_address(item) for item in addresses or []]
+        if not checked or any(item is None for item in checked):
+            return _error(runtime, "address_not_public", 400,
+                          "That server does not have a public address ForkMesh "
+                          "can reach. Use its public IP.", "host")
+        address = str(sorted(checked, key=lambda item: item.version)[0])
+        keys, scan_error, scanned = [], "", False
+        async for message in helper({"op": "keyscan", "address": address,
+                                     "port": form["port"]}):
+            if message.get("error"):
+                scan_error = str(message["error"])[:200]
+            scanned = "keys" in message or scan_error == "no answer"
+            for item in message.get("keys") or []:
+                key_type = str((item or {}).get("type") or "")
+                blob = str((item or {}).get("key") or "")
+                print_ = ssh_setup.fingerprint(blob)
+                if key_type in ssh_setup.KEY_TYPES and \
+                        ssh_setup.KEY_BLOB_RE.fullmatch(blob) and print_:
+                    keys.append({"type": key_type, "key": blob,
+                                 "fingerprint": print_})
+    finally:
+        _probes_running -= 1
+    if not keys and not scanned:
+        return _unavailable(runtime)
     if not keys:
-        return _error(runtime, "ssh_unreachable", 502,
+        return _error(runtime, "ssh_unreachable", 400,
                       "No SSH server answered at %s port %d. Check the IP, "
                       "the port and the server's firewall. %s" % (
                           address, form["port"], ssh_setup.scrub(scan_error)),
@@ -507,6 +552,7 @@ async def _launch(runtime, data):
         actor = await leases._account(runtime, {})
     except Exception:
         actor = ""
+    await runtime.d1_run("DELETE FROM instance_launches WHERE id=?", probe)
     launch_id = runtime.new_id()
     steps = initial_steps()
     steps[0]["state"] = "running"

@@ -233,10 +233,24 @@ struct AgentsScreen: View {
     }
 
     private var tabBar: some View {
-        tools
-            .frame(maxWidth: .infinity)
-            .padding(.horizontal, FmSpace.x2)
-            .frame(height: 46)
+        VStack(alignment: .leading, spacing: FmSpace.x1) {
+            Text("Agents")
+                .fmText(.displaySmall)
+                .lineLimit(1)
+                .accessibilityAddTraits(.isHeader)
+                .padding(.horizontal, FmSpace.x4)
+            ScrollView(.horizontal, showsIndicators: false) {
+                tools
+                    .padding(.horizontal, FmSpace.x4)
+                    .padding(.vertical, FmSpace.x1)
+            }
+            .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.top, FmSpace.x2)
+        .padding(.bottom, FmSpace.x1)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .genieKeepsClear()
     }
 
     private var tools: some View {
@@ -699,20 +713,53 @@ struct AgentsScreen: View {
         }
     }
 
+    static let starters: [(title: String, detail: String, prompt: String)] = [
+        ("Fix the failing tests", "Finds them on main and opens a pull request", "Find the failing tests on main and fix them."),
+        ("Write docs for a screen", "A short page in docs/ with how it works", "Write a short docs page explaining how this screen works: "),
+    ]
+
     private var emptyList: some View {
-        VStack(alignment: .leading, spacing: FmSpace.x3) {
+        VStack(alignment: .leading, spacing: 0) {
             FmEmptyState(
                 icon: "smart_toy_outlined",
-                title: "No agent sessions yet",
+                title: "No agents yet",
                 message: canStart
-                    ? "Send a prompt from the compose button and follow it here from the mirror that runs it to its branch, pull request and merge."
-                    : "Agent sessions pushed by desktop nodes will appear here."
+                    ? "Tap + and describe a change. Follow it here from branch to merge."
+                    : "Agent sessions pushed by desktop nodes will appear here.",
+                art: AnyView(AgentPipelineArt())
             )
+            .frame(minHeight: 320)
+            if canStart {
+                FmSectionHeader(title: "Try one")
+                    .padding(.horizontal, FmSpace.x2)
+                    .padding(.bottom, FmSpace.x2)
+                VStack(spacing: 0) {
+                    ForEach(Array(AgentsScreen.starters.enumerated()), id: \.offset) {
+                        (entry: (offset: Int, element: (title: String, detail: String, prompt: String))) in
+                        if entry.offset > 0 {
+                            FmRowDivider(indent: FmSpace.x4)
+                        }
+                        FmListRow(
+                            title: entry.element.title,
+                            subtitle: entry.element.detail,
+                            trailing: AnyView(
+                                Image(systemName: "arrow.up.right")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(fm.textTertiary)),
+                            onTap: { FmMessageHandoff.compose(ComposeTarget(text: entry.element.prompt)) },
+                            showChevron: false,
+                            minHeight: 56)
+                    }
+                }
+                .background(fm.bgRaised)
+                .clipShape(FmRoundedShape(radius: FmRadius.lg * 2))
+            }
             if !model.hasDesktopNode {
-                FmNeedsDesktopNote(
-                    detail: "This account has no desktop or server node enrolled. A prompt still goes to a mirror of the repository when one can run agents; otherwise it runs on this phone, against a mirror of the repository, on your own provider key or with Gemma 4 on this iPhone.",
-                    icon: "smart_toy_outlined"
-                )
+                Text("No desktop enrolled. Prompts run on a mirror of the repository, or on this iPhone with your own key or Gemma 4.")
+                    .fmText(.bodySmall, color: fm.textSecondary)
+                    .padding(.horizontal, FmSpace.x2)
+                    .padding(.top, FmSpace.x3)
+                    .fmMessageTools("No desktop enrolled. Prompts run on a mirror of the repository, or on this iPhone with your own key or Gemma 4.")
             }
         }
     }
@@ -779,6 +826,7 @@ extension AgentLineSort {
 struct AgentToolChip: ViewModifier {
     func body(content: Content) -> some View {
         content
+            .frame(minWidth: 30)
             .frame(height: 30)
             .shellGlass(RoundedRectangle(cornerRadius: FmRadius.md, style: .continuous))
             .contentShape(RoundedRectangle(cornerRadius: FmRadius.md, style: .continuous))

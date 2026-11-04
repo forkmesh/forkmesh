@@ -384,6 +384,8 @@ QJsonObject AgentSession::toJson() const
         if (!heldBy.isEmpty())
             obj["heldBy"] = heldBy.left(200);
     }
+    if (!deniedPermissions.isEmpty())
+        obj["deniedPermissions"] = QJsonArray::fromStringList(deniedPermissions);
     obj["yolo"] = yolo;
     if (vibe)
         obj["vibe"] = true;
@@ -434,6 +436,9 @@ QJsonObject AgentSession::toJson() const
     obj["webSessionId"] = webSessionId;
     if (!claudeAppSessionId.isEmpty())
         obj["claudeAppSessionId"] = claudeAppSessionId;
+    if (!claudeAppPath.isEmpty())
+        obj["claudeApp"] = QJsonObject{{"path", claudeAppPath},
+                                       {"bytes", double(claudeAppBytes)}};
     if (!claudeImportId.isEmpty())
         obj["claudeImport"] = QJsonObject{{"id", claudeImportId},
                                           {"path", claudeImportPath},
@@ -508,6 +513,9 @@ AgentSession AgentSession::fromJson(const QJsonObject &obj)
     session.directCheckout = obj.value("directCheckout").toBool();
     session.held = obj.value("held").toBool(false);
     session.heldBy = session.held ? obj.value("heldBy").toString().left(200) : QString();
+    for (const QJsonValue &denied : obj.value("deniedPermissions").toArray())
+        if (denied.isString())
+            session.deniedPermissions.append(denied.toString());
     session.yolo = obj.value("yolo").toBool();
     session.vibe = obj.value("vibe").toBool();
     session.genie = obj.value("genie").toBool();
@@ -555,6 +563,9 @@ AgentSession AgentSession::fromJson(const QJsonObject &obj)
             session.orgAgentJob.value("sessionId").toString().trimmed();
     session.claudeAppSessionId =
         obj.value("claudeAppSessionId").toString().trimmed();
+    const QJsonObject claudeApp = obj.value("claudeApp").toObject();
+    session.claudeAppPath = claudeApp.value("path").toString();
+    session.claudeAppBytes = qint64(claudeApp.value("bytes").toDouble());
     const QJsonObject claudeImport = obj.value("claudeImport").toObject();
     session.claudeImportId = claudeImport.value("id").toString();
     session.claudeImportPath = claudeImport.value("path").toString();

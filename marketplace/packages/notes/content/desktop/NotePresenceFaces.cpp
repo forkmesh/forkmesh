@@ -15,6 +15,13 @@
 
 namespace forkmesh::notes {
 
+QColor notePresenceColor(const QString &name)
+{
+    return QColor(QString::fromLatin1(
+        Theme::kSenderPalette[noteAvatarIndex(name.toLower(),
+                                              Theme::kSenderPaletteSize)]));
+}
+
 namespace {
 constexpr int kFace = 24;
 constexpr int kFaceStep = 18;
@@ -23,9 +30,7 @@ constexpr int kBadge = 12;
 
 QColor faceColor(const QString &name)
 {
-    return QColor(QString::fromLatin1(
-        Theme::kSenderPalette[noteAvatarIndex(name.toLower(),
-                                              Theme::kSenderPaletteSize)]));
+    return notePresenceColor(name);
 }
 
 QPixmap facePixmap(const NotePeer &peer, const QPixmap &picture, int side)
@@ -210,6 +215,23 @@ void NotePresenceFaces::showEveryone()
             if (openProfile)
                 openProfile(name);
         });
+    }
+    if (follow) {
+        menu.addSeparator();
+        const QString current = following ? following() : QString();
+        QStringList names;
+        for (const NotePeer &peer : std::as_const(m_peers)) {
+            if (!names.contains(peer.name))
+                names << peer.name;
+        }
+        for (const QString &name : std::as_const(names)) {
+            const bool on = name == current;
+            QAction *action = menu.addAction(on ? QStringLiteral("Stop following %1").arg(name)
+                                                : QStringLiteral("Follow %1").arg(name));
+            action->setToolTip(QStringLiteral("Keep %1's place in the note in view").arg(name));
+            connect(action, &QAction::triggered, this,
+                    [this, name, on] { follow(on ? QString() : name); });
+        }
     }
     menu.exec(mapToGlobal(QPoint(0, height())));
 }

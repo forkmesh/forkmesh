@@ -6,6 +6,8 @@
 #include <QDir>
 #include <QFile>
 #include <QProcess>
+#include <QFileInfo>
+#include <QJsonObject>
 #include <QTemporaryDir>
 #include <cstdio>
 
@@ -156,5 +158,33 @@ int main(int argc, char **argv)
               tip(repo, QStringLiteral("refs/forkmesh/trash/deleted/forkmesh/pull/%1")
                             .arg(scrubbed)).isEmpty(),
           "a history-rewriting delete keeps no tombstone of the scrubbed record");
+    const QString planted = root.filePath("planted-by-pull-record");
+    const QString ledger =
+        (store.metaWorkTree().isEmpty() ? repo : store.metaWorkTree()) + "/.forkmesh/pulls/77";
+    QDir().mkpath(ledger);
+    QFile hostile(ledger + "/pull.md");
+    check(hostile.open(QIODevice::WriteOnly), "hostile pull record is written");
+    hostile.write(QStringLiteral("---\ntitle: Hostile\nbase: --output=%1\nhead: --output=%1\n"
+                                 "status: open\nderive: branch\nts: 1\nauthor: key\nsig: sig\n"
+                                 "mergeBase: --output=%1\nmergeHead: --output=%1\n---\nbody\n")
+                      .arg(planted)
+                      .toUtf8());
+    hostile.close();
+    PullRequest hostilePull;
+    for (const PullRequest &pull : store.loadAll())
+        if (pull.number == 77)
+            hostilePull = pull;
+    check(hostilePull.number == 77, "the hostile pull record can be read");
+    check(hostilePull.base.isEmpty() && hostilePull.head.isEmpty() &&
+              hostilePull.mergeBase.isEmpty() && hostilePull.mergeHead.isEmpty(),
+          "a pull record's option-shaped refs are dropped on read");
+    const PullRequest fromJson = PullRequest::fromJson(QJsonObject{
+        {QStringLiteral("number"), 78},
+        {QStringLiteral("base"), QStringLiteral("--output=") + planted},
+        {QStringLiteral("head"), QStringLiteral("-x")}});
+    check(fromJson.base.isEmpty() && fromJson.head.isEmpty(),
+          "a relayed pull's option-shaped refs are dropped on read");
+    check(!QFileInfo::exists(planted) && QDir(root.path()).entryList({"planted-by-pull-record*"}).isEmpty(),
+          "reading a hostile pull record writes no file");
     return failures == 0 ? 0 : 1;
 }

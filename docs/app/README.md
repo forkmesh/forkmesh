@@ -75,6 +75,7 @@ One page per topic. Each links back here.
 | --- | --- |
 | [dashboard-colors](dashboard-colors.md) | Dashboard colour roles and theme.json |
 | [dashboard-components](dashboard-components.md) | Shared `fm-*` dashboard components |
+| [dashboard-home](dashboard-home.md) | The dashboard home page: rails, composer, sessions, pull requests and issues |
 | [web-composer](web-composer.md) | The dashboard prompt composer |
 | [web-desktop-parity](web-desktop-parity.md) | What works on the web and what still needs the desktop |
 | [seasonal-theme](seasonal-theme.md) | The platform-wide Halloween theme |
@@ -99,7 +100,6 @@ One page per topic. Each links back here.
 | [stale-pulls](stale-pulls.md) | Optional ForkBot reminders and closing for pull requests waiting on their author |
 | [remote-forks](remote-forks.md) | Forks on other instances and cross-instance pull requests |
 | [provider-mirrors](provider-mirrors.md) | Mirroring a repository to GitHub or GitLab |
-| [archive-sync](archive-sync.md) | Scheduled backup of a repository to the Internet Archive |
 | [ai-review](ai-review.md) | Automated first-pass AI review of pull requests |
 | [ai-disclosure](ai-disclosure.md) | AI disclosure on pull requests and the issue AI prompt |
 | [security-advisories](security-advisories.md) | Private vulnerability reports and repository security advisories |
@@ -123,6 +123,7 @@ One page per topic. Each links back here.
 | [notes-documents](notes-documents.md) | Notes as documents: diagrams, page layout and PDF export |
 | [notes-comments](notes-comments.md) | Inline comments on notes, replies, mentions, resolving, and who is here |
 | [notes-pages](notes-pages.md) | Note emoji and pages that gather many notes under one outline |
+| [notes-assist](notes-assist.md) | Writing with AI on a note selection: clean up, check grammar, rewrite, or write from a prompt |
 | [notifications](notifications.md) | Thread notifications, new issue pings, notification email send claims, collaboration author display |
 | [pings-page](pings-page.md) | The `/dashboard/pings` inbox that replaced the bell dropdown and pings modal |
 | [content-first-pings](content-first-pings.md) | Pings that lead with the actor and the content |
@@ -151,6 +152,7 @@ One page per topic. Each links back here.
 | [chat-direct-calls](chat-direct-calls.md) | One-to-one encrypted calls: signaling, resilience, rings, quality widget, phones |
 | [chat-group-calls](chat-group-calls.md) | Group audio and video calls in private channels |
 | [call-filters](call-filters.md) | Face, background, outfit and voice filters in calls, native ports, Face Changer |
+| [meeting-rooms](meeting-rooms.md) | `/call` rooms for booked meetings: link keys, sealed relay, effects, offline transcript |
 | [face-stream](face-stream.md) | Low-bandwidth face stream for calls |
 | [fmm-browser](fmm-browser.md) | FM Media call engine in the browser |
 

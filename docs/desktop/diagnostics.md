@@ -603,8 +603,13 @@ returned, so summed frame totals overstate a function's own cost.
 - **Idle frame rate.** Separate animation timers that never align keep the
   window repainting at the compositor's frame rate while nobody uses it.
   - `AgentDotMatrix` stores a change that only moves a running square's meter
-    for the next sweep frame (`sameSquares`). The scanner tick calls
-    `refreshAgentDots()`, which leaves out `scheduleSessionsPageRefresh()`.
+    for the next sweep frame (`sameSquares`). The 45 ms scanner tick calls
+    `refreshAgentDotIntensities()`, which updates only the running squares'
+    meters from the matrix's current dots and leaves out
+    `scheduleSessionsPageRefresh()`; it falls back to `refreshAgentDots()`
+    when a session was added, removed or started or stopped running. Before
+    report #21 (2026-11-01) every tick rebuilt every session's square and the
+    status tally (`refreshAgentDots`, 512 ms stall).
   - The Agents squares and the Actions strip share one 60 ms clock
     (`ChromeDotGrid::animationClock`, held through `holdAnimationClock` while
     something runs), so their repaints land in the same frame.
@@ -631,6 +636,20 @@ returned, so summed frame totals overstate a function's own cost.
     tables fit from `kit::kDataTableFitRows` (100) rows around the viewport; a
     smaller bound a page already set is kept, and leaving the Next design
     restores the old value. `forkmesh-ui-kit-tests` covers it.
+- **Emoji in elided lines (report #22).** Qt 6.8 caches a colour emoji glyph
+  in ARGB but looks for its advance in the mono format, so every shaping
+  pass decodes each emoji's PNG again (FreeType and libpng frames under
+  `recalcAdvances`, ~0.1 ms per emoji, no warm-up). The prompt's chat preview
+  (`ChatPreviewLabel`) elided whole agent messages on every repaint: 0.5 to
+  1 s stalls (`STALL-20261102T141900552-p876694-0003`, `-0005`).
+  `kit::elideRightToWidth` cuts a line to the characters its width can hold
+  (a third of the average character width each) before eliding, which takes
+  a 3,700-character line with 400 emoji from 45 ms to 3 ms; the label's
+  rich text is cut to `kit::kCellDisplayChars`, and `setLines` keeps the
+  painted rows when the lines did not change. Elide long message text with
+  `kit::elideRightToWidth`; the chat list previews are already capped
+  (`ChatListPreview.h`). `forkmesh-ui-kit-tests` elides a 2,000,000-character
+  line.
 - **Glue frames.** `QtRuntimeDiagnostics::noteEventTiming` (runs after every
   delivery) and `hiddenunicode::guardWidget` (runs on every `Polish`, only
   casts the widget) are glue frames, so a style-sheet polish stall names the
@@ -689,10 +708,181 @@ returned, so summed frame totals overstate a function's own cost.
   `forkmesh::settings::put`, which skips unchanged values.
 - **No work for a link that is already down.** `ServerNode::shutdown` sends
   `bye` (one x25519 seal per room member) only while `m_wsReady`.
+- **Do not `grab()` a widget inside the main window.** On a visible widget,
+  `QWidget::grab` first delivers pending resize events to every widget in the
+  window that has never been shown, which polishes and lays out hidden rich-text
+  labels everywhere (`STALL-20261101T154849825-p1962648-0051`: a ~700 ms rich-text layout under
+  `prepareToRender`). Copy the pixels already on screen with
+  `forkmesh::ui::kit::shownPixels`, which reads the window's backing store. The
+  transcript's held frame uses it and falls back to the blank canvas;
+  `flyToComposer` falls back to `grab()` only if the backing store cannot be read.
+  Drag pixmaps and test grabs can still use `grab()`.
+- **Create a view inside its parent.** Under the application style sheet, moving
+  a built `QTableWidget` into a parent restyles it and its headers, scroll
+  bars and viewport. `buildRewardPoolControlCard` creates its two tables with
+  the card as parent (`…-p970989-0017`). The Control Node tabs still build each
+  card unparented and move it about four times (body, scroll area, tabs).
+- **Delete row widgets instead of hiding them.** `QTreeWidget::clear` hides
+  each item widget before its `deleteLater`. When accessibility is on, each
+  hide builds an accessible interface for the widget and every child, about
+  1 s for a big range (`…-p1962648-0065`). `clearScmTree` deletes the
+  Source Control rows outright. When a menu or modal dialog is open it uses a
+  plain `clear()` instead, because a nested event loop may still be running a
+  row's handler. The working-tree rebuild also keeps `clear()`, because its
+  rows' stage buttons start it.
+- **Repo workflow runs are written in the background.** `repoWorkflowRunChanged`
+  merges the run into `m_repoWorkflowRunsCache` (`rw::mergeRun`) and queues the
+  JSON with `diskwrite::writeLater`; readers go through `repoWorkflowRuns`, so
+  they see the queued state. The run's Markdown output is queued the same way
+  (`…-0064`: the `QSaveFile` fsync took ~700 ms).
+- **Hand the side panels the event list, not one event at a time.**
+  `SessionSidePanels::appendActivity` shares the session's event list and starts
+  its sliced ingest at the first event it has not seen. Copying every event of
+  a long session on a switch touched pages the process had swapped out
+  (`…-0060`, 1.2 s).
+- **Measure colour emoji once.** For a bitmap colour font (Noto Color Emoji),
+  Qt decodes the glyph's PNG each time it measures it, so every `elidedText`
+  and `drawText` over an emoji repeats the decode. `ChatPreviewLabel` (the prompt
+  bar's chat preview) draws its rows into a pixmap. It redraws that pixmap only
+  when the lines, size, font or colours change. Its `sizeHint` no longer lays
+  out the hidden rich-text copy, since the `Ignored` width policy discards
+  that width (`…-p970989-0005`, `-0010`, `-0012`, `-0013`).
+- **Do not re-set an unchanged run log.** `showRun` keeps the run id and a hash
+  of the log it showed, and skips `setPlainText` and the scroll to the end when
+  the same run comes back with the same text and the view still holds all of it.
+  Building the Actions tab shows the latest run and the notification click shows
+  it again, and each layout of emoji lines repeats the colour-glyph decode
+  above (`…-p970989-0016`).
+- **Spin only the rows on screen.** `animateRunningAgentIcons` rebuilds a
+  running row's spinner pixmap only when the table is shown and the row is in
+  the viewport; progress and ticker text still update on every tick
+  (`…-p970989-0009`).
+- **Off the GUI thread:** reading the Genie CRM summary (`GenieCrmCounts::read`,
+  `GenieCrmDigest::read`, `…-p970989-0006`). The Workflows package's
+  `loadLocal` stops when the host's payload has not changed.
+- **Match a URL against a rule list once per URL.** The Network page's
+  endpoint table rebuilt every 120 ms while a row faded and matched each
+  endpoint against all 208 catalog patterns, and each match re-canonicalized
+  the URL through `QUrl::toString` (stalls of 2 to 7.7 s, report #21).
+  `firewallRuleMatchesFacts` (`BackoffNetworkAccessManager.cpp`) works from
+  the URL's scheme, host and port taken once, builds the exact-URL form only
+  for a `url:` rule, and keeps parsed `urlglob:` patterns in a per-thread
+  cache; `matchEndpointProfile` and `firewallDecision` use it (600 URLs
+  against the shipped catalog: 260 to 298 ms before, 21 to 29 ms after).
+  `refreshNetworkDiagnostics` also keeps each method and URL's catalog match
+  (`m_networkEndpointProfileIndex`), since the catalog is fixed. A request
+  no longer rebuilds the table at once: `endpointStatsChanged` queues one
+  rebuild per 250 ms (`m_networkDiagnosticsRefreshQueued`), and the
+  120 ms highlight fade only recolours the rows already there
+  (`fadeNetworkEndpointRows`). Test:
+  `forkmesh-tests` (crypto suite, firewall rule matching).
 - **Nothing to fix:** layout started by `setVisible` (`renderPageNotices`),
   text shaping, paint and style polish with no application frame, cached
   pixmap painting while the process is swapped out, and any stall sampled
   while the load average is far above the CPU count.
+
+### Rules from report #23 (2026-11-03)
+
+- **Patch rows, do not rebuild them.** The repository overview builds a cell
+  widget per row, and each one is polished under the application stylesheet
+  (the most frequent stall, x102). When the last-commit subjects arrive,
+  `mergeOverviewEntryCommits` updates the existing items through
+  `refreshOverviewRowCommits`/`applyOverviewRowCommit`. It rebuilds only when
+  the sort is by "updated" or "subject", or the rows no longer match.
+- **Paint small decorations.** An overview row's size/lines/files strip is
+  one painted `OverviewMetricTracks` widget, not a container with three
+  tracks and three fills. That takes a "next" row from 10 widgets to 4. Its
+  colours repeat the stylesheet's (`#overviewMetricTrack`/`Fill` in
+  `Theme.h`, the track remapped through `nextPalette` and the fill
+  `FgMuted` in the next design).
+- **Build tabs when they are shown.** `QTabWidget::heightForWidth` asks every
+  page through `QStackedLayout`, so a word-wrapped label on a hidden tab still
+  gets laid out. Surveys builds only the shown detail tab
+  ([../marketplace/surveys.md](../marketplace/surveys.md)).
+- **Start web engines on first show.** Face Changer creates its
+  `QWebEngineView` in `showEvent`, not in the page constructor that runs during
+  `buildNextNativePackagePage`
+  ([../marketplace/face-changer-desktop.md](../marketplace/face-changer-desktop.md)).
+- **Do not persist what launch throws away.** A launch always docks the
+  prompt, so only `prompt/detachGeometry` is stored. The floating and detached
+  keys are dropped once, and the startup no longer rewrites and fsyncs
+  `ForkMesh.conf` after every session that ended with the prompt floating.
+
+### Rules from report #25 (2026-11-04)
+
+- **Build a big page top-down.** Under the application style sheet every
+  `setParent` runs `QWidgetPrivate::inheritStyle` over the whole moved
+  subtree: a `StyleChange` to each widget, and an unpolish and polish of any
+  widget a `sizeHint` already polished. A page built bottom-up is walked once
+  per ancestor it is moved under. Opening the Agents tab (the most frequent
+  stall, x131, about 1.1 s) did that for the transcript five times: code
+  split, output page, detail pane, splitter, page stack, page, repository
+  stack. `buildAgentsTab` now creates the page in `m_repoDetailStack` and the
+  page stack, splitter, list and detail panes and the output page in their
+  parents before filling them, so `ensureRepoDetailTabBuilt`'s
+  `insertWidget` moves nothing. The two session side panels (about 200
+  widgets each) were the rest: `SessionSidePanels` sets its inner widget
+  before adding the cards, and the tower copy and the workspace Details copy
+  are created in the code split and the details host. The offscreen
+  `--repo-lazy-only` window test went from 649 ms and 5,125 style changes for
+  697 new widgets to 219 ms and 1,186, and now fails above two per widget.
+- **Create the composer dock in its host.** `buildNetworkLogDock` creates the
+  dock in `m_globalOverlayHost`. It was built unparented and moved in
+  afterwards (`…-p2661941-0001`, ~500 ms), and the
+  `positionGlobalFooterOverlays` it runs while building showed the parentless
+  dock as a top-level window until the move hid it again.
+
+### Rules from the stall run of 2026-11-04 (`p2661941`)
+
+- **Opening the Market rebuilds only what changed.** `showSection` called
+  `refreshMarketPage`, which builds every card twice (All, plus Installed or
+  Not installed), on every open and on Back. That took 2.5 to 5.6 s each time
+  (`…-0005`, `-0040`, `-0041`, `-0044`, `-0047`). `refreshMarketPage` now
+  saves a `MarketPageInputs` fingerprint: each package's version, install
+  state and places, the open native pages, module load state, counts,
+  ratings, sort, theme, settings page and model download. Opening runs
+  `refreshMarketPageIfChanged`, which rebuilds only when the fingerprint
+  differs. Every install, removal and setting change still calls
+  `refreshMarketPage` directly; counts that arrive while the page is hidden
+  change the fingerprint, so the next open shows them.
+- **Memory figures load off the thread.** The card footprint line read and
+  parsed `/proc/self/smaps` (1.5 MB, about 90 ms in a 2.5 GB process) inside
+  every build. The build now uses the last figures and runs
+  `queueMarketResidentRead` on a worker. The result updates the
+  `marketPackageFootprint` labels in place.
+- **The workflow schedule tick reads no files on the GUI thread.**
+  `checkRepoWorkflowSchedules` listed and parsed every repository's workflow
+  files and their run history on each tick (`…-0014`, ~780 ms). A worker now
+  does the listing and the `loadRuns`. `applyRepoWorkflowSchedules` decides
+  what is due on the GUI thread, uses cached runs first, and passes the
+  listings on to `refreshWorkflowPins`.
+- **Action approvals are parsed once per change.** `ActionStore::isApproved`
+  parsed the repository's whole approval JSON on every call, so a workflow
+  scan paid once per workflow (`…-0012`, ~1 s). `parsedApprovals` keeps the
+  parsed object until the stored bytes change.
+
+### Rules from report #26 (2026-11-04)
+
+- **Register inline images, do not inline them.** Qt keeps a `data:` image as
+  its URL and bytes. Every layout and paint parses the URL again and decodes
+  the PNG again, so a merge certificate or leaderboard full of avatars blocked
+  the GUI thread for 9.4 s while the window resized.
+  `forkmesh::ui::adoptInlineImages` (`InlineImageResources.h`) decodes each
+  picture once and stores it as a pixmap resource on the diff document under
+  a short `fm-inline:<sha1>` URL. It rewrites only `<img>` sources, so diff
+  text that mentions a data URL stays as it is. The diff view's `setHtml` and
+  `insertHtml` calls in `MainWindowShared.cpp` go through it. A 400-row test
+  lays out in about half the time (`forkmesh-inline-image-resources-tests`).
+- **Lay out only what you measure.** `updateBranchDiffActiveOutline` runs on
+  every resize. It asks for the document height only when the active file is
+  the last one, because that is the only case that needs it.
+- **Clip one-line commands.** A transcript command card shows the command
+  flattened onto one line, and a long heredoc made a rich-text label tens of
+  thousands of characters wide (3.5 s in `addCommand`). The card now shows
+  the first 480 characters (`CodexTranscriptStyle::clippedCommandLine`); the
+  hover card still shows the whole command. `singleLineCommand` no longer
+  copies the rest of the command at every newline: 20,000 lines took 2.9 s
+  before and take 11 ms now (`forkmesh-codex-tests`).
 
 ### Startup: installed package pages after first paint
 
@@ -718,6 +908,43 @@ would remove that. For the few seconds the steps take, a package page not yet
 built is missing from search results and its rail button. `main.cpp` logs its
 startup lines through `logStartupTrace` like the rest of the trace.
 
+### Installing a package keeps the other pages (report #20)
+
+`syncNativePackagePages` used to delete every package page and build all of
+them again whenever the installed set changed, so one Market install rebuilt
+CRM, Calories, OpenWrt, Workflows, Marketing and the rest on the GUI thread
+(4.8 s, 8.1 s and 7.6 s stalls on 2026-11-01, followed by seconds of deferred
+style polish). It also sent you back to Market when you installed something
+from a package page you had open. Now it only removes the pages whose
+`(id, entrypoint)` dropped out, and only builds the ones that are missing: one
+missing page is built at once, so a single install opens on a ready page;
+two or more added beside pages already built (Install all, a pack) go through
+the `buildNextNativePackagePage` chain, which skips pages already built. A
+window with no pages yet still builds them in one pass, which the window
+tests rely on. Test: the Install all check in `forkmesh-window-tests
+--package-only` and `app/tests/test_desktop_package_rail_startup.py`.
+
+Other fixes from the same report:
+
+- **Market previews arrive ready to paint.** The worker converts each decoded
+  preview to `RGB32` or `ARGB32_Premultiplied`, and `applyMarketPreview` calls
+  `QPixmap::fromImage(..., Qt::NoOpaqueDetection)`, so the GUI thread no longer
+  scans every pixel for alpha and converts the image (1.5 s).
+- **CRM column moves do not refit every row.** In `CrmFeature::applyColumnOrder`
+  each `moveSection` made the table refit its `ResizeToContents` Actions column
+  over every contact row (612 ms for one snapshot). The first real move pins
+  those sections to `Fixed` at their current width, and they go back to
+  `ResizeToContents` once after the last move. A pass with nothing to move
+  touches no resize mode.
+- **The agent recycle bin loads on a worker.** `reloadAgentRecycleBin` reads
+  the bin with `runOffThread` (one read at a time, a call during a read queues
+  one more) and starting an agent no longer waits for it (1.2 s).
+- **Already fixed:** both crash records (the `refreshChannelList` crash during
+  local-mesh startup, and the teardown crash) happened before `d149be9982`.
+- **Nothing to fix:** the `DeployLogFollower::deliverFileLines` frame on the
+  2.4 s polish stall is a stray symbol; the stall was the posted Polish event
+  of the package pages rebuilt three seconds earlier.
+
 ### Background file writes
 
 `src/BackgroundFileWriter.{h,cpp}` (`forkmesh::diskwrite`) moves `QSaveFile`
@@ -733,6 +960,12 @@ commits and their fsync off the GUI thread.
   saved searches after a search or alert run (`SavedSearchStore::saveLater`;
   `save()` goes through `writeNow`, so a later click never lands under an
   older queued snapshot). `AgentStore::saveSession` skips byte-identical writes.
+- The tool-efficiency ledger's 5 s debounced save copies the ledger (Qt
+  containers share their data) and builds its ~100 KB JSON in `runOffThread`;
+  `finishBackgroundSave` queues the bytes only if no later `saveLater` (Clear,
+  shutdown) ran in between, so an older snapshot never lands on top. Building
+  the JSON on the GUI thread was a 575 ms stall under memory pressure
+  (`STALL-20261102T021331143-p970989-0063`).
 
 The agent transcript writers (`AgentStore`) append through
 `forkmesh::OrderedAppendWriter` (`src/OrderedAppendWriter.h`), one ordered
@@ -860,6 +1093,16 @@ Crash-safety rules:
   the crash and fails on any direct connection under `desktop/src` or
   `marketplace/packages`.
 - `glib` `SIGTRAP` crashes have come from file-descriptor exhaustion.
+- Process-wide registries that a `destroyed` handler, a deferred delete or a
+  worker can reach are never destroyed: `BackgroundActivity`'s ticket bus and
+  `ActionTelemetry`'s writer are leaked on purpose. An `exit()` from inside a
+  library (an X11 IO error in an offscreen instance) runs static destructors
+  and then flushes posted events, and a `QNetworkReply` deleted then closed its
+  ticket in the destroyed hash (SIGSEGV in `QHashPrivate::Data::detached`,
+  report #23). The writer still flushes `actions.jsonl` from an `atexit`
+  handler registered when it is created; records that arrive after that are
+  dropped. `forkmesh-background-activity-exit-tests` closes a ticket from an
+  exit handler registered before the bus existed.
 
 ## What is reported to the relay
 

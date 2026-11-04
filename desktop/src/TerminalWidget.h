@@ -23,6 +23,7 @@ public:
                     const QStringList &extraEnv = {},
                     bool keepHostShell = true);
     bool isRunning() const;
+    void setOpensSignInLinks(bool opens) { m_opensSignInLinks = opens; }
     void stop();
     void setRemoteInput(bool remote);
     bool remoteInput() const { return m_remoteInput; }
@@ -147,6 +148,7 @@ private:
 
     QByteArray m_urlScanBuffer;
     bool m_signInUrlEmitted = false;
+    bool m_opensSignInLinks = false;
     bool m_remoteInput = false;
 
     enum class State { Ground, Esc, Csi, Osc, EscIntermediate };

@@ -63,9 +63,11 @@ public enum PingTone: String, Sendable {
 
 public func notificationToneForKind(_ kind: String) -> PingTone {
     switch kind.dartTrimmed.lowercased() {
-    case "error", "error_group", "operational_alert", "security_alert", "local_failure": return .danger
+    case "error", "error_group", "operational_alert", "security_alert", "local_failure", "action_failed": return .danger
     case "agent-done", "agent_done", "host_online", "repository_hosted", "badge": return .success
-    case "issue", "issue_opened", "issue_assigned", "host_offline", "agent_approval", "agent-approval", "pull_attention": return .warning
+    case "issue", "issue_opened", "issue_assigned", "host_offline", "agent_approval", "agent-approval", "pull_attention",
+         "action_approval", "security_advisory":
+        return .warning
     case "mention", "subscribed", "repo", "repo_shared", "repo_activity", "code_push", "pending_inbox",
          "mirror", "mirror_request", "calendar_invitation", "calendar_reminder", "calendar_rsvp",
          "plugin_activity", "timer_finished", "account_email_sent", "prompt", "device_added", "package_review",
@@ -78,6 +80,26 @@ public func notificationToneForKind(_ kind: String) -> PingTone {
         return .accent
     default: return .neutral
     }
+}
+
+public func pingIsGoodNews(kind: String, meta: JSONObject) -> Bool {
+    kind.dartTrimmed.lowercased() == "operational_alert" && meta.str("state").dartTrimmed.lowercased() == "up"
+}
+
+public func notificationIcon(kind: String, meta: JSONObject) -> String {
+    pingIsGoodNews(kind: kind, meta: meta) ? "check_circle_outline" : notificationIconForKind(kind)
+}
+
+public func notificationTone(kind: String, meta: JSONObject) -> PingTone {
+    if pingIsGoodNews(kind: kind, meta: meta) { return .success }
+    if kind.dartTrimmed.lowercased() == "desktop_ping" {
+        switch meta.str("category").dartTrimmed {
+        case "agent-finished": return .success
+        case "agent-failed", "ci-failed": return .danger
+        default: break
+        }
+    }
+    return notificationToneForKind(kind)
 }
 
 /// The filter chips, in order.
@@ -434,7 +456,6 @@ public func pingOpenLabel(_ target: NotificationTapTarget) -> String? {
 
 public enum PingDetailCopy {
     public static let title = "Ping"
-    public static let backToList = "All pings"
     public static let deleteLabel = "Delete ping"
     public static let deleteTitle = "Delete this ping?"
     public static let deleteBody = "It is removed from your ForkMesh inbox on every device. This cannot be undone."

@@ -269,6 +269,8 @@ final class InboxFeedTests: XCTestCase {
         let signedOut = InboxModel(client: client, node: { "" }, store: InMemoryKeyValueStore())
         await signedOut.load()
         XCTAssertEqual(signedOut.errors, ["Sign in to see your inbox."])
+        XCTAssertTrue(signedOut.signedOut)
+        XCTAssertFalse(model.signedOut)
     }
 
     @MainActor func testLocalPingsRedactDedupeAndRateLimit() {
@@ -371,6 +373,12 @@ final class InboxFeedTests: XCTestCase {
         XCTAssertEqual(NotificationCategoryId.forPing(kind: "agent_approval"), .agentApproval)
         XCTAssertEqual(NotificationCategoryId.forPing(kind: "x", topic: "direct-messages"), .dm)
         XCTAssertTrue(NotificationActionId.approve.requiresAuthentication)
+        for action in [NotificationActionId.deny, .retry, .continueRun] {
+            XCTAssertTrue(action.requiresAuthentication)
+            XCTAssertFalse(action.opensApp)
+        }
+        XCTAssertFalse(NotificationActionId.markRead.requiresAuthentication)
+        XCTAssertFalse(NotificationActionId.reply.requiresAuthentication)
         XCTAssertTrue(NotificationActionId.merge.isDestructive)
         XCTAssertTrue(NotificationActionId.reply.isTextInput)
 

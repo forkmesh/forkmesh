@@ -14,12 +14,15 @@
 #include <QHostAddress>
 #include <QIODevice>
 #include <QNetworkReply>
+#include <QPointer>
 #include <QSet>
 #include <QStringList>
 #include <QTimer>
 
 #include <algorithm>
 #include <chrono>
+#include <memory>
+#include <optional>
 #include <utility>
 
 namespace {
@@ -937,17 +940,126 @@ BackoffNetworkAccessManager::parseEndpointCatalog(const QByteArray &json,
     return profiles;
 }
 
+namespace {
+
+struct FirewallUrlFacts {
+    const QUrl &url;
+    QString scheme;
+    QString host;
+    int port = -1;
+    QString hostRule;
+    mutable QString exactRule;
+    mutable bool exactRuleReady = false;
+
+    const QString &exact() const
+    {
+        if (!exactRuleReady) {
+            exactRule = BackoffNetworkAccessManager::firewallRuleForExactUrl(url);
+            exactRuleReady = true;
+        }
+        return exactRule;
+    }
+};
+
+FirewallUrlFacts firewallUrlFacts(const QUrl &url)
+{
+    FirewallUrlFacts facts{url};
+    facts.scheme = url.scheme().toLower();
+    facts.host = url.host().trimmed().toLower();
+    facts.port = url.port();
+    if (facts.port <= 0)
+        facts.port = facts.scheme == QLatin1String("https") ||
+                             facts.scheme == QLatin1String("wss")
+                         ? 443
+                     : facts.scheme == QLatin1String("http") ||
+                             facts.scheme == QLatin1String("ws")
+                         ? 80
+                         : -1;
+    facts.hostRule = facts.host.isEmpty() ? QString()
+                                          : QStringLiteral("host:") + facts.host;
+    return facts;
+}
+
+const UrlGlob *cachedUrlGlob(const QString &pattern)
+{
+    thread_local QHash<QString, std::optional<UrlGlob>> cache;
+    auto it = cache.constFind(pattern);
+    if (it == cache.constEnd()) {
+        if (cache.size() > 4096)
+            cache.clear();
+        UrlGlob glob;
+        std::optional<UrlGlob> parsed;
+        if (parseUrlGlob(pattern, &glob))
+            parsed = glob;
+        it = cache.insert(pattern, parsed);
+    }
+    return it->has_value() ? &it->value() : nullptr;
+}
+
+bool firewallRuleMatchesFacts(const QString &rule, const FirewallUrlFacts &facts)
+{
+    if (rule == QLatin1String("*") || rule == facts.hostRule)
+        return true;
+    if (rule.isEmpty() || rule.startsWith(QLatin1String("url:")))
+        return rule == facts.exact();
+    if (rule.startsWith(QLatin1String("scheme:")))
+        return QStringView(rule).mid(7) == facts.scheme;
+    if (rule.startsWith(QLatin1String("urlglob:"))) {
+        const UrlGlob *glob = cachedUrlGlob(rule.mid(8));
+        if (!glob)
+            return false;
+        if (glob->scheme != QLatin1String("*") && glob->scheme != facts.scheme)
+            return false;
+        if (glob->port > 0 && glob->port != facts.port)
+            return false;
+        if (glob->host.startsWith(QLatin1String("*."))) {
+            const QStringView suffix = QStringView(glob->host).mid(2);
+            if (facts.host != suffix &&
+                !(facts.host.endsWith(suffix) &&
+                  facts.host.size() > suffix.size() &&
+                  facts.host.at(facts.host.size() - suffix.size() - 1) ==
+                      QLatin1Char('.')))
+                return false;
+        } else if (facts.host != glob->host) {
+            return false;
+        }
+        const QString path =
+            facts.url.path().isEmpty() ? QStringLiteral("/") : facts.url.path();
+        return wildcardMatch(glob->path, path) ||
+               (glob->path.endsWith(QLatin1String("/*")) &&
+                path == QStringView(glob->path).chopped(2));
+    }
+    if (rule.startsWith(QLatin1String("hostwild:"))) {
+        const QStringView suffix = QStringView(rule).mid(9);
+        return facts.host == suffix ||
+               (facts.host.endsWith(suffix) &&
+                facts.host.size() > suffix.size() &&
+                facts.host.at(facts.host.size() - suffix.size() - 1) ==
+                    QLatin1Char('.'));
+    }
+    if (rule.startsWith(QLatin1String("hostport:")) && facts.port > 0) {
+        const QStringView rest = QStringView(rule).mid(9);
+        const qsizetype colon = rest.lastIndexOf(QLatin1Char(':'));
+        return colon > 0 && rest.left(colon) == facts.host &&
+               rest.mid(colon + 1).toInt() == facts.port;
+    }
+    return false;
+}
+
+} // namespace
+
 int BackoffNetworkAccessManager::matchEndpointProfile(
     const QList<EndpointProfile> &profiles, const QString &method, const QUrl &url)
 {
     const QString wanted = method.trimmed().toUpper();
+    const FirewallUrlFacts facts = firewallUrlFacts(url);
     int best = -1;
     qint64 bestScore = -1;
     for (int i = 0; i < profiles.size(); ++i) {
         const EndpointProfile &profile = profiles.at(i);
         if (!profile.method.isEmpty() && profile.method != wanted)
             continue;
-        if (!firewallRuleMatches(profile.pattern, url))
+        if (!firewallRuleMatchesFacts(profile.pattern, facts))
             continue;
         // Specificity leaves the lowest digit for the scheme; the method gets
         // a bit above the whole key so a named method always wins a tie.
@@ -1294,47 +1406,7 @@ void BackoffNetworkAccessManager::noteEndpointFinished(Operation op, const QUrl 
 bool BackoffNetworkAccessManager::firewallRuleMatches(const QString &rule,
                                                       const QUrl &url)
 {
-    const QString scheme = url.scheme().toLower();
-    const QString host = normalizedHost(url.host());
-    const int port = normalizedPort(url);
-    if (rule == QLatin1String("*") || rule == firewallRuleForUrl(url) ||
-        rule == firewallRuleForExactUrl(url))
-        return true;
-    if (rule == QStringLiteral("scheme:") + scheme)
-        return true;
-    if (rule.startsWith(QStringLiteral("urlglob:"))) {
-        UrlGlob glob;
-        if (!parseUrlGlob(rule.mid(8), &glob))
-            return false;
-        if (glob.scheme != QLatin1String("*") && glob.scheme != scheme)
-            return false;
-        if (glob.port > 0 && glob.port != port)
-            return false;
-        if (glob.host.startsWith(QLatin1String("*."))) {
-            const QString suffix = glob.host.mid(2);
-            if (host != suffix && !host.endsWith(QLatin1Char('.') + suffix))
-                return false;
-        } else if (host != glob.host) {
-            return false;
-        }
-        const QString path = url.path().isEmpty() ? QStringLiteral("/") : url.path();
-        // "dir/*" also covers "dir" itself.
-        return wildcardMatch(glob.path, path) ||
-               (glob.path.endsWith(QLatin1String("/*")) && path == glob.path.chopped(2));
-    }
-    if (rule.startsWith(QStringLiteral("hostwild:"))) {
-        const QString suffix = rule.mid(9);
-        if (host == suffix || host.endsWith(QStringLiteral(".") + suffix))
-            return true;
-    }
-    if (rule.startsWith(QStringLiteral("hostport:")) && port > 0) {
-        const QString rest = rule.mid(9);
-        const int colon = rest.lastIndexOf(QLatin1Char(':'));
-        if (colon > 0 && rest.left(colon) == host &&
-            rest.mid(colon + 1).toInt() == port)
-            return true;
-    }
-    return false;
+    return firewallRuleMatchesFacts(rule, firewallUrlFacts(url));
 }
 
 BackoffNetworkAccessManager::FirewallMatch
@@ -1355,10 +1427,11 @@ BackoffNetworkAccessManager::firewallDecision(const QUrl &url,
     if (!url.isValid() || isOnThisMachine(url))
         return FirewallAllowed;
     // The most specific matching rule decides; a tie goes to deny.
+    const FirewallUrlFacts facts = firewallUrlFacts(url);
     QString denyRule;
     qint64 bestDeny = -1;
     for (const QString &rule : m_firewallDenyRules) {
-        if (!firewallRuleMatches(rule, url))
+        if (!firewallRuleMatchesFacts(rule, facts))
             continue;
         const qint64 specificity = firewallRuleSpecificity(rule);
         if (specificity > bestDeny) {
@@ -1369,7 +1442,7 @@ BackoffNetworkAccessManager::firewallDecision(const QUrl &url,
     QString allowRule;
     qint64 bestAllow = -1;
     for (const QString &rule : m_firewallRules) {
-        if (!firewallRuleMatches(rule, url))
+        if (!firewallRuleMatchesFacts(rule, facts))
             continue;
         const qint64 specificity = firewallRuleSpecificity(rule);
         if (specificity > bestAllow) {
@@ -1403,6 +1476,116 @@ BackoffNetworkAccessManager::recordFirewallMatch(const QUrl &url)
 bool BackoffNetworkAccessManager::firewallAllows(const QUrl &url) const
 {
     return !m_firewallEnabled || firewallMatch(url) == FirewallAllowed;
+}
+
+bool BackoffNetworkAccessManager::firewallAdmits(Operation op, const QUrl &url, bool decoration,
+                                                  int requestIndex)
+{
+    const FirewallMatch match =
+        m_firewallEnabled ? recordFirewallMatch(url) : FirewallAllowed;
+    if (match == FirewallDenied) {
+        noteEndpointBlocked(op, url, QStringLiteral("Firewall denied"),
+                            requestIndex);
+        return false;
+    }
+    if (match != FirewallUnlisted)
+        return true;
+    QString rule = firewallRuleForUrl(url);
+    const QString method = firewallMethodName(op);
+    if (firewallAllowingAll())
+        rule.clear();
+    const FirewallVerdict verdict =
+        firewallAllowingAll() ? FirewallAllowOnce
+        : m_firewallPrompt && !decoration
+            ? m_firewallPrompt(method, url, &rule)
+            : FirewallDenyOnce;
+    const QString canonical = canonicalFirewallRule(rule);
+    if (!canonical.isEmpty()) {
+        if (verdict == FirewallAllow)
+            addFirewallRule(canonical);
+        else if (verdict == FirewallDeny)
+            addFirewallDenyRule(canonical);
+    }
+    const bool allowed = verdict == FirewallAllow || verdict == FirewallAllowOnce;
+    if (!decoration)
+        emit firewallRequestDecided(method, url, canonical, allowed);
+    if (!allowed)
+        noteEndpointBlocked(op, url, QStringLiteral("Firewall blocked"), requestIndex);
+    return allowed;
+}
+
+bool BackoffNetworkAccessManager::firewallAnswerCoversUrl(FirewallVerdict verdict,
+                                                          const QString &rule, const QUrl &url)
+{
+    if (verdict == FirewallDeny || verdict == FirewallDenyOnce)
+        return true;
+    return verdict == FirewallAllow && firewallRuleMatches(canonicalFirewallRule(rule), url);
+}
+
+QString BackoffNetworkAccessManager::redirectRefusal(QNetworkRequest::RedirectPolicy policy,
+                                                     const QUrl &from, const QUrl &to)
+{
+    if (!isOnThisMachine(from) && isOnThisMachine(to))
+        return QStringLiteral("Redirect to this machine refused");
+    if (policy == QNetworkRequest::NoLessSafeRedirectPolicy &&
+        from.scheme().compare(QLatin1String("https"), Qt::CaseInsensitive) == 0 &&
+        to.scheme().compare(QLatin1String("http"), Qt::CaseInsensitive) == 0)
+        return QStringLiteral("Redirect from https to http refused");
+    if (policy == QNetworkRequest::SameOriginRedirectPolicy &&
+        (from.scheme().compare(to.scheme(), Qt::CaseInsensitive) != 0 ||
+         from.host().compare(to.host(), Qt::CaseInsensitive) != 0 ||
+         from.port() != to.port()))
+        return QStringLiteral("Redirect to another origin refused");
+    return {};
+}
+
+void BackoffNetworkAccessManager::guardRedirects(QNetworkReply *reply, Operation op,
+                                                 const QUrl &origin,
+                                                 QNetworkRequest::RedirectPolicy policy,
+                                                 bool decoration)
+{
+    const QPointer<QNetworkReply> guard(reply);
+    auto from = std::make_shared<QUrl>(origin);
+    connect(reply, &QNetworkReply::redirected, this,
+            [this, guard, from, op, policy, decoration](const QUrl &target) {
+        if (!guard)
+            return;
+        const QUrl to = from->resolved(target);
+        const int index = noteEndpointAttempt(op, to, QStringLiteral("Redirect"));
+        const auto refuse = [&](const QString &reason) {
+            noteEndpointBlocked(op, to, reason, index);
+            if (guard)
+                guard->abort();
+        };
+        const QString refusal = redirectRefusal(policy, *from, to);
+        if (!refusal.isEmpty()) {
+            refuse(refusal);
+            return;
+        }
+        if (m_clientVersionBlocked && !isOnThisMachine(to)) {
+            refuse(QStringLiteral("Update required"));
+            return;
+        }
+        if (m_offlineMode && !isOnThisMachine(to)) {
+            refuse(QStringLiteral("Offline mode"));
+            return;
+        }
+        if (m_offMachineBlocked && !isOnThisMachine(to)) {
+            refuse(QStringLiteral("Off-machine blocked"));
+            return;
+        }
+        if (!firewallAdmits(op, to, decoration, index)) {
+            if (guard)
+                guard->abort();
+            return;
+        }
+        if (!guard)
+            return;
+        *from = to;
+        noteEndpointAllowed(op, to);
+        noteEndpointFinished(op, to, 0, 0, 0, QString(), index, QStringLiteral("Redirect"));
+        emit guard->redirectAllowed();
+    });
 }
 
 QNetworkReply *BackoffNetworkAccessManager::createRequest(
@@ -1441,61 +1624,36 @@ QNetworkReply *BackoffNetworkAccessManager::createRequest(
                             requestIndex);
         return new DeniedReply(request, op, QStringLiteral("test build"), this);
     }
-    const FirewallMatch match =
-        m_firewallEnabled ? recordFirewallMatch(url) : FirewallAllowed;
-    if (match == FirewallDenied) {
-        // Already decided: a remembered denial blocks without asking again.
-        noteEndpointBlocked(op, url, QStringLiteral("Firewall denied"),
-                            requestIndex);
+    const bool decoration =
+        request.attribute(forkmesh::kFaviconProbeAttribute).toBool();
+    if (!firewallAdmits(op, url, decoration, requestIndex))
         return new DeniedReply(request, op, QStringLiteral("firewall"), this);
-    }
-    if (match == FirewallUnlisted) {
-        // No rule yet, so the request waits for a decision. With no prompt
-        // installed there is nobody to ask, and unlisted means blocked.
-        QString rule = firewallRuleForUrl(url);
-        const QString method = firewallMethodName(op);
-        // A favicon is decoration with a letter mark to fall back on, fetched
-        // for whatever host a log line names -- every Mastodon instance that
-        // hits the relay, for one. Asking about it put a modal prompt inside
-        // MainWindow's constructor (the footer paints log lines while the
-        // window is built), so on 2026-09-21 the window never appeared until
-        // a "wants to connect" dialog was answered. Skip it this time instead;
-        // nothing is remembered, so a rule added later still applies.
-        const bool decoration =
-            request.attribute(forkmesh::kFaviconProbeAttribute).toBool();
-        if (firewallAllowingAll())
-            rule.clear();
-        const FirewallVerdict verdict =
-            firewallAllowingAll() ? FirewallAllowOnce
-            : m_firewallPrompt && !decoration
-                ? m_firewallPrompt(method, url, &rule)
-                : FirewallDenyOnce;
-        const QString canonical = canonicalFirewallRule(rule);
-        if (!canonical.isEmpty()) {
-            if (verdict == FirewallAllow)
-                addFirewallRule(canonical);
-            else if (verdict == FirewallDeny)
-                addFirewallDenyRule(canonical);
-        }
-        const bool allowed =
-            verdict == FirewallAllow || verdict == FirewallAllowOnce;
-        if (!decoration)
-            emit firewallRequestDecided(method, url, canonical, allowed);
-        if (!allowed) {
-            noteEndpointBlocked(op, url, QStringLiteral("Firewall blocked"),
-                                requestIndex);
-            return new DeniedReply(request, op, QStringLiteral("firewall"),
-                                   this);
-        }
-    }
     noteEndpointAllowed(op, url);
+
+    QNetworkRequest gatedRequest = request;
+    const QVariant wantedRedirects =
+        request.attribute(QNetworkRequest::RedirectPolicyAttribute);
+    const auto redirectPolicy =
+        wantedRedirects.isValid()
+            ? static_cast<QNetworkRequest::RedirectPolicy>(wantedRedirects.toInt())
+            : this->redirectPolicy();
+    const bool guardsRedirects =
+        (url.scheme().compare(QLatin1String("http"), Qt::CaseInsensitive) == 0 ||
+         url.scheme().compare(QLatin1String("https"), Qt::CaseInsensitive) == 0) &&
+        (redirectPolicy == QNetworkRequest::NoLessSafeRedirectPolicy ||
+         redirectPolicy == QNetworkRequest::SameOriginRedirectPolicy);
+    if (guardsRedirects)
+        gatedRequest.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                                  QNetworkRequest::UserVerifiedRedirectPolicy);
 
     auto createTrackedRequest = [&]() {
         const qint64 outgoingKnown =
             (outgoingData && !outgoingData->isSequential())
                 ? qMax<qint64>(0, outgoingData->size())
                 : 0;
-        QNetworkReply *reply = createNetworkRequest(op, request, outgoingData);
+        QNetworkReply *reply = createNetworkRequest(op, gatedRequest, outgoingData);
+        if (guardsRedirects)
+            guardRedirects(reply, op, url, redirectPolicy, decoration);
         auto *tracker = new EndpointTransferTracker(reply);
         tracker->uploaded = outgoingKnown;
         const quint64 activity = forkmesh::BackgroundActivity::begin(

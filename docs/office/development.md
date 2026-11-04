@@ -225,9 +225,11 @@ Budgets in `office/perf-budget.json`. Rendering is Canvas 2D (one pre-rendered
 map, cached sprites, viewport culling); movement is batched to 20 Hz and the
 proximity mesh recomputed every 250 ms.
 
-The script budget is 156 KB gzip (about 155 KB used). The Office bundles
-the site chat's crypto (`chat-seal.js`, the ML-KEM-768 port `chat-mlkem.js`,
-the DM ratchet of chat protocol v4, `chat-frame-auth.js` from the
+The script budget is 156,300 bytes gzip (156,283 used). The Office bundles
+the site chat's crypto (`chat-seal.js`, including the strict-room key
+succession that carries a device's approval over to its new key, about
+300 bytes; the ML-KEM-768 port `chat-mlkem.js`, the DM ratchet of chat
+protocol v4, `chat-frame-auth.js` from the
 [relay hardening](../app/chat-relay-hardening.md)) and the call quality widget
 with its diagnostics (`call-quality-meter.js`, about 10 KB). Raise the budget
 only by the measured size of what a change adds.

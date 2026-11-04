@@ -1,5 +1,6 @@
 import json
 import subprocess
+import re
 from pathlib import Path
 
 from test_issue_timeline_people import _function
@@ -223,7 +224,7 @@ const container = { isConnected: true, innerHTML: "",
 const parsed = { body: "" };
 const state = { repoRecordDetail: { parsed } };
 function renderRepoRecordDetail(repo, kind, number, value) { return `rendered:${value.issueMentions.length}`; }
-function mountIssueStickyHeader() {}
+function mountRecordStickyHeader() {}
 function paintRepoIssueDetail(target, html) { target.innerHTML = html; }
 %s
 %s
@@ -274,6 +275,42 @@ console.log(JSON.stringify({ html, none: renderIssueRowCommenters({}) }));
     assert 'loading="lazy"' in html and 'width="20" height="20"' in html
     assert "<a " not in html and "github.com" not in html
     assert 'title="Recent comments: @Bob, carol, dan, erin"' in html
+
+
+def test_pull_rows_stack_everyone_latest_first_with_the_author_last():
+    from test_issue_timeline_people import _const
+    code = "\n".join(
+        [_const(HELPERS, name) for name in ("FORGE_PROFILES", "FORGE_IDENTITY_RE", "forgeAvatarSets",
+                                            "forgeAvatarCommits")]
+        + [HELPERS[HELPERS.index("  const BOT_AVATAR_GLYPHS = {"):
+                   HELPERS.index("\n  };\n", HELPERS.index("  const BOT_AVATAR_GLYPHS = {")) + 5]]
+        + [_function(HELPERS, name) for name in (
+            "escapeHtml", "forgeIdentity", "forgeLinkAttrs", "issueActorPixels",
+            "botAvatarKind", "botAvatarSvg", "issueActorIsBot", "issuePersonHandle",
+            "rememberForgeAvatars", "forgeAvatarSrc", "issueActorAvatarHtml")]
+        + [_function(CONTENT, "renderPullRowPeople")])
+    script = """
+const state = { session: null, selectedRepo: { owner: "example", name: "forum" } };
+const ISSUE_PERSON_HANDLE_RE = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
+function repoContributorIsBot() { return false; }
+function watchIssueActorAvatars() {}
+function repoRawUrl(repo, path) { return `/api/repo/${repo.owner}/${repo.name}/raw?path=${encodeURIComponent(path)}`; }
+%s
+console.log(JSON.stringify({
+  html: renderPullRowPeople({ people: ["github:Bob", "carol", "dan", "erin", "fay", "ann"], author: "ann", authorKey: "ann-key" }),
+  quiet: renderPullRowPeople({ people: null, author: "ann", authorKey: "ann-key" }),
+  none: renderPullRowPeople({ author: "unknown" }),
+}));
+""" % code
+    out = json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True,
+                                    check=True).stdout)
+    html = out["html"]
+    assert html.count("h-5 w-5") == 6
+    assert 'title="Latest first: @Bob, carol, dan, erin, fay, ann"' in html
+    assert [int(z) for z in re.findall(r"z-index:(\d+)", html)] == [6, 5, 4, 3, 2, 1]
+    assert "<a " not in html
+    assert out["quiet"].count("h-5 w-5") == 1
+    assert out["none"] == ""
 
 
 def test_the_issue_list_defaults_to_newest_created_like_github():

@@ -160,15 +160,17 @@ verifies in Python with Cyrillic, emoji and control characters in the text.
 1. The repository's `forum` switch is on.
 2. The event's shape and limits (`clean_event`), and that `ts` is within 15
    minutes of the server's clock.
-3. The session binds the author (`_bind_session_author`); a signed-out author
-   is refused.
+3. A signed-in session is required, even for a registered key, and it binds
+   the author (`_bind_session_author`). The client's `branch` is ignored.
 4. The signature (`ed25519_verify`).
 5. Operator rights for operator types.
-6. For `topic` and `post` by non-operators, `moderation.submission_gate`:
-   blocked accounts are refused, and so are accounts whose first posts need
-   approval, because the forum has no review queue yet.
+6. For author actions by non-operators, `moderation.submission_gate`: blocked
+   accounts are refused, and for `topic` and `post` so are accounts whose first
+   posts need approval, because the forum has no review queue yet.
 7. A silenced account cannot use the author actions.
-8. Replaying an event already saved (same file name) is refused.
+8. Non-operators have an hourly write budget, and `hosted_push_limit` applies.
+9. Replaying an event already saved is refused. The event file name comes from
+   a hash of the signed fields, because the signature does not cover `id`.
 
 **How it is written**
 - The record and the files it changes are committed in one commit to the
@@ -178,7 +180,8 @@ verifies in Python with Cyrillic, emoji and control characters in the text.
   `forum-record`, fast-forward only, and branch protection is respected. This
   is the App committing on the forum's behalf, which the owner allowed by
   turning the forum on. The reader cannot push anywhere else: the App builds
-  the commit itself.
+  the commit itself. These commits start no workflow and no AI review, because
+  a stranger chose when they happen.
 - A commit that loses a race is rebuilt from the new tip, up to three times.
 - Operator actions are written to the audit log (`forum.<type>`).
 - After a write, the page reads at the returned commit, so the author sees
@@ -187,7 +190,7 @@ verifies in Python with Cyrillic, emoji and control characters in the text.
 **Files written alongside format v1** (the importer never writes them):
 
 ```text
-events/<YYYY-MM>/<ts>-<id>.json   every signed event, with authorName and receivedAt
+events/<YYYY-MM>/<ts>-<hash>.json every signed event, with authorName and receivedAt
 native.json                        {next, topics: {n<k>: list row}}  topics made on ForkMesh
 local.json                         title, description and category overrides
 moderation.json                    {silenced: {account: {until, by}}}

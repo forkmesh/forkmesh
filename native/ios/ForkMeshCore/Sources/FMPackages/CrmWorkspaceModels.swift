@@ -205,6 +205,7 @@ public enum CrmTab: Hashable, Sendable, Identifiable {
     case list(String)
     case pipeline(String)
     case noPipeline
+    case network(String)
     case activity
     case mail
     case outreach
@@ -217,6 +218,7 @@ public enum CrmTab: Hashable, Sendable, Identifiable {
         case .list(let id): return "list:" + id
         case .pipeline(let id): return "pipeline:" + id
         case .noPipeline: return "no-pipeline"
+        case .network(let id): return "network:" + id
         case .activity: return "activity"
         case .mail: return "mail"
         case .outreach: return "outreach"
@@ -228,9 +230,30 @@ public enum CrmTab: Hashable, Sendable, Identifiable {
 
     public var isContacts: Bool {
         switch self {
-        case .list, .pipeline, .noPipeline: return true
+        case .list, .pipeline, .noPipeline, .network: return true
         default: return false
         }
+    }
+}
+
+public struct CrmNetwork: Equatable, Sendable, Identifiable {
+    public var id: String
+    public var name: String
+
+    public static let all = [
+        CrmNetwork(id: "mastodon", name: "Mastodon"),
+        CrmNetwork(id: "bluesky", name: "Bluesky"),
+        CrmNetwork(id: "twitter", name: "X (Twitter)"),
+        CrmNetwork(id: "linkedin", name: "LinkedIn"),
+        CrmNetwork(id: "github", name: "GitHub"),
+    ]
+
+    public static let icon = "globe"
+
+    public static func named(_ id: String) -> CrmNetwork? { all.first { $0.id == id } }
+
+    public func has(_ contact: CrmContact) -> Bool {
+        !contact.value(of: id).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 }
 
@@ -274,6 +297,9 @@ extension CrmOrganizationData {
             return contacts.filter { contains($0, in: view) }
         case .pipeline(let id): return contacts.filter { $0.flow == id }
         case .noPipeline: return strayContacts
+        case .network(let id):
+            guard let network = CrmNetwork.named(id) else { return [] }
+            return contacts.filter(network.has)
         default: return []
         }
     }
@@ -315,6 +341,13 @@ extension CrmOrganizationData {
             items.append(CrmTabItem(tab: .noPipeline, title: "No pipeline", icon: "questionmark.folder", count: stray))
         }
         return items
+    }
+
+    public var networkTabs: [CrmTabItem] {
+        CrmNetwork.all.compactMap { network in
+            let count = contacts.filter(network.has).count
+            return count > 0 ? CrmTabItem(tab: .network(network.id), title: network.name, icon: CrmNetwork.icon, count: count) : nil
+        }
     }
 
     public var workspaceTabs: [CrmTabItem] {

@@ -143,7 +143,7 @@ class LocalControlTest {
         }
     }
 
-    private fun serve(desktop: FakeDesktop, events: Int = 0): Pair<ServerSocket, Thread> {
+    private fun serve(desktop: FakeDesktop, events: Int = 0, extra: (FakeDesktop) -> List<ByteArray> = { emptyList() }): Pair<ServerSocket, Thread> {
         val server = ServerSocket(0)
         val thread = Thread {
             server.accept().use { socket ->
@@ -160,6 +160,7 @@ class LocalControlTest {
                 val auth = Json.parse(String(authFrame)).asJsonMap()
                 if (!desktop.onAuth(auth)) return@use
                 out.write(controlFrame(desktop.sessionEvent()))
+                extra(desktop).forEach { out.write(controlFrame(it)) }
                 repeat(events) { out.write(controlFrame(desktop.seal(mapOf("event" to "agents.changed", "data" to emptyMap<String, Any?>())))) }
                 while (true) {
                     val frame = try {
@@ -234,6 +235,8 @@ class LocalControlTest {
             if (service.agents != null) listed.countDown()
         }
         service.connect(MeshControlHost("", "127.0.0.1", server.localPort, name = "desk"))
+        expect(waitFor { service.status == LocalControlStatus.ConfirmingCode })
+        service.confirmDesktop(desktop.key)
         expect(connected.await(5, TimeUnit.SECONDS))
         expect(listed.await(5, TimeUnit.SECONDS))
         assertEq(desktop.key, service.paired.single().key)
@@ -284,6 +287,8 @@ class LocalControlTest {
         val mesh = ProbedHosts()
         val service = LocalControlService(identity, prefs, mesh, "p/x/", filesDirectory = { File(dir, "in") })
         service.connect(MeshControlHost("", "127.0.0.1", server.localPort, name = "desk"))
+        expect(waitFor { service.status == LocalControlStatus.ConfirmingCode })
+        service.confirmDesktop(desktop.key)
         expect(waitFor { service.connected })
         expect(prefs.getString("p/x/" + LocalControlService.LAN_ADDRESSES_KEY)!!.contains(desktop.key))
         assertEq(emptyList<String>(), mesh.provider!!())
@@ -337,29 +342,110 @@ class LocalControlTest {
         override fun removeListener(listener: () -> Unit) {}
     }
 
-    fun testADesktopOnThePhonesAccountConnectsWithoutBeingPickedFirst() {
+    fun testAnUnknownDesktopSayingPairedStaysUntilThePhoneConfirmsItsCode() {
         val desktop = FakeDesktop()
         val (server, _) = serve(desktop)
         val prefs = MemoryPrefStore()
-        val identity = Identity.fromSeed(ByteArray(32) { 8 })
-        val dir = LocalScratch.create("control-auto")
-        val mine = MeshControlHost(desktop.key, "127.0.0.1", server.localPort, nodeName = "desk", ownerUser = "fran")
-        val service = LocalControlService(identity, prefs, FixedHosts(listOf(mine)), "p/y/", userName = { " Fran " }, filesDirectory = { File(dir, "in") })
-        val connected = CountDownLatch(1)
-        service.addListener { if (service.connected) connected.countDown() }
-        if (!service.connected) expect(connected.await(5, TimeUnit.SECONDS))
+        val identity = Identity.fromSeed(ByteArray(32) { 9 })
+        val dir = LocalScratch.create("control-confirm")
+        val service = LocalControlService(identity, prefs, null, "p/z/", filesDirectory = { File(dir, "in") })
+        val events = Collections.synchronizedList(ArrayList<String>())
+        service.addEventTap { events.add(it.event) }
+        service.connect(MeshControlHost(desktop.key, "127.0.0.1", server.localPort, name = "desk"))
+        expect(waitFor { service.status == LocalControlStatus.ConfirmingCode })
+        expect(!service.connected)
+        expect(service.paired.isEmpty())
+        assertEq(null, prefs.getString("p/z/" + LocalControlService.PAIRED_KEY))
+        assertEq(null, prefs.getString("p/z/" + LocalControlService.LAN_ADDRESSES_KEY))
+        assertEq(service.currentConnection!!.pairingCode, service.pairingCode)
+        expect(service.pairingCode != "123456")
+        assertFails<LocalControlException> { service.request("agents.list") }
+        expect(desktop.requests.none { it["method"] == "agents.list" })
+        assertEq(ShellLocalDesktop.ConfirmingCode("studio"), DesktopControlHub(service, null).localDesktop)
+
+        service.confirmDesktop("some-other-key")
+        Thread.sleep(50)
+        expect(!service.connected)
+
+        service.confirmDesktop(desktop.key)
+        expect(waitFor { service.connected })
+        assertEq(desktop.key, service.paired.single().key)
+        assertEq("", service.pairingCode)
+        service.dispose()
+        server.close()
+        LocalScratch.delete(dir)
+    }
+
+    fun testADesktopCannotPushFilesOrEventsBeforeItIsConfirmed() {
+        val desktop = FakeDesktop()
+        val (server, _) = serve(desktop, extra = { d ->
+            listOf(
+                d.seal(mapOf("event" to "file.begin", "data" to mapOf("transfer" to "t1", "name" to "evil.txt", "size" to 1))),
+                d.seal(mapOf("event" to "agents.changed", "data" to emptyMap<String, Any?>())),
+            )
+        })
+        val dir = LocalScratch.create("control-early")
+        val service = LocalControlService(Identity.fromSeed(ByteArray(32) { 10 }), MemoryPrefStore(), null, "p/z/", filesDirectory = { File(dir, "in") })
+        val seen = Collections.synchronizedList(ArrayList<String>())
+        service.addEventTap { seen.add(it.event) }
+        service.connect(MeshControlHost(desktop.key, "127.0.0.1", server.localPort, name = "desk"))
+        expect(waitFor { service.status == LocalControlStatus.ConfirmingCode })
+        Thread.sleep(100)
+        expect("file.begin" !in seen)
+        expect("agents.changed" !in seen)
+        expect(!File(dir, "in").exists() || File(dir, "in").list().isNullOrEmpty())
+        expect(desktop.requests.none { it["method"] == "agents.list" })
+        service.dispose()
+        server.close()
+        LocalScratch.delete(dir)
+    }
+
+    fun testDesktopsAnAccountLinksConfirmWithoutATap() {
+        val desktop = FakeDesktop()
+        val (server, _) = serve(desktop)
+        val dir = LocalScratch.create("control-account-late")
+        val service = LocalControlService(Identity.fromSeed(ByteArray(32) { 11 }), MemoryPrefStore(), null, "p/z/", filesDirectory = { File(dir, "in") })
+        service.connect(MeshControlHost(desktop.key, "127.0.0.1", server.localPort, name = "desk"))
+        expect(waitFor { service.status == LocalControlStatus.ConfirmingCode })
+        service.setAccountDesktops(setOf("another"))
+        Thread.sleep(50)
+        expect(!service.connected)
+        service.setAccountDesktops(setOf(desktop.key))
+        expect(waitFor { service.connected })
         assertEq(desktop.key, service.paired.single().key)
         service.dispose()
         server.close()
         LocalScratch.delete(dir)
+    }
 
-        val theirs = MeshControlHost("theirs", "127.0.0.1", 1, ownerUser = "mallory")
+    fun testAKnownDesktopReconnectsWithoutTheCode() {
+        val desktop = FakeDesktop()
+        val (server, _) = serve(desktop)
+        val prefs = MemoryPrefStore()
+        val dir = LocalScratch.create("control-known")
+        val first = LocalControlService(Identity.fromSeed(ByteArray(32) { 12 }), prefs, null, "p/z/", filesDirectory = { File(dir, "in") })
+        first.connect(MeshControlHost(desktop.key, "127.0.0.1", server.localPort, name = "desk"))
+        expect(waitFor { first.status == LocalControlStatus.ConfirmingCode })
+        first.confirmDesktop(desktop.key)
+        expect(waitFor { first.connected })
+        first.dispose()
+        server.close()
+        val again = FakeDesktop()
+        val (second, _) = serve(again)
+        val service = LocalControlService(Identity.fromSeed(ByteArray(32) { 12 }), prefs, null, "p/z/", filesDirectory = { File(dir, "in") })
+        service.connect(MeshControlHost(again.key, "127.0.0.1", second.localPort, name = "desk"))
+        expect(waitFor { service.connected })
+        assertEq("", service.pairingCode)
+        service.dispose()
+        second.close()
+        LocalScratch.delete(dir)
+    }
+
+    fun testOnlyPairedOrAccountDesktopsAreDialledAutomatically() {
+        val mine = MeshControlHost("mine", "127.0.0.1", 1, ownerUser = "fran")
         val paired = MeshControlHost("paired", "127.0.0.1", 1)
-        assertEq(null, automaticControlTarget(listOf(theirs), emptySet(), "fran", emptySet()))
-        assertEq(null, automaticControlTarget(listOf(mine), emptySet(), "", emptySet()))
-        assertEq(null, automaticControlTarget(listOf(mine), emptySet(), "fran", setOf(desktop.key)))
-        assertEq(mine, automaticControlTarget(listOf(theirs, mine), emptySet(), "fran", emptySet()))
-        assertEq(paired, automaticControlTarget(listOf(mine, paired), setOf("paired"), "fran", setOf("paired")))
+        assertEq(null, automaticControlTarget(listOf(mine), emptySet()))
+        assertEq(paired, automaticControlTarget(listOf(mine, paired), setOf("paired")))
     }
 
     fun testADesktopTheAccountListsIsDialledOnTheLanWithoutAnOwnerMatch() {
@@ -381,9 +467,9 @@ class LocalControlTest {
 
         val stranger = MeshControlHost("stranger", "127.0.0.1", 1)
         val paired = MeshControlHost("paired", "127.0.0.1", 1)
-        assertEq(owned, automaticControlTarget(listOf(stranger, owned), emptySet(), "", setOf(desktop.key), setOf(desktop.key)))
-        assertEq(paired, automaticControlTarget(listOf(owned, paired), setOf("paired"), "fran", emptySet(), setOf(desktop.key)))
-        assertEq(null, automaticControlTarget(listOf(stranger), emptySet(), "fran", emptySet(), setOf(desktop.key)))
+        assertEq(owned, automaticControlTarget(listOf(stranger, owned), emptySet(), setOf(desktop.key)))
+        assertEq(paired, automaticControlTarget(listOf(owned, paired), setOf("paired"), setOf(desktop.key)))
+        assertEq(null, automaticControlTarget(listOf(stranger), emptySet(), setOf(desktop.key)))
     }
 
     fun testSafeNameAndPairedJson() {

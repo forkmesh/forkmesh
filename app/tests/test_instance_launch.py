@@ -55,6 +55,7 @@ class Runtime:
                           "mixed.example.com": ["8.8.8.8", "10.0.0.2"]}
         self.keys = [{"type": "ssh-rsa", "key": RSA_BLOB},
                      {"type": "ssh-ed25519", "key": ED_BLOB}]
+        self.keyscan_events = None
         self.install_events = []
 
     def use(self, raw=b"", actor="", method="POST"):
@@ -107,7 +108,11 @@ class Runtime:
 
         async def events():
             if request.get("op") == "keyscan":
-                yield {"keys": [dict(item) for item in self.keys]}
+                scan = self.keyscan_events
+                if scan is None:
+                    scan = [{"keys": [dict(item) for item in self.keys]}]
+                for event in scan:
+                    yield dict(event)
                 return
             for event in self.install_events:
                 yield dict(event)
@@ -251,6 +256,73 @@ def test_no_domain_starts_on_sslip_and_a_wrong_fingerprint_stops():
     assert answer["data"]["error"] == "fingerprint_mismatch"
 
 
+def test_keyscan_helper_fault_is_not_blamed_on_the_visitors_server():
+    runtime = Runtime()
+    runtime.keyscan_events = [{"error": "no answer"}]
+    answer = post(runtime, form())
+    assert answer["status"] == 400
+    assert answer["data"]["error"] == "ssh_unreachable"
+    for events in ([{"error": "keyscan failed"}], []):
+        runtime = Runtime()
+        runtime.keyscan_events = events
+        answer = post(runtime, form())
+        assert answer["status"] == 503, events
+        assert answer["data"]["error"] == "launch_unavailable"
+        assert runtime.db.execute(
+            "SELECT COUNT(*) FROM instance_launches WHERE project<>''"
+        ).fetchone()[0] == 0
+
+
+def test_failed_probes_spend_a_budget_before_any_keyscan():
+    runtime = Runtime()
+    runtime.keys = []
+    for _ in range(instance_launch.MAX_PROBES_PER_HOUR):
+        assert post(runtime, form())["data"]["error"] == "ssh_unreachable"
+    scans = len(runtime.requests)
+    assert scans == instance_launch.MAX_PROBES_PER_HOUR
+    answer = post(runtime, form())
+    assert answer["status"] == 429 and answer["data"]["error"] == "rate_limited"
+    assert len(runtime.requests) == scans
+    runtime.client = "client-b"
+    assert post(runtime, form())["data"]["error"] == "ssh_unreachable"
+    runtime.client = "client-a"
+    runtime.clock += instance_launch.HOUR_MS + 1
+    assert post(runtime, form())["data"]["error"] == "ssh_unreachable"
+    assert runtime.db.execute("SELECT COUNT(*) FROM instance_launches WHERE "
+                              "client_key='client-a'").fetchone()[0] == 1
+
+
+def test_private_address_answers_spend_the_same_budget():
+    runtime = Runtime()
+    for _ in range(instance_launch.MAX_PROBES_PER_HOUR):
+        assert post(runtime, form(host="lan.example.com"))["status"] == 400
+    assert post(runtime, form(host="lan.example.com"))["status"] == 429
+
+
+def test_a_launch_leaves_no_probe_row_and_probes_leave_the_launch_budget():
+    runtime = Runtime()
+    runtime.keys = []
+    for _ in range(instance_launch.MAX_LAUNCHES_PER_HOUR + 1):
+        assert post(runtime, form())["status"] == 400
+    runtime.keys = [{"type": "ssh-ed25519", "key": ED_BLOB}]
+    assert post(runtime, form())["status"] == 202
+    rows = runtime.db.execute("SELECT project FROM instance_launches").fetchall()
+    assert sorted(row[0] for row in rows).count("Acme Code") == 1
+    assert len(rows) == instance_launch.MAX_LAUNCHES_PER_HOUR + 2
+
+
+def test_probes_running_at_once_are_capped_and_released(monkeypatch):
+    runtime = Runtime()
+    monkeypatch.setattr(instance_launch, "_probes_running",
+                        instance_launch.MAX_PROBES_RUNNING)
+    answer = post(runtime, form())
+    assert answer["status"] == 503 and answer["data"]["error"] == "busy"
+    assert runtime.requests == []
+    monkeypatch.setattr(instance_launch, "_probes_running", 0)
+    assert post(runtime, form())["status"] == 202
+    assert instance_launch._probes_running == 0
+
+
 def test_private_addresses_unreachable_servers_and_limits():
     runtime = Runtime()
     for host in ("lan.example.com", "mixed.example.com", "10.77.0.2",
@@ -259,8 +331,9 @@ def test_private_addresses_unreachable_servers_and_limits():
         assert answer["status"] == 400 and answer["data"]["field"] == "host", host
     runtime.keys = []
     answer = post(runtime, form())
-    assert answer["status"] == 502
+    assert answer["status"] == 400
     assert answer["data"]["error"] == "ssh_unreachable"
+    assert answer["data"]["field"] == "host"
     runtime = Runtime()
     runtime.helper_available = False
     assert post(runtime, form())["status"] == 503

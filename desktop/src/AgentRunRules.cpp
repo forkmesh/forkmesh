@@ -36,6 +36,11 @@ bool gatesCommands(const RunRules &rules)
            !rules.deniedPermissions.isEmpty();
 }
 
+bool agentTerminalWritesAllowed(const RunRules &rules)
+{
+    return !gatesCommands(rules) && rules.access.folders != Access::Folders::Project;
+}
+
 Decision decide(const RunRules &rules, const forkmesh::agentnet::ExternalCall &call,
                 const forkmesh::agentnet::CommandRisk &risk, const QSet<QString> &runApproved)
 {
@@ -46,44 +51,71 @@ Decision decide(const RunRules &rules, const forkmesh::agentnet::ExternalCall &c
         decision.target = call.target;
         return decision;
     };
-    if (!risk.permission.isEmpty() && rules.deniedPermissions.contains(risk.permission))
-        return finish(verdict(
-            Verdict::Deny,
-            QStringLiteral("%1 does not have the “%2” permission this command needs. "
-                           "Do not try another way; leave it for the user.")
-                .arg(who, risk.permission)));
-    if (!risk.destructive.isEmpty()) {
-        const QString key = QStringLiteral("destructive:") + risk.destructive;
+    const QStringList permissions =
+        risk.permissions.isEmpty() && !risk.permission.isEmpty() ? QStringList{risk.permission}
+                                                                 : risk.permissions;
+    for (const QString &permission : permissions)
+        if (rules.deniedPermissions.contains(permission))
+            return finish(verdict(
+                Verdict::Deny,
+                QStringLiteral("%1 does not have the “%2” permission this command needs. "
+                               "Do not try another way; leave it for the user.")
+                    .arg(who, permission)));
+    const QStringList kinds =
+        risk.destructiveKinds.isEmpty() && !risk.destructive.isEmpty()
+            ? QStringList{risk.destructive}
+            : risk.destructiveKinds;
+    if (!kinds.isEmpty()) {
+        const QString named = kinds.join(QStringLiteral(", "));
         if (rules.destructive == Destructive::Block)
             return finish(verdict(
                 Verdict::Deny,
                 QStringLiteral("The global agent rules block destructive commands (%1). Do not "
                                "try another way; ask the user to run it themselves.")
-                    .arg(risk.destructive)));
-        if (rules.destructive == Destructive::Ask && !runApproved.contains(key) &&
-            !rules.access.allowedDestructive.contains(risk.destructive) &&
-            !(risk.onlyRemoves &&
-              forkmesh::commandvars::deletesAllowed(rules.access.allowedDeletePaths,
-                                                    risk.removedPaths, risk.scratch)))
-            return finish(verdict(
-                Verdict::Ask,
-                QStringLiteral("A destructive command (%1) waits for your approval.")
-                    .arg(risk.destructive),
-                key));
+                    .arg(named)));
+        if (rules.destructive == Destructive::Ask) {
+            QStringList pending;
+            const bool deleteRuleCovers =
+                risk.onlyRemoves &&
+                forkmesh::commandvars::deletesAllowed(rules.access.allowedDeletePaths,
+                                                      risk.removedPaths, risk.scratch);
+            for (const QString &kind : kinds)
+                if (!runApproved.contains(QStringLiteral("destructive:") + kind) &&
+                    !rules.access.allowedDestructive.contains(kind) && !deleteRuleCovers)
+                    pending.append(kind);
+            if (!pending.isEmpty()) {
+                Decision asked = verdict(
+                    Verdict::Ask,
+                    QStringLiteral("A destructive command (%1) waits for your approval.")
+                        .arg(pending.join(QStringLiteral(", "))),
+                    QStringLiteral("destructive:") + pending.first());
+                asked.pendingKinds = pending;
+                return finish(asked);
+            }
+        }
     }
     if (!call.external)
         return finish(verdict(Verdict::Run, QString()));
-    const QString shown = shownTarget(call.target);
-    const QString host = forkmesh::projects::normalizeHost(call.target);
-    if (!host.isEmpty() && forkmesh::projects::hostBlocked(rules.access.blockedHosts, host))
-        return finish(verdict(
-            Verdict::Deny,
-            QStringLiteral("%1 is on the global agent rules' blocked list. Do not try another "
-                           "way to reach it.")
-                .arg(shown)));
-    if ((!host.isEmpty() && forkmesh::projects::hostAllowed(rules.access.allowedHosts, host)) ||
-        runApproved.contains(call.target))
+    const QStringList destinations = call.destinations();
+    QStringList pending;
+    for (const QString &target : destinations) {
+        const QString host = forkmesh::projects::normalizeHost(target);
+        if (!host.isEmpty() && forkmesh::projects::hostBlocked(rules.access.blockedHosts, host))
+            return finish(verdict(
+                Verdict::Deny,
+                QStringLiteral("%1 is on the global agent rules' blocked list. Do not try "
+                               "another way to reach it.")
+                    .arg(shownTarget(target))));
+        if (!(!host.isEmpty() && forkmesh::projects::hostAllowed(rules.access.allowedHosts, host)) &&
+            !runApproved.contains(target))
+            pending.append(target);
+    }
+    if (pending.isEmpty())
         return finish(verdict(Verdict::Run, QString()));
+    QStringList shownPending;
+    for (const QString &target : std::as_const(pending))
+        shownPending.append(shownTarget(target));
+    const QString shown = shownPending.join(QStringLiteral(", "));
     if (rules.externalBlocked)
         return finish(verdict(
             Verdict::Deny,
@@ -99,10 +131,25 @@ Decision decide(const RunRules &rules, const forkmesh::agentnet::ExternalCall &c
                            "approved destinations. Ask the user to approve it in the "
                            "project's settings; do not try another way to reach it.")
                 .arg(shown)));
-    return finish(verdict(Verdict::Ask,
-                          QStringLiteral("Reaches %1; external calls wait for your approval.")
-                              .arg(shown),
-                          call.target));
+    Decision asked = verdict(Verdict::Ask,
+                             QStringLiteral("Reaches %1; external calls wait for your approval.")
+                                 .arg(shown),
+                             pending.first());
+    asked.pendingTargets = pending;
+    return finish(asked);
+}
+
+Decision decideUrl(const RunRules &rules, const QUrl &url, const QSet<QString> &runApproved)
+{
+    forkmesh::agentnet::ExternalCall call;
+    const QString host = url.host().toLower();
+    if (!host.isEmpty() && !forkmesh::agentnet::isLocalHost(host)) {
+        call.external = true;
+        call.target = host;
+        call.targets = {host};
+        call.summary = QStringLiteral("Open %1").arg(url.toDisplayString(QUrl::RemoveUserInfo));
+    }
+    return decide(rules, call, forkmesh::agentnet::CommandRisk(), runApproved);
 }
 
 Decision decideCommand(const RunRules &rules, const QString &command, const QString &cwd,

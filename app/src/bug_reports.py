@@ -573,12 +573,6 @@ async def bug_reports_inbox_handler(env, request):
 
 async def _mine_account(env, request):
     try:
-        authorization = str(request.headers.get("authorization") or "")
-    except Exception:
-        return ""
-    if not authorization.lower().startswith("bearer "):
-        return ""
-    try:
         return safe_segment(await _authed_account_name(env, request)) or ""
     except Exception:
         return ""

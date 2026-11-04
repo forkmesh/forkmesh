@@ -19,6 +19,7 @@ class QPushButton;
 class QScrollArea;
 class QSplitter;
 class QStackedWidget;
+class QTabWidget;
 class QTableWidget;
 class QVBoxLayout;
 
@@ -64,8 +65,10 @@ private:
     void openSurvey(const QString &id);
     void closeDetail();
     void renderDetail();
+    void fillDetailTab(QTabWidget *tabs, int index);
     QWidget *resultsPage();
     QWidget *responsesPage();
+    QWidget *activityPage();
     void addDetailActions(QHBoxLayout *primary, QHBoxLayout *secondary);
     void loadResponses();
     void surveyChanged(const QJsonObject &survey, const QString &notice);

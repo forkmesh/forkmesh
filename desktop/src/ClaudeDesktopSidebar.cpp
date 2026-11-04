@@ -380,7 +380,7 @@ QList<SidebarGroup> arrangeSidebar(const DesktopIndex &index, const QList<Sideba
             continue;
         }
         const QList<int> list = sectionItems.value(section.id);
-        if (list.isEmpty())
+        if (list.isEmpty() && !section.keepEmpty)
             continue;
         SidebarGroup group;
         group.key = QStringLiteral("@claude:") + section.id;

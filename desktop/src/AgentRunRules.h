@@ -6,6 +6,7 @@
 #include <QSet>
 #include <QString>
 #include <QStringList>
+#include <QUrl>
 
 namespace forkmesh::agentrules {
 
@@ -27,14 +28,19 @@ struct Decision {
     QString runKey;
     bool external = false;
     QString target;
+    QStringList pendingKinds;
+    QStringList pendingTargets;
 };
 
 bool gatesCommands(const RunRules &rules);
+bool agentTerminalWritesAllowed(const RunRules &rules);
 
 Decision decide(const RunRules &rules, const forkmesh::agentnet::ExternalCall &call,
                 const forkmesh::agentnet::CommandRisk &risk, const QSet<QString> &runApproved);
 Decision decideCommand(const RunRules &rules, const QString &command, const QString &cwd,
                        const QSet<QString> &runApproved);
+
+Decision decideUrl(const RunRules &rules, const QUrl &url, const QSet<QString> &runApproved);
 
 QStringList enforcedTeammatePermissions();
 QStringList deniedTeammatePermissions(const QStringList &granted);

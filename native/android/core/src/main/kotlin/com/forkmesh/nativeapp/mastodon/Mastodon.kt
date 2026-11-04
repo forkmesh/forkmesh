@@ -45,6 +45,18 @@ object MastodonServer {
         return "https://$host$port"
     }
 
+    fun webLink(value: String): String {
+        val text = value.trim()
+        val lowered = text.lowercase()
+        val start = when {
+            lowered.startsWith("https://") -> "https://".length
+            lowered.startsWith("http://") -> "http://".length
+            else -> return ""
+        }
+        if (text.length == start || text[start] == '/' || text.any { it.isWhitespace() || it.isISOControl() }) return ""
+        return text
+    }
+
     fun host(server: String): String {
         val uri = runCatching { URI(server) }.getOrNull()
         val host = uri?.host ?: return server.removePrefix("https://")

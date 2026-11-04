@@ -305,11 +305,11 @@ def test_history_and_documents_pages_date_every_entry(tmp_path):
         assert f'data-sort-value="{entry.updated}"' in documents, entry.url
     assert 'aria-sort="descending"' in documents
     assert '<a class="active" href="/docs/history/">Updates</a>' in documents
-    assert 'aria-current="page">All documents</a>' in documents
+    assert re.search(r'aria-current="page"><svg[^>]*>.*?</svg><span>All documents</span></a>', documents)
 
     history = (destination / "docs/history/index.html").read_text(encoding="utf-8")
     assert "Recent documentation updates" in history
-    assert 'aria-current="page">Recent updates</a>' in history
+    assert re.search(r'aria-current="page"><svg[^>]*>.*?</svg><span>Recent updates</span></a>', history)
     if catalog.history.available:
         newest = catalog.history.commits[0]
         assert newest.parent
@@ -414,3 +414,148 @@ def test_desktop_docs_package_mirrors_the_web_library():
     block = re.search(r"QList<DocsArea> list = \{(.*?)\n\s*\};", source, re.DOTALL)
     areas = re.findall(r'\{QStringLiteral\("([^"]*)"\), QStringLiteral\("([^"]*)"\)', block.group(1))
     assert areas == [(area.key, area.label) for area in docs_site.AREAS if area.key != "product"]
+
+
+def test_rich_rendering_turns_data_blocks_into_views():
+    source = (
+        "```json\n{\"name\": \"node\", \"port\": 8080, \"tls\": true, \"owner\": null,\n"
+        " \"tags\": [\"a\", \"b\"], \"peers\": [{\"host\": \"n1\", \"up\": true}, {\"host\": \"n2\", \"up\": false}]}\n```\n\n"
+        "```json\n\"fragment\": {\"key\": \"<value>\"}\n```\n\n"
+        "```json\n{\"a\": [...]}\n```\n\n"
+        "```toml\n[calls]\nenabled = true\nport = 3479  # the UDP port\n# extra = 1\n```\n\n"
+        "```dotenv\nTOKEN=<secret>\n```\n"
+    )
+    plain = docs_markdown.render(source).html
+    assert "dp-figure" not in plain and plain.count("<pre>") == 5
+    html = docs_markdown.render(source, rich=True).html
+    assert html.count('class="dp-figure dp-data"') == 4
+    assert "Object · 6 fields" in html
+    assert '<span class="dp-v dp-v-num">8080</span>' in html
+    assert '<span class="dp-v dp-v-bool dp-v-true">true</span>' in html
+    assert '<span class="dp-v dp-v-null">null</span>' in html
+    assert '<ul class="dp-chips">' in html
+    assert '<td data-label="host"><span class="dp-v dp-v-str">n1</span></td>' in html
+    assert '<span class="dp-v dp-v-hole">&lt;value&gt;</span>' in html
+    assert '<pre><code class="language-json" data-language="json">{&quot;a&quot;: [...]}' not in html
+    assert '<pre><code class="language-json" data-language="json">{"a": [...]}\n</code></pre>' in html
+    assert '<p class="dp-conf-name"><code>[calls]</code></p>' in html
+    assert '<small class="dp-kv-note">the UDP port</small>' in html
+    assert '<small class="dp-kv-note">extra = 1</small>' in html
+    assert "1 section · 2 settings" in html
+    assert '<span class="dp-v dp-v-hole">&lt;secret&gt;</span>' in html
+    assert html.count('<details class="dp-data-source"><summary>Show ') == 4
+
+
+def test_rich_rendering_frames_diagrams_and_draws_flows():
+    html = docs_markdown.render(
+        "```text\n a ──► b\n │\n c\n```\n\n"
+        "```text\nplain\nlines\nonly\n```\n\n"
+        "```flow\ntitle: Request path\nClient -> DNS -> Core\nCore -> DNS\nProbe -> DNS\n```\n\n"
+        "```flow\nnot a flow\n```\n",
+        rich=True,
+    ).html
+    assert html.count('class="dp-figure dp-diagram"') == 1
+    assert "--dp-diagram-columns:8" in html
+    assert html.count('class="dp-figure dp-flow"') == 1
+    assert '<span class="dp-figure-summary">Request path</span>' in html
+    ranks = re.findall(r'<div class="dp-flow-rank">(.*?)</div>', html)
+    assert [re.findall(r">([^<]+)</span>", rank) for rank in ranks] == [["Client", "Probe"], ["DNS"], ["Core"]]
+    assert '<li data-from="2" data-to="1">Core → DNS</li>' in html
+    assert '<pre><code class="language-flow" data-language="flow">not a flow\n</code></pre>' in html
+
+
+def test_rich_tables_carry_labels_for_stacked_phone_cards():
+    source = "| Part | Does | Code |\n| --- | --- | --- |\n| **Node** | Holds `repos` | `desktop/` |\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n"
+    html = docs_markdown.render(source, rich=True).html
+    assert '<div class="table-wrap table-stack" data-columns="3"><table>' in html
+    assert '<td data-label="Does">Holds <code>repos</code></td>' in html
+    assert "<td>1</td>" in html
+    assert "table-stack" not in docs_markdown.render(source).html
+
+
+def test_pages_carry_the_page_map_suggestions_and_reader_script():
+    catalog = docs_site.load_catalog()
+    entry = catalog.by_url()["/docs/architecture/"]
+    page = docs_site.page_html(catalog, entry)
+    assert '<section class="dp-map"' in page and "data-map-hub" in page
+    assert "Pages this one links to" in page
+    assert page.count('class="dp-map-node"') >= docs_site.MAP_VISIBLE
+    assert 'class="dp-map-more"' in page
+    assert '<section class="dp-suggest" data-suggest hidden' in page
+    assert f'data-reader-index="{docs_site.READER_INDEX_URL}"' in page
+    assert 'src="/docs-explore.js?v=${version}"' in page
+    assert 'class="dp-figure dp-flow"' in page
+    lonely = docs_site.Entry(url="/docs/lonely/", title="Lonely", description="", area="guides")
+    assert docs_site.page_map_html(lonely, []) == ""
+
+
+def test_reader_index_lists_pages_links_and_keywords(tmp_path):
+    catalog = docs_site.load_catalog()
+    index = docs_site.reader_index(catalog)
+    pages = index["pages"]
+    assert {page["u"] for page in pages} == {
+        entry.url for entry in catalog.entries if entry.kind in ("doc", "product")
+    }
+    by_url = {page["u"]: page for page in pages}
+    node = by_url["/docs/operations/mirror-node/"]
+    assert {"mirror", "node"} <= {word for word, _ in node["k"]}
+    assert 0 < len(node["k"]) <= docs_site.KEYWORDS_PER_PAGE
+    assert all(0 < weight <= 1 for _, weight in node["k"])
+    linked = {pages[position]["u"] for position in node["o"]}
+    assert linked == {url for url in catalog.by_url()["/docs/operations/mirror-node/"].outgoing if url in by_url}
+    assert set(index["areas"]) == {area.key for area in docs_site.AREAS}
+
+
+def test_reader_script_keeps_reading_history_on_the_device():
+    script = (PUBLIC / "docs-explore.js").read_text(encoding="utf-8")
+    node = shutil.which("node")
+    if node:
+        subprocess.run([node, "--check", str(PUBLIC / "docs-explore.js")], check=True, timeout=30)
+    assert "forkmesh.docs.reader.v1" in script and "localStorage" in script
+    assert re.findall(r"fetch\(([^,)]+)", script) == ["source"]
+    assert 'getAttribute("data-reader-index")' in script
+    assert "Nothing is sent anywhere." in script
+    assert "Forget my reading" in script
+    css = (PUBLIC / "docs-page.css").read_text(encoding="utf-8")
+    for selector in (".dp-dock", ".dp-sheet", ".dp-peek", ".dp-figure", ".table-stack", ".dp-map-grid", ".dp-viewer"):
+        assert selector in css, selector
+
+
+def test_docs_art_partials_match_the_generator():
+    import docs_art
+
+    assert docs_art.stale_partials() == []
+    for name in docs_art.partials():
+        assert f'partials/docs-art/{name}' in (
+            REPOSITORY / "www" / "templates" / "pages" / "docs" / "index.html"
+        ).read_text(encoding="utf-8")
+
+
+def test_pages_open_with_an_illustrated_hero_and_interwoven_rail():
+    catalog = docs_site.load_catalog()
+    entry = catalog.by_url()["/docs/censorship-resilience/"]
+    page = docs_site.page_html(catalog, entry)
+    hero = page[page.index('<header class="dp-hero">'):page.index("</header>", page.index('<header class="dp-hero">'))]
+    assert "<h1 " in hero and 'class="dp-hero-lead"' in hero and "data-docs-meta" in hero
+    assert 'class="dp-art"' in hero and 'class="dp-pillar-strip"' in hero
+    assert '<a href="/docs/censorship-resilience/" aria-current="page">' in hero
+    assert "<p>Part of the core documentation:" not in page
+    assert '<section class="dp-callout">' in page
+    assert 'class="dp-rail-card dp-rail-path"' in page and 'class="dp-rail-card dp-rail-related"' in page
+    assert page.count('class="dp-art"') == 2
+    for url, label in docs_site.DOCS_TABS:
+        assert f'href="{url}">{label}</a>' in page
+    other = docs_site.page_html(catalog, catalog.by_url()["/docs/operations/mirror-node/"])
+    assert 'class="dp-hero"' in other and 'class="dp-pillar-strip"' not in other
+    assert 'class="dp-nav-group current" open' in other
+
+
+def test_every_area_has_an_icon_and_an_illustration():
+    import docs_art
+
+    for area in docs_site.AREAS:
+        glyph, art = docs_site.AREA_STYLE[area.key]
+        assert glyph in docs_art.ICONS
+        assert 'class="dp-art"' in docs_art.art(art, "check")
+    for _, art in docs_site.PILLAR_LABELS.values():
+        assert 'class="dp-art"' in docs_art.art(art, "check")

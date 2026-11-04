@@ -150,7 +150,7 @@ def test_the_client_refuses_changed_keys_and_matches_sites_exactly():
     # A sender is pinned only after their signature held under those keys.
     load = CLIENT.split("async function load()", 1)[1].split("async function save(", 1)[0]
     assert load.index("await C.openGrant({") < load.index("trust.pins[seen.name] = seen.fingerprint")
-    assert "return Boolean(saved) && saved === loginHost(pageUrl);" in CLIENT
+    assert "return Boolean(saved) && saved === loginHost(pageUrl) && loginPort(savedUrl) === loginPort(pageUrl);" in CLIENT
     assert "endsWith" not in CLIENT
     # The published keys must be the ones this keyset can open.
     assert 'throw new VaultError("keyset_mismatch");' in CLIENT

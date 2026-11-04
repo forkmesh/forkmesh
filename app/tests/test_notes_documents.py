@@ -184,3 +184,22 @@ def test_published_note_page_draws_figures_and_hides_layout_lines():
     assert html.count('<figure class="figure">') == 1 and "<figcaption>Fig</figcaption>" in html
     assert 'class="pagebreak"' in html and "size=letter" not in html
     assert "<pre><code>&lt;div&gt;x&lt;/div&gt;</code></pre>" in html
+
+
+def test_right_column_holds_comments_chat_activity_and_history():
+    view = VIEW.read_text(encoding="utf-8")
+    assert PACKAGED.read_text(encoding="utf-8") == view
+    column = view[view.index("<aside data-note-comments"):]
+    column = column[:column.index("</aside>")]
+    for tab in ("comments", "chat", "activity", "history"):
+        assert 'data-note-panel-tab="%s"' % tab in column
+        assert 'data-note-panel="%s"' % tab in column
+    for marker in ("data-note-activity-list", "data-note-versions", "data-note-version-view",
+                   "data-note-chat-form"):
+        assert marker in column
+    assert "data-note-versions-panel" not in view and "<aside data-note-activity" not in view
+    notes = NOTES.read_text(encoding="utf-8")
+    assert 'const NOTE_SIDE_TABS = ["comments", "chat", "activity", "history"];' in notes
+    assert "/versions?version=${encodeURIComponent(number)}" in notes
+    assert 'if (frame.type === "note-updated") scheduleNoteVersions();' in notes
+    assert 'openNotePanel("history")' in notes and 'openNotePanel("activity")' in notes

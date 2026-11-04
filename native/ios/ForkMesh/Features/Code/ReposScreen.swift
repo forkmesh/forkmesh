@@ -48,33 +48,45 @@ struct ReposScreen: View {
 
     // MARK: Search, filters, sort
 
+    private var counts: [RepoFilter: Int] {
+        let all: [Repository] = model.catalog.data ?? []
+        let online: Int = all.filter { ReposCatalog.isOnline($0) }.count
+        return [.all: all.count, .online: online, .offline: all.count - online]
+    }
+
     private var header: some View {
         VStack(alignment: .leading, spacing: FmSpace.x3) {
             HStack(spacing: FmSpace.x2) {
-                searchField
+                Text("Repos")
+                    .fmText(.displaySmall)
+                    .accessibilityAddTraits(.isHeader)
+                Spacer(minLength: 0)
                 refreshButton
             }
+            searchField
             ReposCatalogControls(
                 filter: model.filter,
                 sort: model.sort,
+                counts: counts,
                 onFilterChanged: { (filter: RepoFilter) in model.filter = filter },
                 onSortChanged: { (sort: RepoSort) in model.sort = sort })
         }
-        .padding(FmSpace.x4)
+        .padding(EdgeInsets(top: FmSpace.x2, leading: FmSpace.x4, bottom: FmSpace.x3, trailing: FmSpace.x4))
+        .genieKeepsClear()
     }
 
     private var searchField: some View {
         HStack(spacing: FmSpace.x2) {
             FmIcon("search", size: 18, color: fm.textTertiary)
-            TextField("", text: $model.queryText, prompt: Text("Find a repository...").foregroundColor(fm.textTertiary))
+            TextField("", text: $model.queryText, prompt: Text("Find a repository").foregroundColor(fm.textTertiary))
                 .fmText(.bodyLarge)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .submitLabel(.search)
         }
         .padding(.horizontal, FmSpace.x4)
-        .frame(height: 48)
-        .shellGlass(RoundedRectangle(cornerRadius: FmRadius.lg, style: .continuous))
+        .frame(height: 44)
+        .shellGlass(Capsule())
     }
 
     private var refreshButton: some View {
@@ -83,11 +95,11 @@ struct ReposScreen: View {
             Task { await reloadNetwork() }
             Task { await desktop.load() }
         }) {
-            FmIcon("refresh", size: 24, color: fm.textSecondary)
-                .frame(width: 48, height: 48)
+            FmIcon("refresh", size: 20, color: fm.textPrimary)
+                .frame(width: 44, height: 44)
                 .shellGlass(Circle())
         }
-        .buttonStyle(FmPressStyle(highlight: fm.textPrimary.opacity(0.08), cornerRadius: 24))
+        .buttonStyle(FmPressStyle(highlight: fm.textPrimary.opacity(0.08), cornerRadius: 22))
         .accessibilityLabel(Text("Refresh repositories"))
     }
 
@@ -112,9 +124,7 @@ struct ReposScreen: View {
                 await reloadNetwork()
                 await desktop.load()
             }
-            .safeAreaInset(edge: .top, spacing: 0) {
-                header
-            }
+            .modifier(ReposPinnedHeader(background: fm.listSurface) { header })
             .onTabReselect(.code) {
                 withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(TabTopAnchor.id, anchor: .top) }
             }
@@ -173,11 +183,12 @@ struct DesktopReposSection: View {
     var body: some View {
         if model.available && (!model.repos.isEmpty || model.problem != nil || model.loading) {
             VStack(alignment: .leading, spacing: 0) {
-                FmSectionHeader(title: title, icon: "desktop_windows_outlined", count: model.repos.count)
-                    .padding(EdgeInsets(top: FmSpace.x2, leading: FmSpace.x4, bottom: FmSpace.x2, trailing: FmSpace.x4))
+                FmSectionHeader(title: title, count: model.repos.isEmpty ? nil : model.repos.count)
+                    .padding(EdgeInsets(top: FmSpace.x4, leading: FmSpace.x4, bottom: FmSpace.x2, trailing: FmSpace.x4))
                 if model.repos.isEmpty, let problem = model.problem {
                     Text(problem)
-                        .fmText(.bodySmall, color: fm.textTertiary)
+                        .fmText(.bodyMedium, color: fm.textSecondary)
+                        .lineLimit(2)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .fmMessageTools(problem)
                         .padding(.horizontal, FmSpace.x4)
@@ -193,7 +204,6 @@ struct DesktopReposSection: View {
                                 name: repo.repository.name))
                     FmRowDivider()
                 }
-                FmHairline()
             }
             .accessibilityIdentifier("repos-desktop-section")
         }
@@ -223,7 +233,9 @@ struct DesktopRepoRow: View {
             title: repo.slug,
             titleView: AnyView(titleView),
             subtitle: repo.detail,
-            leading: AnyView(FmIconTile(icon: repo.isPrivate ? "lock_outline" : "desktop_windows_outlined", tint: fm.accent, size: 36)),
+            leading: AnyView(
+                FmIcon(repo.isPrivate ? "lock_outline" : "desktop_windows_outlined", size: 20, color: fm.textSecondary)
+                    .frame(width: 36, height: 36)),
             onTap: onTap,
             minHeight: 52,
             padding: EdgeInsets.fmSymmetric(horizontal: FmSpace.x4, vertical: FmSpace.x2)
@@ -231,71 +243,135 @@ struct DesktopRepoRow: View {
     }
 }
 
-/// The filter chips and the sort menu.
+/// The reachability segments, the visibility and sort menu, and the active visibility pill.
 struct ReposCatalogControls: View {
     @Environment(\.fmPalette) private var fm
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Namespace private var selection
 
     let filter: RepoFilter
     let sort: RepoSort
+    var counts: [RepoFilter: Int] = [:]
     let onFilterChanged: (RepoFilter) -> Void
     let onSortChanged: (RepoSort) -> Void
 
-    private func chip(_ option: RepoFilter) -> some View {
-        let selected: Bool = option == filter
-        return Button(action: {
-            FmHaptics.selection()
+    static let segments: [RepoFilter] = [.all, .online, .offline]
+    static let visibility: [RepoFilter] = [.public, .private]
+
+    private func pick(_ option: RepoFilter) {
+        guard option != filter else { return }
+        withAnimation(reduceMotion ? nil : .snappy) {
             onFilterChanged(option)
-        }) {
-            Text(option.label)
-                .fmText(.labelMedium, color: selected ? fm.accent : fm.textSecondary)
-                .padding(.horizontal, 10)
-                .frame(height: 32)
-                .background(selected ? fm.accentSubtle : fm.bgRaised)
-                .clipShape(FmRoundedShape(radius: FmRadius.md))
-                .overlay {
-                    FmRoundedShape(radius: FmRadius.md).strokeBorder(selected ? fm.accent : fm.border, lineWidth: 1)
+        }
+    }
+
+    private func segment(_ option: RepoFilter) -> some View {
+        let selected: Bool = option == filter
+        return Button(action: { pick(option) }) {
+            HStack(spacing: 5) {
+                Text(option.label)
+                    .fmText(.labelLarge, color: selected ? fm.textPrimary : fm.textSecondary)
+                if let count = counts[option] {
+                    Text(String(count))
+                        .fmText(.bodyLarge, color: fm.textTertiary, height: FmType.leadingTight, tabular: true)
+                        .contentTransition(.numericText())
                 }
+            }
+            .lineLimit(1)
+            .frame(maxWidth: .infinity, minHeight: 36)
+            .background {
+                if selected {
+                    Capsule()
+                        .fill(fm.bgRaised)
+                        .shadow(color: Color.black.opacity(fm.dark ? 0.3 : 0.07), radius: 3, y: 1)
+                        .matchedGeometryEffect(id: "segment", in: selection)
+                }
+            }
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(Text(option.label))
+        .accessibilityValue(Text(counts[option].map { "\($0) repositories" } ?? ""))
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
-    private var chips: some View {
-        FmEdgeFadeScroll {
-            HStack(spacing: FmSpace.x2) {
-                ForEach(RepoFilter.allCases, id: \.self) { (option: RepoFilter) in
-                    chip(option)
-                }
+    private var segments: some View {
+        HStack(spacing: 0) {
+            ForEach(ReposCatalogControls.segments, id: \.self) { (option: RepoFilter) in
+                segment(option)
             }
         }
-        .frame(height: 36)
+        .padding(4)
+        .shellGlass(Capsule())
+        .sensoryFeedback(.selection, trigger: filter)
     }
 
-    private var sortMenu: some View {
+    private var visibilityActive: Bool { ReposCatalogControls.visibility.contains(filter) }
+
+    private var filterMenu: some View {
         Menu {
-            ForEach(RepoSort.allCases, id: \.self) { (option: RepoSort) in
-                Button(action: { onSortChanged(option) }) {
-                    if option == sort {
-                        Label(option.menuLabel, systemImage: "checkmark")
-                    } else {
-                        Text(option.menuLabel)
+            Section("Visibility") {
+                Button { pick(.all) } label: {
+                    Label("Any", systemImage: visibilityActive ? "circle" : "checkmark")
+                }
+                ForEach(ReposCatalogControls.visibility, id: \.self) { (option: RepoFilter) in
+                    Button { pick(option) } label: {
+                        Label(option.label, systemImage: option == filter ? "checkmark" : (option == .private ? "lock" : "globe"))
+                    }
+                }
+            }
+            Section("Sort by") {
+                ForEach(RepoSort.allCases, id: \.self) { (option: RepoSort) in
+                    Button(action: { onSortChanged(option) }) {
+                        if option == sort {
+                            Label(option.menuLabel, systemImage: "checkmark")
+                        } else {
+                            Text(option.menuLabel)
+                        }
                     }
                 }
             }
         } label: {
-            FmIcon("sort", size: 16, color: fm.textSecondary)
-                .frame(width: 36, height: 36)
+            Image(systemName: "line.3.horizontal.decrease")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(fm.textPrimary)
+                .frame(width: 44, height: 44)
+                .overlay(alignment: .topTrailing) {
+                    if visibilityActive {
+                        Circle().fill(fm.accent).frame(width: 8, height: 8).offset(x: -9, y: 9)
+                    }
+                }
                 .shellGlass(Circle())
         }
-        .accessibilityLabel(Text("Sort repositories"))
-        .accessibilityValue(Text(sort.buttonLabel))
+        .accessibilityLabel(Text("Filter and sort repositories"))
+        .accessibilityValue(Text(visibilityActive ? "\(filter.label), \(sort.buttonLabel)" : sort.buttonLabel))
     }
 
     var body: some View {
-        HStack(spacing: FmSpace.x2) {
-            chips
-                .frame(maxWidth: .infinity)
-            sortMenu
+        VStack(alignment: .leading, spacing: FmSpace.x2) {
+            HStack(spacing: FmSpace.x2) {
+                segments
+                filterMenu
+            }
+            if visibilityActive {
+                Button { pick(.all) } label: {
+                    HStack(spacing: FmSpace.x1 + 2) {
+                        Text(filter.label)
+                            .fmText(.labelMedium)
+                        Image(systemName: "xmark")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(fm.textSecondary)
+                    }
+                    .padding(.horizontal, FmSpace.x3)
+                    .frame(height: 30)
+                    .background(fm.bgRaised, in: Capsule())
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("Showing \(filter.label.lowercased()) repositories. Clear"))
+                .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .leading)))
+            }
         }
     }
 }
@@ -316,10 +392,10 @@ struct RepoCatalogRow: View {
 
     private var titleView: some View {
         HStack(spacing: FmSpace.x2) {
-            Text(repo.fullName)
+            (Text(repo.displayOwner + "/").foregroundColor(fm.textTertiary) + Text(repo.name).foregroundColor(fm.textPrimary))
                 .fmText(.titleSmall)
-                .lineLimit(2)
-                .truncationMode(.tail)
+                .lineLimit(1)
+                .truncationMode(.middle)
             Circle()
                 .fill(online ? fm.success : fm.offline)
                 .frame(width: 8, height: 8)
@@ -327,21 +403,21 @@ struct RepoCatalogRow: View {
         }
     }
 
+    private var meta: String {
+        ReposCatalog.metaItems(repo).map(\.text).joined(separator: " · ")
+    }
+
     private var subtitleView: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 2) {
             if !repo.description.isEmpty {
                 Text(repo.description)
-                    .fmText(.bodyMedium, color: fm.textSecondary)
-                    .lineLimit(2)
+                    .fmText(.bodyMedium, color: fm.textPrimary.opacity(0.82))
+                    .lineLimit(1)
                     .truncationMode(.tail)
-                    .padding(.top, 1)
             }
-            RepoWrap(spacing: FmSpace.x3, runSpacing: FmSpace.x1) {
-                ForEach(ReposCatalog.metaItems(repo), id: \.self) { (item: RepoMetaItem) in
-                    RepoMetaItemView(item: item)
-                }
-            }
-            .padding(.top, FmSpace.x2)
+            Text(meta)
+                .fmText(.bodySmall, color: fm.textTertiary, tabular: true)
+                .lineLimit(1)
         }
     }
 
@@ -350,12 +426,29 @@ struct RepoCatalogRow: View {
             title: repo.fullName,
             titleView: AnyView(titleView),
             subtitleView: AnyView(subtitleView),
-            leading: AnyView(FmIconTile(icon: repo.isPrivate ? "lock_outline" : "book_outlined", tint: fm.accent, size: 40)),
+            leading: AnyView(FmAvatar(name: repo.displayOwner, size: 36, fontSize: FmType.body)),
             trailing: localBadge,
             onTap: onTap,
-            minHeight: 64,
+            minHeight: 60,
             padding: EdgeInsets.fmSymmetric(horizontal: FmSpace.x4, vertical: FmSpace.x3)
         )
+        .contextMenu {
+            if !repo.description.isEmpty {
+                Text(repo.description)
+            }
+            Button { onTap() } label: { Label("Open", systemImage: "arrow.up.right") }
+        } preview: {
+            VStack(alignment: .leading, spacing: FmSpace.x2) {
+                Text(repo.fullName).fmText(.titleMedium)
+                if !repo.description.isEmpty {
+                    Text(repo.description).fmText(.bodyLarge, color: fm.textSecondary)
+                }
+                Text(meta).fmText(.bodySmall, color: fm.textTertiary)
+            }
+            .padding(FmSpace.x4)
+            .frame(width: 320, alignment: .leading)
+            .background(fm.bgRaised)
+        }
     }
 }
 
@@ -387,5 +480,22 @@ struct ReposErrorView: View {
             }
         }
         .padding(FmSpace.x4)
+    }
+}
+
+private struct ReposPinnedHeader<Header: View>: ViewModifier {
+    let background: Color
+    @ViewBuilder let header: () -> Header
+
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content
+                .safeAreaBar(edge: .top, spacing: 0, content: header)
+                .scrollEdgeEffectStyle(.hard, for: .top)
+        } else {
+            content.safeAreaInset(edge: .top, spacing: 0) {
+                header().background(background)
+            }
+        }
     }
 }

@@ -246,6 +246,38 @@ Threat model for phones: [threat-model.md](../protocol/threat-model.md).
   the new group, then delete the old copy).
 - Ed25519 is never delegated to CryptoKit (randomised signatures would break
   the pinned deterministic vectors).
+- "Confirm it's you" fails closed. The plain Confirm dialog is only for a phone
+  with no screen lock (Android `security/UserPresencePolicy`; iOS
+  `LocalAuthPresencePrompt` returns nil only for `passcodeNotSet`). Any other
+  error, a sensor timeout included, is a refusal, otherwise a person holding an
+  unlocked phone could wait out the prompt and tap Confirm. Android 8 and 9 have
+  no prompt that accepts the passcode, so `UserPresenceActivity` opens the
+  system's credential screen instead.
+- Notification actions that drive an agent need an unlocked phone: Deny, Retry
+  and Continue join Approve, Merge and Approve PR in `requiresAuthentication`.
+  iOS sets `.authenticationRequired`. Android sets `setAuthenticationRequired` on
+  API 31 and later, and `NotificationActionReceiver` refuses them while the device
+  is locked on every version, because a broadcast action otherwise runs from the
+  lock screen. Mark read and chat Reply stay available there.
+  Only text-input actions use a mutable `PendingIntent`, so a notification
+  listener cannot rewrite another action's extras.
+- Siri and Shortcuts intents that drive an agent (Tell, Continue, Stop, Stop
+  all, Merge, Delete, Answer request) set `.requiresAuthentication`, so they
+  never run from a locked iPhone. Android has no voice equivalent.
+- A LAN desktop is not trusted for saying it paired the phone:
+  [DESKTOP_AGENTS.md](DESKTOP_AGENTS.md#confirming-a-desktop-on-the-phone).
+- The Mastodon sign-in belongs to one ForkMesh session in one project. Clearing the
+  local ForkMesh session (sign-out, revoked device, expired session, deleted
+  account) deletes `mastodon.*` first and then revokes the token on the server
+  (`AuthService.onLocalSessionCleared` on iOS, `AuthController.onLocalSessionCleared`
+  on Android), so the next account on the phone never inherits it. Android's
+  `MastodonState` is a process-wide object, so it also resets on
+  `ProjectLifecycle.onClose`; iOS builds `MastodonHub` per screen over the
+  project-routed store.
+- Mastodon URL fields (`url`, `uri`, avatar, header, media) pass
+  `MastodonServer.webLink`, which keeps only `https` and `http`, like post bodies.
+  "Open in browser" and media tiles would otherwise hand a server-chosen
+  `shortcuts://` or `forkmesh://` address to the system.
 - The iOS app shows no prices, plans or paid features and moves no money
   ([IOS_RELEASE.md](IOS_RELEASE.md), "App Review: nothing paid on iOS").
 - **Phone Security** (`phone-security`) is the phones' checkup, the
@@ -254,6 +286,9 @@ Threat model for phones: [threat-model.md](../protocol/threat-model.md).
 - **Eye Control** (`eye-control`, iOS only, experimental) moves a cursor with
   ARKit face tracking and taps on a firm blink (route `eyeControl`;
   [../marketplace/eye-control.md](../marketplace/eye-control.md)).
+- **Silent Speech** (`silent-speech`, experimental) recognises words mouthed
+  without a sound from AirPods or Android head-tracker motion (route
+  `silentSpeech`; [../marketplace/silent-speech.md](../marketplace/silent-speech.md)).
 - **Router** (`openwrt`) manages an OpenWrt router on the phone's Wi-Fi (route
   `openWrtRouter`, web path `/dashboard/openwrt`). Logic in
   `FMPackages/OpenWrt*.swift` and core `openwrt/`; screens in

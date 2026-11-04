@@ -470,6 +470,16 @@
       .fm-merge-method { display: flex; min-width: 0; flex: 1 1 14rem; max-width: 100%; align-items: center; gap: 8px; font-size: 12px; color: rgb(var(--dashboard-muted-foreground-rgb)); }
       .fm-merge-method > span { white-space: nowrap; }
       .fm-merge-method select { width: 0; min-width: 0; flex: 1 1 auto; max-width: 18rem; height: var(--dashboard-control-height-sm); padding: 0 8px; border: 1px solid rgb(var(--dashboard-border-rgb)); border-radius: var(--dashboard-control-radius); background: rgb(var(--dashboard-background-rgb)); color: rgb(var(--dashboard-foreground-rgb)); font-size: 12px; }
+      .fm-merge-files { margin-top: 16px; }
+      .fm-merge-files-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 16px; border-bottom: 1px solid rgb(var(--dashboard-border-rgb)); }
+      .fm-merge-files-title { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; color: rgb(var(--dashboard-foreground-rgb)); }
+      .fm-merge-files-title svg, .fm-merge-files-title i { width: 16px; height: 16px; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+      .fm-merge-files-blockers { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 10px 16px 0; list-style: none; }
+      .fm-merge-files-blockers li { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border: 1px solid rgb(var(--dashboard-border-rgb)); border-radius: 999px; font-size: 12px; color: rgb(var(--dashboard-foreground-rgb)); }
+      .fm-merge-files-blockers li svg, .fm-merge-files-blockers li i { width: 14px; height: 14px; }
+      .fm-merge-files-blockers li[data-tone="bad"] svg { color: rgb(var(--dashboard-destructive-rgb)); }
+      .fm-merge-files-blockers li[data-tone="warn"] svg { color: rgb(var(--dashboard-attention-rgb)); }
+      .fm-merge-files-blockers li[data-tone="pending"] svg { color: rgb(var(--dashboard-muted-foreground-rgb)); }
       .fm-merge-buttons { display: flex; flex: 1 1 auto; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
       @media (max-width: 639px) {
         .fm-merge-buttons { flex-basis: 100%; }
@@ -4123,6 +4133,7 @@
             <a data-nav="agents" data-nav-link href="/dashboard/agents" data-plugin-entry="agents"><span class="dashboard-nav-icon"><i data-lucide="bot"></i></span>Agents</a>
             <a data-nav="apps" data-nav-link href="/dashboard/apps"><span class="dashboard-nav-icon"><i data-lucide="blocks"></i></span>Apps</a>
             <a data-nav="runners" data-nav-link href="/dashboard/runners"><span class="dashboard-nav-icon"><i data-lucide="server"></i></span>Runners</a>
+            <a data-nav="plugins" data-nav-link data-admin-only class="hidden" href="/dashboard/plugins"><span class="dashboard-nav-icon"><i data-lucide="puzzle"></i></span>Plugins</a>
             <a href="/dashboard/settings"><span class="dashboard-nav-icon"><i data-lucide="settings"></i></span>Settings</a>
           </div>
           <!-- forkmesh:plugin-navigation -->
@@ -4205,63 +4216,165 @@
         <div data-recent-pushes hidden class="flex-none"></div>
         <div id="content" class="flex-1 min-h-0 overflow-hidden">
           <section data-view="home" class="view active h-full overflow-y-auto">
-            <div class="grid min-h-full lg:grid-cols-[18rem_minmax(0,1fr)] xl:grid-cols-[18rem_minmax(0,48rem)_20rem] 2xl:grid-cols-[20rem_minmax(0,52rem)_22rem]">
-              <aside data-home-left-rail class="min-w-0 border-b border-border bg-card px-4 py-6 sm:px-6 lg:min-h-full lg:border-b-0 lg:border-r lg:px-8 lg:py-10">
-                <div class="mb-3 flex items-center justify-between gap-3">
-                  <h2 class="text-sm font-semibold text-foreground">Top repositories</h2>
-                  <a
-                    data-home-new-repo
-                    href="/dashboard/repos/new"
-                    title="Create a new repository"
-                    class="fm-btn fm-btn-sm fm-btn-cta"
-                  >
-                    <i data-lucide="book-marked"></i>
-                    New
-                  </a>
+            <style>
+              .fm-home-grid { display: grid; min-height: 100%; }
+              @media (min-width: 1024px) { .fm-home-grid { grid-template-columns: 20rem minmax(0, 1fr); } }
+              @media (min-width: 1280px) { .fm-home-grid { grid-template-columns: 20rem minmax(0, 1fr) 22rem; } }
+              .fm-home-center { width: 100%; max-width: 66rem; margin: 0 auto; }
+              .fm-home-account { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 4px; border-radius: 6px; }
+              .fm-home-account:hover { background: rgb(var(--dashboard-foreground-rgb) / .06); }
+              .fm-home-avatar { position: relative; display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; flex: none; overflow: hidden; border-radius: 999px; border: 1px solid rgb(var(--dashboard-border-rgb)); background: rgb(var(--dashboard-secondary-rgb)); color: rgb(var(--dashboard-foreground-rgb)); font-size: 13px; font-weight: 600; }
+              .fm-home-avatar img { width: 100%; height: 100%; object-fit: cover; }
+              .fm-home-nav { display: grid; gap: 2px; }
+              .fm-home-nav button { position: relative; display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border-radius: 6px; color: rgb(var(--dashboard-foreground-rgb)); font-size: 14px; text-align: left; }
+              .fm-home-nav button:hover { background: rgb(var(--dashboard-foreground-rgb) / .06); }
+              .fm-home-nav button i, .fm-home-nav button svg { width: 16px; height: 16px; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+              .fm-home-nav button[aria-pressed="true"] { background: rgb(var(--dashboard-foreground-rgb) / .08); font-weight: 600; }
+              .fm-home-nav button[aria-pressed="true"]::before { content: ""; position: absolute; left: -8px; top: 6px; bottom: 6px; width: 4px; border-radius: 4px; background: rgb(var(--dashboard-primary-rgb)); }
+              .fm-home-rail-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 28px; }
+              .fm-home-rail-title { font-size: 12px; font-weight: 600; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+              :where(.fm-home-icon-btn) { display: inline-flex; }
+              .fm-home-icon-btn { align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 6px; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+              .fm-home-icon-btn:hover, .fm-home-icon-btn[aria-expanded="true"] { background: rgb(var(--dashboard-foreground-rgb) / .06); color: rgb(var(--dashboard-foreground-rgb)); }
+              .fm-home-icon-btn i, .fm-home-icon-btn svg { width: 16px; height: 16px; }
+              .fm-home-greeting { margin: 0 0 16px; font-size: 24px; font-weight: 600; line-height: 1.25; color: rgb(var(--dashboard-foreground-rgb)); }
+              .fm-home-section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 32px 0 8px; }
+              .fm-home-section-title { font-size: 14px; font-weight: 600; color: rgb(var(--dashboard-foreground-rgb)); }
+              .fm-home-section-meta { display: inline-flex; align-items: center; gap: 12px; font-size: 12px; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+              .fm-home-list { overflow: hidden; border: 1px solid rgb(var(--dashboard-border-rgb)); border-radius: 12px; background: rgb(var(--dashboard-card-rgb)); }
+              .fm-home-list > * + * { border-top: 1px solid rgb(var(--dashboard-border-rgb)); }
+              .fm-home-row { display: flex; align-items: flex-start; gap: 12px; min-width: 0; padding: 14px 16px; }
+              a.fm-home-row:hover { background: rgb(var(--dashboard-foreground-rgb) / .03); }
+              a.fm-home-row:hover .fm-home-row-title { color: rgb(var(--dashboard-accent-rgb)); }
+              .fm-home-row-icon { display: inline-flex; width: 16px; height: 20px; flex: none; align-items: center; justify-content: center; }
+              .fm-home-row-icon i, .fm-home-row-icon svg { width: 16px; height: 16px; }
+              .fm-home-row-title { display: block; min-width: 0; font-size: 14px; font-weight: 600; line-height: 20px; color: rgb(var(--dashboard-foreground-rgb)); overflow-wrap: anywhere; }
+              .fm-home-row-meta { display: block; margin-top: 2px; font-size: 12px; line-height: 18px; color: rgb(var(--dashboard-muted-foreground-rgb)); overflow-wrap: anywhere; }
+              .fm-home-row-end { display: inline-flex; flex: none; align-items: center; gap: 4px; padding-top: 2px; font-size: 12px; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+              .fm-home-empty { padding: 14px 16px; font-size: 13px; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+              .fm-home-card { border: 1px solid rgb(var(--dashboard-border-rgb)); border-radius: 12px; background: rgb(var(--dashboard-card-rgb)); padding: 16px 20px; }
+              .fm-home-card + .fm-home-card { margin-top: 16px; }
+              .fm-home-card-title { margin: 0 0 12px; font-size: 14px; font-weight: 600; color: rgb(var(--dashboard-foreground-rgb)); }
+              .fm-home-timeline { position: relative; display: grid; gap: 14px; margin: 0; padding: 0 0 0 18px; list-style: none; }
+              .fm-home-timeline::before { content: ""; position: absolute; left: 3px; top: 6px; bottom: 6px; width: 1px; background: rgb(var(--dashboard-border-rgb)); }
+              .fm-home-timeline li { position: relative; }
+              .fm-home-timeline li::before { content: ""; position: absolute; left: -18px; top: 6px; width: 7px; height: 7px; border-radius: 999px; background: rgb(var(--dashboard-muted-foreground-rgb)); box-shadow: 0 0 0 3px rgb(var(--dashboard-card-rgb)); }
+              .fm-home-timeline time, .fm-home-timeline .fm-home-kicker { display: block; font-size: 12px; line-height: 16px; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+              .fm-home-timeline a, .fm-home-timeline p { display: block; margin: 2px 0 0; font-size: 14px; line-height: 20px; color: rgb(var(--dashboard-foreground-rgb)); }
+              .fm-home-timeline a:hover { color: rgb(var(--dashboard-accent-rgb)); }
+              .fm-home-more { display: inline-flex; align-items: center; gap: 4px; margin: 14px 0 0 18px; font-size: 12px; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+              .fm-home-more:hover { color: rgb(var(--dashboard-accent-rgb)); }
+              [data-home-tab-panel][hidden] { display: none !important; }
+              .fm-home-divider { margin: 20px 0; border-top: 1px solid rgb(var(--dashboard-border-rgb)); }
+              .fm-home-timeline a.line-clamp-2 { display: -webkit-box; }
+              @media (min-width: 1024px) { [data-home-left-rail].fm-home-rail { padding-left: 24px; padding-right: 24px; } }
+              @media (min-width: 1280px) { [data-home-right-rail].fm-home-right { padding-right: 24px; } }
+            </style>
+            <div class="fm-home-grid">
+              <aside data-home-left-rail class="min-w-0 border-b border-border bg-card px-4 py-6 sm:px-6 lg:min-h-full lg:border-b-0 lg:border-r fm-home-rail">
+                <a data-home-account href="/dashboard/profile" class="fm-home-account" title="Your profile">
+                  <span data-home-account-avatar class="fm-home-avatar">
+                    <img class="hidden" alt="" />
+                    <span data-avatar-initial>F</span>
+                  </span>
+                  <span class="min-w-0">
+                    <span data-home-account-name class="block truncate text-sm font-semibold text-foreground">Your account</span>
+                    <span class="block truncate text-xs text-muted-foreground">Your personal account</span>
+                  </span>
+                </a>
+
+                <nav data-home-tabs aria-label="Home sections" class="fm-home-nav mt-4">
+                  <button type="button" data-home-tab="home" aria-pressed="true"><i data-lucide="house"></i>Home</button>
+                  <button type="button" data-home-tab="feed" aria-pressed="false"><i data-lucide="globe"></i>Feed</button>
+                </nav>
+
+                <div class="fm-home-divider"></div>
+
+                <div class="fm-home-rail-head mb-2">
+                  <h2 class="fm-home-rail-title">Top repositories</h2>
+                  <span class="inline-flex items-center gap-1">
+                    <button data-home-repo-search-toggle type="button" aria-expanded="false" aria-label="Find a repository" title="Find a repository" class="fm-home-icon-btn hidden"><i data-lucide="search"></i></button>
+                    <a
+                      data-home-new-repo
+                      href="/dashboard/repos/new"
+                      title="Create a new repository"
+                      class="fm-btn fm-btn-sm fm-btn-cta"
+                    >
+                      <i data-lucide="book-marked"></i>
+                      New
+                    </a>
+                  </span>
                 </div>
-                <label data-home-repo-search-field class="mb-3 hidden h-9 min-w-0 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm text-muted-foreground focus-within:border-ring focus-within:text-foreground">
+                <label data-home-repo-search-field class="mb-2 hidden h-8 min-w-0 items-center gap-2 rounded-md border border-border bg-background px-2.5 text-sm text-muted-foreground focus-within:border-ring focus-within:text-foreground">
                   <i data-lucide="search" class="h-3.5 w-3.5 shrink-0"></i>
                   <input data-home-repo-search type="search" autocomplete="off" spellcheck="false" placeholder="Find a repository..." class="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground" />
                 </label>
-                <div data-home-top-repositories class="grid gap-1">
+                <div data-home-top-repositories class="grid gap-0.5">
                   <p class="px-1 py-2 text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading repositories...</p>
                 </div>
                 <button data-home-repos-show-more type="button" class="mt-4 hidden text-xs font-medium text-muted-foreground hover:text-accent">Show more</button>
-
-                <div class="mt-8 mb-3 flex items-center justify-between gap-3">
-                  <h2 class="text-sm font-semibold text-foreground">Feed</h2>
-                  <i data-lucide="activity" class="h-3.5 w-3.5 shrink-0 text-muted-foreground"></i>
-                </div>
-                <div data-home-feed class="grid gap-2">
-                  <p class="px-1 py-2 text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading activity...</p>
-                </div>
               </aside>
 
               <section data-home-content-column class="min-w-0 px-4 py-6 sm:px-6 lg:px-8">
-                <h1 class="mb-5 text-2xl font-semibold tracking-normal text-foreground">Home</h1>
+                <div class="fm-home-center">
+                  <div data-home-tab-panel="home">
+                    <h1 data-home-greeting class="fm-home-greeting">Welcome back!</h1>
 
-                <div data-home-prompt data-composer-slot>
-                  <div class="rounded-lg border border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading prompt...</div>
-                </div>
+                    <div data-home-prompt data-composer-slot>
+                      <div class="rounded-xl border border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading prompt...</div>
+                    </div>
 
-                <div data-plugin-entry="agents" class="mt-6 mb-3 flex items-center justify-between gap-3">
-                  <h2 class="text-sm font-semibold text-foreground">Agents</h2>
-                  <span data-home-agents-count class="text-xs text-muted-foreground"></span>
-                </div>
-                <div data-home-agents data-plugin-entry="agents" class="grid gap-2">
-                  <div class="rounded-lg border border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading agents...</div>
+                    <div data-plugin-entry="agents" class="fm-home-section-head">
+                      <h2 class="fm-home-section-title">Agent sessions</h2>
+                      <span class="fm-home-section-meta">
+                        <span data-home-agents-count></span>
+                        <a href="/dashboard/agents" class="text-accent hover:underline">View all</a>
+                      </span>
+                    </div>
+                    <div data-home-agents data-plugin-entry="agents" class="fm-home-list">
+                      <div class="fm-home-empty"><span class="fm-spinner" aria-hidden="true"></span>Loading agent sessions...</div>
+                    </div>
+
+                    <div data-home-pulls-section hidden>
+                      <div class="fm-home-section-head">
+                        <h2 class="fm-home-section-title">Pull requests</h2>
+                        <span data-home-pulls-count class="fm-home-section-meta"></span>
+                      </div>
+                      <div data-home-pulls class="fm-home-list"></div>
+                    </div>
+
+                    <div data-home-issues-section hidden>
+                      <div class="fm-home-section-head">
+                        <h2 class="fm-home-section-title">Issues</h2>
+                        <span data-home-issues-count class="fm-home-section-meta"></span>
+                      </div>
+                      <div data-home-issues class="fm-home-list"></div>
+                    </div>
+                  </div>
+
+                  <div data-home-tab-panel="feed" hidden>
+                    <h1 class="fm-home-greeting">Feed</h1>
+                    <div data-home-feed class="fm-home-list">
+                      <div class="fm-home-empty"><span class="fm-spinner" aria-hidden="true"></span>Loading activity...</div>
+                    </div>
+                  </div>
                 </div>
               </section>
 
-              <aside data-home-right-rail class="min-w-0 px-4 pb-6 sm:px-6 xl:sticky xl:top-6 xl:self-start xl:px-0 xl:py-6">
-                <section data-home-blog-card data-instance-plugin="blog" class="rounded-lg border border-border bg-card p-4">
-                  <div class="flex items-center justify-between gap-3">
-                    <h2 class="text-sm font-semibold text-foreground">Latest from the blog</h2>
-                    <a href="/blog" class="shrink-0 text-xs font-medium text-accent hover:underline">View all</a>
-                  </div>
-                  <div data-home-blog-list class="mt-4 grid gap-3">
-                    <div class="text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading blog posts...</div>
-                  </div>
+              <aside data-home-right-rail class="fm-home-right min-w-0 px-4 pb-6 sm:px-6 xl:sticky xl:top-6 xl:self-start xl:px-0 xl:py-6">
+                <section data-home-changelog-card data-instance-plugin="changelog" class="fm-home-card">
+                  <h2 class="fm-home-card-title">Latest from our changelog</h2>
+                  <ol data-home-changelog-list class="fm-home-timeline">
+                    <li><span class="text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading changelog...</span></li>
+                  </ol>
+                  <a href="/changelog" class="fm-home-more">View changelog <i data-lucide="arrow-right" class="h-3 w-3"></i></a>
+                </section>
+                <section data-home-blog-card data-instance-plugin="blog" class="fm-home-card">
+                  <h2 class="fm-home-card-title">Latest from the blog</h2>
+                  <ol data-home-blog-list class="fm-home-timeline">
+                    <li><span class="text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading blog posts...</span></li>
+                  </ol>
+                  <a href="/blog" class="fm-home-more">View all posts <i data-lucide="arrow-right" class="h-3 w-3"></i></a>
                 </section>
               </aside>
             </div>

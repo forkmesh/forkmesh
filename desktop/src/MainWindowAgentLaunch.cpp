@@ -351,6 +351,7 @@ int MainWindow::startAgentForIssue(const Issue &issue, const QString &provider,
         session.mode = m_quickAddModeSelector->currentText();
     session.contextWindow =
         qMax(1000, QSettings().value(kAgentContextSetting, 32000).toInt());
+    session.deniedPermissions = m_startingAgentDeniedPermissions;
     session = m_agentStore->createSession(session);
     session.branchName =
         QStringLiteral("agent/issue-%1-s%2-%3")
@@ -1032,6 +1033,7 @@ int MainWindow::startAdHocAgentForRepo(int repoIndex, const QString &task,
     session.baseBranch = requestedBaseBranch;
     session.baseRef = requestedBaseRef;
     session.held = held;
+    session.deniedPermissions = m_startingAgentDeniedPermissions;
     session = m_agentStore->createSession(session);
     if (!direct) {
         const QString sharedName =
@@ -1209,7 +1211,8 @@ int MainWindow::startAgentOnExistingBranch(int repoIndex, const QString &branch,
                                            int prNumber, const QString &title,
                                            const QString &task,
                                            const QString &provider,
-                                           const QString &model, bool held)
+                                           const QString &model, bool held,
+                                           const QString &modeOverride)
 {
     if (!m_agentStore || branch.trimmed().isEmpty() || task.trimmed().isEmpty())
         return 0;
@@ -1295,9 +1298,11 @@ int MainWindow::startAgentOnExistingBranch(int repoIndex, const QString &branch,
     // Codex's.
     session.model = agentIsCodexProvider(provider) ? codexChatGptModelId(model)
                                                    : model.trimmed();
-    if ((provider == QLatin1String("claude-code") ||
-         agentIsCodexProvider(provider)) &&
-        m_quickAddModeSelector)
+    if (!modeOverride.trimmed().isEmpty())
+        session.mode = modeOverride.trimmed();
+    else if ((provider == QLatin1String("claude-code") ||
+              agentIsCodexProvider(provider)) &&
+             m_quickAddModeSelector)
         session.mode = m_quickAddModeSelector->currentText();
     session.contextWindow =
         qMax(1000, QSettings().value(kAgentContextSetting, 32000).toInt());
@@ -1305,6 +1310,7 @@ int MainWindow::startAgentOnExistingBranch(int repoIndex, const QString &branch,
     session.baseRef = head;
     session.baseBranch = baseBranch.trimmed();
     session.held = held;
+    session.deniedPermissions = m_startingAgentDeniedPermissions;
     session = m_agentStore->createSession(session);
     // The worktree directory can only be named once the id exists; the branch
     // is the pull request's and is set above.
@@ -1371,39 +1377,54 @@ int MainWindow::startAgentOnExistingBranch(int repoIndex, const QString &branch,
     return sessionId;
 }
 
-void MainWindow::startAgentFromComposer()
+bool MainWindow::startAgentFromComposer()
 {
-    if (!m_agentComposePrompt || !m_agentComposeRepo || !m_agentComposeProvider)
-        return;
-    const QString prompt = m_agentComposePrompt->text().trimmed();
+    if (!m_issueQuickAdd)
+        return false;
+    const QString prompt = m_issueQuickAdd->toPlainText().trimmed();
     if (prompt.isEmpty()) {
         flashMessage("Type a task first to start an agent.", true, QString(),
                      forkmesh::kLocalOperationNoticeKind);
-        m_agentComposePrompt->setFocus();
-        return;
+        m_issueQuickAdd->setFocus();
+        return false;
     }
-    if (m_agentComposeRepo->currentIndex() < 0) {
-        flashMessage("Open a repository with a local checkout first.", true,
-                     QString(), forkmesh::kLocalOperationNoticeKind);
-        return;
+    const int repoIndex = resolveAgentRepositoryIndex(issuesRepoIndex());
+    if (repoIndex < 0 || repoIndex >= m_repositories.size()) {
+        flashMessage(QStringLiteral("The prompt is in the composer. Open a repository "
+                                    "with a local checkout to start the agent."),
+                     true, QString(), forkmesh::kLocalOperationNoticeKind);
+        m_issueQuickAdd->setFocus();
+        return false;
     }
-    bool ok = false;
-    const int repoIndex = m_agentComposeRepo->currentData().toInt(&ok);
-    if (!ok || repoIndex < 0 || repoIndex >= m_repositories.size())
-        return;
-    const QString provider = m_agentComposeProvider->currentData().toString();
+    const QString chosen = m_quickAddAgentProvider
+                               ? m_quickAddAgentProvider->currentData().toString()
+                               : QString();
+    const bool agentProvider = !chosen.isEmpty() && chosen != QLatin1String("manual") &&
+                               chosen != kActivityPubPromptProvider &&
+                               chosen != kNotePromptProvider &&
+                               chosen != kTaskPromptProvider;
+    const QString provider = agentProvider ? chosen : QStringLiteral("claude-code");
     const QString model =
-        provider == QLatin1String("claude-code")
-            ? QSettings().value(kClaudeCodeModelSetting).toString()
-            : (agentIsCodexProvider(provider)
-                   ? codexChatGptModelId(
-                       QSettings().value(kCodexModelSetting).toString())
-                   : QString());
-    if (startAdHocAgentForRepo(repoIndex, prompt, provider, /*createPr=*/false,
-                               model) > 0) {
-        m_agentComposePrompt->clear();
-        forkmesh::sonify::UiSounds::play(forkmesh::sonify::Cue::Send);
+        agentProvider && (provider == QLatin1String("claude-code") ||
+                          agentIsCodexProvider(provider) ||
+                          agentIsCloudflareAiProvider(provider) ||
+                          agentIsLocalLlamaProvider(provider))
+            ? selectedModelComboValue(m_quickAddClaudeModel)
+            : provider == QLatin1String("claude-code")
+                  ? QSettings().value(kClaudeCodeModelSetting).toString()
+                  : QString();
+    const int sessionId =
+        startAdHocAgentForRepo(repoIndex, prompt, provider, /*createPr=*/false, model);
+    if (sessionId <= 0) {
+        m_issueQuickAdd->setFocus();
+        return false;
     }
+    recordQuickAddHistory(prompt);
+    m_issueQuickAdd->clear();
+    forkmesh::sonify::UiSounds::play(forkmesh::sonify::Cue::Send);
+    logSystem(QStringLiteral("Started a %1 agent on the prompt.")
+                  .arg(agentProviderName(provider)));
+    return true;
 }
 
 QString MainWindow::saveNewAgentPromptImage(const QImage &image)
@@ -2171,6 +2192,15 @@ void MainWindow::purgeSessionState(int sessionId)
     m_streamEventsLoading.remove(sessionId);
     m_streamEventsAbsent.remove(sessionId);
     m_agentQueue.removeAll(sessionId);
+    m_claudeDesktopPending.remove(sessionId);
+    for (auto it = m_claudeDesktopLinkOwners.begin(); it != m_claudeDesktopLinkOwners.end();) {
+        if (it.value() == sessionId) {
+            m_claudeDesktopLinkQueue.removeAll(it.key());
+            it = m_claudeDesktopLinkOwners.erase(it);
+        } else {
+            ++it;
+        }
+    }
     if (m_agentTranscriptRenderSession == sessionId) {
         ++m_agentTranscriptRenderGeneration;
         m_agentTranscriptRenderSession = -1;

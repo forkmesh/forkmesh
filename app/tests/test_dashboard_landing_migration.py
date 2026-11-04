@@ -313,10 +313,8 @@ def test_dashboard_profile_views_are_own_pages_and_client_section_router_is_gone
     assert 'data-home-top-repositories' in home
     assert 'data-home-right-rail' in home
     assert 'data-home-left-rail' in home
-    # The rail's own account chip is gone: the header's avatar links to account
-    # settings and its adjacent menu offers the other signed-in actions.
-    assert 'data-home-user-avatar' not in home
-    assert 'data-home-user-name' not in home
+    assert 'data-home-account-avatar' in home
+    assert 'data-home-account-name' in home
     assert 'data-composer-slot' in home
     assert 'data-home-agents' in home
     assert 'data-home-action-panel' not in home
@@ -545,6 +543,12 @@ def test_dashboard_profile_contribution_renderer_uses_one_native_request():
     assert "md:hidden" in account_js
     assert "Loading verified contribution activity" in account_js
     assert "Contribution activity is unavailable" in account_js
+    # Forge-recorded web activity is named in the coverage note rather than
+    # silently mixed in, and the "missing collaboration" label narrows to
+    # what the forge cannot see.
+    assert "function profileContributionForgeNote" in account_js
+    assert "profileContributionForgeNote(coverage?.forge)" in account_js
+    assert "collaboration events outside hosted repositories" in account_js
 
     for stale in (
         "loadProfileContributionHistories",
@@ -769,15 +773,14 @@ def test_dashboard_home_widgets_are_wired_to_real_data_and_actions():
     assert "mesh-maintainer" not in dashboard_js
 
 
-def test_home_right_rail_lists_latest_blog_posts_with_artwork():
-    """adhoc #381: the right-rail card shows the three newest blog posts,
-    with their images, read from the blog's own edge-cached RSS feed."""
+def test_home_right_rail_lists_latest_blog_posts_as_a_timeline():
+    """adhoc #381: the right-rail card lists the three newest blog posts read
+    from the blog's own edge-cached RSS feed, as a plain text timeline."""
     home = _read(VIEWS / "home.html")
     dashboard_js = _read(PUBLIC / "dashboard.js")
 
     assert "Latest from the blog" in home
     assert 'data-home-blog-list' in home
-    # The hand-maintained release list the card used to bake in is gone.
     assert "The Living Code City" not in home
     assert "The Living Code City" not in dashboard_js
     assert "Loading release notes" not in home
@@ -787,40 +790,37 @@ def test_home_right_rail_lists_latest_blog_posts_with_artwork():
         'const HOME_BLOG_FEED_URL = "/rss.xml";',
         "function parseHomeBlogFeed(xml)",
         'doc.querySelectorAll("item")',
-        'item.querySelector("enclosure")?.getAttribute("url")',
         ".slice(0, HOME_BLOG_POST_LIMIT)",
         "async function loadHomeBlogPosts()",
         "void loadHomeBlogPosts();",
+        "${escapeHtml(post.title)}",
     ):
         assert marker in dashboard_js
-    # Post artwork is painted, and titles/URLs stay escaped like every other
-    # feed-sourced string in the dashboard.
-    assert 'loading="lazy" class="block aspect-[16/9] w-full object-cover"' in dashboard_js
-    assert "${escapeHtml(post.image)}" in dashboard_js
-    assert "${escapeHtml(post.title)}" in dashboard_js
+    item = dashboard_js[dashboard_js.index("function homeBlogPostItem(post)"):]
+    item = item[:item.index("function renderHomeBlogPosts()")]
+    assert "<img" not in item
+    assert "homeBlogImageUrl" not in dashboard_js
+    assert 'href: homeBlogUrl(item.querySelector("link")?.textContent),' in dashboard_js
 
 
-def test_home_blog_artwork_keeps_the_feed_host_the_app_ships_no_blog_assets():
-    """The dashboard runs on the App origin, whose asset bundle deliberately
-    carries no /assets/blog/* (build_site_assets.shared_assets skips it), so a
-    path-only image src 404s and every card paints a broken image. Post links
-    stay path-relative (the Worker 308s /blog/*), artwork keeps the feed's own
-    absolute URL, and only ForkMesh's own hosts are ever fetched."""
+def test_home_right_rail_shows_the_latest_changelog_notes():
+    home = _read(VIEWS / "home.html")
     dashboard_js = _read(PUBLIC / "dashboard.js")
 
+    assert "Latest from our changelog" in home
+    assert "data-home-changelog-list" in home
+    assert 'href="/changelog"' in home
+    assert home.index("data-home-changelog-card") < home.index("data-home-blog-card")
+    assert 'data-home-changelog-card data-instance-plugin="changelog"' in home
     for marker in (
-        'const HOME_BLOG_IMAGE_HOSTS = new Set(["forkmesh.com", "www.forkmesh.com"]);',
-        "function homeBlogImageUrl(value)",
-        "if (parsed.origin === window.location.origin) {",
-        'if (parsed.protocol !== "https:") return "";',
-        "if (!HOME_BLOG_IMAGE_HOSTS.has(parsed.hostname.toLowerCase())) return \"\";",
-        "return parsed.href;",
-        'image: homeBlogImageUrl(item.querySelector("enclosure")?.getAttribute("url")),',
+        'const HOME_CHANGELOG_URL = "/changelog.json";',
+        "const HOME_CHANGELOG_NOTE_LIMIT = 4;",
+        ".sort((a, b) => b.date.localeCompare(a.date))",
+        ".slice(0, HOME_CHANGELOG_NOTE_LIMIT);",
+        "${escapeHtml(note.text)}",
+        "void loadHomeChangelog();",
     ):
         assert marker in dashboard_js
-    # The link stays on this origin; only the artwork keeps its host.
-    assert 'href: homeBlogUrl(item.querySelector("link")?.textContent),' in dashboard_js
-    assert 'image: homeBlogUrl(' not in dashboard_js
 
 
 def test_home_show_more_repositories_link_is_hidden_for_small_accounts():
@@ -2131,7 +2131,10 @@ def test_dashboard_pull_timeline_includes_commits_and_live_branch_agents():
     assert "pullCommitPhrase(commits.length)" in refresh
     # Only signed-in members can read organization sessions, so a signed-out
     # visitor never starts the watch at all.
-    assert 'if (kind === "pulls" && state.session?.sessionToken) {' in dashboard_js
+    finish = dashboard_js[dashboard_js.index("async function finishRepoPullLiveState("):]
+    finish = finish[:finish.index("\n  }\n")]
+    assert "if (state.session?.sessionToken) {" in finish
+    assert "scheduleRepoPullActivityRefresh(repo, number," in finish
 
 
 def test_dashboard_pull_commits_follow_the_live_head_branch():
@@ -2726,7 +2729,7 @@ def test_worker_routes_raw_repository_blobs_through_direct_https_gateway():
     assert "stream=stream" in gateway
     assert 'kind="process"' in gateway
     assert '["cat-file", "blob", object_name]' in gateway
-    assert 'if guessed_type in active_types:' in gateway
+    assert 'if _active_media_type(guessed_type):' in gateway
     assert 'disposition = "attachment"' in gateway
 
 

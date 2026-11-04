@@ -64,7 +64,7 @@ struct NextAccess {
                                       int sessionId);
     static void sessionStarted(MainWindow &window, int sessionId);
     static void fillWorkspaceMenu(MainWindow &window, QMenu *menu, int which);
-    static void placeWorkspaceComposer(MainWindow &window, bool overDetail);
+    static void placeWorkspaceComposer(MainWindow &window, QWidget *pane);
 };
 
 }

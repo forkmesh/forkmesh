@@ -42,6 +42,7 @@ import com.forkmesh.nativeapp.control.ControlErrorText
 import com.forkmesh.nativeapp.control.DesktopTranscriptStream
 import com.forkmesh.nativeapp.control.LocalAgentRow
 import com.forkmesh.nativeapp.control.LocalControlService
+import com.forkmesh.nativeapp.control.LocalDesktopCopy
 import com.forkmesh.nativeapp.control.LocalControlStatus
 import com.forkmesh.nativeapp.control.MeshControlHost
 import com.forkmesh.nativeapp.control.TranscriptFollower
@@ -97,6 +98,7 @@ internal fun LocalDesktopChip(navigator: Navigator) {
     val label = when (service.status) {
         LocalControlStatus.Connected -> service.desktopName.ifEmpty { "Desktop" } + " · on this network"
         LocalControlStatus.AwaitingApproval -> "Approve on ${service.desktopName}"
+        LocalControlStatus.ConfirmingCode -> "Check the code for ${service.desktopName}"
         LocalControlStatus.Connecting -> "Connecting to ${service.desktopName}…"
         else -> "Desktop on this network"
     }
@@ -160,6 +162,7 @@ internal class LocalDesktopScreen : Screen() {
                 "Directly over this network, encrypted end to end. Agents, files and transcripts move without the relay."
             LocalControlStatus.AwaitingApproval -> "Approve this phone on ${service.desktopName}" to
                 "The desktop is asking whether to let this phone control it. Allow it only if it shows the same code."
+            LocalControlStatus.ConfirmingCode -> "Check the code for ${service.desktopName}" to LocalDesktopCopy.confirmCode(service.desktopName)
             LocalControlStatus.Connecting -> "Connecting to ${service.desktopName}…" to ""
             LocalControlStatus.Failed -> "Not connected" to service.error
             LocalControlStatus.Idle -> "Not connected" to
@@ -182,6 +185,9 @@ internal class LocalDesktopScreen : Screen() {
                 Spacer(Modifier.height(FmSpace.x3))
                 Row(horizontalArrangement = Arrangement.spacedBy(FmSpace.x2)) {
                     val host = service.host
+                    if (service.status == LocalControlStatus.ConfirmingCode) {
+                        FmToneButton("Confirm", onPressed = { service.confirmDesktop(service.desktopKey) }, tone = FmTone.Accent, filled = true)
+                    }
                     if (service.status == LocalControlStatus.Failed && host != null) {
                         FmOutlinedButton("Try again", onClick = { service.connect(host) })
                     }

@@ -32,11 +32,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.forkmesh.nativeapp.chat.DirectMessageFrames
 import com.forkmesh.nativeapp.chat.DirectSafetyScan
+import com.forkmesh.nativeapp.chat.DirectTrustDecision
 import com.forkmesh.nativeapp.chat.DirectTrustNotice
 import com.forkmesh.nativeapp.chat.DirectTrustText
 import com.forkmesh.nativeapp.feature.account.settings.QrScannerScreen
@@ -142,21 +146,32 @@ fun PendingDeviceBanner(conversation: String, revision: Int) {
     val notice = pending.firstOrNull { it.asksApproval } ?: return
     var working by remember(notice.id) { mutableStateOf(false) }
     var confirmBlock by remember(notice.id) { mutableStateOf(false) }
+    var failure by remember(notice.id) { mutableStateOf<String?>(null) }
     val colors = Fm.colors
     fun decide(approve: Boolean) {
         if (working) return
         working = true
+        failure = null
         scope.launch {
-            withContext(Dispatchers.IO) {
-                val direct = ChatDepth.direct
-                for (kid in notice.kids) {
-                    if (approve) direct?.approveDevice(conversation, kid) else direct?.blockDevice(conversation, kid)
+            val kids = notice.kids
+            val done = withContext(Dispatchers.IO) {
+                val direct = ChatDepth.direct ?: return@withContext false
+                DirectTrustDecision.run(kids) {
+                    if (approve) direct.approveDevice(conversation, it) else direct.blockDevice(conversation, it)
                 }
             }
+            if (!done) failure = DirectTrustText.decideFailed(approve)
             working = false
         }
     }
     Column(Modifier.fillMaxWidth().background(colors.bgRaised).padding(horizontal = FmSpace.x4, vertical = FmSpace.x2)) {
+        failure?.let {
+            Text(
+                it,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive },
+                style = Fm.text.bodySmall.copy(color = colors.danger),
+            )
+        }
         Text(notice.text, style = Fm.text.bodySmall.copy(color = colors.textSecondary))
         Row(horizontalArrangement = Arrangement.spacedBy(FmSpace.x2)) {
             FmTextButton(onClick = { decide(approve = true) }, enabled = !working) { Text("Approve") }

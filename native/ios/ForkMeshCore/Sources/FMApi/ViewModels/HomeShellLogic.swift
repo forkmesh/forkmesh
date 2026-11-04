@@ -162,13 +162,14 @@ public enum ShellLocalDesktop: Equatable, Sendable {
     case inReach
     case connecting(String)
     case awaitingApproval(String)
+    case confirmingCode(String)
     case connected(String)
     case relay(String)
 
     public var isConnected: Bool {
         switch self {
         case .connected, .relay: return true
-        case .hidden, .inReach, .connecting, .awaitingApproval: return false
+        case .hidden, .inReach, .connecting, .awaitingApproval, .confirmingCode: return false
         }
     }
 
@@ -179,6 +180,7 @@ public enum ShellLocalDesktop: Equatable, Sendable {
         case .inReach: return "A desktop is on this network"
         case .connecting(let name): return "Connecting to \(name)"
         case .awaitingApproval(let name): return "Approve this phone on \(name)"
+        case .confirmingCode(let name): return "Check the code for \(name)"
         case .connected(let name): return "Connected to \(name) on this network"
         case .relay(let name): return "Connected to \(name) through the relay"
         }

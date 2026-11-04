@@ -1,6 +1,9 @@
 #include "AppArmorFeature.h"
 
+#include "DesignTokens.h"
+
 #include <QComboBox>
+#include <QCryptographicHash>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
@@ -10,6 +13,7 @@
 #include <QFont>
 #include <QFontDatabase>
 #include <QFormLayout>
+#include <QFrame>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
@@ -25,31 +29,36 @@
 #include <QSet>
 #include <QSplitter>
 #include <QStandardPaths>
-#include <QTabWidget>
+#include <QStyle>
 #include <QTemporaryFile>
 #include <QThread>
 #include <QToolTip>
 #include <QTreeWidget>
+#include <QUrl>
 #include <QVBoxLayout>
 
 #include <algorithm>
+#include <cmath>
 
 namespace forkmesh::apparmor {
+
+QFont scaledFont(const QFont &base, qreal factor);
+
+struct Segment {
+    QString label;
+    int count = 0;
+    QColor color;
+};
 
 class ModeBar final : public QWidget
 {
 public:
-    struct Segment {
-        QString label;
-        int count = 0;
-        QColor color;
-    };
-
     explicit ModeBar(const QString &title, QWidget *parent = nullptr)
         : QWidget(parent)
         , m_title(title)
     {
-        setMinimumHeight(64);
+        setObjectName(QStringLiteral("appArmorChart"));
+        setMinimumHeight(50);
         setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     }
 
@@ -64,7 +73,7 @@ public:
         update();
     }
 
-    QSize sizeHint() const override { return {360, 64}; }
+    QSize sizeHint() const override { return {280, 50}; }
 
 protected:
     void paintEvent(QPaintEvent *) override
@@ -78,11 +87,10 @@ protected:
         int total = 0;
         for (const Segment &segment : m_segments)
             total += segment.count;
-        painter.drawText(QRect(0, 0, width(), 18), Qt::AlignLeft | Qt::AlignVCenter,
-                         QStringLiteral("%1 · %2").arg(m_title).arg(total));
-        const QRectF bar(0, 22, width(), 12);
+        painter.drawText(QRect(0, 0, width(), 16), Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("%1 · %2").arg(m_title).arg(total));
+        const QRectF bar(0, 19, width(), 10);
         QPainterPath clip;
-        clip.addRoundedRect(bar, 6, 6);
+        clip.addRoundedRect(bar, 5, 5);
         painter.setClipPath(clip);
         painter.fillRect(bar, palette().color(QPalette::Mid));
         qreal x = 0;
@@ -99,14 +107,14 @@ protected:
         const QFontMetrics metrics(font());
         for (const Segment &segment : m_segments) {
             const QString text = QStringLiteral("%1 %2").arg(segment.label).arg(segment.count);
-            const int needed = 14 + metrics.horizontalAdvance(text) + 14;
+            const int needed = 14 + metrics.horizontalAdvance(text) + 12;
             if (lx + needed > width())
                 break;
             painter.setBrush(segment.color);
             painter.setPen(Qt::NoPen);
-            painter.drawRoundedRect(QRectF(lx, 44, 10, 10), 2, 2);
+            painter.drawRoundedRect(QRectF(lx, 37, 9, 9), 2, 2);
             painter.setPen(palette().color(QPalette::WindowText));
-            painter.drawText(QRect(lx + 14, 40, needed, 18), Qt::AlignLeft | Qt::AlignVCenter, text);
+            painter.drawText(QRect(lx + 13, 33, needed, 17), Qt::AlignLeft | Qt::AlignVCenter, text);
             lx += needed;
         }
     }
@@ -116,16 +124,91 @@ private:
     QList<Segment> m_segments;
 };
 
+class CoverageRing final : public QWidget
+{
+public:
+    explicit CoverageRing(QWidget *parent = nullptr)
+        : QWidget(parent)
+    {
+        setObjectName(QStringLiteral("appArmorChart"));
+        setFixedSize(104, 104);
+        setAccessibleName(QStringLiteral("Share of running processes AppArmor confines"));
+    }
+
+    void setSegments(const QList<Segment> &segments, int covered)
+    {
+        m_segments = segments;
+        m_covered = covered;
+        m_total = 0;
+        for (const Segment &segment : segments)
+            m_total += segment.count;
+        const QString text = QStringLiteral("%1 of %2 running processes are confined by AppArmor").arg(covered).arg(m_total);
+        setToolTip(text);
+        setAccessibleDescription(text);
+        update();
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        const qreal thickness = 11;
+        const QRectF ring = QRectF(rect()).adjusted(thickness / 2 + 1, thickness / 2 + 1, -thickness / 2 - 1, -thickness / 2 - 1);
+        QPen track(palette().color(QPalette::Mid), thickness, Qt::SolidLine, Qt::FlatCap);
+        painter.setPen(track);
+        painter.drawEllipse(ring);
+        if (m_total > 0) {
+            qreal start = 90 * 16;
+            for (const Segment &segment : m_segments) {
+                if (segment.count == 0)
+                    continue;
+                const qreal span = -360.0 * 16 * segment.count / m_total;
+                painter.setPen(QPen(segment.color, thickness, Qt::SolidLine, Qt::FlatCap));
+                painter.drawArc(ring, int(start), int(std::min(-16.0, span)));
+                start += span;
+            }
+        }
+        const int percent = m_total > 0 ? int(std::lround(100.0 * m_covered / m_total)) : 0;
+        QFont big = scaledFont(font(), 1.45);
+        big.setBold(true);
+        painter.setFont(big);
+        painter.setPen(palette().color(QPalette::WindowText));
+        painter.drawText(QRectF(0, height() / 2.0 - 20, width(), 24), Qt::AlignCenter, QStringLiteral("%1%").arg(percent));
+        const QFont small = scaledFont(font(), 0.85);
+        painter.setFont(small);
+        QColor muted = palette().color(QPalette::WindowText);
+        muted.setAlphaF(0.65);
+        painter.setPen(muted);
+        painter.drawText(QRectF(0, height() / 2.0 + 4, width(), 16), Qt::AlignCenter, QStringLiteral("confined"));
+    }
+
+private:
+    QList<Segment> m_segments;
+    int m_covered = 0;
+    int m_total = 0;
+};
+
 class TimelineChart final : public QWidget
 {
 public:
-    explicit TimelineChart(QWidget *parent = nullptr)
+    explicit TimelineChart(int height, int labelEvery, const QString &labelFormat, QWidget *parent = nullptr)
         : QWidget(parent)
+        , m_labelEvery(labelEvery)
+        , m_labelFormat(labelFormat)
     {
+        setObjectName(QStringLiteral("appArmorChart"));
         setMouseTracking(true);
-        setMinimumHeight(140);
+        setFixedHeight(height);
         setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         setAccessibleName(QStringLiteral("AppArmor events per hour"));
+    }
+
+    void setColors(const QColor &denied, const QColor &allowed)
+    {
+        m_denied = denied;
+        m_allowed = allowed;
+        update();
     }
 
     void setBuckets(const QList<HourBucket> &buckets)
@@ -144,7 +227,7 @@ public:
         update();
     }
 
-    QSize sizeHint() const override { return {480, 140}; }
+    QSize sizeHint() const override { return {360, height()}; }
 
 protected:
     void paintEvent(QPaintEvent *) override
@@ -159,25 +242,25 @@ protected:
         painter.drawLine(plot.bottomLeft(), plot.bottomRight());
         painter.drawLine(plot.topLeft(), plot.topRight());
         const int peak = maximum();
-        painter.setPen(text);
-        painter.drawText(QRectF(0, plot.top() - 8, plot.left() - 6, 16), Qt::AlignRight | Qt::AlignVCenter, QString::number(peak));
-        painter.drawText(QRectF(0, plot.bottom() - 8, plot.left() - 6, 16), Qt::AlignRight | Qt::AlignVCenter, QStringLiteral("0"));
+        QColor muted = text;
+        muted.setAlphaF(0.65);
+        painter.setPen(muted);
+        painter.drawText(QRectF(0, plot.top() - 8, plot.left() - 5, 16), Qt::AlignRight | Qt::AlignVCenter, QString::number(peak));
+        painter.drawText(QRectF(0, plot.bottom() - 8, plot.left() - 5, 16), Qt::AlignRight | Qt::AlignVCenter, QStringLiteral("0"));
         if (m_buckets.isEmpty())
             return;
         const qreal slot = plot.width() / m_buckets.size();
-        const qreal barWidth = std::max<qreal>(2, slot - 3);
+        const qreal barWidth = std::max<qreal>(1.5, slot - (slot > 6 ? 3 : 0.5));
         for (int i = 0; i < m_buckets.size(); ++i) {
             const HourBucket &bucket = m_buckets.at(i);
             const qreal x = plot.left() + i * slot + (slot - barWidth) / 2;
             const qreal deniedHeight = plot.height() * bucket.denied / peak;
             const qreal allowedHeight = plot.height() * bucket.allowed / peak;
-            painter.fillRect(QRectF(x, plot.bottom() - deniedHeight, barWidth, deniedHeight), QColor(QStringLiteral("#b42318")));
-            painter.fillRect(QRectF(x, plot.bottom() - deniedHeight - allowedHeight, barWidth, allowedHeight),
-                             QColor(QStringLiteral("#d08a00")));
-            if (i % 6 == 0) {
-                painter.setPen(text);
-                painter.drawText(QRectF(x - 20, plot.bottom() + 2, 52, 16), Qt::AlignHCenter | Qt::AlignTop,
-                                 bucket.start.toString(QStringLiteral("HH:mm")));
+            painter.fillRect(QRectF(x, plot.bottom() - deniedHeight, barWidth, deniedHeight), m_denied);
+            painter.fillRect(QRectF(x, plot.bottom() - deniedHeight - allowedHeight, barWidth, allowedHeight), m_allowed);
+            if (m_labelEvery > 0 && i % m_labelEvery == 0) {
+                painter.setPen(muted);
+                painter.drawText(QRectF(x - 2, plot.bottom() + 2, 52, 14), Qt::AlignLeft | Qt::AlignTop, bucket.start.toString(m_labelFormat));
             }
         }
     }
@@ -202,7 +285,7 @@ protected:
     }
 
 private:
-    QRectF plotRect() const { return QRectF(36, 10, std::max(10, width() - 44), std::max(10, height() - 32)); }
+    QRectF plotRect() const { return QRectF(28, 6, std::max(10, width() - 32), std::max(10, height() - 22)); }
 
     int maximum() const
     {
@@ -212,28 +295,215 @@ private:
         return peak;
     }
 
+    int m_labelEvery = 6;
+    QString m_labelFormat;
+    QColor m_denied;
+    QColor m_allowed;
     QList<HourBucket> m_buckets;
 };
+
+class RankBars final : public QWidget
+{
+public:
+    struct Entry {
+        QString name;
+        int denied = 0;
+        int allowed = 0;
+    };
+
+    explicit RankBars(std::function<void(const QString &)> activated, QWidget *parent = nullptr)
+        : QWidget(parent)
+        , m_activated(std::move(activated))
+    {
+        setObjectName(QStringLiteral("appArmorChart"));
+        setMouseTracking(true);
+        setFixedHeight(5 * kRow);
+        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        setAccessibleName(QStringLiteral("Profiles with the most events in 7 days"));
+    }
+
+    void setEntries(const QList<Entry> &entries, const QColor &denied, const QColor &allowed, const QString &empty)
+    {
+        m_empty = empty;
+        m_entries = entries.mid(0, 5);
+        m_denied = denied;
+        m_allowed = allowed;
+        QStringList lines;
+        for (const Entry &entry : m_entries)
+            lines << QStringLiteral("%1: %2 denied, %3 allowed").arg(entry.name).arg(entry.denied).arg(entry.allowed);
+        setAccessibleDescription(lines.join(QStringLiteral("; ")));
+        update();
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        const QColor text = palette().color(QPalette::WindowText);
+        QColor muted = text;
+        muted.setAlphaF(0.65);
+        if (m_entries.isEmpty()) {
+            painter.setPen(muted);
+            painter.drawText(rect(), Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap, m_empty);
+            return;
+        }
+        int peak = 1;
+        for (const Entry &entry : m_entries)
+            peak = std::max(peak, entry.denied + entry.allowed);
+        const QFontMetrics metrics(font());
+        const int nameWidth = std::min(width() * 2 / 5, 180);
+        const int countWidth = 36;
+        const qreal barSpace = std::max(10, width() - nameWidth - countWidth - 8);
+        for (int i = 0; i < m_entries.size(); ++i) {
+            const Entry &entry = m_entries.at(i);
+            const int y = i * kRow;
+            if (i == m_hover) {
+                QColor hover = palette().color(QPalette::Highlight);
+                hover.setAlphaF(0.12);
+                painter.fillRect(QRect(0, y, width(), kRow), hover);
+            }
+            painter.setPen(text);
+            painter.drawText(QRect(2, y, nameWidth - 6, kRow), Qt::AlignLeft | Qt::AlignVCenter,
+                             metrics.elidedText(entry.name, Qt::ElideMiddle, nameWidth - 6));
+            const qreal deniedWidth = barSpace * entry.denied / peak;
+            const qreal allowedWidth = barSpace * entry.allowed / peak;
+            const QRectF bar(nameWidth, y + kRow / 2.0 - 5, deniedWidth + allowedWidth, 10);
+            QPainterPath clip;
+            clip.addRoundedRect(bar, 3, 3);
+            painter.save();
+            painter.setClipPath(clip);
+            painter.fillRect(QRectF(bar.left(), bar.top(), deniedWidth, bar.height()), m_denied);
+            painter.fillRect(QRectF(bar.left() + deniedWidth, bar.top(), allowedWidth, bar.height()), m_allowed);
+            painter.restore();
+            painter.setPen(muted);
+            painter.drawText(QRectF(bar.right() + 6, y, countWidth, kRow), Qt::AlignLeft | Qt::AlignVCenter,
+                             QString::number(entry.denied + entry.allowed));
+        }
+    }
+
+    void mouseMoveEvent(QMouseEvent *event) override
+    {
+        const int row = rowAt(event->position().y());
+        if (row != m_hover) {
+            m_hover = row;
+            setCursor(row >= 0 ? Qt::PointingHandCursor : Qt::ArrowCursor);
+            update();
+        }
+        if (row >= 0) {
+            const Entry &entry = m_entries.at(row);
+            QToolTip::showText(event->globalPosition().toPoint(),
+                               QStringLiteral("%1\n%2 denied, %3 allowed in complain mode\nClick to open it")
+                                   .arg(entry.name)
+                                   .arg(entry.denied)
+                                   .arg(entry.allowed),
+                               this);
+        }
+    }
+
+    void leaveEvent(QEvent *) override
+    {
+        m_hover = -1;
+        update();
+    }
+
+    void mouseReleaseEvent(QMouseEvent *event) override
+    {
+        const int row = rowAt(event->position().y());
+        if (row >= 0 && m_activated)
+            m_activated(m_entries.at(row).name);
+    }
+
+private:
+    static constexpr int kRow = 21;
+
+    int rowAt(qreal y) const
+    {
+        const int row = int(y / kRow);
+        return y >= 0 && row < m_entries.size() ? row : -1;
+    }
+
+    std::function<void(const QString &)> m_activated;
+    QList<Entry> m_entries;
+    QString m_empty;
+    QColor m_denied;
+    QColor m_allowed;
+    int m_hover = -1;
+};
+
+QFont scaledFont(const QFont &base, qreal factor)
+{
+    QFont font = base;
+    if (base.pixelSize() > 0)
+        font.setPixelSize(std::max(1, int(std::lround(base.pixelSize() * factor))));
+    else if (base.pointSizeF() > 0)
+        font.setPointSizeF(base.pointSizeF() * factor);
+    return font;
+}
 
 namespace {
 
 QColor modeColor(Mode mode)
 {
     switch (mode) {
-    case Mode::Enforce: return QColor(QStringLiteral("#27834a"));
-    case Mode::Complain: return QColor(QStringLiteral("#d08a00"));
-    case Mode::Kill: return QColor(QStringLiteral("#b42318"));
-    case Mode::Prompt: return QColor(QStringLiteral("#2f6fdb"));
+    case Mode::Enforce: return Theme::color(Theme::Role::Success);
+    case Mode::Complain: return Theme::color(Theme::Role::Warning);
+    case Mode::Kill: return Theme::color(Theme::Role::Danger);
+    case Mode::Prompt: return Theme::color(Theme::Role::Accent);
     case Mode::Mixed: return QColor(QStringLiteral("#7c5cc4"));
     case Mode::Unconfined:
-    case Mode::Unknown: return QColor(QStringLiteral("#6b7280"));
+    case Mode::Unknown: return Theme::color(Theme::Role::FgMuted);
     }
     return {};
 }
 
+QColor deniedColor()
+{
+    return Theme::color(Theme::Role::Danger);
+}
+
+QColor allowedColor()
+{
+    return Theme::color(Theme::Role::Warning);
+}
+
 QColor disabledColor()
 {
-    return QColor(QStringLiteral("#a3a9b4"));
+    return Theme::color(Theme::Role::FgSubtle);
+}
+
+QColor toneColor(AdviceTone tone)
+{
+    switch (tone) {
+    case AdviceTone::Good: return Theme::color(Theme::Role::Success);
+    case AdviceTone::Warning: return Theme::color(Theme::Role::Warning);
+    case AdviceTone::Problem: return Theme::color(Theme::Role::Danger);
+    case AdviceTone::Info: break;
+    }
+    return Theme::color(Theme::Role::Accent);
+}
+
+QIcon dotIcon(const QColor &color)
+{
+    QPixmap pixmap(20, 20);
+    pixmap.setDevicePixelRatio(2);
+    pixmap.fill(Qt::transparent);
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(color);
+    painter.drawEllipse(QRectF(1.5, 1.5, 7, 7));
+    return QIcon(pixmap);
+}
+
+QString dotHtml(const QColor &color)
+{
+    return QStringLiteral("<span style=\"color:%1\">&#9679;</span>").arg(color.name());
+}
+
+QString linkFor(const QString &target)
+{
+    return QString::fromLatin1(QUrl::toPercentEncoding(target));
 }
 
 QLabel *mutedLabel(const QString &text)
@@ -253,6 +523,16 @@ QLabel *heading(const QString &text)
     return label;
 }
 
+QLabel *richLabel()
+{
+    auto *label = new QLabel;
+    label->setWordWrap(true);
+    label->setTextFormat(Qt::RichText);
+    label->setTextInteractionFlags(Qt::TextBrowserInteraction);
+    label->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+    return label;
+}
+
 QPushButton *ghostButton(const QString &text, const QString &tip)
 {
     auto *button = new QPushButton(text);
@@ -266,6 +546,7 @@ QTreeWidget *table(const QString &name, const QStringList &headers, int stretch)
 {
     auto *tree = new QTreeWidget;
     tree->setAccessibleName(name);
+    tree->setFrameShape(QFrame::NoFrame);
     tree->setColumnCount(int(headers.size()));
     tree->setHeaderLabels(headers);
     tree->setRootIsDecorated(false);
@@ -276,6 +557,30 @@ QTreeWidget *table(const QString &name, const QStringList &headers, int stretch)
     for (int i = 0; i < headers.size(); ++i)
         tree->header()->setSectionResizeMode(i, i == stretch ? QHeaderView::Stretch : QHeaderView::ResizeToContents);
     return tree;
+}
+
+QFrame *pane(const QString &title, const QString &explanation, QLabel **count, QWidget *tools = nullptr)
+{
+    auto *frame = new QFrame;
+    frame->setObjectName(QStringLiteral("appArmorPane"));
+    auto *layout = new QVBoxLayout(frame);
+    layout->setContentsMargins(10, 8, 10, 8);
+    layout->setSpacing(4);
+    auto *header = new QHBoxLayout;
+    header->setSpacing(8);
+    header->addWidget(heading(title));
+    if (count) {
+        *count = mutedLabel({});
+        (*count)->setWordWrap(false);
+        header->addWidget(*count);
+    }
+    header->addStretch();
+    if (tools)
+        header->addWidget(tools);
+    layout->addLayout(header);
+    if (!explanation.isEmpty())
+        layout->addWidget(mutedLabel(explanation));
+    return frame;
 }
 
 QFont monoFont()
@@ -335,17 +640,21 @@ AppArmorFeature::AppArmorFeature(const forkmesh::market::NativePackageHost &host
 {
     setObjectName(QStringLiteral("appArmorPage"));
     auto *outer = new QVBoxLayout(this);
-    outer->setContentsMargins(20, 18, 20, 20);
-    outer->setSpacing(10);
+    outer->setContentsMargins(16, 12, 16, 12);
+    outer->setSpacing(8);
 
     auto *headingRow = new QHBoxLayout;
     auto *title = new QLabel(QStringLiteral("AppArmor"));
     title->setObjectName(QStringLiteral("pageTitle"));
     headingRow->addWidget(title);
-    headingRow->addStretch();
+    m_summary = new QLabel(QStringLiteral("Reading AppArmor…"));
+    m_summary->setObjectName(QStringLiteral("appArmorSummary"));
+    m_summary->setTextFormat(Qt::RichText);
+    headingRow->addSpacing(8);
+    headingRow->addWidget(m_summary, 1);
     m_newProfile = ghostButton(QStringLiteral("New profile…"), QStringLiteral("Write a profile for a program, starting in complain mode so it only logs"));
     m_reloadAll = ghostButton(QStringLiteral("Reload all"), QStringLiteral("Reload every profile in /etc/apparmor.d (administrator)"));
-    m_live = ghostButton(QStringLiteral("Live view"), QStringLiteral("Read the loaded profiles and the denial log once (administrator)"));
+    m_live = ghostButton(QStringLiteral("Live view"), QStringLiteral("Read the loaded profiles and the denial log once (administrator); changes nothing"));
     m_refresh = new QPushButton(QStringLiteral("Refresh"));
     m_refresh->setObjectName(QStringLiteral("primaryButton"));
     headingRow->addWidget(m_newProfile);
@@ -354,31 +663,45 @@ AppArmorFeature::AppArmorFeature(const forkmesh::market::NativePackageHost &host
     headingRow->addWidget(m_refresh);
     outer->addLayout(headingRow);
 
-    m_summary = new QLabel(QStringLiteral("Reading AppArmor…"));
-    m_summary->setObjectName(QStringLiteral("appArmorSummary"));
-    m_summary->setWordWrap(true);
-    outer->addWidget(m_summary);
-    outer->addWidget(mutedLabel(QStringLiteral("AppArmor limits what each program may open, run and connect to. This page reads the profiles, "
-                                               "processes and log on this computer; it sends nothing anywhere. Every change asks for confirmation "
-                                               "and then your administrator password, keeps a copy of the file it replaces, and is undone "
-                                               "if AppArmor rejects the new profile.")));
+    auto *intro = mutedLabel(QStringLiteral("AppArmor gives each program a profile that limits what it may open, run and connect to. "
+                                            "<b>Enforce</b> blocks and logs, <b>complain</b> only logs, <b>unconfined</b> means no limits. "
+                                            "Nothing here leaves this computer; every change asks first, keeps a backup and is undone if "
+                                            "AppArmor rejects it."));
+    intro->setTextFormat(Qt::RichText);
+    outer->addWidget(intro);
     m_status = mutedLabel({});
     m_status->setObjectName(QStringLiteral("appArmorStatus"));
     m_status->hide();
     outer->addWidget(m_status);
 
-    m_tabs = new QTabWidget;
-    m_tabs->setDocumentMode(true);
-    m_tabs->addTab(buildOverview(), QStringLiteral("Overview"));
-    m_tabs->addTab(buildProfiles(), QStringLiteral("Profiles"));
-    m_tabs->addTab(buildProcesses(), QStringLiteral("Processes"));
-    m_tabs->addTab(buildEvents(), QStringLiteral("Events"));
-    outer->addWidget(m_tabs, 1);
+    outer->addWidget(buildOverview());
+
+    auto *columns = new QSplitter(Qt::Horizontal);
+    columns->setChildrenCollapsible(false);
+    columns->setHandleWidth(8);
+    auto *left = new QSplitter(Qt::Vertical);
+    left->setChildrenCollapsible(false);
+    left->setHandleWidth(8);
+    left->addWidget(buildProfiles());
+    left->addWidget(buildProcesses());
+    left->setSizes({600, 400});
+    auto *middle = new QSplitter(Qt::Vertical);
+    middle->setChildrenCollapsible(false);
+    middle->setHandleWidth(8);
+    middle->addWidget(buildDetails());
+    middle->addWidget(buildEvents());
+    middle->setSizes({500, 500});
+    columns->addWidget(left);
+    columns->addWidget(middle);
+    columns->addWidget(buildSuggestions());
+    columns->setSizes({400, 500, 380});
+    outer->addWidget(columns, 1);
 
     connect(m_refresh, &QPushButton::clicked, this, [this] { refresh(); });
     connect(m_live, &QPushButton::clicked, this, [this] { readLive(); });
     connect(m_newProfile, &QPushButton::clicked, this, [this] { newProfile(); });
     connect(m_reloadAll, &QPushButton::clicked, this, [this] { reloadAll(); });
+    applyStyle();
     updateActions();
     refresh();
 }
@@ -392,65 +715,76 @@ AppArmorFeature::~AppArmorFeature()
     }
 }
 
+void AppArmorFeature::applyStyle()
+{
+    setStyleSheet(QStringLiteral("QFrame#appArmorPane { background: %1; border: 1px solid %2; border-radius: 8px; }"
+                                 "QFrame#appArmorPane QLabel { background: transparent; border: none; }"
+                                 "QFrame#appArmorPane QScrollArea, QFrame#appArmorPane QScrollArea > QWidget > QWidget,"
+                                 " QWidget#appArmorChart { background: transparent; }")
+                      .arg(Theme::hex(Theme::Role::Surface), Theme::hex(Theme::Role::Border)));
+    m_timeline->setColors(deniedColor(), allowedColor());
+    m_profileTimeline->setColors(deniedColor(), allowedColor());
+}
+
+void AppArmorFeature::themeChanged()
+{
+    applyStyle();
+    render();
+}
+
 QWidget *AppArmorFeature::buildOverview()
 {
-    auto *page = new QWidget;
-    auto *layout = new QVBoxLayout(page);
-    layout->setContentsMargins(0, 10, 0, 0);
-    layout->setSpacing(12);
-    auto *bars = new QHBoxLayout;
-    bars->setSpacing(24);
+    auto *strip = new QHBoxLayout;
+    strip->setSpacing(8);
+    strip->setContentsMargins(0, 0, 0, 0);
+
+    QFrame *coverage = pane(QStringLiteral("Coverage"), {}, nullptr);
+    auto *coverageRow = new QHBoxLayout;
+    coverageRow->setSpacing(12);
+    m_coverage = new CoverageRing;
+    coverageRow->addWidget(m_coverage, 0, Qt::AlignTop);
+    auto *bars = new QVBoxLayout;
+    bars->setSpacing(4);
     m_profileBar = new ModeBar(QStringLiteral("Profiles"));
     m_profileBar->setAccessibleName(QStringLiteral("Profiles by mode"));
     m_processBar = new ModeBar(QStringLiteral("Running processes"));
     m_processBar->setAccessibleName(QStringLiteral("Processes by confinement"));
-    bars->addWidget(m_profileBar, 1);
-    bars->addWidget(m_processBar, 1);
-    layout->addLayout(bars);
-    layout->addWidget(heading(QStringLiteral("Events in the last 24 hours")));
-    m_timeline = new TimelineChart;
-    layout->addWidget(m_timeline);
+    bars->addWidget(m_profileBar);
+    bars->addWidget(m_processBar);
+    bars->addStretch();
+    coverageRow->addLayout(bars, 1);
+    static_cast<QVBoxLayout *>(coverage->layout())->addLayout(coverageRow);
+    static_cast<QVBoxLayout *>(coverage->layout())->addStretch();
+
+    QFrame *timeline = pane(QStringLiteral("Last 24 hours"), {}, nullptr);
+    m_timeline = new TimelineChart(86, 6, QStringLiteral("HH:mm"));
+    timeline->layout()->addWidget(m_timeline);
     m_timelineCaption = mutedLabel({});
-    layout->addWidget(m_timelineCaption);
+    m_timelineCaption->setTextFormat(Qt::RichText);
+    timeline->layout()->addWidget(m_timelineCaption);
+    static_cast<QVBoxLayout *>(timeline->layout())->addStretch();
 
-    auto *split = new QSplitter(Qt::Horizontal);
-    split->setChildrenCollapsible(false);
-    auto *left = new QWidget;
-    auto *leftLayout = new QVBoxLayout(left);
-    leftLayout->setContentsMargins(0, 0, 0, 0);
-    leftLayout->addWidget(heading(QStringLiteral("Status")));
-    m_checks = table(QStringLiteral("AppArmor status"), {QStringLiteral("Item"), QStringLiteral("State")}, 1);
-    leftLayout->addWidget(m_checks);
-    auto *right = new QWidget;
-    auto *rightLayout = new QVBoxLayout(right);
-    rightLayout->setContentsMargins(0, 0, 0, 0);
-    rightLayout->addWidget(heading(QStringLiteral("Worth a look")));
-    m_attention = table(QStringLiteral("Items worth a look"), {QStringLiteral("What"), QStringLiteral("Detail")}, 1);
-    m_attention->setUniformRowHeights(false);
-    rightLayout->addWidget(m_attention);
-    split->addWidget(left);
-    split->addWidget(right);
-    split->setStretchFactor(0, 2);
-    split->setStretchFactor(1, 3);
-    layout->addWidget(split, 1);
+    QFrame *busiest = pane(QStringLiteral("Busiest profiles"), {}, nullptr);
+    m_busiest = new RankBars([this](const QString &name) {
+        selectProfile(name);
+        showEventsFor(name);
+    });
+    busiest->layout()->addWidget(m_busiest);
+    m_busiestCaption = mutedLabel({});
+    busiest->layout()->addWidget(m_busiestCaption);
+    static_cast<QVBoxLayout *>(busiest->layout())->addStretch();
 
-    connect(m_attention, &QTreeWidget::itemActivated, this, [this](QTreeWidgetItem *item) {
-        if (item)
-            navigate(item->data(0, Qt::UserRole).toString());
-    });
-    connect(m_attention, &QTreeWidget::itemClicked, this, [this](QTreeWidgetItem *item) {
-        if (item)
-            navigate(item->data(0, Qt::UserRole).toString());
-    });
-    return page;
+    strip->addWidget(coverage, 4);
+    strip->addWidget(timeline, 5);
+    strip->addWidget(busiest, 3);
+    auto *holder = new QWidget;
+    holder->setLayout(strip);
+    holder->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Maximum);
+    return holder;
 }
 
 QWidget *AppArmorFeature::buildProfiles()
 {
-    auto *page = new QWidget;
-    auto *layout = new QVBoxLayout(page);
-    layout->setContentsMargins(0, 10, 0, 0);
-    auto *filters = new QHBoxLayout;
     m_profileFilter = new QComboBox;
     m_profileFilter->setAccessibleName(QStringLiteral("Filter profiles"));
     m_profileFilter->addItem(QStringLiteral("All profiles"), QStringLiteral("all"));
@@ -461,65 +795,84 @@ QWidget *AppArmorFeature::buildProfiles()
     m_profileFilter->addItem(QStringLiteral("Not loaded"), QStringLiteral("unloaded"));
     m_profileFilter->addItem(QStringLiteral("With events"), QStringLiteral("events"));
     m_profileFilter->addItem(QStringLiteral("Running"), QStringLiteral("running"));
-    filters->addWidget(m_profileFilter);
-    filters->addStretch();
-    layout->addLayout(filters);
-
-    auto *split = new QSplitter(Qt::Vertical);
-    split->setChildrenCollapsible(false);
+    QFrame *frame = pane(QStringLiteral("Profiles"), {}, &m_profilesCount, m_profileFilter);
     m_profiles = table(QStringLiteral("AppArmor profiles"),
-                       {QStringLiteral("Profile"), QStringLiteral("Mode"), QStringLiteral("State"), QStringLiteral("Processes"),
-                        QStringLiteral("Denied"), QStringLiteral("File")},
-                       5);
-    split->addWidget(m_profiles);
+                       {QStringLiteral("Profile"), QStringLiteral("Mode"), QStringLiteral("Running"), QStringLiteral("Denied")}, 0);
+    frame->layout()->addWidget(m_profiles);
+    connect(m_profileFilter, &QComboBox::currentIndexChanged, this, [this] { renderProfiles(); });
+    connect(m_profiles, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem *item) {
+        if (item)
+            showProfile(item->data(0, Qt::UserRole).toString());
+    });
+    return frame;
+}
 
+QWidget *AppArmorFeature::buildDetails()
+{
+    QFrame *frame = pane(QStringLiteral("Selected profile"), {}, nullptr);
+    m_profileEmpty = mutedLabel(QStringLiteral("Pick a profile on the left to see what it does, how it is doing, and what to do next."));
+    frame->layout()->addWidget(m_profileEmpty);
     auto *scroll = new QScrollArea;
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_profileDetails = new QWidget;
     auto *details = new QVBoxLayout(m_profileDetails);
-    details->setContentsMargins(4, 8, 4, 4);
-    details->setSpacing(6);
+    details->setContentsMargins(0, 0, 4, 0);
+    details->setSpacing(5);
     m_profileTitle = heading({});
     m_profileTitle->setWordWrap(true);
     m_profileTitle->setTextInteractionFlags(Qt::TextSelectableByMouse);
     details->addWidget(m_profileTitle);
-    m_profileInfo = new QLabel;
-    m_profileInfo->setWordWrap(true);
-    m_profileInfo->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    details->addWidget(m_profileInfo);
-    auto *actions = new QHBoxLayout;
+    m_profileMode = new QLabel;
+    m_profileMode->setTextFormat(Qt::RichText);
+    m_profileMode->setWordWrap(true);
+    details->addWidget(m_profileMode);
+    m_profileAbout = mutedLabel({});
+    m_profileAbout->setTextFormat(Qt::RichText);
+    details->addWidget(m_profileAbout);
+    m_profileAdvice = richLabel();
+    m_profileAdvice->setAccessibleName(QStringLiteral("Suggestions for this profile"));
+    details->addWidget(m_profileAdvice);
+    m_profileTimeline = new TimelineChart(58, 24, QStringLiteral("ddd"));
+    m_profileTimeline->setAccessibleName(QStringLiteral("This profile's events per hour over 7 days"));
+    details->addWidget(m_profileTimeline);
     m_enforce = ghostButton(QStringLiteral("Enforce"), QStringLiteral("Block and log anything the profile does not allow"));
     m_complain = ghostButton(QStringLiteral("Complain"), QStringLiteral("Allow everything but log what enforce mode would block"));
     m_toggleDisabled = ghostButton(QStringLiteral("Disable"), QStringLiteral("Unload the profile and keep it off after restarts"));
     m_reload = ghostButton(QStringLiteral("Reload"), QStringLiteral("Compile and load the profile file again"));
     m_unload = ghostButton(QStringLiteral("Unload"), QStringLiteral("Remove the profile from the kernel until the next restart or reload"));
     m_edit = ghostButton(QStringLiteral("Edit…"), QStringLiteral("Edit the profile file, then save and load it"));
-    m_profileEvents = ghostButton(QStringLiteral("Show events"), QStringLiteral("Show this profile's log events"));
-    for (QPushButton *button : {m_enforce, m_complain, m_toggleDisabled, m_reload, m_unload, m_edit, m_profileEvents})
-        actions->addWidget(button);
-    actions->addStretch();
-    details->addLayout(actions);
+    m_profileEvents = ghostButton(QStringLiteral("Show events"), QStringLiteral("Show only this profile's log events below"));
+    for (const QList<QPushButton *> &group : {QList<QPushButton *>{m_enforce, m_complain, m_toggleDisabled, m_profileEvents},
+                                              QList<QPushButton *>{m_reload, m_unload, m_edit}}) {
+        auto *actions = new QHBoxLayout;
+        actions->setSpacing(4);
+        for (QPushButton *button : group)
+            actions->addWidget(button);
+        actions->addStretch();
+        details->addLayout(actions);
+    }
     m_profileHint = mutedLabel({});
     details->addWidget(m_profileHint);
+    m_profileInfo = mutedLabel({});
+    m_profileInfo->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    details->addWidget(m_profileInfo);
+    m_showFile = ghostButton(QStringLiteral("Show file"), QStringLiteral("Show the profile's rules"));
+    m_showFile->setCheckable(true);
+    details->addWidget(m_showFile, 0, Qt::AlignLeft);
     m_profileText = new QPlainTextEdit;
     m_profileText->setReadOnly(true);
     m_profileText->setFont(monoFont());
     m_profileText->setLineWrapMode(QPlainTextEdit::NoWrap);
     m_profileText->setAccessibleName(QStringLiteral("Profile file contents"));
-    m_profileText->setMinimumHeight(160);
+    m_profileText->setMinimumHeight(180);
+    m_profileText->hide();
     details->addWidget(m_profileText, 1);
+    details->addStretch();
     scroll->setWidget(m_profileDetails);
-    split->addWidget(scroll);
-    split->setStretchFactor(0, 3);
-    split->setStretchFactor(1, 2);
-    layout->addWidget(split, 1);
+    frame->layout()->addWidget(scroll);
 
-    connect(m_profileFilter, &QComboBox::currentIndexChanged, this, [this] { renderProfiles(); });
-    connect(m_profiles, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem *item) {
-        if (item)
-            showProfile(item->data(0, Qt::UserRole).toString());
-    });
     connect(m_enforce, &QPushButton::clicked, this, [this] { setMode(Mode::Enforce); });
     connect(m_complain, &QPushButton::clicked, this, [this] { setMode(Mode::Complain); });
     connect(m_toggleDisabled, &QPushButton::clicked, this, [this] { toggleDisabled(); });
@@ -527,15 +880,15 @@ QWidget *AppArmorFeature::buildProfiles()
     connect(m_unload, &QPushButton::clicked, this, [this] { unloadProfile(); });
     connect(m_edit, &QPushButton::clicked, this, [this] { editProfile(); });
     connect(m_profileEvents, &QPushButton::clicked, this, [this] { showEventsFor(m_selectedProfile); });
-    return page;
+    connect(m_showFile, &QPushButton::toggled, this, [this](bool on) {
+        m_showFile->setText(on ? QStringLiteral("Hide file") : QStringLiteral("Show file"));
+        m_profileText->setVisible(on);
+    });
+    return frame;
 }
 
 QWidget *AppArmorFeature::buildProcesses()
 {
-    auto *page = new QWidget;
-    auto *layout = new QVBoxLayout(page);
-    layout->setContentsMargins(0, 10, 0, 0);
-    auto *filters = new QHBoxLayout;
     m_processFilter = new QComboBox;
     m_processFilter->setAccessibleName(QStringLiteral("Filter processes"));
     m_processFilter->addItem(QStringLiteral("All processes"), QStringLiteral("all"));
@@ -544,31 +897,34 @@ QWidget *AppArmorFeature::buildProcesses()
     m_processFilter->addItem(QStringLiteral("Complain"), QStringLiteral("complain"));
     m_processFilter->addItem(QStringLiteral("Unconfined"), QStringLiteral("unconfined"));
     m_processFilter->addItem(QStringLiteral("Unconfined, but a profile exists"), QStringLiteral("missed"));
-    filters->addWidget(m_processFilter);
-    filters->addStretch();
-    layout->addLayout(filters);
+    QFrame *frame = pane(QStringLiteral("Processes"), QStringLiteral("Double-click a confined process to open its profile."), &m_processesCount,
+                         m_processFilter);
     m_processes = table(QStringLiteral("Processes and their AppArmor confinement"),
-                        {QStringLiteral("PID"), QStringLiteral("Program"), QStringLiteral("Profile"), QStringLiteral("Mode"),
-                         QStringLiteral("Note"), QStringLiteral("Command")},
-                        5);
-    layout->addWidget(m_processes, 1);
-    m_processNote = mutedLabel(QStringLiteral("Double-click a confined process to open its profile. A process started before its profile "
-                                              "was loaded stays unconfined until it is restarted."));
-    layout->addWidget(m_processNote);
+                        {QStringLiteral("PID"), QStringLiteral("Program"), QStringLiteral("Mode"), QStringLiteral("Profile"),
+                         QStringLiteral("Note")},
+                        3);
+    m_processes->header()->setSectionResizeMode(1, QHeaderView::Interactive);
+    m_processes->setColumnWidth(1, 150);
+    frame->layout()->addWidget(m_processes);
     connect(m_processFilter, &QComboBox::currentIndexChanged, this, [this] { renderProcesses(); });
     connect(m_processes, &QTreeWidget::itemDoubleClicked, this, [this](QTreeWidgetItem *item) {
         if (item && !item->data(0, Qt::UserRole).toString().isEmpty())
             selectProfile(item->data(0, Qt::UserRole).toString());
     });
-    return page;
+    return frame;
 }
 
 QWidget *AppArmorFeature::buildEvents()
 {
-    auto *page = new QWidget;
-    auto *layout = new QVBoxLayout(page);
-    layout->setContentsMargins(0, 10, 0, 0);
-    auto *filters = new QHBoxLayout;
+    auto *tools = new QWidget;
+    auto *filters = new QHBoxLayout(tools);
+    filters->setContentsMargins(0, 0, 0, 0);
+    filters->setSpacing(6);
+    m_eventScope = mutedLabel({});
+    m_eventScope->setWordWrap(false);
+    filters->addWidget(m_eventScope);
+    m_eventScopeClear = ghostButton(QStringLiteral("All profiles"), QStringLiteral("Stop filtering by profile"));
+    filters->addWidget(m_eventScopeClear);
     m_eventFilter = new QComboBox;
     m_eventFilter->setAccessibleName(QStringLiteral("Filter events"));
     m_eventFilter->addItem(QStringLiteral("Denied and allowed"), QStringLiteral("access"));
@@ -577,53 +933,61 @@ QWidget *AppArmorFeature::buildEvents()
     m_eventFilter->addItem(QStringLiteral("Profile loads and other"), QStringLiteral("other"));
     m_eventFilter->addItem(QStringLiteral("Everything"), QStringLiteral("all"));
     filters->addWidget(m_eventFilter);
-    m_eventScope = mutedLabel({});
-    m_eventScope->setWordWrap(false);
-    filters->addWidget(m_eventScope);
-    m_eventScopeClear = ghostButton(QStringLiteral("Show all profiles"), QStringLiteral("Stop filtering by profile"));
-    filters->addWidget(m_eventScopeClear);
-    filters->addStretch();
-    layout->addLayout(filters);
+    QFrame *frame = pane(QStringLiteral("Events"), {}, &m_eventsCount, tools);
     m_eventEmpty = mutedLabel({});
-    layout->addWidget(m_eventEmpty);
-
-    auto *split = new QSplitter(Qt::Vertical);
-    split->setChildrenCollapsible(false);
+    frame->layout()->addWidget(m_eventEmpty);
     m_events = table(QStringLiteral("AppArmor log events"),
                      {QStringLiteral("Time"), QStringLiteral("Result"), QStringLiteral("Profile"), QStringLiteral("Operation"),
                       QStringLiteral("Target"), QStringLiteral("Access"), QStringLiteral("Program")},
                      4);
     m_events->setSelectionMode(QAbstractItemView::ExtendedSelection);
-    split->addWidget(m_events);
-    auto *detail = new QWidget;
-    auto *detailLayout = new QVBoxLayout(detail);
-    detailLayout->setContentsMargins(4, 8, 4, 4);
+    frame->layout()->addWidget(m_events);
+    auto *actions = new QHBoxLayout;
     m_eventRule = new QLabel;
     m_eventRule->setWordWrap(true);
     m_eventRule->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    detailLayout->addWidget(m_eventRule);
-    auto *actions = new QHBoxLayout;
+    actions->addWidget(m_eventRule, 1);
     m_allow = new QPushButton(QStringLiteral("Allow…"));
     m_allow->setObjectName(QStringLiteral("primaryButton"));
     m_allow->setToolTip(QStringLiteral("Add rules for the selected events to the profile and reload it"));
-    actions->addWidget(m_allow);
-    actions->addStretch();
-    detailLayout->addLayout(actions);
-    m_eventDetail = mutedLabel({});
-    m_eventDetail->setFont(monoFont());
-    m_eventDetail->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    detailLayout->addWidget(m_eventDetail);
-    detailLayout->addStretch();
-    split->addWidget(detail);
-    split->setStretchFactor(0, 3);
-    split->setStretchFactor(1, 1);
-    layout->addWidget(split, 1);
+    actions->addWidget(m_allow, 0, Qt::AlignTop);
+    static_cast<QVBoxLayout *>(frame->layout())->addLayout(actions);
 
     connect(m_eventFilter, &QComboBox::currentIndexChanged, this, [this] { renderEvents(); });
     connect(m_eventScopeClear, &QPushButton::clicked, this, [this] { showEventsFor({}); });
     connect(m_events, &QTreeWidget::itemSelectionChanged, this, [this] { showEventDetails(); });
     connect(m_allow, &QPushButton::clicked, this, [this] { allowSelected(); });
-    return page;
+    return frame;
+}
+
+QWidget *AppArmorFeature::buildSuggestions()
+{
+    auto *column = new QWidget;
+    auto *layout = new QVBoxLayout(column);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(8);
+
+    QFrame *attention = pane(QStringLiteral("Suggestions"), {}, &m_attentionCount);
+    auto *scroll = new QScrollArea;
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    m_attention = richLabel();
+    m_attention->setAccessibleName(QStringLiteral("Suggestions"));
+    m_attention->setContentsMargins(0, 0, 4, 0);
+    scroll->setWidget(m_attention);
+    attention->layout()->addWidget(scroll);
+
+    QFrame *status = pane(QStringLiteral("System"), {}, nullptr);
+    m_checks = richLabel();
+    m_checks->setAccessibleName(QStringLiteral("AppArmor status"));
+    status->layout()->addWidget(m_checks);
+    status->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Maximum);
+
+    layout->addWidget(attention, 1);
+    layout->addWidget(status);
+
+    connect(m_attention, &QLabel::linkActivated, this, [this](const QString &link) { navigate(QUrl::fromPercentEncoding(link.toUtf8())); });
+    return column;
 }
 
 void AppArmorFeature::refresh()
@@ -792,6 +1156,36 @@ bool AppArmorFeature::matchesQuery(const QStringList &values) const
     return false;
 }
 
+ProfileFacts AppArmorFeature::factsFor(const ProfileRow &row) const
+{
+    const ProfileFile *file = fileFor(&row);
+    ProfileFacts facts;
+    facts.hasFile = file != nullptr;
+    facts.editable = file && file->editable;
+    facts.disabled = file && file->disabled;
+    facts.liveKnown = m_liveProfiles.has_value();
+    facts.loaded = row.loaded;
+    facts.logKnown = m_liveEvents.has_value() || !m_snapshot.eventSource.isEmpty();
+    if (m_liveProfiles && row.loaded)
+        facts.mode = row.live;
+    else if (file && file->forceComplain)
+        facts.mode = Mode::Complain;
+    else
+        facts.mode = row.declared;
+    if (file) {
+        for (const ProfileDeclaration &declaration : file->profiles)
+            facts.unconfinedFlag = facts.unconfinedFlag || declaredMode(declaration.flags) == Mode::Unconfined;
+    }
+    facts.processes = row.processes;
+    facts.denied = row.denied;
+    facts.allowed = row.allowed;
+    for (const QString &profile : m_missed) {
+        if (profile == row.name)
+            ++facts.missed;
+    }
+    return facts;
+}
+
 void AppArmorFeature::render()
 {
     renderOverview();
@@ -808,7 +1202,8 @@ void AppArmorFeature::renderOverview()
     if (!m_snapshot.supported) {
         m_summary->setText(QStringLiteral("AppArmor is a Linux security module. This page works on Linux only."));
         m_checks->clear();
-        m_attention->clear();
+        m_attention->setText(QStringLiteral("Nothing to show: AppArmor runs on Linux only."));
+        m_attentionCount->clear();
         return;
     }
     QHash<QString, int> modes;
@@ -820,39 +1215,41 @@ void AppArmorFeature::renderOverview()
         else
             ++modes[displayMode(row)];
     }
-    QList<ModeBar::Segment> profileSegments;
+    QList<Segment> profileSegments;
     for (Mode mode : {Mode::Enforce, Mode::Complain, Mode::Kill, Mode::Prompt, Mode::Unconfined, Mode::Mixed, Mode::Unknown}) {
         const int count = modes.value(modeName(mode));
         if (count > 0)
-            profileSegments << ModeBar::Segment{modeName(mode), count, modeColor(mode)};
+            profileSegments << Segment{modeName(mode), count, modeColor(mode)};
     }
     if (disabled > 0)
-        profileSegments << ModeBar::Segment{QStringLiteral("disabled"), disabled, disabledColor()};
+        profileSegments << Segment{QStringLiteral("disabled"), disabled, disabledColor()};
     m_profileBar->setSegments(profileSegments);
 
     int enforced = 0;
     int complaining = 0;
     int other = 0;
     int unconfined = 0;
-    int missed = 0;
+    QHash<QString, int> unconfinedPrograms;
     for (const ProcessInfo &process : m_snapshot.processes) {
         switch (process.label.mode) {
         case Mode::Enforce: ++enforced; break;
         case Mode::Complain: ++complaining; break;
         case Mode::Unconfined:
             ++unconfined;
-            if (!profileFor(process).isEmpty())
-                ++missed;
+            if (profileFor(process).isEmpty() && !process.name.isEmpty())
+                ++unconfinedPrograms[process.name];
             break;
         default: ++other; break;
         }
     }
-    QList<ModeBar::Segment> processSegments{{QStringLiteral("enforce"), enforced, modeColor(Mode::Enforce)},
-                                            {QStringLiteral("complain"), complaining, modeColor(Mode::Complain)}};
+    QList<Segment> processSegments{{QStringLiteral("enforce"), enforced, modeColor(Mode::Enforce)},
+                                   {QStringLiteral("complain"), complaining, modeColor(Mode::Complain)}};
     if (other > 0)
-        processSegments << ModeBar::Segment{QStringLiteral("other"), other, modeColor(Mode::Mixed)};
-    processSegments << ModeBar::Segment{QStringLiteral("unconfined"), unconfined, modeColor(Mode::Unconfined)};
+        processSegments << Segment{QStringLiteral("other"), other, modeColor(Mode::Mixed)};
+    processSegments << Segment{QStringLiteral("unconfined"), unconfined, modeColor(Mode::Unconfined)};
     m_processBar->setSegments(processSegments);
+    const int confined = enforced + complaining + other;
+    m_coverage->setSegments(processSegments, confined);
 
     const QList<Event> &all = events();
     int denied = 0;
@@ -866,104 +1263,190 @@ void AppArmorFeature::renderOverview()
     m_timeline->setBuckets(hourlyBuckets(all, QDateTime::currentDateTime(), 24));
     const QString source = m_liveEvents ? QStringLiteral("the administrator read at %1").arg(m_liveReadAt.toString(QStringLiteral("HH:mm")))
                                         : m_snapshot.eventSource;
-    if (source.isEmpty())
-        m_timelineCaption->setText(QStringLiteral("The AppArmor log is only readable by an administrator on this computer. Press Live view to read it once."));
+    const bool logKnown = !source.isEmpty();
+    if (!logKnown)
+        m_timelineCaption->setText(QStringLiteral("The log is only readable by an administrator. Press Live view to read it once."));
     else
-        m_timelineCaption->setText(QStringLiteral("Red bars are denials, amber bars are accesses complain mode let through. %1 denied and %2 "
-                                                  "allowed in the last 7 days, from %3.")
+        m_timelineCaption->setText(QStringLiteral("%1 denied &nbsp;%2 let through by complain mode &nbsp;·&nbsp; 7 days: %3 denied, %4 let through")
+                                       .arg(dotHtml(deniedColor()), dotHtml(allowedColor()))
                                        .arg(denied)
-                                       .arg(allowed)
-                                       .arg(source));
+                                       .arg(allowed));
+
+    QList<RankBars::Entry> busiest;
+    for (const ProfileRow &row : m_rows) {
+        if (row.denied + row.allowed > 0)
+            busiest << RankBars::Entry{row.name, row.denied, row.allowed};
+    }
+    std::sort(busiest.begin(), busiest.end(), [](const RankBars::Entry &left, const RankBars::Entry &right) {
+        return left.denied + left.allowed > right.denied + right.allowed;
+    });
+    m_busiest->setEntries(busiest, deniedColor(), allowedColor(),
+                          logKnown ? QStringLiteral("No profile blocked or logged anything in 7 days.")
+                                   : QStringLiteral("The log is only readable by an administrator. Press Live view to see which profiles "
+                                                    "block the most."));
+    m_busiestCaption->setText(QStringLiteral("Events per profile in 7 days. Click one to open it."));
+    m_busiestCaption->setVisible(!busiest.isEmpty());
 
     QString state;
+    AdviceTone stateTone = AdviceTone::Good;
     if (m_snapshot.enabled && m_snapshot.inLsmList)
         state = QStringLiteral("AppArmor is on");
-    else if (m_snapshot.moduleLoaded)
+    else if (m_snapshot.moduleLoaded) {
         state = QStringLiteral("AppArmor is built in but turned off");
-    else
+        stateTone = AdviceTone::Problem;
+    } else {
         state = QStringLiteral("AppArmor is not available in this kernel");
-    const int confined = enforced + complaining + other;
-    m_summary->setText(QStringLiteral("%1 · %2 profiles (%3 enforce, %4 complain) · %5 of %6 processes confined · %7 denials in 7 days")
-                           .arg(state)
+        stateTone = AdviceTone::Problem;
+    }
+    m_summary->setText(QStringLiteral("%1 <b>%2</b> · %3 profiles · %4 of %5 processes confined · %6")
+                           .arg(dotHtml(toneColor(stateTone)), state)
                            .arg(m_rows.size())
-                           .arg(modes.value(modeName(Mode::Enforce)))
-                           .arg(modes.value(modeName(Mode::Complain)))
                            .arg(confined)
                            .arg(m_snapshot.processes.size())
-                           .arg(denied));
+                           .arg(logKnown ? QStringLiteral("%1 denials in 7 days").arg(denied) : QStringLiteral("log not read yet")));
 
-    m_checks->clear();
-    auto check = [this](const QString &item, const QString &value, bool good) {
-        auto *row = new QTreeWidgetItem(m_checks, {item, value});
-        row->setForeground(1, good ? modeColor(Mode::Enforce) : modeColor(Mode::Kill));
-        row->setToolTip(1, value);
+    QStringList checks;
+    auto check = [&checks](const QString &item, const QString &value, bool good) {
+        checks << QStringLiteral("<tr><td style=\"color:%1\">%2</td><td style=\"padding:0 8px 0 4px\"><b>%3</b></td><td>%4</td></tr>")
+                      .arg((good ? toneColor(AdviceTone::Good) : toneColor(AdviceTone::Problem)).name(),
+                           good ? QStringLiteral("&#10003;") : QStringLiteral("&#10007;"), item.toHtmlEscaped(), value.toHtmlEscaped());
     };
     check(QStringLiteral("Kernel"), m_snapshot.enabled ? QStringLiteral("Enabled")
                                     : m_snapshot.moduleLoaded ? QStringLiteral("Built in, turned off (add apparmor=1 security=apparmor to the boot line)")
                                                               : QStringLiteral("Not in this kernel"),
           m_snapshot.enabled);
-    check(QStringLiteral("Security modules"), m_snapshot.lsm.isEmpty() ? QStringLiteral("Unknown") : m_snapshot.lsm, m_snapshot.inLsmList);
-    check(QStringLiteral("Policy compiler"),
+    const QStringList modules = m_snapshot.lsm.split(QLatin1Char(','), Qt::SkipEmptyParts);
+    check(QStringLiteral("Modules"),
+          modules.isEmpty()           ? QStringLiteral("Unknown")
+          : m_snapshot.inLsmList      ? QStringLiteral("AppArmor is one of %1 active").arg(modules.size())
+                                      : QStringLiteral("AppArmor is not among the %1 active").arg(modules.size()),
+          m_snapshot.inLsmList);
+    check(QStringLiteral("Compiler"),
           m_snapshot.parserPath.isEmpty() ? QStringLiteral("apparmor_parser is not installed; install the apparmor package") : m_snapshot.parserPath,
           !m_snapshot.parserPath.isEmpty());
     int fileCount = 0;
     int snapCount = 0;
     for (const ProfileFile &file : m_snapshot.files)
         (file.source == QStringLiteral("snap") ? snapCount : fileCount)++;
-    check(QStringLiteral("Policy files"),
+    check(QStringLiteral("Files"),
           QStringLiteral("%1 in %2%3").arg(fileCount).arg(m_snapshot.policyDir, snapCount ? QStringLiteral(", %1 from Snap").arg(snapCount) : QString()),
           fileCount > 0);
-    check(QStringLiteral("Loaded profiles"),
+    check(QStringLiteral("Loaded"),
           m_liveProfiles ? QStringLiteral("%1, read at %2").arg(m_liveProfiles->size()).arg(m_liveReadAt.toString(QStringLiteral("HH:mm")))
-                         : QStringLiteral("Only an administrator can list them; press Live view"),
+                         : QStringLiteral("Needs Live view"),
           m_liveProfiles.has_value());
-    check(QStringLiteral("Log"), source.isEmpty() ? QStringLiteral("Not readable without administrator rights") : source, !source.isEmpty());
+    check(QStringLiteral("Log"), logKnown ? source : QStringLiteral("Needs Live view"), logKnown);
+    m_checks->setText(QStringLiteral("<table cellspacing=\"0\" cellpadding=\"1\">%1</table>").arg(checks.join(QString())));
+    m_checks->setToolTip(modules.isEmpty() ? QString() : QStringLiteral("Active security modules: %1").arg(modules.join(QStringLiteral(", "))));
 
-    m_attention->clear();
-    auto attention = [this](const QString &what, const QString &detail, const QString &target, Mode tone) {
-        auto *row = new QTreeWidgetItem(m_attention, {what, detail});
-        row->setData(0, Qt::UserRole, target);
-        row->setForeground(0, modeColor(tone));
-        row->setToolTip(1, detail);
+    QStringList items;
+    auto attention = [&items](AdviceTone tone, const QString &what, const QString &detail, const QString &target, const QString &linkText) {
+        QString link;
+        if (!target.isEmpty())
+            link = QStringLiteral(" <a href=\"%1\">%2</a>").arg(linkFor(target), linkText.toHtmlEscaped());
+        items << QStringLiteral("<p style=\"margin:0 0 8px 0\">%1 <b>%2</b><br>%3%4</p>")
+                     .arg(dotHtml(toneColor(tone)), what.toHtmlEscaped(), detail.toHtmlEscaped(), link);
     };
     if (!m_snapshot.enabled)
-        attention(QStringLiteral("AppArmor is off"), QStringLiteral("No profile protects anything until it is turned on at boot."), {}, Mode::Kill);
+        attention(AdviceTone::Problem, QStringLiteral("AppArmor is off"),
+                  QStringLiteral("No profile protects anything until it is turned on at boot: add apparmor=1 security=apparmor to the kernel "
+                                 "command line and restart."),
+                  {}, {});
+    if (m_snapshot.enabled && m_snapshot.parserPath.isEmpty())
+        attention(AdviceTone::Problem, QStringLiteral("apparmor_parser is missing"),
+                  QStringLiteral("Profiles cannot be loaded or changed without it. Install the apparmor package."), {}, {});
+    if (!logKnown)
+        attention(AdviceTone::Info, QStringLiteral("Read the log"),
+                  QStringLiteral("Only an administrator can read what AppArmor blocked. Live view reads it once and changes nothing."),
+                  QStringLiteral("live:"), QStringLiteral("Live view"));
     QList<const ProfileRow *> noisy;
     for (const ProfileRow &row : m_rows) {
         if (row.denied > 0)
             noisy << &row;
     }
     std::sort(noisy.begin(), noisy.end(), [](const ProfileRow *left, const ProfileRow *right) { return left->denied > right->denied; });
-    for (qsizetype i = 0; i < std::min<qsizetype>(noisy.size(), 6); ++i)
-        attention(noisy.at(i)->name, QStringLiteral("%1 denials. If the program misbehaves, select them in Events and allow them.").arg(noisy.at(i)->denied),
-                  QStringLiteral("events:") + noisy.at(i)->name, Mode::Kill);
-    for (const ProcessInfo &process : m_snapshot.processes) {
-        const QString profile = profileFor(process);
-        if (!profile.isEmpty())
-            attention(QStringLiteral("%1 (pid %2)").arg(process.name).arg(process.pid),
-                      QStringLiteral("Runs unconfined although profile %1 matches it. Restart the program to confine it.").arg(profile),
-                      QStringLiteral("profile:") + profile, Mode::Complain);
+    for (qsizetype i = 0; i < std::min<qsizetype>(noisy.size(), 5); ++i) {
+        const ProfileRow *row = noisy.at(i);
+        const QString about = programDescription(row->name);
+        attention(AdviceTone::Problem, row->name,
+                  QStringLiteral("%1Blocked %2 %3 in 7 days. If the program works, the profile is doing its job; if something broke, "
+                                 "allow the denials it needs.")
+                      .arg(about.isEmpty() ? QString() : about + QLatin1Char(' '))
+                      .arg(row->denied)
+                      .arg(row->denied == 1 ? QStringLiteral("access") : QStringLiteral("accesses")),
+                  QStringLiteral("events:") + row->name, QStringLiteral("Review denials"));
     }
+    QStringList learning;
+    QStringList readyToEnforce;
     QStringList complainProfiles;
     for (const ProfileRow &row : m_rows) {
-        if (displayMode(row) == modeName(Mode::Complain))
-            complainProfiles << row.name;
+        if (displayMode(row) != modeName(Mode::Complain))
+            continue;
+        complainProfiles << row.name;
+        if (row.allowed > 0)
+            learning << row.name;
+        else if (logKnown && row.processes > 0)
+            readyToEnforce << row.name;
     }
-    if (complainProfiles.size() == 1)
-        attention(complainProfiles.first(), QStringLiteral("In complain mode: it logs but blocks nothing. Switch to enforce once the log is quiet."),
-                  QStringLiteral("profile:") + complainProfiles.first(), Mode::Complain);
-    else if (complainProfiles.size() > 1)
-        attention(QStringLiteral("%1 profiles in complain mode").arg(complainProfiles.size()),
-                  QStringLiteral("They log but block nothing: %1. Switch each to enforce once its log is quiet.")
-                      .arg(complainProfiles.mid(0, 6).join(QStringLiteral(", ")) + (complainProfiles.size() > 6 ? QStringLiteral("…") : QString())),
-                  QStringLiteral("filter:complain"), Mode::Complain);
+    for (const QString &name : learning.mid(0, 3)) {
+        const ProfileRow *row = rowByName(name);
+        attention(AdviceTone::Warning, name,
+                  QStringLiteral("Complain mode let %1 %2 through. Allow what the program needs, then switch it to enforce.")
+                      .arg(row->allowed)
+                      .arg(row->allowed == 1 ? QStringLiteral("access") : QStringLiteral("accesses")),
+                  QStringLiteral("events:") + name, QStringLiteral("Review"));
+    }
+    for (const QString &name : readyToEnforce.mid(0, 3))
+        attention(AdviceTone::Warning, name,
+                  QStringLiteral("Running in complain mode with a quiet log: enforce mode would block nothing it does. Switch it to enforce "
+                                 "to protect it."),
+                  QStringLiteral("profile:") + name, QStringLiteral("Open"));
+    QList<const ProcessInfo *> missed;
+    for (const ProcessInfo &process : m_snapshot.processes) {
+        if (!profileFor(process).isEmpty())
+            missed << &process;
+    }
+    for (qsizetype i = 0; i < std::min<qsizetype>(missed.size(), 3); ++i)
+        attention(AdviceTone::Warning, QStringLiteral("%1 (pid %2)").arg(missed.at(i)->name).arg(missed.at(i)->pid),
+                  QStringLiteral("Runs unconfined although profile %1 matches it, because it started first. Restart the program to confine it.")
+                      .arg(profileFor(*missed.at(i))),
+                  QStringLiteral("profile:") + profileFor(*missed.at(i)), QStringLiteral("Open profile"));
+    if (missed.size() > 3)
+        attention(AdviceTone::Warning, QStringLiteral("%1 more unconfined processes with a profile").arg(missed.size() - 3),
+                  QStringLiteral("Restart them to confine them."), QStringLiteral("processes:missed"), QStringLiteral("Show them"));
+    const int otherComplain = int(complainProfiles.size() - learning.mid(0, 3).size() - readyToEnforce.mid(0, 3).size());
+    if (otherComplain > 0)
+        attention(AdviceTone::Info, QStringLiteral("%1 profiles only log").arg(complainProfiles.size()),
+                  QStringLiteral("Complain mode blocks nothing: %1. Switch each to enforce once its program has run a while with a quiet log.")
+                      .arg(complainProfiles.mid(0, 5).join(QStringLiteral(", ")) + (complainProfiles.size() > 5 ? QStringLiteral("…") : QString())),
+                  QStringLiteral("filter:complain"), QStringLiteral("List them"));
     for (const ProfileRow &row : m_rows) {
         if (m_liveProfiles && fileFor(&row) && !fileFor(&row)->disabled && !row.loaded)
-            attention(row.name, QStringLiteral("Has a file but is not loaded. Reload it to apply it."), QStringLiteral("profile:") + row.name,
-                      Mode::Unknown);
+            attention(AdviceTone::Problem, row.name, QStringLiteral("Has a file but is not loaded, so it protects nothing. Reload it."),
+                      QStringLiteral("profile:") + row.name, QStringLiteral("Open"));
     }
-    if (m_attention->topLevelItemCount() == 0)
-        new QTreeWidgetItem(m_attention, {QStringLiteral("Nothing stands out"), QStringLiteral("No denials, unconfined matches or complain-mode profiles.")});
+    QList<QPair<QString, int>> topUnconfined;
+    for (auto it = unconfinedPrograms.constBegin(); it != unconfinedPrograms.constEnd(); ++it)
+        topUnconfined.append({it.key(), it.value()});
+    std::sort(topUnconfined.begin(), topUnconfined.end(), [](const QPair<QString, int> &left, const QPair<QString, int> &right) {
+        return left.second != right.second ? left.second > right.second : left.first < right.first;
+    });
+    if (!topUnconfined.isEmpty()) {
+        QStringList names;
+        for (qsizetype i = 0; i < std::min<qsizetype>(topUnconfined.size(), 5); ++i)
+            names << QStringLiteral("%1 (%2)").arg(topUnconfined.at(i).first).arg(topUnconfined.at(i).second);
+        attention(AdviceTone::Info, QStringLiteral("Most running programs have no profile"),
+                  QStringLiteral("Normal on most systems: distributions confine network services and a few apps. Busiest unconfined: %1. "
+                                 "A profile helps most for programs that open files or pages from others (browsers, chat, PDF viewers).")
+                      .arg(names.join(QStringLiteral(", "))),
+                  QStringLiteral("new:"), QStringLiteral("New profile…"));
+    }
+    if (items.isEmpty())
+        attention(AdviceTone::Good, QStringLiteral("Nothing stands out"), QStringLiteral("No denials, unconfined matches or complain-mode profiles."),
+                  {}, {});
+    m_attention->setText(items.join(QString()));
+    const int count = int(items.size());
+    m_attentionCount->setText(count == 1 ? QStringLiteral("1 item") : QStringLiteral("%1 items").arg(count));
 }
 
 void AppArmorFeature::renderProfiles()
@@ -988,18 +1471,34 @@ void AppArmorFeature::renderProfiles()
             show = row.denied + row.allowed > 0;
         else if (filter == QStringLiteral("running"))
             show = row.processes > 0;
-        if (!show || !matchesQuery({row.name, row.attachment, file ? file->fileName : QString(), mode}))
+        const QString about = programDescription(row.name);
+        if (!show || !matchesQuery({row.name, row.attachment, file ? file->fileName : QString(), mode, about}))
             continue;
-        auto *item = new QTreeWidgetItem(m_profiles, {row.name, mode, displayState(row), row.processes ? QString::number(row.processes) : QString(),
-                                                      row.denied ? QString::number(row.denied) : QString(), file ? file->path : QString()});
+        const QString state = displayState(row);
+        const bool usual = state == QStringLiteral("In policy") || state == QStringLiteral("Loaded");
+        auto *item = new QTreeWidgetItem(m_profiles, {row.name, usual ? mode : QStringLiteral("%1 · %2").arg(mode, state.toLower()),
+                                                      row.processes ? QString::number(row.processes) : QString(),
+                                                      row.denied ? QString::number(row.denied) : QString()});
         item->setData(0, Qt::UserRole, row.name);
-        item->setForeground(1, disabled ? disabledColor() : modeColor(modeFromText(mode)));
-        item->setToolTip(0, row.attachment.isEmpty() ? row.name : QStringLiteral("%1\nAttaches to %2").arg(row.name, row.attachment));
+        const QColor color = disabled ? disabledColor() : modeColor(modeFromText(mode));
+        item->setIcon(1, dotIcon(color));
+        QStringList tip{row.name};
+        if (!about.isEmpty())
+            tip << about;
+        if (!row.attachment.isEmpty() && row.attachment != row.name)
+            tip << QStringLiteral("Attaches to %1").arg(row.attachment);
+        if (file)
+            tip << file->path;
+        item->setToolTip(0, tip.join(QLatin1Char('\n')));
+        item->setToolTip(1, QStringLiteral("%1\n%2").arg(state, modeExplanation(modeFromText(mode))).trimmed());
         if (row.denied)
-            item->setForeground(4, modeColor(Mode::Kill));
+            item->setForeground(3, deniedColor());
         if (row.name == keep)
             selected = item;
     }
+    m_profilesCount->setText(m_profiles->topLevelItemCount() == m_rows.size()
+                                 ? QString::number(m_rows.size())
+                                 : QStringLiteral("%1 of %2").arg(m_profiles->topLevelItemCount()).arg(m_rows.size()));
     if (!selected)
         selected = m_profiles->topLevelItem(0);
     if (selected) {
@@ -1015,14 +1514,49 @@ void AppArmorFeature::showProfile(const QString &name)
     m_selectedProfile = name;
     const ProfileRow *row = rowByName(name);
     m_profileDetails->setVisible(row != nullptr);
+    m_profileEmpty->setVisible(row == nullptr);
+    m_recommended = AdviceAction::None;
     if (!row) {
         updateActions();
         return;
     }
     const ProfileFile *file = fileFor(row);
+    const ProfileFacts facts = factsFor(*row);
     m_profileTitle->setText(row->name);
+    const QColor color = facts.disabled ? disabledColor() : modeColor(facts.mode);
+    m_profileMode->setText(QStringLiteral("%1 %2 · %3").arg(dotHtml(color), displayMode(*row).toHtmlEscaped(), displayState(*row).toHtmlEscaped()));
+    QStringList about;
+    const QString description = programDescription(row->name);
+    if (!description.isEmpty())
+        about << description.toHtmlEscaped();
+    if (facts.disabled)
+        about << QStringLiteral("Disabled: AppArmor does not load this profile, so the program runs without limits.");
+    else if (!modeExplanation(facts.mode).isEmpty())
+        about << modeExplanation(facts.mode).toHtmlEscaped();
+    m_profileAbout->setText(about.join(QStringLiteral("<br>")));
+    m_profileAbout->setVisible(!about.isEmpty());
+
+    const QList<Advice> advice = profileAdvice(facts);
+    QStringList lines;
+    for (const Advice &entry : advice) {
+        lines << QStringLiteral("<p style=\"margin:0 0 4px 0\">%1 %2</p>").arg(dotHtml(toneColor(entry.tone)), entry.text.toHtmlEscaped());
+        if (m_recommended == AdviceAction::None)
+            m_recommended = entry.action;
+    }
+    m_profileAdvice->setText(lines.join(QString()));
+    m_profileAdvice->setVisible(!lines.isEmpty());
+
+    QList<Event> own;
+    for (const Event &event : events()) {
+        if (topLevelProfile(event.profile) == row->name)
+            own << event;
+    }
+    m_profileTimeline->setBuckets(hourlyBuckets(own, QDateTime::currentDateTime(), 24 * 7));
+    m_profileTimeline->setToolTip(QStringLiteral("This profile's events per hour over 7 days"));
+    m_profileTimeline->setVisible(facts.logKnown);
+
     QStringList info;
-    info << QStringLiteral("Mode: %1 · %2").arg(displayMode(*row), displayState(*row));
+    info << QStringLiteral("Running processes: %1 · Denied: %2 · Let through in complain mode: %3").arg(row->processes).arg(row->denied).arg(row->allowed);
     if (!row->attachment.isEmpty() && row->attachment != row->name)
         info << QStringLiteral("Attaches to: %1").arg(row->attachment);
     if (file) {
@@ -1036,10 +1570,10 @@ void AppArmorFeature::showProfile(const QString &name)
                 info << QStringLiteral("Flags: %1").arg(declaration.flags.join(QStringLiteral(", ")));
         }
     }
-    info << QStringLiteral("Running processes: %1 · Denied: %2 · Allowed in complain mode: %3").arg(row->processes).arg(row->denied).arg(row->allowed);
     m_profileInfo->setText(info.join(QLatin1Char('\n')));
     m_profileText->setPlainText(file ? file->text : QString());
-    m_profileText->setVisible(file != nullptr);
+    m_showFile->setVisible(file != nullptr);
+    m_profileText->setVisible(file != nullptr && m_showFile->isChecked());
     updateActions();
 }
 
@@ -1064,21 +1598,29 @@ void AppArmorFeature::renderProcesses()
         const QString program = process.name;
         if (!show || !matchesQuery({program, process.executable, process.label.profile, process.command, QString::number(process.pid)}))
             continue;
-        const QString note = missed.isEmpty() ? QString() : QStringLiteral("Profile %1 exists; restart to confine").arg(missed);
-        auto *item = new QTreeWidgetItem(m_processes, {QString::number(process.pid), program, process.label.profile, modeName(mode), note, process.command});
+        const QString note = missed.isEmpty() ? QString() : QStringLiteral("Restart to confine");
+        auto *item = new QTreeWidgetItem(m_processes, {QString::number(process.pid), program, modeName(mode),
+                                                       missed.isEmpty() ? process.label.profile : missed, note});
         item->setData(0, Qt::UserRole, missed.isEmpty() ? topLevelProfile(process.label.profile) : missed);
-        item->setForeground(3, modeColor(mode));
-        if (!missed.isEmpty())
+        item->setIcon(2, dotIcon(modeColor(mode)));
+        const QString tip = process.command.isEmpty() ? process.executable : process.command;
+        for (int column = 0; column < 4; ++column)
+            item->setToolTip(column, tip);
+        if (!missed.isEmpty()) {
             item->setForeground(4, modeColor(Mode::Complain));
-        item->setToolTip(1, process.executable);
-        item->setToolTip(5, process.command);
+            item->setToolTip(4, QStringLiteral("Profile %1 matches this program, but the process started before it was loaded. Restart the "
+                                               "program to confine it.").arg(missed));
+        }
     }
+    const int total = int(m_snapshot.processes.size());
+    m_processesCount->setText(m_processes->topLevelItemCount() == total ? QString::number(total)
+                                                                        : QStringLiteral("%1 of %2").arg(m_processes->topLevelItemCount()).arg(total));
 }
 
 void AppArmorFeature::renderEvents()
 {
     const QString filter = m_eventFilter->currentData().toString();
-    m_eventScope->setText(m_eventProfile.isEmpty() ? QString() : QStringLiteral("Profile: %1").arg(m_eventProfile));
+    m_eventScope->setText(m_eventProfile.isEmpty() ? QString() : QStringLiteral("Only %1").arg(m_eventProfile));
     m_eventScope->setVisible(!m_eventProfile.isEmpty());
     m_eventScopeClear->setVisible(!m_eventProfile.isEmpty());
     m_events->clear();
@@ -1102,12 +1644,15 @@ void AppArmorFeature::renderEvents()
                                                     event.result.toLower(), event.profile, event.operation, event.target, mask,
                                                     event.pid ? QStringLiteral("%1 (%2)").arg(event.comm).arg(event.pid) : event.comm});
         item->setData(0, Qt::UserRole, i);
-        item->setForeground(1, event.result == QStringLiteral("DENIED") ? modeColor(Mode::Kill)
-                               : event.result == QStringLiteral("ALLOWED") ? modeColor(Mode::Complain)
-                                                                           : modeColor(Mode::Unknown));
+        const QColor color = event.result == QStringLiteral("DENIED") ? deniedColor()
+                             : event.result == QStringLiteral("ALLOWED") ? allowedColor()
+                                                                         : modeColor(Mode::Unknown);
+        item->setIcon(1, dotIcon(color));
+        item->setToolTip(0, event.raw);
         item->setToolTip(4, event.target);
         ++shown;
     }
+    m_eventsCount->setText(shown == 5000 ? QStringLiteral("first 5,000") : QString::number(shown));
     QString empty;
     if (all.isEmpty())
         empty = m_liveEvents || !m_snapshot.eventSource.isEmpty()
@@ -1126,7 +1671,7 @@ void AppArmorFeature::showEventDetails()
     const QList<Event> &all = events();
     if (selected.isEmpty()) {
         m_eventRule->setText(QStringLiteral("Select one or more denials to see the rule that would allow them."));
-        m_eventDetail->clear();
+        m_eventRule->setToolTip({});
         updateActions();
         return;
     }
@@ -1142,9 +1687,9 @@ void AppArmorFeature::showEventDetails()
             rules << rule;
     }
     const int first = selected.first()->data(0, Qt::UserRole).toInt();
-    m_eventDetail->setText(first >= 0 && first < all.size() ? all.at(first).raw : QString());
+    m_eventRule->setToolTip(first >= 0 && first < all.size() ? all.at(first).raw : QString());
     if (rules.isEmpty())
-        m_eventRule->setText(QStringLiteral("No rule can be suggested for this event. Edit the profile in Profiles if it needs one."));
+        m_eventRule->setText(QStringLiteral("No rule can be suggested for this event. Use Edit on the profile if it needs one."));
     else if (profiles.size() > 1)
         m_eventRule->setText(QStringLiteral("Select events from one profile at a time to allow them."));
     else
@@ -1155,29 +1700,34 @@ void AppArmorFeature::showEventDetails()
 void AppArmorFeature::selectProfile(const QString &name)
 {
     m_selectedProfile = name;
+    m_profileFilter->blockSignals(true);
     m_profileFilter->setCurrentIndex(0);
+    m_profileFilter->blockSignals(false);
     renderProfiles();
-    m_tabs->setCurrentIndex(1);
+    m_profiles->setFocus();
 }
 
 void AppArmorFeature::showEventsFor(const QString &profile)
 {
     m_eventProfile = profile;
     renderEvents();
-    if (!profile.isEmpty())
-        m_tabs->setCurrentIndex(3);
 }
 
 void AppArmorFeature::navigate(const QString &target)
 {
     if (target.startsWith(QStringLiteral("profile:")))
         selectProfile(target.mid(8));
-    else if (target.startsWith(QStringLiteral("events:")))
+    else if (target.startsWith(QStringLiteral("events:"))) {
+        selectProfile(target.mid(7));
         showEventsFor(target.mid(7));
-    else if (target.startsWith(QStringLiteral("filter:"))) {
+    } else if (target.startsWith(QStringLiteral("filter:")))
         m_profileFilter->setCurrentIndex(std::max(0, m_profileFilter->findData(target.mid(7))));
-        m_tabs->setCurrentIndex(1);
-    }
+    else if (target.startsWith(QStringLiteral("processes:")))
+        m_processFilter->setCurrentIndex(std::max(0, m_processFilter->findData(target.mid(10))));
+    else if (target == QStringLiteral("live:"))
+        readLive();
+    else if (target == QStringLiteral("new:"))
+        newProfile();
 }
 
 void AppArmorFeature::setHostSearchQuery(const QString &query)
@@ -1234,18 +1784,28 @@ void AppArmorFeature::updateActions()
     m_unload->setEnabled(idle && ready && file && (!m_liveProfiles || (row && row->loaded)));
     m_edit->setEnabled(editable);
     m_profileEvents->setEnabled(row && row->denied + row->allowed > 0);
-    QString hint;
-    if (file && !file->editable)
-        hint = QStringLiteral("Snap writes this profile itself and replaces any change, so it can only be viewed here.");
-    else if (unconfinedFlag)
-        hint = QStringLiteral("This profile is marked unconfined on purpose: it only names the program and allows everything. Enforce or "
-                              "complain would apply a profile with almost no rules and break the program.");
-    else if (row && !file)
-        hint = QStringLiteral("This profile is loaded in the kernel but has no file in %1 (a container, Snap or another tool loaded it).").arg(m_snapshot.policyDir);
-    else if (file && m_snapshot.parserPath.isEmpty())
-        hint = QStringLiteral("apparmor_parser is not installed, so profiles cannot be loaded from here.");
-    m_profileHint->setText(hint);
-    m_profileHint->setVisible(!hint.isEmpty());
+    m_profileHint->setText(file && m_snapshot.parserPath.isEmpty() ? QStringLiteral("apparmor_parser is not installed, so profiles cannot be loaded from here.")
+                                                                   : QString());
+    m_profileHint->setVisible(!m_profileHint->text().isEmpty());
+
+    QPushButton *recommended = nullptr;
+    switch (m_recommended) {
+    case AdviceAction::Enforce: recommended = m_enforce; break;
+    case AdviceAction::Complain: recommended = m_complain; break;
+    case AdviceAction::Enable: recommended = m_toggleDisabled; break;
+    case AdviceAction::Reload: recommended = m_reload; break;
+    case AdviceAction::Events: recommended = m_profileEvents; break;
+    case AdviceAction::LiveView:
+    case AdviceAction::None: break;
+    }
+    for (QPushButton *button : {m_enforce, m_complain, m_toggleDisabled, m_reload, m_profileEvents}) {
+        const QString name = button == recommended && button->isEnabled() ? QStringLiteral("primaryButton") : QStringLiteral("ghostButton");
+        if (button->objectName() == name)
+            continue;
+        button->setObjectName(name);
+        button->style()->unpolish(button);
+        button->style()->polish(button);
+    }
 
     bool allowable = false;
     const QList<QTreeWidgetItem *> selected = m_events->selectedItems();
@@ -1395,7 +1955,7 @@ void AppArmorFeature::newProfile()
         else if (!isSafeProfileName(profile))
             error = QStringLiteral("Use letters, digits, dots, dashes or underscores for the name.");
         else if (existing.contains(profile))
-            error = QStringLiteral("%1/%2 already exists; edit it in Profiles instead.").arg(policyDir, profile);
+            error = QStringLiteral("%1/%2 already exists; select it in Profiles and use Edit instead.").arg(policyDir, profile);
         problem->setText(error);
         create->setEnabled(error.isEmpty());
     };
@@ -1463,7 +2023,7 @@ void AppArmorFeature::allowSelected()
     if (rules.isEmpty())
         return;
     if (profile.contains(QStringLiteral("//"))) {
-        setStatus(QStringLiteral("%1 is a child profile inside another one. Add the rule to it with Edit in Profiles.").arg(profile));
+        setStatus(QStringLiteral("%1 is a child profile inside another one. Add the rule to it with Edit.").arg(profile));
         return;
     }
     const ProfileRow *row = rowByName(profile);
@@ -1543,7 +2103,10 @@ void AppArmorFeature::writePolicy(const QString &title, const QString &descripti
              QStringLiteral("File: %1\nOld copy kept in: %2\n%3\nChanges:\n%4")
                  .arg(dest, backupDir(), load.isEmpty() ? QStringLiteral("Not loaded (profile is disabled).") : QStringLiteral("Then load: ") + load,
                       changes),
-             adminInstallScript(), {temp->fileName(), dest, backupDir(), load}, true, temp);
+             adminInstallScript(),
+             {temp->fileName(), dest, backupDir(), load,
+              QString::fromLatin1(QCryptographicHash::hash(text.toUtf8(), QCryptographicHash::Sha256).toHex())},
+             true, temp);
 }
 
 void AppArmorFeature::runAdmin(const QString &title, const QString &description, const QString &details, const QString &script,

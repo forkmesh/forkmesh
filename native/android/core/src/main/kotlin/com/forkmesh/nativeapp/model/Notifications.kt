@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.model
 
+import com.forkmesh.nativeapp.account.pingIsGoodNews
 import com.forkmesh.nativeapp.json.jsonMaps
 import com.forkmesh.nativeapp.json.jsonText
 import com.forkmesh.nativeapp.json.obj
@@ -104,7 +105,11 @@ data class ForkNotification(
 ) {
     val isUnread: Boolean get() = readAt <= 0
 
-    val kindLabel: String
+    val isGoodNews: Boolean get() = pingIsGoodNews(kind, meta)
+
+    val kindLabel: String get() = if (isGoodNews) "Good news" else typeLabel
+
+    val typeLabel: String
         get() = when (kind) {
             "mention" -> "Mention"
             "subscribed" -> "Subscribed"

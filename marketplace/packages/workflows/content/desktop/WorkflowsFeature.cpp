@@ -3590,7 +3590,11 @@ void WorkflowsFeature::loadLocal()
 {
     if (!localAvailable())
         return;
-    m_local = m_repositoryWorkflows();
+    QJsonObject local = m_repositoryWorkflows();
+    if (m_localLoaded && local == m_local)
+        return;
+    m_localLoaded = true;
+    m_local = std::move(local);
     if (m_localCatalog.isEmpty())
         m_localCatalog.load(m_local.value(QStringLiteral("catalog")).toObject());
     m_localWorkflows = m_local.value(QStringLiteral("workflows")).toArray();

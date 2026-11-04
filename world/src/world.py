@@ -10,6 +10,8 @@ Nothing here identifies a network connection.  Country is an approximate
 Cloudflare-provided two-letter code, while peer ids are random per connection.
 """
 
+import hashlib
+import hmac
 import math
 import re
 import unicodedata
@@ -464,6 +466,18 @@ def world_voice_room(value):
     if len(room) > WORLD_VOICE_ROOM_MAX:
         return ""
     return room if WORLD_VOICE_ROOM_RE.fullmatch(room) else ""
+
+
+def world_voice_room_with_proof(value, secret):
+    room = world_voice_room(value)
+    if not room.startswith("bubble:"):
+        return room
+    secret = str(secret or "")
+    if not WORLD_VOICE_SECRET_RE.fullmatch(secret):
+        return ""
+    tag = hashlib.sha256(
+        ("forkmesh-world-bubble-v1\n" + secret).encode()).hexdigest()[:16]
+    return room if hmac.compare_digest(tag, room[len("bubble:"):]) else ""
 
 
 def clean_voice_room_name(value):
@@ -1037,7 +1051,8 @@ def sanitize_message(payload, current, now, country_source="",
             state["space"] = world_space(payload.get("space"))
         if "voice" in payload:
             state["voice"] = (
-                world_voice_room(payload.get("voice"))
+                world_voice_room_with_proof(
+                    payload.get("voice"), payload.get("voiceSecret"))
                 if state.get("accountStatus") != "Guest" else "")
         if "voiceName" in payload:
             state["voiceName"] = clean_voice_room_name(

@@ -1,6 +1,8 @@
 package com.forkmesh.nativeapp.inbox
 
-import com.forkmesh.nativeapp.account.notificationIconForKind
+import com.forkmesh.nativeapp.account.PingTone
+import com.forkmesh.nativeapp.account.notificationIcon
+import com.forkmesh.nativeapp.account.notificationTone
 import com.forkmesh.nativeapp.api.PrefStore
 import com.forkmesh.nativeapp.json.Json
 import com.forkmesh.nativeapp.json.asJsonMap
@@ -67,6 +69,7 @@ data class InboxItem(
     val approvalId: String = "",
     val desktopPingId: String = "",
     val desktopNode: String = "",
+    val meta: Map<String, Any?> = emptyMap(),
 ) {
     val fromDesktop: Boolean get() = source == InboxSource.Ping && kind == "desktop_ping"
 
@@ -74,7 +77,17 @@ data class InboxItem(
         get() = when (source) {
             InboxSource.Task -> "task_alt"
             InboxSource.Local -> if (kind == LocalPingLog.CHAT_KIND) "chat_bubble_outline" else "error_outline"
-            InboxSource.Ping -> if (category == InboxCategory.Approval) "verified_user_outlined" else notificationIconForKind(kind)
+            InboxSource.Ping -> if (category == InboxCategory.Approval) "verified_user_outlined" else notificationIcon(kind, meta)
+        }
+
+    val tone: PingTone
+        get() = when {
+            source == InboxSource.Task -> PingTone.Accent
+            source == InboxSource.Local -> if (kind == LocalPingLog.CHAT_KIND) PingTone.Accent else PingTone.Danger
+            category == InboxCategory.Approval -> PingTone.Warning
+            category == InboxCategory.Review -> PingTone.Accent
+            category == InboxCategory.Mention -> PingTone.Info
+            else -> notificationTone(kind, meta)
         }
 
     val kindLabel: String
@@ -85,7 +98,7 @@ data class InboxItem(
             category == InboxCategory.Review -> "Review"
             category == InboxCategory.Assigned -> "Assigned"
             category == InboxCategory.Mention -> "Mention"
-            else -> ForkNotification(id = "", kind = kind, title = "").kindLabel
+            else -> ForkNotification(id = "", kind = kind, title = "", meta = meta).kindLabel
         }
 
     companion object {
@@ -107,6 +120,7 @@ data class InboxItem(
             approvalId = ping.meta.str("approvalId"),
             desktopPingId = ping.meta.str("pingId"),
             desktopNode = ping.meta.str("node"),
+            meta = ping.meta,
         )
     }
 }

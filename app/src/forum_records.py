@@ -18,6 +18,7 @@ MAX_LOCAL_POSTS = 2000
 MAX_LIKERS = 5000
 MAX_ATTEMPTS = 3
 MAX_FILE_BYTES = 1_500_000
+MAX_WRITES_PER_ACCOUNT_PER_HOUR = 240
 TOPIC_RE = re.compile(r"^(?:[1-9]\d{0,9}|n[1-9]\d{0,8})$")
 POST_RE = re.compile(r"^(?:[1-9]\d{0,6}|l[1-9]\d{0,6})$")
 EVENT_ID_RE = re.compile(r"^[a-z][a-z-]{1,20}-[0-9a-z-]{4,60}$")
@@ -443,7 +444,8 @@ class Forum:
             "category-delete": self.delete_category, "site": self.site, "silence": self.silence,
             "unsilence": self.silence,
         }.get(kind, self.set_state)
-        path = "events/%s/%d-%s.json" % (iso(self.event["ts"])[:7], self.event["ts"], self.event["id"][-12:])
+        signed = hashlib.sha256(canonical("", self.event).encode("utf-8")).hexdigest()[:24]
+        path = "events/%s/%d-%s.json" % (iso(self.event["ts"])[:7], self.event["ts"], signed)
         if await self.get(path) is not None:
             raise RecordError("duplicate", "This forum event was already saved.", 409)
         await handler()
@@ -817,17 +819,25 @@ async def _viewer(env, request, owner, repo, data):
     return account, moderator
 
 
+async def _forum_branch(env, owner, repo):
+    return await core_push_default_branch(env, owner, repo)
+
+
 async def submit(env, request, owner, repo, data):
     features = await _repo_features_get(env, owner, repo)
     if features.get("forum") is not True:
         raise RecordError("forum_off", "The forum is turned off for this repository.", 403)
-    branch = str(data.get("branch") or "main").strip()
+    branch = await _forum_branch(env, owner, repo)
     if not edits.valid_branch(branch):
         raise RecordError("invalid_branch", "The repository branch is not valid.")
     now = int(Date.now())
     event = clean_event(data.get("event"), now)
     record = dict(event, authorName=str((data.get("event") or {}).get("authorName") or ""))
-    refused = await _bind_session_author(env, request, data, record)
+    _, session_record = await _account_session_record(env, request, data, allow_unverified=True)
+    session = clean_string((session_record or {}).get("name", ""), MAX_NODE_NAME).strip().lower()
+    if not session:
+        raise RecordError("sign_in", "Sign in to take part in the forum.", 401)
+    refused = await _bind_session_author(env, request, data, record, session=session)
     if refused is not None:
         raise RecordError("author_mismatch", "This key belongs to another account.", 403)
     account = str(record.get("authorName") or "")
@@ -837,15 +847,25 @@ async def submit(env, request, owner, repo, data):
     if not await ed25519_verify(event["author"], event["sig"], canonical(repo_key, event).encode("utf-8")):
         raise RecordError("bad_signature", "The forum event's signature does not match.", 403)
     moderator = await _moderation.can_moderate_repo(env, account, owner, repo)
-    if event["type"] in ("topic", "post") and not moderator:
+    if event["type"] in AUTHOR_TYPES and not moderator:
+        posting = event["type"] in ("topic", "post")
         refusal, context = await _moderation.submission_gate(
             env, request, {}, owner, repo,
-            {"type": "open" if event["type"] == "topic" else "comment", "authorName": account})
+            {"type": "open" if event["type"] == "topic" else "comment", "authorName": account},
+            surface="issue" if posting else "forum")
         if refusal is not None:
             raise RecordError("refused", "You cannot post in this forum right now.", 403)
         if context.get("hold"):
             raise RecordError("approval_required",
                               "Your first posts need an operator's approval, which this forum cannot take yet.", 403)
+    if not moderator:
+        throttled = await signup_rate_check(
+            env, await blind_index(env, "forum-write\n" + account), MAX_WRITES_PER_ACCOUNT_PER_HOUR)
+        if throttled is not None:
+            raise RecordError("rate_limited", "That is a lot of forum activity; try again later.", 429)
+    quota = await hosted_push_limit(env, request, owner, repo, "POST")
+    if quota is not None:
+        raise RecordError("repository_quota_exceeded", "This repository has reached its hosting limit.", 413)
     ctx = {"account": account, "moderator": moderator, "now": now, "repoTitle": repo}
     for _attempt in range(MAX_ATTEMPTS):
         commit, read = await read_forum(env, owner, repo, branch)

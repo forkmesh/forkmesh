@@ -62,7 +62,8 @@ only for unread); text labels over icon-with-caption.
 | `accent` | `#4d7ef7` | `#2f6fed` | Primary button, selection, focus, toggle on |
 | `accentHover`, `accentPressed` | `#6b93fa`, `#3d6be0` | `#2860d6`, `#2254bd` | Button states |
 | `accentFg` | `#7ea4ff` | `#2f6fed` | Links, active tab underline |
-| `accentSubtle` | `#1a2338` | `#eaf1fe` | Current-item background |
+| `accentSubtle` | `#1d2438` | `#d6e2fb` | Current-item background |
+| `selection` | `#1d2438` | `#c6d6f8` | Selected rows and text (`QPalette::Highlight`) |
 | `onAccent` | `#ffffff` | `#ffffff` | Text on accent, danger and success fills |
 | `success` | `#3fb871` | `#1f9d55` | Status only |
 | `warning` | `#d9a440` | `#b7791f` | Status only |
@@ -70,6 +71,11 @@ only for unread); text labels over icon-with-caption.
 
 `success`, `warning` and `danger` each have a `Subtle` background. Chat has its
 own tone table (`kChatTones`, `@chat*` in QSS, `Theme::chatColor` in code).
+
+The light `selection` and `accentSubtle` were `#e8eefb`, too faint to see a
+selected row on the near-white page; they are now a clear pale blue that
+still keeps `fg` text readable. An instance theme blends them at 32% and 24%
+of its primary colour in light mode for the same reason.
 
 **Type.** Base 14 px; the Next sheet caps `font-weight` at 600. Next uses the
 bundled Geist and Geist Mono (`desktop/resources/fonts`, SIL OFL, registered by
@@ -1576,6 +1582,22 @@ totals, wallets, the payout plan), so it is unchanged. The page carries the
     - "Link wallet" opens the same section and focuses the profile's
       "Link a wallet…" button (`m_profileTipLinkButton`), which is where the
       hint already points.
+    - **Key file missing:** the payment wallet lives only in
+      `<data>/tips/tip-key.vault`, so a lost file used to look like a wallet
+      that was never linked (found 2026-11-03, after the 2026-09-22 data
+      wipe). `refreshTipWalletControls` now keeps the linked address in
+      `tips/lastLinkedAddress`; "Remove wallet" clears it. When the setting
+      names an address the vault no longer holds, the card says "Key file
+      missing" with that address, the button reads "Relink wallet", and the
+      profile's wallet section says the same. Re-importing the key is the only
+      fix, so the hourly box backup (`forkmesh-backup-minimal.sh`) now
+      includes `data/core/tips/`.
+    - **Back up a generated wallet.** The lost wallet had been generated in
+      the app, so the vault held its only copy and the passphrase alone could
+      not rebuild it. Linking a key made with "Generate" now ends in a "Back
+      up the new wallet now" prompt whose default opens the existing export
+      (`exportTipWalletSecret`); an imported key keeps the old notice, since
+      it already exists elsewhere.
   - **QR popover** (`#ledgerWalletQrMenu`): the existing `QrCode` encoder
     draws the real `solana:<address>` code on a white rounded tile
     (`ledgerQrTile`). Under it are the short mono address (the full one in

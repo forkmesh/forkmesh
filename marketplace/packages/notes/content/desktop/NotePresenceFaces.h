@@ -2,12 +2,15 @@
 
 #include "NoteComments.h"
 
+#include <QColor>
 #include <QPixmap>
 #include <QWidget>
 
 #include <functional>
 
 namespace forkmesh::notes {
+
+QColor notePresenceColor(const QString &name);
 
 class NotePresenceFaces : public QWidget
 {
@@ -21,6 +24,8 @@ public:
 
     std::function<QPixmap(const QString &)> picture;
     std::function<void(const QString &)> openProfile;
+    std::function<void(const QString &)> follow;
+    std::function<QString()> following;
 
 protected:
     void paintEvent(QPaintEvent *event) override;

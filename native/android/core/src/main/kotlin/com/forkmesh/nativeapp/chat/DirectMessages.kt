@@ -1,6 +1,7 @@
 package com.forkmesh.nativeapp.chat
 
 import com.forkmesh.nativeapp.crypto.ChatDeviceKeys
+import com.forkmesh.nativeapp.crypto.ChatNodeKey
 import com.forkmesh.nativeapp.crypto.ChatTrust
 import com.forkmesh.nativeapp.crypto.ChatV3
 import com.forkmesh.nativeapp.crypto.ChatV4
@@ -276,6 +277,7 @@ class DirectMessageService(
     private val platform: String = "android",
     private val loop: EventLoop = sharedLoop,
     private val account: () -> String = { "" },
+    private val nodeKey: () -> ChatNodeKey? = { null },
 ) {
     private class OutboxEntry(
         var ref: String,
@@ -664,6 +666,7 @@ class DirectMessageService(
 
     private fun seal(room: String, conversationId: String): RoomSeal {
         synchronized(lock) { seals[room] }?.let {
+            nodeKey()?.let { key -> if (it.nodeKey?.node != key.node) it.nodeKey = key }
             it.setIdentity(sealAccount(), selfId())
             it.participants = participants(conversationId)
             return it
@@ -676,6 +679,7 @@ class DirectMessageService(
             secureStore = secureStore,
             clock = now,
             node = selfId(),
+            nodeKey = nodeKey(),
         )
         loaded.participants = participants(conversationId)
         synchronized(lock) { seals[room] = loaded }

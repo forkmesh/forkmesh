@@ -38,6 +38,7 @@ async function openNotes(page, { search = "", userQueries = [], shareRequests = 
       sessionToken: "test-session",
       status: "active",
     }));
+    localStorage.setItem("forkmesh.notes.layout", "split");
     window.ForkMeshDashboard = {
       _registrations: [["notes", ({ builtinPage }) => builtinPage("notes")]],
       registerPage(pageId, initializer) { this._registrations.push([pageId, initializer]); },

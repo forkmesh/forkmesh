@@ -22,6 +22,23 @@ public enum MastodonServer {
         return "https://" + host
     }
 
+    public static func webLink(_ value: String) -> String {
+        let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lowered = text.lowercased()
+        let start: Int
+        if lowered.hasPrefix("https://") {
+            start = "https://".count
+        } else if lowered.hasPrefix("http://") {
+            start = "http://".count
+        } else {
+            return ""
+        }
+        guard let first = text.dropFirst(start).first, first != "/",
+              !text.unicodeScalars.contains(where: { CharacterSet.whitespacesAndNewlines.contains($0) || CharacterSet.controlCharacters.contains($0) })
+        else { return "" }
+        return text
+    }
+
     public static func host(_ server: String) -> String {
         URLComponents(string: server)?.host ?? server
     }

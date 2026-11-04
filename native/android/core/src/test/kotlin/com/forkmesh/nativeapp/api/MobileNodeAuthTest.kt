@@ -411,7 +411,10 @@ class MobileNodeAuthTest {
 
         val transport = FakeTransport { jsonResponse(mapOf("ok" to true)) }
         val online = AuthController(f.settings, f.prefs, f.secrets, { f.identity }, transport, AuthSession.fromJson(boundPayload()))
+        var cleared = 0
+        online.onLocalSessionCleared = { cleared++ }
         online.logout()
+        assertEq(1, cleared)
         assertEq("/api/accounts/logout", transport.requests.single().path())
         assertEq(mapOf("sessionToken" to "mobile-session"), transport.requests.single().bodyJson())
     }

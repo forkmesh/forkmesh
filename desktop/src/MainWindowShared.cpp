@@ -4,6 +4,7 @@
 #include "ActionStore.h"
 #include "AgentStore.h"
 #include "DiffIntraLine.h"
+#include "InlineImageResources.h"
 #include "MarkdownRender.h"
 #include "StartupSplash.h"
 
@@ -1705,7 +1706,7 @@ void appendDiffStreamBatch(QTextEdit *view, const QString &batch)
     view->setUpdatesEnabled(false);
     QTextCursor cur(view->document());
     cur.movePosition(QTextCursor::End);
-    cur.insertHtml(batch);
+    cur.insertHtml(forkmesh::ui::adoptInlineImages(view->document(), batch));
     view->setUpdatesEnabled(true);
 }
 
@@ -1895,7 +1896,8 @@ void beginDiffStreamIncremental(QTextEdit *view, const QString &styleSheet,
     state.endCap = false;
     view->document()->setDefaultStyleSheet(styleSheet);
     if (!placeholder.isEmpty())
-        view->setHtml(placeholder);
+        view->setHtml(
+            forkmesh::ui::adoptInlineImages(view->document(), placeholder));
 }
 
 QList<QStringList> paginateDiffStreamChunk(const QString &chunk)
@@ -2045,7 +2047,7 @@ void renderDiffPage(QTextEdit *view, int page)
                          : view->objectName()),
             forkmesh::ActionTelemetry::Execution::UiDeferred);
         view->document()->setDefaultStyleSheet(state.styleSheet);
-        view->setHtml(first);
+        view->setHtml(forkmesh::ui::adoptInlineImages(view->document(), first));
     }
     state.windowPagePositions.insert(state.page, 0);
     scrollLoadedDiffAnchor(view, state, first);
@@ -5639,7 +5641,8 @@ DiffFileBlockSwap swapDiffFileViewedState(QTextEdit *view, const QString &anchor
         // insertHtml leaves the cursor after what it inserted, so a sliced
         // file's fragments rejoin in order exactly as the streamer appends them.
         for (const QString &fragment : std::as_const(replacement))
-            cursor.insertHtml(fragment);
+            cursor.insertHtml(
+                forkmesh::ui::adoptInlineImages(doc, fragment));
         cursor.endEditBlock();
     }
     // Editing the document resizes the scroll bar, and a view can answer that

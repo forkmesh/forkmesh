@@ -51,180 +51,6 @@ struct TourHomeScene: View {
     }
 }
 
-struct TourAgentsScene: View {
-    @Environment(\.fmPalette) private var fm
-
-    let phase: Int
-    let act: (Int) -> Void
-
-    private var step: Int { phase % 3 }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            TourTopBar(stars: step == 0 ? 1 : 2)
-            TourTitle(text: "Agents", trailing: step == 0 ? "1 needs you" : nil)
-            if step == 0 {
-                TourSectionLabel(text: "Needs you")
-                TourRow(symbol: "hand.raised.fill", tint: fm.warning, title: "Agent 754 · Fix login test", detail: "Wants to run npm test", unread: true) {
-                    Button(action: { act(1) }) {
-                        TourPill(text: "Allow", lit: true)
-                    }
-                    .buttonStyle(.plain)
-                }
-                .transition(.move(edge: .top).combined(with: .opacity))
-            }
-            TourSectionLabel(text: "Running")
-            if step >= 1 {
-                TourRow(symbol: "sparkles", title: "Agent 754 · Fix login test", detail: step == 1 ? "Running npm test · 0:12" : "Writing the fix · 1:04") {
-                    ProgressView()
-                        .controlSize(.small)
-                }
-                .transition(.move(edge: .top).combined(with: .opacity))
-            }
-            TourRow(symbol: "sparkles", title: "Agent 751 · Dark mode", detail: "Editing 4 files · 6:30") {
-                ProgressView()
-                    .controlSize(.small)
-            }
-            TourSectionLabel(text: "Finished")
-            TourRow(symbol: "checkmark.circle.fill", tint: fm.success, title: "Agent 748 · Update docs", detail: "+42 −7 · ready to merge") {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(fm.textTertiary)
-            }
-            Spacer(minLength: 0)
-        }
-    }
-}
-
-struct TourNewAgentScene: View {
-    @Environment(\.fmPalette) private var fm
-
-    let phase: Int
-    let act: (Int) -> Void
-
-    private var step: Int { phase % 4 }
-
-    var body: some View {
-        ZStack(alignment: .bottom) {
-            VStack(alignment: .leading, spacing: 6) {
-                TourTopBar(stars: step >= 2 ? 3 : 2, buttonLit: step == 0, onButton: { act(1) })
-                TourTitle(text: "forkmesh/app")
-                TourRow(symbol: "exclamationmark.circle", tint: fm.success, title: "#91 Login fails offline", detail: "Opened 2 hours ago") {
-                    EmptyView()
-                }
-                TourRow(symbol: "arrow.triangle.pull", title: "#128 Fix flaky login test", detail: "2 checks running") {
-                    EmptyView()
-                }
-                Spacer(minLength: 0)
-            }
-            .blur(radius: step == 1 ? 1.5 : 0)
-            if step == 1 {
-                composer
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-            if step == 2 {
-                Label("Agent started", systemImage: "sparkles")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(fm.accent)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .tourGlass(Capsule(), fallback: fm.bgRaised)
-                    .padding(.bottom, 20)
-                    .transition(.scale(scale: 0.3, anchor: .topTrailing).combined(with: .opacity))
-            }
-        }
-    }
-
-    private var composer: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
-                TourPill(text: "forkmesh/app", filled: false)
-                TourPill(text: "Edit", filled: false)
-                TourPill(text: "Opus", filled: false)
-                Spacer(minLength: 0)
-            }
-            Text("Fix the flaky login test and open a pull request")
-                .font(.system(size: 15))
-                .foregroundStyle(fm.textPrimary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            HStack {
-                Image(systemName: "paperclip")
-                Image(systemName: "mic")
-                Spacer(minLength: 0)
-                Button(action: { act(2) }) {
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(Color.white)
-                        .frame(width: 32, height: 32)
-                        .background(fm.accent, in: Circle())
-                        .tourTarget(true, round: true)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Text("Send"))
-            }
-            .foregroundStyle(fm.textSecondary)
-        }
-        .padding(14)
-        .tourGlass(RoundedRectangle(cornerRadius: 22, style: .continuous), fallback: fm.bgElevated)
-        .shadow(color: Color.black.opacity(0.15), radius: 12, y: 4)
-        .padding(10)
-    }
-}
-
-struct TourInboxScene: View {
-    @Environment(\.fmPalette) private var fm
-
-    let phase: Int
-    let act: (Int) -> Void
-
-    private static let items: [(symbol: String, title: String, detail: String, filter: Int)] = [
-        ("hand.raised.fill", "Agent 754 needs approval", "Wants to run npm test", 5),
-        ("arrow.triangle.pull", "Review requested: #128", "Fix flaky login test", 2),
-        ("at", "You were mentioned in #mesh", "\"can you take a look?\"", 4),
-        ("exclamationmark.circle", "Assigned: #91", "Login fails offline", 3),
-    ]
-    private static let filters: [String] = ["All", "Pings", "Reviews", "Assigned", "Mentions", "Approvals"]
-
-    private var step: Int { phase % 6 }
-    private var shown: Int { min(TourInboxScene.items.count, step + 1) }
-    private var read: Int { step >= 5 ? 1 : 0 }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            TourTopBar()
-            TourTitle(text: "Inbox", trailing: "\(max(0, shown - read)) unread")
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    ForEach(0..<TourInboxScene.filters.count, id: \.self) { (at: Int) in
-                        TourPill(text: TourInboxScene.filters[at], filled: at == 0)
-                    }
-                }
-                .padding(.horizontal, 12)
-            }
-            .allowsHitTesting(false)
-            ForEach(0..<shown, id: \.self) { (at: Int) in
-                row(at)
-            }
-            Spacer(minLength: 0)
-        }
-    }
-
-    private func row(_ at: Int) -> some View {
-        let item: (symbol: String, title: String, detail: String, filter: Int) = TourInboxScene.items[at]
-        let fresh: Bool = at >= read
-        let dot: Color = fresh ? fm.accent : Color.clear
-        return Button(action: { act(5) }) {
-            TourRow(symbol: item.symbol, title: item.title, detail: item.detail, unread: fresh) {
-                Circle()
-                    .fill(dot)
-                    .frame(width: 8, height: 8)
-            }
-        }
-        .buttonStyle(.plain)
-        .transition(.move(edge: .top).combined(with: .opacity))
-    }
-}
-
 struct TourHubScene: View {
     @Environment(\.fmPalette) private var fm
 
@@ -337,49 +163,39 @@ struct TourVoiceScene: View {
     }
 
     var body: some View {
-        ZStack {
-            VStack(spacing: 0) {
-                TourTopBar(stars: sent ? 3 : 2)
-                Spacer(minLength: 0)
-            }
-            .blur(radius: listening || sent ? 6 : 0)
-            if listening || sent {
-                Color.black.opacity(0.25)
-                    .transition(.opacity)
-            }
-            VStack(spacing: 14) {
-                Spacer(minLength: 0)
-                orb
-                Text(TourVoiceScene.words.prefix(said).joined(separator: " "))
-                    .font(.system(size: 17, weight: .medium))
-                    .foregroundStyle(listening || sent ? Color.white : fm.textPrimary)
-                    .frame(height: 24)
-                    .contentTransition(.opacity)
+        VStack(spacing: 18) {
+            orb
+            TourWave(live: listening)
+                .frame(height: 44)
+                .opacity(listening ? 1 : 0.25)
+            Text(TourVoiceScene.words.prefix(said).joined(separator: " "))
+                .font(.system(size: 22, weight: .medium))
+                .foregroundStyle(fm.textPrimary)
+                .frame(height: 30)
+                .contentTransition(.opacity)
+            Group {
                 if sent {
                     Label("Agent started", systemImage: "sparkles")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Color.white)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(fm.success)
                         .transition(.scale.combined(with: .opacity))
                 } else if listening {
-                    HStack(spacing: 8) {
-                        TourPill(text: "Cancel", filled: false, tint: Color.white)
-                        TourPill(text: "Type", filled: false, tint: Color.white)
-                        TourPill(text: "Commands", filled: false, tint: Color.white)
-                    }
-                    .transition(.opacity)
+                    Text("Listening")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(fm.accent)
                 } else {
                     Text("Touch and hold")
-                        .font(.system(size: 13))
+                        .font(.system(size: 14))
                         .foregroundStyle(fm.textSecondary)
                 }
-                Spacer(minLength: 0)
             }
+            .frame(height: 22)
         }
         .task(id: holding) { await listen() }
     }
 
     private var orb: some View {
-        let size: CGFloat = listening ? 96 : 56
+        let size: CGFloat = listening ? 132 : 112
         return ZStack {
             if listening && !reduceMotion {
                 ForEach(0..<3, id: \.self) { (ring: Int) in
@@ -395,7 +211,7 @@ struct TourVoiceScene: View {
             }
             TourSparkleButton(stars: sent ? 9 : 4, size: size, lit: step == 0 && !holding)
         }
-        .frame(width: 150, height: 150)
+        .frame(width: 220, height: 220)
         .contentShape(Circle())
         .textSelection(.disabled)
         .onLongPressGesture(minimumDuration: 0.35, maximumDistance: 40, perform: {}, onPressingChanged: { (down: Bool) in
@@ -429,84 +245,6 @@ struct TourVoiceScene: View {
                 heard += 1
             }
         }
-    }
-}
-
-struct TourCodeScene: View {
-    @Environment(\.fmPalette) private var fm
-
-    let phase: Int
-    let act: (Int) -> Void
-
-    private var step: Int { phase % 3 }
-    private var merged: Bool { step == 2 }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            TourTopBar()
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    TourPill(text: merged ? "Merged" : "Open", tint: merged ? Color.purple : fm.success)
-                    Text("#128")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(fm.textSecondary)
-                }
-                Text("Fix flaky login test")
-                    .font(.system(size: 19, weight: .bold))
-                    .foregroundStyle(fm.textPrimary)
-                HStack(spacing: 10) {
-                    Label("12 checks passed", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(fm.success)
-                    if step >= 1 {
-                        Label("Approved", systemImage: "person.crop.circle.badge.checkmark")
-                            .foregroundStyle(fm.accent)
-                            .transition(.scale.combined(with: .opacity))
-                    }
-                }
-                .font(.system(size: 12, weight: .medium))
-            }
-            .padding(.horizontal, 16)
-            VStack(alignment: .leading, spacing: 0) {
-                Text("LoginTests.swift")
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(fm.textSecondary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                diffLine(" ", "func testSignIn() async {", nil)
-                diffLine("-", "  try await Task.sleep(for: .seconds(1))", fm.danger)
-                diffLine("+", "  await session.waitUntilReady()", fm.success)
-                diffLine(" ", "  XCTAssertTrue(session.signedIn)", nil)
-            }
-            .background(fm.bgRaised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .padding(.horizontal, 12)
-            Spacer(minLength: 0)
-            Button(action: { act(merged ? 0 : 2) }) {
-                Label(merged ? "Merged" : "Merge pull request", systemImage: merged ? "checkmark" : "arrow.triangle.merge")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Color.white)
-                    .frame(maxWidth: .infinity, minHeight: 40)
-                    .background(merged ? Color.purple : fm.success, in: Capsule())
-                    .tourTarget(!merged)
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 16)
-            .padding(.bottom, 14)
-        }
-    }
-
-    private func diffLine(_ mark: String, _ code: String, _ tint: Color?) -> some View {
-        HStack(spacing: 6) {
-            Text(mark)
-                .foregroundStyle(tint ?? fm.textTertiary)
-            Text(code)
-                .foregroundStyle(fm.textPrimary)
-                .lineLimit(1)
-            Spacer(minLength: 0)
-        }
-        .font(.system(size: 11, design: .monospaced))
-        .padding(.horizontal, 10)
-        .padding(.vertical, 3)
-        .background((tint ?? Color.clear).opacity(0.14))
     }
 }
 
@@ -1087,74 +825,6 @@ struct TourWorkspaceScene: View {
     }
 }
 
-struct TourMarketScene: View {
-    @Environment(\.fmPalette) private var fm
-
-    let phase: Int
-    let act: (Int) -> Void
-
-    private static let packages: [(title: String, symbol: String, detail: String)] = [
-        ("Notes", "note.text", "Markdown notes"), ("Water", "drop", "Count your glasses"),
-        ("Vault", "lock.shield", "Passwords and secrets"),
-    ]
-
-    private var installed: Int { phase % (TourMarketScene.packages.count + 1) }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            TourTopBar()
-            home
-            TourTitle(text: "Market")
-            ForEach(0..<TourMarketScene.packages.count, id: \.self) { (at: Int) in
-                listing(at)
-            }
-            Spacer(minLength: 0)
-        }
-    }
-
-    private var home: some View {
-        HStack(spacing: 0) {
-            ForEach(0..<installed, id: \.self) { (at: Int) in
-                icon(at)
-            }
-            Spacer(minLength: 0)
-        }
-        .frame(height: 56)
-        .padding(.horizontal, 12)
-        .background(fm.bgRaised.opacity(0.5), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(alignment: .center) {
-            if installed == 0 {
-                Text("Home")
-                    .font(.system(size: 12))
-                    .foregroundStyle(fm.textTertiary)
-            }
-        }
-        .padding(.horizontal, 12)
-    }
-
-    private func icon(_ at: Int) -> some View {
-        let listing: (title: String, symbol: String, detail: String) = TourMarketScene.packages[at]
-        let item: ShellBarItem = ShellBarItem(
-            id: "tour-\(listing.title)", title: listing.title, symbol: listing.symbol, badge: 0, selected: false,
-            kind: .action, pulse: installed, action: {})
-        return ShellHomeIcon(item: item, style: .outline, iconSize: 18, labelSize: 10)
-            .frame(width: 64)
-            .transition(.scale.combined(with: .opacity))
-    }
-
-    private func listing(_ at: Int) -> some View {
-        let listing: (title: String, symbol: String, detail: String) = TourMarketScene.packages[at]
-        let got: Bool = at < installed
-        let tint: Color? = got ? fm.success : nil
-        return TourRow(symbol: listing.symbol, title: listing.title, detail: listing.detail) {
-            Button(action: { act(got ? at : at + 1) }) {
-                TourPill(text: got ? "Installed" : "Get", filled: !got, tint: tint, lit: at == installed)
-            }
-            .buttonStyle(.plain)
-        }
-    }
-}
-
 struct TourPersonalScene: View {
     @Environment(\.fmPalette) private var fm
 
@@ -1225,14 +895,12 @@ struct TourSystemScene: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            LinearGradient(
-                colors: [fm.accent.opacity(0.85), Color.indigo.opacity(0.9), Color.black.opacity(0.85)],
-                startPoint: .topLeading, endPoint: .bottomTrailing)
+            TourLockWallpaper()
             VStack(spacing: 10) {
                 Text("9:41")
-                    .font(.system(size: 52, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color.white.opacity(0.92))
-                    .padding(.top, 14)
+                    .font(.system(size: 56, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Color.white.opacity(0.95))
+                    .padding(.top, 56)
                 HStack(spacing: 8) {
                     Image(systemName: "sparkles")
                     Text(approved ? "3 running" : "2 running · 1 needs you")
@@ -1332,5 +1000,44 @@ struct TourLooksScene: View {
             Spacer(minLength: 0)
             TourBottomBar()
         }
+    }
+}
+
+struct TourWave: View {
+    @Environment(\.fmPalette) private var fm
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    let live: Bool
+
+    private static let heights: [CGFloat] = [0.35, 0.7, 0.5, 1, 0.6, 0.85, 0.4, 0.95, 0.55, 0.75, 0.3, 0.65]
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !live || reduceMotion)) { (context: TimelineViewDefaultContext) in
+            let time: Double = context.date.timeIntervalSinceReferenceDate
+            HStack(spacing: 5) {
+                ForEach(0..<TourWave.heights.count, id: \.self) { (at: Int) in
+                    let wobble: Double = live && !reduceMotion ? (sin(time * 7 + Double(at) * 0.9) + 1) / 2 : 0.4
+                    Capsule()
+                        .fill(fm.accent)
+                        .frame(width: 6, height: max(6, 44 * TourWave.heights[at] * CGFloat(0.35 + wobble * 0.65)))
+                }
+            }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+struct TourLockWallpaper: View {
+    var body: some View {
+        ZStack {
+            Color(fmARGB: 0xFF0B1220)
+            RadialGradient(
+                colors: [Color(fmARGB: 0xFF2F5FA8).opacity(0.9), Color(fmARGB: 0xFF0B1220).opacity(0)],
+                center: UnitPoint(x: 0.5, y: 0.05), startRadius: 0, endRadius: 360)
+            RadialGradient(
+                colors: [Color(fmARGB: 0xFF16324F).opacity(0.8), Color(fmARGB: 0xFF0B1220).opacity(0)],
+                center: UnitPoint(x: 0.85, y: 1), startRadius: 0, endRadius: 300)
+        }
+        .accessibilityHidden(true)
     }
 }

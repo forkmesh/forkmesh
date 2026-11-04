@@ -130,6 +130,8 @@ struct AgentSession {
     // run and show it once. Empty for a run started on this desktop.
     QString webSessionId;
     QString claudeAppSessionId;
+    QString claudeAppPath;
+    qint64 claudeAppBytes = 0;
     QString claudeImportId;
     QString claudeImportPath;
     QString claudeImportCwd;
@@ -140,6 +142,7 @@ struct AgentSession {
     QString status = AgentStatus::Queued;
     bool held = false;
     QString heldBy;
+    QStringList deniedPermissions;
     QString branchName;
     // Explicit directory name for newer sessions whose branch and worktree use
     // one shared semantic name. Empty preserves legacy derived worktree paths.

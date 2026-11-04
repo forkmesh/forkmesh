@@ -132,17 +132,19 @@ public struct SurveySettings: Equatable, Sendable {
     public var closesAt: Int64
     public var maxResponses: Int
     public var notifyOnResponse: Bool
+    public var notifyOnVisit: Bool
     public var shuffleOptions: Bool
 
     public init(
         oneResponsePerPerson: Bool = false, opensAt: Int64 = 0, closesAt: Int64 = 0, maxResponses: Int = 0,
-        notifyOnResponse: Bool = true, shuffleOptions: Bool = false
+        notifyOnResponse: Bool = true, notifyOnVisit: Bool = true, shuffleOptions: Bool = false
     ) {
         self.oneResponsePerPerson = oneResponsePerPerson
         self.opensAt = opensAt
         self.closesAt = closesAt
         self.maxResponses = maxResponses
         self.notifyOnResponse = notifyOnResponse
+        self.notifyOnVisit = notifyOnVisit
         self.shuffleOptions = shuffleOptions
     }
 
@@ -151,7 +153,8 @@ public struct SurveySettings: Equatable, Sendable {
             oneResponsePerPerson: json.bool("oneResponsePerPerson"), opensAt: max(0, json.int64("opensAt")),
             closesAt: max(0, json.int64("closesAt")),
             maxResponses: min(SurveyLimits.maxResponses, max(0, json.int("maxResponses"))),
-            notifyOnResponse: json.optBool("notifyOnResponse") ?? true, shuffleOptions: json.bool("shuffleOptions"))
+            notifyOnResponse: json.optBool("notifyOnResponse") ?? true, notifyOnVisit: json.optBool("notifyOnVisit") ?? true,
+            shuffleOptions: json.bool("shuffleOptions"))
     }
 
     public var body: JSONObject {
@@ -159,7 +162,8 @@ public struct SurveySettings: Equatable, Sendable {
             "oneResponsePerPerson": .bool(oneResponsePerPerson), "opensAt": .int(max(0, opensAt)),
             "closesAt": .int(max(0, closesAt)),
             "maxResponses": .int(Int64(min(SurveyLimits.maxResponses, max(0, maxResponses)))),
-            "notifyOnResponse": .bool(notifyOnResponse), "shuffleOptions": .bool(shuffleOptions),
+            "notifyOnResponse": .bool(notifyOnResponse), "notifyOnVisit": .bool(notifyOnVisit),
+            "shuffleOptions": .bool(shuffleOptions),
         ]
     }
 
@@ -444,6 +448,7 @@ public struct Survey: Equatable, Sendable, Identifiable {
     public var publicUrl: String
     public var questions: [SurveyQuestion]?
     public var results: [SurveyResult]?
+    public var activity: PageActivity
 
     public init(json: JSONObject) {
         id = json.str("id")
@@ -472,6 +477,7 @@ public struct Survey: Equatable, Sendable, Identifiable {
         let link = json.str("publicUrl")
         publicUrl = link.lowercased().hasPrefix("https://") && !link.contains(" ") ? link : ""
         results = json["results"]?.arrayValue.map { $0.compactMap(\.objectValue).map(SurveyResult.init(json:)) }
+        activity = PageActivity(json: json.obj("activity"))
     }
 
     public var displayTitle: String { title.isEmpty ? "Untitled survey" : title }
@@ -586,6 +592,7 @@ public struct SurveyBoard: Equatable, Sendable {
         var stored = survey
         stored.questions = nil
         stored.results = nil
+        stored.activity = PageActivity()
         if let index = surveys.firstIndex(where: { $0.id == survey.id }) {
             surveys[index] = stored
         } else {

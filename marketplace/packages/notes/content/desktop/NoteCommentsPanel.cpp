@@ -1,6 +1,7 @@
 #include "NoteCommentsPanel.h"
 
 #include "DesignTokens.h"
+#include "FlowLayout.h"
 #include "OcticonIcons.h"
 #include "Theme.h"
 
@@ -11,6 +12,7 @@
 #include <QKeyEvent>
 #include <QLabel>
 #include <QListWidget>
+#include <QMenu>
 #include <QMessageBox>
 #include <QMouseEvent>
 #include <QPlainTextEdit>
@@ -18,8 +20,12 @@
 #include <QPushButton>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QSettings>
+#include <QShowEvent>
 #include <QSignalBlocker>
+#include <QStackedWidget>
 #include <QTextBlock>
+#include <QTextBrowser>
 #include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -177,6 +183,33 @@ private:
     int m_anchor = -1;
 };
 
+class EnterSends : public QObject
+{
+public:
+    EnterSends(QPlainTextEdit *box, std::function<void()> send)
+        : QObject(box), m_send(std::move(send))
+    {
+        box->installEventFilter(this);
+    }
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (event->type() == QEvent::KeyPress) {
+            auto *key = static_cast<QKeyEvent *>(event);
+            if ((key->key() == Qt::Key_Return || key->key() == Qt::Key_Enter) &&
+                !(key->modifiers() & Qt::ShiftModifier)) {
+                m_send();
+                return true;
+            }
+        }
+        return QObject::eventFilter(watched, event);
+    }
+
+private:
+    std::function<void()> m_send;
+};
+
 QString elided(const QString &text, int chars)
 {
     const QString flat = text.simplified();
@@ -226,18 +259,42 @@ NoteCommentsPanel::NoteCommentsPanel(Hooks hooks, QWidget *parent)
     : QWidget(parent), m_hooks(std::move(hooks))
 {
     setObjectName(QStringLiteral("noteCommentsPanel"));
-    setMinimumWidth(260);
+    setMinimumWidth(300);
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(12, 0, 0, 0);
     layout->setSpacing(8);
 
     auto *header = new QHBoxLayout;
-    header->setSpacing(4);
-    auto *title = new QLabel(QStringLiteral("Comments"));
-    title->setStyleSheet(Theme::remapSheet(QStringLiteral("font-weight:600;")));
-    header->addWidget(title);
+    header->setSpacing(2);
+    m_commentsTabButton = textButton(QStringLiteral("Comments"), "markdownTab");
+    m_chatTabButton = textButton(QStringLiteral("Chat"), "markdownTab");
+    m_chatTabButton->setToolTip(
+        QStringLiteral("Chat with everyone who can open this note"));
+    m_activityTabButton = textButton(QStringLiteral("Activity"), "markdownTab");
+    m_activityTabButton->setToolTip(QStringLiteral(
+        "Views, edits, shares, publishing and restores, newest first"));
+    m_historyTabButton = textButton(QStringLiteral("History"), "markdownTab");
+    m_historyTabButton->setToolTip(QStringLiteral(
+        "Every saved version: who saved it and when, to view or restore"));
+    for (QPushButton *tab : {m_commentsTabButton, m_chatTabButton,
+                             m_activityTabButton, m_historyTabButton}) {
+        tab->setCheckable(true);
+        header->addWidget(tab);
+    }
+    m_commentsTabButton->setChecked(true);
+    connect(m_commentsTabButton, &QPushButton::clicked, this,
+            [this] { showTab(NoteSideTab::Comments); });
+    connect(m_chatTabButton, &QPushButton::clicked, this, [this] {
+        showTab(NoteSideTab::Chat);
+        focusChat();
+    });
+    connect(m_activityTabButton, &QPushButton::clicked, this,
+            [this] { showTab(NoteSideTab::Activity); });
+    connect(m_historyTabButton, &QPushButton::clicked, this,
+            [this] { showTab(NoteSideTab::History); });
     header->addStretch();
     auto *add = textButton(QStringLiteral("New"), "ghostButton");
+    m_newButton = add;
     forkmesh::ui::setOcticon(add, QStringLiteral("comment"), 14);
     add->setToolTip(QStringLiteral(
         "Comment on the selected text, or on the whole note when nothing is "
@@ -247,7 +304,7 @@ NoteCommentsPanel::NoteCommentsPanel(Hooks hooks, QWidget *parent)
             m_hooks.newComment();
     });
     header->addWidget(add);
-    auto *close = iconButton(QStringLiteral("x"), QStringLiteral("Close comments"));
+    auto *close = iconButton(QStringLiteral("x"), QStringLiteral("Close the panel"));
     connect(close, &QToolButton::clicked, this, [this] {
         hide();
         if (m_hooks.closed)
@@ -256,9 +313,17 @@ NoteCommentsPanel::NoteCommentsPanel(Hooks hooks, QWidget *parent)
     header->addWidget(close);
     layout->addLayout(header);
 
+    m_pages = new QStackedWidget;
+    auto *commentsPage = new QWidget;
+    auto *commentsLayout = new QVBoxLayout(commentsPage);
+    commentsLayout->setContentsMargins(0, 0, 0, 0);
+    commentsLayout->setSpacing(8);
+    m_pages->addWidget(commentsPage);
+    layout->addWidget(m_pages, 1);
+
     m_status = mutedLabel();
     m_status->hide();
-    layout->addWidget(m_status);
+    commentsLayout->addWidget(m_status);
 
     m_composer = new QWidget;
     m_composer->setObjectName(QStringLiteral("noteCommentComposer"));
@@ -296,7 +361,7 @@ NoteCommentsPanel::NoteCommentsPanel(Hooks hooks, QWidget *parent)
     composeButtons->addWidget(m_composeSend);
     composerLayout->addLayout(composeButtons);
     m_composer->hide();
-    layout->addWidget(m_composer);
+    commentsLayout->addWidget(m_composer);
 
     m_scroll = new QScrollArea;
     m_scroll->setObjectName(QStringLiteral("noteCommentsScroll"));
@@ -309,7 +374,49 @@ NoteCommentsPanel::NoteCommentsPanel(Hooks hooks, QWidget *parent)
     m_listLayout->setContentsMargins(0, 0, 4, 0);
     m_listLayout->setSpacing(8);
     m_scroll->setWidget(m_list);
-    layout->addWidget(m_scroll, 1);
+    commentsLayout->addWidget(m_scroll, 1);
+
+    auto *chatPage = new QWidget;
+    chatPage->setObjectName(QStringLiteral("noteChatPage"));
+    auto *chatLayout = new QVBoxLayout(chatPage);
+    chatLayout->setContentsMargins(0, 0, 0, 0);
+    chatLayout->setSpacing(6);
+    m_chatStatus = mutedLabel();
+    m_chatStatus->hide();
+    chatLayout->addWidget(m_chatStatus);
+    m_chatScroll = new QScrollArea;
+    m_chatScroll->setObjectName(QStringLiteral("noteChatScroll"));
+    m_chatScroll->setWidgetResizable(true);
+    m_chatScroll->setFrameShape(QFrame::NoFrame);
+    m_chatScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_chatList = new QWidget;
+    m_chatList->setObjectName(QStringLiteral("noteChatList"));
+    m_chatListLayout = new QVBoxLayout(m_chatList);
+    m_chatListLayout->setContentsMargins(0, 0, 4, 0);
+    m_chatListLayout->setSpacing(8);
+    m_chatScroll->setWidget(m_chatList);
+    chatLayout->addWidget(m_chatScroll, 1);
+    m_chatBox = new QPlainTextEdit;
+    m_chatBox->setObjectName(QStringLiteral("noteChatBox"));
+    m_chatBox->setPlaceholderText(QStringLiteral(
+        "Message everyone in this note. Enter sends, Shift+Enter adds a line."));
+    m_chatBox->setTabChangesFocus(true);
+    m_chatBox->setFixedHeight(m_chatBox->fontMetrics().lineSpacing() * kBoxLines + 12);
+    new EnterSends(m_chatBox, [this] { sendChat(); });
+    new CommentBoxHelper(
+        m_chatBox, [this] { return m_people; },
+        [this] { return m_hooks.me ? m_hooks.me() : QString(); },
+        [this] { sendChat(); });
+    chatLayout->addWidget(m_chatBox);
+    auto *chatButtons = new QHBoxLayout;
+    chatButtons->addStretch();
+    m_chatSend = textButton(QStringLiteral("Send"), "primaryButton");
+    connect(m_chatSend, &QPushButton::clicked, this, [this] { sendChat(); });
+    chatButtons->addWidget(m_chatSend);
+    chatLayout->addLayout(chatButtons);
+    m_pages->addWidget(chatPage);
+    m_pages->addWidget(buildActivityPage());
+    m_pages->addWidget(buildHistoryPage());
 
     m_anchorTimer = new QTimer(this);
     m_anchorTimer->setSingleShot(true);
@@ -319,10 +426,28 @@ NoteCommentsPanel::NoteCommentsPanel(Hooks hooks, QWidget *parent)
             return;
         const QList<CommentThread> threads = commentThreads(
             m_comments, m_hooks.markdown ? m_hooks.markdown() : QString());
-        if (commentThreadsSignature(threads) != m_signature)
+        if (commentThreadsSignature(threads) != m_signature ||
+            noteReactionGroupsSignature(reactionGroups()) != m_reactionSignature)
             render();
+        if (!m_reactions.isEmpty() && m_hooks.reactionsChanged)
+            m_hooks.reactionsChanged();
     });
     render();
+}
+
+QString NoteCommentsPanel::reactionsPath(const QString &reactionId) const
+{
+    QString path = QStringLiteral("/api/notes/%1/reactions").arg(m_noteId);
+    if (!reactionId.isEmpty())
+        path += QLatin1Char('/') + reactionId;
+    return path;
+}
+
+QList<NoteReactionGroup> NoteCommentsPanel::reactionGroups() const
+{
+    return noteReactionGroups(m_reactions,
+                              m_hooks.markdown ? m_hooks.markdown() : QString(),
+                              m_hooks.me ? m_hooks.me() : QString());
 }
 
 QString NoteCommentsPanel::commentsPath(const QString &commentId) const
@@ -340,6 +465,9 @@ void NoteCommentsPanel::setNote(const QString &noteId)
     m_noteId = noteId;
     ++m_sequence;
     m_comments = QJsonArray();
+    m_reactions.clear();
+    m_reactionSignature.clear();
+    m_reactionBusy = false;
     m_people.clear();
     m_canResolve = false;
     m_loaded = false;
@@ -357,7 +485,591 @@ void NoteCommentsPanel::setNote(const QString &noteId)
     render();
     if (m_hooks.countChanged)
         m_hooks.countChanged();
+    if (m_hooks.reactionsChanged)
+        m_hooks.reactionsChanged();
     reload();
+    ++m_chatSequence;
+    m_chat.clear();
+    m_chatLoaded = false;
+    m_chatModerate = false;
+    m_chatBusy = false;
+    m_chatUnread = 0;
+    m_chatBox->clear();
+    setChatStatus(QString());
+    renderChat();
+    if (m_hooks.chatChanged)
+        m_hooks.chatChanged();
+    reloadChat();
+    ++m_activitySequence;
+    ++m_historySequence;
+    ++m_versionSequence;
+    m_activity.clear();
+    m_versions.clear();
+    m_activityLoaded = false;
+    m_historyLoaded = false;
+    m_activityStale = true;
+    m_historyStale = true;
+    m_versionShown = QJsonObject();
+    setActivityStatus(QString());
+    setHistoryStatus(QString());
+    renderActivity();
+    renderHistory();
+    renderVersion();
+    loadShownTab();
+}
+
+QString NoteCommentsPanel::chatPath(const QString &messageId) const
+{
+    QString path = QStringLiteral("/api/notes/%1/chat").arg(m_noteId);
+    if (!messageId.isEmpty())
+        path += QLatin1Char('/') + messageId;
+    return path;
+}
+
+void NoteCommentsPanel::showTab(NoteSideTab tab)
+{
+    m_tab = tab;
+    const bool chat = tab == NoteSideTab::Chat;
+    m_chatTab = chat;
+    m_pages->setCurrentIndex(int(tab));
+    m_commentsTabButton->setChecked(tab == NoteSideTab::Comments);
+    m_chatTabButton->setChecked(chat);
+    m_activityTabButton->setChecked(tab == NoteSideTab::Activity);
+    m_historyTabButton->setChecked(tab == NoteSideTab::History);
+    m_newButton->setVisible(tab == NoteSideTab::Comments);
+    loadShownTab();
+    if (chat && isVisible())
+        markChatSeen();
+    if (chat)
+        QTimer::singleShot(0, this, [this] {
+            m_chatScroll->verticalScrollBar()->setValue(
+                m_chatScroll->verticalScrollBar()->maximum());
+        });
+}
+
+void NoteCommentsPanel::focusChat()
+{
+    if (m_chatTab)
+        m_chatBox->setFocus();
+}
+
+void NoteCommentsPanel::showEvent(QShowEvent *event)
+{
+    QWidget::showEvent(event);
+    if (m_chatTab)
+        markChatSeen();
+    loadShownTab();
+}
+
+QWidget *NoteCommentsPanel::buildActivityPage()
+{
+    auto *page = new QWidget;
+    page->setObjectName(QStringLiteral("noteActivityPage"));
+    auto *layout = new QVBoxLayout(page);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(6);
+    m_activityStatus = mutedLabel();
+    m_activityStatus->hide();
+    layout->addWidget(m_activityStatus);
+    m_activityScroll = new QScrollArea;
+    m_activityScroll->setObjectName(QStringLiteral("noteActivityScroll"));
+    m_activityScroll->setWidgetResizable(true);
+    m_activityScroll->setFrameShape(QFrame::NoFrame);
+    m_activityScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    auto *list = new QWidget;
+    list->setObjectName(QStringLiteral("noteActivityList"));
+    m_activityListLayout = new QVBoxLayout(list);
+    m_activityListLayout->setContentsMargins(0, 0, 4, 0);
+    m_activityListLayout->setSpacing(10);
+    m_activityScroll->setWidget(list);
+    layout->addWidget(m_activityScroll, 1);
+    return page;
+}
+
+QWidget *NoteCommentsPanel::buildHistoryPage()
+{
+    auto *page = new QWidget;
+    page->setObjectName(QStringLiteral("noteHistoryPage"));
+    auto *layout = new QVBoxLayout(page);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(6);
+    m_historyStatus = mutedLabel();
+    m_historyStatus->hide();
+    layout->addWidget(m_historyStatus);
+    m_historyPages = new QStackedWidget;
+    m_historyScroll = new QScrollArea;
+    m_historyScroll->setObjectName(QStringLiteral("noteHistoryScroll"));
+    m_historyScroll->setWidgetResizable(true);
+    m_historyScroll->setFrameShape(QFrame::NoFrame);
+    m_historyScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    auto *list = new QWidget;
+    list->setObjectName(QStringLiteral("noteHistoryList"));
+    m_historyListLayout = new QVBoxLayout(list);
+    m_historyListLayout->setContentsMargins(0, 0, 4, 0);
+    m_historyListLayout->setSpacing(8);
+    m_historyScroll->setWidget(list);
+    m_historyPages->addWidget(m_historyScroll);
+
+    auto *viewer = new QWidget;
+    viewer->setObjectName(QStringLiteral("noteVersionView"));
+    auto *viewerLayout = new QVBoxLayout(viewer);
+    viewerLayout->setContentsMargins(0, 0, 0, 0);
+    viewerLayout->setSpacing(6);
+    auto *viewerHead = new QHBoxLayout;
+    viewerHead->setSpacing(6);
+    auto *back = iconButton(QStringLiteral("chevron-left"),
+                            QStringLiteral("Back to all versions"));
+    connect(back, &QToolButton::clicked, this, [this] { closeVersion(); });
+    viewerHead->addWidget(back);
+    m_versionHeading = new QLabel;
+    m_versionHeading->setWordWrap(true);
+    m_versionHeading->setTextFormat(Qt::RichText);
+    m_versionHeading->setStyleSheet(
+        Theme::remapSheet(QStringLiteral("background:transparent;")));
+    viewerHead->addWidget(m_versionHeading, 1);
+    m_versionRestore = textButton(QStringLiteral("Restore"), "ghostButton");
+    m_versionRestore->setToolTip(
+        QStringLiteral("Save this version again as the newest one"));
+    connect(m_versionRestore, &QPushButton::clicked, this, [this] {
+        restoreVersion(m_versionShown.value(QStringLiteral("version")).toInt());
+    });
+    viewerHead->addWidget(m_versionRestore);
+    viewerLayout->addLayout(viewerHead);
+    m_versionBody = new QTextBrowser;
+    m_versionBody->setObjectName(QStringLiteral("noteVersionBody"));
+    m_versionBody->setOpenLinks(false);
+    m_versionBody->setFrameShape(QFrame::NoFrame);
+    viewerLayout->addWidget(m_versionBody, 1);
+    m_historyPages->addWidget(viewer);
+    layout->addWidget(m_historyPages, 1);
+    return page;
+}
+
+void NoteCommentsPanel::loadShownTab()
+{
+    if (!isVisible() || m_noteId.isEmpty())
+        return;
+    if (m_tab == NoteSideTab::Activity && m_activityStale)
+        loadActivity();
+    if (m_tab == NoteSideTab::History && m_historyStale)
+        loadHistory();
+}
+
+void NoteCommentsPanel::reloadActivity()
+{
+    m_activityStale = true;
+    m_historyStale = true;
+    loadShownTab();
+}
+
+void NoteCommentsPanel::setActivityStatus(const QString &text)
+{
+    m_activityStatus->setText(text);
+    m_activityStatus->setVisible(!text.isEmpty());
+}
+
+void NoteCommentsPanel::setHistoryStatus(const QString &text)
+{
+    m_historyStatus->setText(text);
+    m_historyStatus->setVisible(!text.isEmpty());
+}
+
+void NoteCommentsPanel::loadActivity()
+{
+    if (m_noteId.isEmpty() || !m_hooks.request)
+        return;
+    m_activityStale = false;
+    const int sequence = ++m_activitySequence;
+    const QString noteId = m_noteId;
+    QPointer<NoteCommentsPanel> guard(this);
+    m_hooks.request(QByteArrayLiteral("GET"),
+                    QStringLiteral("/api/notes/%1/activity").arg(noteId), {},
+                    [guard, sequence, noteId](bool ok, const QJsonObject &payload,
+                                              const QString &error) {
+        if (!guard || guard->m_activitySequence != sequence || guard->m_noteId != noteId)
+            return;
+        if (!ok) {
+            guard->m_activityStale = true;
+            guard->setActivityStatus(
+                QStringLiteral("Activity is unavailable: %1").arg(error));
+            return;
+        }
+        guard->m_activity = noteActivityEntries(payload);
+        guard->m_activityLoaded = true;
+        guard->setActivityStatus(QString());
+        guard->renderActivity();
+    });
+}
+
+void NoteCommentsPanel::renderActivity()
+{
+    while (QLayoutItem *item = m_activityListLayout->takeAt(0)) {
+        delete item->widget();
+        delete item;
+    }
+    if (m_activity.isEmpty())
+        m_activityListLayout->addWidget(mutedLabel(
+            m_activityLoaded ? QStringLiteral("Nothing yet.")
+                             : QStringLiteral("Loading activity…")));
+    const QString me = m_hooks.me ? m_hooks.me() : QString();
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    for (const NoteActivityEntry &entry : std::as_const(m_activity)) {
+        auto *row = new QWidget;
+        row->setObjectName(QStringLiteral("noteActivityRow"));
+        auto *rowLayout = new QVBoxLayout(row);
+        rowLayout->setContentsMargins(0, 0, 0, 0);
+        rowLayout->setSpacing(1);
+        const QString actor = noteActivityActor(entry, me);
+        auto *text = new QLabel(
+            (actor.isEmpty() ? QString()
+                             : QStringLiteral("<b>%1</b> ").arg(actor.toHtmlEscaped()))
+            + noteActivityText(entry).toHtmlEscaped());
+        text->setTextFormat(Qt::RichText);
+        text->setWordWrap(true);
+        text->setStyleSheet(Theme::remapSheet(QStringLiteral("background:transparent;")));
+        rowLayout->addWidget(text);
+        auto *time = mutedLabel(entry.at ? commentTimeLabel(entry.at, now) : QString());
+        time->setToolTip(QDateTime::fromMSecsSinceEpoch(entry.at)
+                             .toLocalTime()
+                             .toString(QStringLiteral("yyyy-MM-dd HH:mm")));
+        rowLayout->addWidget(time);
+        m_activityListLayout->addWidget(row);
+    }
+    m_activityListLayout->addStretch();
+}
+
+void NoteCommentsPanel::loadHistory()
+{
+    if (m_noteId.isEmpty() || !m_hooks.request)
+        return;
+    m_historyStale = false;
+    const int sequence = ++m_historySequence;
+    const QString noteId = m_noteId;
+    QPointer<NoteCommentsPanel> guard(this);
+    m_hooks.request(QByteArrayLiteral("GET"),
+                    QStringLiteral("/api/notes/%1/versions").arg(noteId), {},
+                    [guard, sequence, noteId](bool ok, const QJsonObject &payload,
+                                              const QString &error) {
+        if (!guard || guard->m_historySequence != sequence || guard->m_noteId != noteId)
+            return;
+        if (!ok) {
+            guard->m_historyStale = true;
+            guard->setHistoryStatus(
+                QStringLiteral("History is unavailable: %1").arg(error));
+            return;
+        }
+        guard->m_versions = noteVersionEntries(
+            payload.value(QStringLiteral("versions")).toArray());
+        guard->m_historyLoaded = true;
+        guard->setHistoryStatus(QString());
+        guard->renderHistory();
+        guard->renderVersion();
+    });
+}
+
+void NoteCommentsPanel::renderHistory()
+{
+    while (QLayoutItem *item = m_historyListLayout->takeAt(0)) {
+        delete item->widget();
+        delete item;
+    }
+    if (m_versions.isEmpty())
+        m_historyListLayout->addWidget(mutedLabel(
+            m_historyLoaded ? QStringLiteral("No saved versions yet.")
+                            : QStringLiteral("Loading history…")));
+    const int current = m_hooks.currentVersion ? m_hooks.currentVersion() : 0;
+    const bool canEdit = m_hooks.canEdit && m_hooks.canEdit();
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    for (const NoteVersionEntry &version : std::as_const(m_versions)) {
+        auto *row = new QWidget;
+        row->setObjectName(QStringLiteral("noteVersionRow"));
+        auto *rowLayout = new QHBoxLayout(row);
+        rowLayout->setContentsMargins(0, 0, 0, 0);
+        rowLayout->setSpacing(6);
+        auto *text = new QVBoxLayout;
+        text->setSpacing(1);
+        auto *name = new QLabel(version.version == current
+                                    ? QStringLiteral("Version %1 · Current").arg(version.version)
+                                    : QStringLiteral("Version %1").arg(version.version));
+        name->setStyleSheet(Theme::remapSheet(
+            QStringLiteral("font-weight:600; background:transparent;")));
+        text->addWidget(name);
+        QString hint = commentTimeLabel(version.createdAt, now);
+        if (!version.author.isEmpty())
+            hint += QStringLiteral(" · by @") + version.author;
+        auto *when = mutedLabel(hint);
+        when->setToolTip(QDateTime::fromMSecsSinceEpoch(version.createdAt)
+                             .toLocalTime()
+                             .toString(QStringLiteral("yyyy-MM-dd HH:mm")));
+        text->addWidget(when);
+        rowLayout->addLayout(text, 1);
+        const int number = version.version;
+        auto *view = textButton(QStringLiteral("View"), "ghostButton");
+        view->setToolTip(QStringLiteral("Read this version"));
+        connect(view, &QPushButton::clicked, this, [this, number] { showVersion(number); });
+        rowLayout->addWidget(view);
+        if (canEdit && number != current) {
+            auto *restore = textButton(QStringLiteral("Restore"), "ghostButton");
+            restore->setToolTip(QStringLiteral("Save this version again as the newest one"));
+            connect(restore, &QPushButton::clicked, this,
+                    [this, number] { restoreVersion(number); });
+            rowLayout->addWidget(restore);
+        }
+        m_historyListLayout->addWidget(row);
+    }
+    m_historyListLayout->addStretch();
+}
+
+void NoteCommentsPanel::showVersion(int version)
+{
+    if (m_noteId.isEmpty() || !m_hooks.request)
+        return;
+    const int sequence = ++m_versionSequence;
+    const QString noteId = m_noteId;
+    QPointer<NoteCommentsPanel> guard(this);
+    m_hooks.request(QByteArrayLiteral("GET"),
+                    QStringLiteral("/api/notes/%1/versions?version=%2").arg(noteId).arg(version),
+                    {},
+                    [guard, sequence, noteId](bool ok, const QJsonObject &payload,
+                                              const QString &error) {
+        if (!guard || guard->m_versionSequence != sequence || guard->m_noteId != noteId)
+            return;
+        if (!ok) {
+            guard->setHistoryStatus(QStringLiteral("That version did not open: %1").arg(error));
+            return;
+        }
+        guard->setHistoryStatus(QString());
+        guard->m_versionShown = payload.value(QStringLiteral("version")).toObject();
+        guard->renderVersion();
+    });
+}
+
+void NoteCommentsPanel::renderVersion()
+{
+    const int number = m_versionShown.value(QStringLiteral("version")).toInt();
+    const bool listed = std::any_of(m_versions.cbegin(), m_versions.cend(),
+                                    [number](const NoteVersionEntry &entry) {
+        return entry.version == number;
+    });
+    if (number <= 0 || (m_historyLoaded && !listed)) {
+        m_versionShown = QJsonObject();
+        m_historyPages->setCurrentIndex(0);
+        m_versionBody->clear();
+        return;
+    }
+    const int current = m_hooks.currentVersion ? m_hooks.currentVersion() : 0;
+    QString hint = commentTimeLabel(
+        qint64(m_versionShown.value(QStringLiteral("createdAt")).toDouble()),
+        QDateTime::currentMSecsSinceEpoch());
+    const QString author = m_versionShown.value(QStringLiteral("author")).toString();
+    if (!author.isEmpty())
+        hint += QStringLiteral(" · by @") + author;
+    m_versionHeading->setText(
+        QStringLiteral("<b>Version %1%2</b><br><span style=\"color:%3\">%4</span>")
+            .arg(number)
+            .arg(number == current ? QStringLiteral(" · Current") : QString())
+            .arg(Theme::hex(Theme::Role::FgMuted), hint.toHtmlEscaped()));
+    m_versionRestore->setVisible(number != current && m_hooks.canEdit && m_hooks.canEdit());
+    const QString emoji = m_versionShown.value(QStringLiteral("emoji")).toString();
+    const QString title = m_versionShown.value(QStringLiteral("title")).toString(
+        QStringLiteral("Untitled note"));
+    m_versionBody->setMarkdown(QStringLiteral("# %1%2\n\n%3")
+                                   .arg(emoji.isEmpty() ? QString() : emoji + QLatin1Char(' '),
+                                        title,
+                                        m_versionShown.value(QStringLiteral("markdown")).toString()));
+    m_historyPages->setCurrentIndex(1);
+}
+
+void NoteCommentsPanel::closeVersion()
+{
+    ++m_versionSequence;
+    m_versionShown = QJsonObject();
+    renderVersion();
+}
+
+void NoteCommentsPanel::restoreVersion(int version)
+{
+    if (version <= 0 || !m_hooks.restoreVersion)
+        return;
+    if (QMessageBox::question(
+            this, QStringLiteral("Restore version"),
+            QStringLiteral("Restore version %1? It is saved again as the newest "
+                           "version; nothing is lost.").arg(version))
+        != QMessageBox::Yes)
+        return;
+    closeVersion();
+    m_hooks.restoreVersion(version);
+}
+
+void NoteCommentsPanel::reloadChat()
+{
+    if (m_noteId.isEmpty() || !m_hooks.request)
+        return;
+    const int sequence = ++m_chatSequence;
+    const QString noteId = m_noteId;
+    QPointer<NoteCommentsPanel> guard(this);
+    m_hooks.request(QByteArrayLiteral("GET"), chatPath(), {},
+                    [guard, sequence, noteId](bool ok, const QJsonObject &payload,
+                                              const QString &error) {
+        if (!guard || guard->m_chatSequence != sequence || guard->m_noteId != noteId)
+            return;
+        if (!ok) {
+            if (!guard->m_chatLoaded)
+                guard->setChatStatus(
+                    QStringLiteral("Chat is unavailable: %1").arg(error));
+            return;
+        }
+        guard->applyChat(payload);
+    });
+}
+
+void NoteCommentsPanel::applyChat(const QJsonObject &payload)
+{
+    m_chat = noteChatMessages(payload.value(QStringLiteral("messages")).toArray());
+    m_chatModerate = payload.value(QStringLiteral("canModerate")).toBool();
+    m_chatLoaded = true;
+    setChatStatus(QString());
+    const QSettings settings;
+    m_chatUnread = noteChatUnread(
+        m_chat, m_hooks.me ? m_hooks.me() : QString(),
+        settings.value(QStringLiteral("notes/chatSeen/") + m_noteId).toLongLong());
+    if (m_chatTab && isVisible())
+        markChatSeen();
+    renderChat();
+    if (m_hooks.chatChanged)
+        m_hooks.chatChanged();
+}
+
+void NoteCommentsPanel::markChatSeen()
+{
+    if (m_noteId.isEmpty() || m_chat.isEmpty()) {
+        m_chatUnread = 0;
+        return;
+    }
+    QSettings settings;
+    const QString key = QStringLiteral("notes/chatSeen/") + m_noteId;
+    if (settings.value(key).toLongLong() < m_chat.constLast().createdAt)
+        settings.setValue(key, m_chat.constLast().createdAt);
+    if (std::exchange(m_chatUnread, 0) && m_hooks.chatChanged)
+        m_hooks.chatChanged();
+}
+
+void NoteCommentsPanel::setChatStatus(const QString &text)
+{
+    m_chatStatus->setText(text);
+    m_chatStatus->setVisible(!text.isEmpty());
+}
+
+void NoteCommentsPanel::renderChat()
+{
+    QScrollBar *bar = m_chatScroll->verticalScrollBar();
+    const bool atBottom = bar->value() >= bar->maximum() - 40;
+    while (QLayoutItem *item = m_chatListLayout->takeAt(0)) {
+        delete item->widget();
+        delete item;
+    }
+    const QString me = m_hooks.me ? m_hooks.me() : QString();
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (m_chat.isEmpty()) {
+        m_chatListLayout->addWidget(mutedLabel(
+            m_chatLoaded ? QStringLiteral("No messages yet. Say hello to everyone in this note.")
+                         : QStringLiteral("Loading chat…")));
+    }
+    for (const NoteChatMessage &message : std::as_const(m_chat)) {
+        const bool mine = sameAccount(message.author, me);
+        auto *row = new QWidget;
+        row->setObjectName(QStringLiteral("noteChatMessage"));
+        auto *rowLayout = new QVBoxLayout(row);
+        rowLayout->setContentsMargins(0, 0, 0, 0);
+        rowLayout->setSpacing(2);
+        auto *header = new QHBoxLayout;
+        header->setSpacing(6);
+        auto *who = new QLabel(mine ? QStringLiteral("You")
+                                    : QStringLiteral("@") + message.author);
+        who->setStyleSheet(Theme::remapSheet(
+            QStringLiteral("font-weight:600; background:transparent;")));
+        header->addWidget(who);
+        auto *time = new QLabel(commentTimeLabel(message.createdAt, now));
+        time->setObjectName(QStringLiteral("mutedLabel"));
+        time->setToolTip(QDateTime::fromMSecsSinceEpoch(message.createdAt)
+                             .toLocalTime()
+                             .toString(QStringLiteral("yyyy-MM-dd HH:mm")));
+        header->addWidget(time);
+        header->addStretch();
+        if (mine || m_chatModerate) {
+            auto *remove = iconButton(QStringLiteral("trash"), QStringLiteral("Delete message"));
+            const QString id = message.id;
+            connect(remove, &QToolButton::clicked, this, [this, id] { deleteChat(id); });
+            header->addWidget(remove);
+        }
+        rowLayout->addLayout(header);
+        auto *body = new QLabel(message.body);
+        body->setTextFormat(Qt::PlainText);
+        body->setWordWrap(true);
+        body->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        body->setStyleSheet(Theme::remapSheet(QStringLiteral("background:transparent;")));
+        rowLayout->addWidget(body);
+        m_chatListLayout->addWidget(row);
+    }
+    m_chatListLayout->addStretch();
+    if (atBottom || m_chatTab)
+        QTimer::singleShot(0, this, [this] {
+            m_chatScroll->verticalScrollBar()->setValue(
+                m_chatScroll->verticalScrollBar()->maximum());
+        });
+}
+
+void NoteCommentsPanel::sendChat()
+{
+    const QString body = m_chatBox->toPlainText().trimmed();
+    if (body.isEmpty() || m_chatBusy || m_noteId.isEmpty() || !m_hooks.request)
+        return;
+    if (body.size() > kMaxChatBody) {
+        setChatStatus(QStringLiteral("A message can be up to %1 characters.").arg(kMaxChatBody));
+        return;
+    }
+    m_chatBusy = true;
+    m_chatSend->setEnabled(false);
+    const QString noteId = m_noteId;
+    QPointer<NoteCommentsPanel> guard(this);
+    m_hooks.request(QByteArrayLiteral("POST"), chatPath(),
+                    QJsonObject{{QStringLiteral("body"), body}},
+                    [guard, noteId](bool ok, const QJsonObject &payload,
+                                    const QString &error) {
+        if (!guard || guard->m_noteId != noteId)
+            return;
+        guard->m_chatBusy = false;
+        guard->m_chatSend->setEnabled(true);
+        if (!ok) {
+            guard->setChatStatus(QStringLiteral("Not sent: %1").arg(error));
+            return;
+        }
+        guard->m_chatBox->clear();
+        ++guard->m_chatSequence;
+        guard->applyChat(payload);
+    });
+}
+
+void NoteCommentsPanel::deleteChat(const QString &messageId)
+{
+    if (QMessageBox::question(this, QStringLiteral("Delete message"),
+                              QStringLiteral("Delete this message for everyone?"))
+        != QMessageBox::Yes)
+        return;
+    const QString noteId = m_noteId;
+    QPointer<NoteCommentsPanel> guard(this);
+    m_hooks.request(QByteArrayLiteral("DELETE"), chatPath(messageId), {},
+                    [guard, noteId](bool ok, const QJsonObject &payload,
+                                    const QString &error) {
+        if (!guard || guard->m_noteId != noteId)
+            return;
+        if (!ok) {
+            guard->setChatStatus(QStringLiteral("Not deleted: %1").arg(error));
+            return;
+        }
+        ++guard->m_chatSequence;
+        guard->applyChat(payload);
+    });
 }
 
 void NoteCommentsPanel::reload()
@@ -385,6 +1097,7 @@ void NoteCommentsPanel::reload()
 void NoteCommentsPanel::apply(const QJsonObject &payload)
 {
     m_comments = payload.value(QStringLiteral("comments")).toArray();
+    m_reactions = noteReactions(payload.value(QStringLiteral("reactions")).toArray());
     m_people.clear();
     for (const QJsonValue &value : payload.value(QStringLiteral("people")).toArray()) {
         const QString name = value.toString().trimmed();
@@ -401,6 +1114,8 @@ void NoteCommentsPanel::apply(const QJsonObject &payload)
     render();
     if (m_hooks.countChanged)
         m_hooks.countChanged();
+    if (m_hooks.reactionsChanged)
+        m_hooks.reactionsChanged();
     if (!m_pendingId.isEmpty()) {
         const QString pending = std::exchange(m_pendingId, QString());
         showThread(pending);
@@ -457,6 +1172,14 @@ void NoteCommentsPanel::render()
     m_signature = commentThreadsSignature(threads);
     m_openCount = openThreadCount(threads);
     const int resolved = int(threads.size()) - m_openCount;
+    const QList<NoteReactionGroup> groups = reactionGroups();
+    m_reactionSignature = noteReactionGroupsSignature(groups);
+    if (m_loaded && !groups.isEmpty()) {
+        m_listLayout->addWidget(reactionsSection(groups));
+        auto *heading = mutedLabel(QStringLiteral("Comments"));
+        heading->setStyleSheet(QStringLiteral("font-weight: 600; background: transparent;"));
+        m_listLayout->addWidget(heading);
+    }
 
     if (!m_loaded) {
         if (!m_noteId.isEmpty())
@@ -465,8 +1188,8 @@ void NoteCommentsPanel::render()
         m_listLayout->addWidget(mutedLabel(
             resolved ? QStringLiteral("No open comments.")
                      : QStringLiteral("No comments yet. Select text in the note "
-                                      "and choose Comment, or press New to "
-                                      "comment on the whole note.")));
+                                      "and choose Comment or React, or press New "
+                                      "to comment on the whole note.")));
     }
     for (const CommentThread &thread : threads) {
         if (!thread.resolved)
@@ -709,6 +1432,148 @@ QWidget *NoteCommentsPanel::threadCard(const CommentThread &thread)
     }
     m_cards.insert(id, card);
     return card;
+}
+
+QWidget *NoteCommentsPanel::reactionsSection(const QList<NoteReactionGroup> &groups)
+{
+    auto *section = new QWidget;
+    section->setObjectName(QStringLiteral("noteReactionsSection"));
+    auto *layout = new QVBoxLayout(section);
+    layout->setContentsMargins(0, 0, 0, 4);
+    layout->setSpacing(6);
+    auto *heading = mutedLabel(QStringLiteral("Reactions"));
+    heading->setStyleSheet(QStringLiteral("font-weight: 600; background: transparent;"));
+    layout->addWidget(heading);
+    for (const NoteReactionGroup &group : groups)
+        layout->addWidget(reactionGroupCard(group));
+    return section;
+}
+
+QWidget *NoteCommentsPanel::reactionGroupCard(const NoteReactionGroup &group)
+{
+    auto *card = new QFrame;
+    card->setObjectName(QStringLiteral("noteReactionGroup"));
+    card->setProperty("reactionGroup", group.key());
+    card->setStyleSheet(QStringLiteral("QFrame#noteReactionGroup { background: %1;"
+                                       " border: 1px solid %2; border-radius: 8px; }")
+                            .arg(Theme::hex(Theme::Role::SurfaceRaised),
+                                 Theme::hex(Theme::Role::Border)));
+    auto *layout = new QVBoxLayout(card);
+    layout->setContentsMargins(10, 8, 10, 8);
+    layout->setSpacing(6);
+    if (group.wholeNote()) {
+        layout->addWidget(mutedLabel(QStringLiteral("On the whole note")));
+    } else {
+        auto *quoteHost = new ThreadCard;
+        quoteHost->setObjectName(QStringLiteral("noteReactionQuoteHost"));
+        quoteHost->setCursor(Qt::PointingHandCursor);
+        quoteHost->setToolTip(QStringLiteral("Select this passage in the note"));
+        auto *quoteLayout = new QVBoxLayout(quoteHost);
+        quoteLayout->setContentsMargins(0, 0, 0, 0);
+        auto *quote = new QLabel(elided(group.quote(), kQuotePreviewChars));
+        quote->setObjectName(QStringLiteral("noteReactionQuote"));
+        quote->setWordWrap(true);
+        quote->setTextFormat(Qt::PlainText);
+        quote->setStyleSheet(quoteSheet());
+        quoteLayout->addWidget(quote);
+        quoteHost->clicked = [this, group] {
+            if (m_hooks.selectPassage)
+                m_hooks.selectPassage(group);
+        };
+        layout->addWidget(quoteHost);
+    }
+    auto *chips = new QWidget;
+    chips->setObjectName(QStringLiteral("noteReactionChips"));
+    auto *flow = new FlowLayout(chips, 0, 4, 4);
+    const auto chipSheet = [](bool mine) {
+        return QStringLiteral("QToolButton { border: 1px solid %1; border-radius: 10px;"
+                              " padding: 1px 8px; background: %2; color: %3; }"
+                              " QToolButton:hover { border-color: %4; }")
+            .arg(Theme::hex(mine ? Theme::Role::Accent : Theme::Role::Border),
+                 Theme::hex(mine ? Theme::Role::AccentSubtle : Theme::Role::Surface),
+                 Theme::hex(mine ? Theme::Role::Accent : Theme::Role::Fg),
+                 Theme::hex(mine ? Theme::Role::Accent : Theme::Role::BorderStrong));
+    };
+    for (const NoteReactionChip &chip : group.chips) {
+        auto *button = new QToolButton;
+        button->setObjectName(QStringLiteral("noteReactionChip"));
+        button->setProperty("mine", chip.mine());
+        button->setCursor(Qt::PointingHandCursor);
+        button->setText(noteReactionChipLabel(chip));
+        button->setToolTip(noteReactionChipTip(chip));
+        button->setAccessibleName(noteReactionChipTip(chip));
+        button->setStyleSheet(chipSheet(chip.mine()));
+        const NoteReactionToggle toggle = noteReactionToggle(group, chip);
+        connect(button, &QToolButton::clicked, this, [this, toggle] {
+            sendReaction(toggle.method, reactionsPath(toggle.reactionId), toggle.body);
+        });
+        flow->addWidget(button);
+    }
+    auto *add = new QToolButton;
+    add->setObjectName(QStringLiteral("noteReactionAdd"));
+    add->setCursor(Qt::PointingHandCursor);
+    add->setText(QStringLiteral("+"));
+    add->setToolTip(group.wholeNote() ? QStringLiteral("React to the whole note")
+                                      : QStringLiteral("React to this passage"));
+    add->setAccessibleName(add->toolTip());
+    add->setStyleSheet(chipSheet(false));
+    const NoteReaction like = group.first;
+    connect(add, &QToolButton::clicked, this,
+            [this, add, like] { showReactionMenu(add, like); });
+    flow->addWidget(add);
+    layout->addWidget(chips);
+    return card;
+}
+
+void NoteCommentsPanel::showReactionMenu(QWidget *below, const NoteReaction &like)
+{
+    auto *menu = new QMenu(this);
+    menu->setObjectName(QStringLiteral("noteReactionMenu"));
+    menu->setAttribute(Qt::WA_DeleteOnClose);
+    for (const QString &emoji : noteQuickReactions()) {
+        QAction *action = menu->addAction(emoji);
+        connect(action, &QAction::triggered, this, [this, emoji, like] {
+            sendReaction(QByteArrayLiteral("POST"), reactionsPath(),
+                         noteReactionRequest(emoji, like));
+        });
+    }
+    menu->popup(below->mapToGlobal(QPoint(0, below->height())));
+}
+
+void NoteCommentsPanel::react(const QString &emoji, const CommentQuote &quote)
+{
+    sendReaction(QByteArrayLiteral("POST"), reactionsPath(),
+                 noteReactionRequest(emoji, quote));
+}
+
+void NoteCommentsPanel::sendReaction(const QByteArray &method, const QString &path,
+                                     const QJsonObject &body)
+{
+    if (!m_hooks.request || m_noteId.isEmpty() || m_reactionBusy)
+        return;
+    m_reactionBusy = true;
+    const QString noteId = m_noteId;
+    QPointer<NoteCommentsPanel> guard(this);
+    m_hooks.request(method, path, body,
+                    [guard, noteId](bool ok, const QJsonObject &payload,
+                                    const QString &error) {
+        if (!guard || guard->m_noteId != noteId)
+            return;
+        guard->m_reactionBusy = false;
+        if (!ok) {
+            const QString code = payload.value(QStringLiteral("error")).toString();
+            const QString text = noteReactionError(
+                code, QStringLiteral("That reaction did not go through: %1").arg(error));
+            if (guard->m_hooks.failed)
+                guard->m_hooks.failed(text);
+            else
+                guard->setStatus(text);
+            if (code == QLatin1String("reaction_not_found"))
+                guard->reload();
+            return;
+        }
+        guard->apply(payload);
+    });
 }
 
 void NoteCommentsPanel::restyleCards()

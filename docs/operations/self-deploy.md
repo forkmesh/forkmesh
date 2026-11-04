@@ -21,6 +21,13 @@ stops the rest. A core without a fresh `cluster_members` heartbeat neither
 blocks nor holds the approval open. Progress is in `deploy_approval_nodes`;
 the outcome is announced to operators and the approver.
 
+The agent runs as root and the repository belongs to `forkmesh-node`, whose
+daemon faces the internet. A repository's `config` can run commands (a
+partial-clone lazy fetch runs `core.sshCommand`), so reads go through `runuser
+-u forkmesh-node` and every git call sets `GIT_NO_LAZY_FETCH=1`. The clone into
+the build folder stays root, because root owns that folder: it reads the
+repository without running its config, and the clone gets a fresh `config`.
+
 ## What a core does
 
 | Change | Action |

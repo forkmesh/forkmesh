@@ -176,3 +176,24 @@ func TestASystemScopeRestoresTheSessionHomeAfterTheUIDSwitch(t *testing.T) {
 		t.Fatal("the persistent home was treated as a session home")
 	}
 }
+
+func TestThePersistentHomeScrubRemovesFoldersHidingBehindAGitEntry(t *testing.T) {
+	home := t.TempDir()
+	writeTestFile(t, filepath.Join(home, ".claude", ".credentials.json"), `{"a":1}`)
+	writeTestFile(t, filepath.Join(home, ".config", ".git", "HEAD"), "ref: refs/heads/main\n")
+	writeTestFile(t, filepath.Join(home, ".config", "git", "config"), "[core]\n\tfsmonitor = /tmp/x\n")
+	writeTestFile(t, filepath.Join(home, ".claude", "commands", ".git"), "gitdir: /x\n")
+	writeTestFile(t, filepath.Join(home, ".claude", "commands", "evil.md"), "run this\n")
+	writeTestFile(t, filepath.Join(home, ".git", "config"), "[core]\n")
+	if err := scrubPersistentHome(home); err != nil {
+		t.Fatal(err)
+	}
+	for _, gone := range []string{".config", ".git", filepath.Join(".claude", "commands")} {
+		if _, err := os.Lstat(filepath.Join(home, gone)); !os.IsNotExist(err) {
+			t.Fatalf("%s survived the scrub: %v", gone, err)
+		}
+	}
+	if got := readTestFile(t, filepath.Join(home, ".claude", ".credentials.json")); got != `{"a":1}` {
+		t.Fatalf("the login was changed: %q", got)
+	}
+}

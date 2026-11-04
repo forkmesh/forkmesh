@@ -1,0 +1,567 @@
+import FMTools
+import Foundation
+import XCTest
+
+enum SilentSynth {
+    static func pattern(_ word: String, _ p: Double, _ amp: Double) -> SilentVector {
+        let one: Double = amp * sin(2 * Double.pi * p)
+        let two: Double = amp * sin(4 * Double.pi * p)
+        switch word {
+        case "yes": return SilentVector(one, 0, 0)
+        case "no": return SilentVector(0, one, 0)
+        case "help": return SilentVector(two, 0, 0)
+        default: return SilentVector(0, 0, one)
+        }
+    }
+
+    static func take(_ word: String, _ random: inout SilentRandom, rate: Double = 25, acceleration: Bool = true, noise: Double = 0.05) -> [SilentSample] {
+        let duration: Double = 0.8 + 0.3 * random.unit()
+        let amp: Double = 1.5 + 0.5 * random.unit()
+        let lead: Double = 0.3
+        let count: Int = Int(((2 * lead + duration) * rate).rounded())
+        var attitude: SilentQuaternion = .identity
+        var samples: [SilentSample] = []
+        for k in 0..<count {
+            let t: Double = Double(k) / rate
+            let p: Double = (t - lead) / duration
+            let base: SilentVector = p >= 0 && p <= 1 ? pattern(word, p, amp) : .zero
+            let rate3: SilentVector = SilentVector(
+                base.x + noise * (random.unit() - 0.5), base.y + noise * (random.unit() - 0.5), base.z + noise * (random.unit() - 0.5))
+            attitude = (attitude * SilentQuaternion.fromRotationVector(SilentVector(rate3.x / rate, rate3.y / rate, rate3.z / rate))).normalized
+            let accel: SilentVector? = acceleration ? SilentVector(0.02 * rate3.x, 0.02 * rate3.y, 0.02 * rate3.z) : nil
+            samples.append(SilentSample(t: t, rotationRate: rate3, attitude: attitude, acceleration: accel))
+        }
+        return samples
+    }
+
+    static func dataset(words: [String], takes: Int, seed: UInt64, acceleration: Bool = true) -> SilentDataset {
+        var random: SilentRandom = SilentRandom(seed: seed)
+        var dataset: SilentDataset = SilentDataset(words: words.map { SilentWord($0) })
+        for n in 0..<takes {
+            for word in words {
+                dataset.addTake(SilentTake(id: "\(word)-\(n)", word: word, samples: take(word, &random, acceleration: acceleration)))
+            }
+        }
+        return dataset
+    }
+
+    static func shifted(_ samples: [SilentSample], by offset: Double) -> [SilentSample] {
+        samples.map { SilentSample(t: $0.t + offset, rotationRate: $0.rotationRate, attitude: $0.attitude, acceleration: $0.acceleration) }
+    }
+
+    static func heartbeat(bpm: Double, seconds: Double, amplitude: Double, rate: Double = 25) -> [SilentSample] {
+        var random: SilentRandom = SilentRandom(seed: 12)
+        let period: Double = 60 / bpm
+        return (0..<Int(seconds * rate)).map { (k: Int) -> SilentSample in
+            let t: Double = Double(k) / rate
+            let phase: Double = t.truncatingRemainder(dividingBy: period) / period
+            let beat: Double = amplitude * (exp(-pow((phase - 0.2) / 0.05, 2)) - 0.6 * exp(-pow((phase - 0.3) / 0.06, 2)))
+            let breath: Double = 0.003 * sin(2 * Double.pi * 0.25 * t)
+            let jitter: SilentVector = SilentVector(0.002 * (random.unit() - 0.5), 0.002 * (random.unit() - 0.5), 0.002 * (random.unit() - 0.5))
+            return SilentSample(t: t, rotationRate: SilentVector(beat + breath + jitter.x, 0.5 * beat + jitter.y, jitter.z), attitude: .identity, acceleration: SilentVector(0.3 * beat, jitter.y, jitter.z))
+        }
+    }
+}
+
+final class SilentSpeechTests: XCTestCase {
+    func testRandomMatchesSplitMix64() {
+        var random: SilentRandom = SilentRandom(seed: 0x5EED_5EED)
+        XCTAssertEqual(random.next(), 0x99a4_143d_3458_5f45)
+        XCTAssertEqual(random.next(), 0xfc18_d87f_cc9c_a7a3)
+        XCTAssertEqual(random.next(), 0x7220_ff96_60d1_3a72)
+    }
+
+    func testQuaternionRoundTripsARotationVector() {
+        let v: SilentVector = SilentVector(0.3, -0.2, 0.9)
+        let back: SilentVector = SilentQuaternion.fromRotationVector(v).rotationVector
+        XCTAssertEqual(back.x, v.x, accuracy: 1e-9)
+        XCTAssertEqual(back.y, v.y, accuracy: 1e-9)
+        XCTAssertEqual(back.z, v.z, accuracy: 1e-9)
+        let r: SilentVector = (SilentQuaternion.fromRotationVector(v).conjugate * SilentQuaternion.fromRotationVector(v)).rotationVector
+        XCTAssertEqual(r.length, 0, accuracy: 1e-9)
+    }
+
+    func testResamplesToTwentyFiveHertz() {
+        var random: SilentRandom = SilentRandom(seed: 1)
+        let fast: [SilentSample] = SilentSynth.take("yes", &random, rate: 100)
+        let resampled: [SilentSample] = SilentFeatures.resampled(fast)
+        let span: Double = fast.last!.t - fast.first!.t
+        XCTAssertEqual(resampled.count, Int((span * 25).rounded(.down)) + 1)
+        XCTAssertEqual(resampled[1].t - resampled[0].t, 0.04, accuracy: 1e-9)
+    }
+
+    func testTrimsTheQuietLeadInAndLeadOut() {
+        var random: SilentRandom = SilentRandom(seed: 2)
+        let samples: [SilentSample] = SilentSynth.take("no", &random, noise: 0.01)
+        let trimmed: [SilentSample] = SilentFeatures.trimmed(samples)
+        XCTAssertLessThan(trimmed.count, samples.count - 10)
+        XCTAssertGreaterThan(trimmed.first!.t, 0.25)
+    }
+
+    func testFramesHaveThreeValuesPerChannelAndAreCentred() {
+        var random: SilentRandom = SilentRandom(seed: 3)
+        let samples: [SilentSample] = SilentSynth.take("help", &random)
+        XCTAssertEqual(SilentFeatures.frames(samples, channels: SilentChannel.defaults).first?.count, 9)
+        let frames: [[Double]] = SilentFeatures.frames(samples, channels: [.rotation])
+        XCTAssertEqual(frames.first?.count, 3)
+        let mean: Double = frames.reduce(0) { $0 + $1[0] } / Double(frames.count)
+        XCTAssertEqual(mean, 0, accuracy: 1e-9)
+    }
+
+    func testDTWIsZeroForItselfSymmetricAndForgivesTempo() {
+        var random: SilentRandom = SilentRandom(seed: 4)
+        let a: [[Double]] = SilentFeatures.frames(SilentSynth.take("yes", &random), channels: [.rotation])
+        let slow: [[Double]] = SilentFeatures.frames(SilentSynth.take("yes", &random), channels: [.rotation])
+        let other: [[Double]] = SilentFeatures.frames(SilentSynth.take("no", &random), channels: [.rotation])
+        XCTAssertEqual(SilentDTW.distance(a, a), 0, accuracy: 1e-12)
+        XCTAssertEqual(SilentDTW.distance(a, other), SilentDTW.distance(other, a), accuracy: 1e-12)
+        XCTAssertLessThan(SilentDTW.distance(a, slow), SilentDTW.distance(a, other))
+        XCTAssertEqual(SilentDTW.distance(a, other, cutoff: 1e-6), .infinity)
+        XCTAssertEqual(SilentDTW.distance([], a), .infinity)
+    }
+
+    func testModelRecognisesEachWordAndRejectsFarOnes() {
+        let train: SilentDataset = SilentSynth.dataset(words: ["yes", "no", "help", "stop"], takes: 3, seed: 10)
+        let model: SilentModel = SilentModel(takes: train.takes, channels: SilentChannel.defaults)
+        var random: SilentRandom = SilentRandom(seed: 99)
+        for word in ["yes", "no", "help", "stop"] {
+            let match: SilentMatch? = model.match(SilentSynth.take(word, &random), maxDistance: nil, minMargin: 0)
+            XCTAssertEqual(match?.word, word)
+            XCTAssertEqual(match?.accepted, true)
+        }
+        let strict: SilentMatch? = model.match(SilentSynth.take("yes", &random), maxDistance: 1e-6, minMargin: 0)
+        XCTAssertEqual(strict?.accepted, false)
+        XCTAssertTrue(strict?.summary.hasPrefix("Not sure") ?? false)
+    }
+
+    func testWorksWithoutAccelerationLikeAndroidHeadTrackers() {
+        let train: SilentDataset = SilentSynth.dataset(words: ["yes", "no"], takes: 3, seed: 11, acceleration: false)
+        let model: SilentModel = SilentModel(takes: train.takes, channels: SilentChannel.defaults)
+        var random: SilentRandom = SilentRandom(seed: 12)
+        XCTAssertEqual(model.match(SilentSynth.take("no", &random, acceleration: false), maxDistance: nil, minMargin: 0)?.word, "no")
+    }
+
+    func testEvaluationFindsSeparableWordsSignificant() throws {
+        let dataset: SilentDataset = SilentSynth.dataset(words: ["yes", "no", "help", "stop"], takes: 4, seed: 42)
+        let result: SilentEvaluation = try XCTUnwrap(SilentEvaluator.evaluate(dataset, channels: SilentChannel.defaults, permutations: 200))
+        XCTAssertEqual(result.evaluated, 16)
+        XCTAssertEqual(result.correct, 16)
+        XCTAssertEqual(result.pValue, 1.0 / 201.0, accuracy: 1e-12)
+        XCTAssertTrue(result.significant)
+        XCTAssertEqual(result.confusion.map { $0.reduce(0, +) }, [4, 4, 4, 4])
+        XCTAssertNotNil(result.suggestedMaxDistance)
+        XCTAssertLessThan(result.nullMean, 0.5)
+        XCTAssertEqual(result.headline, "Right 16 of 16 (100%), chance is about 25%")
+        XCTAssertTrue(result.verdict.hasPrefix("p = 0.005"))
+    }
+
+    func testEvaluationOfIdenticalMotionIsNotSignificant() throws {
+        var random: SilentRandom = SilentRandom(seed: 7)
+        var dataset: SilentDataset = SilentDataset(words: [SilentWord("a"), SilentWord("b"), SilentWord("c")])
+        for n in 0..<12 {
+            dataset.addTake(SilentTake(id: "\(n)", word: ["a", "b", "c"][n % 3], samples: SilentSynth.take("yes", &random, noise: 0.4)))
+        }
+        let result: SilentEvaluation = try XCTUnwrap(SilentEvaluator.evaluate(dataset, channels: SilentChannel.defaults, permutations: 200))
+        XCTAssertFalse(result.significant)
+        XCTAssertTrue(result.verdict.contains("not yet better than chance"))
+    }
+
+    func testEvaluationNeedsTwoWordsWithTwoTakes() {
+        var dataset: SilentDataset = SilentSynth.dataset(words: ["yes", "no"], takes: 1, seed: 5)
+        XCTAssertNotNil(SilentEvaluator.requirement(dataset))
+        XCTAssertNil(SilentEvaluator.evaluate(dataset, channels: SilentChannel.defaults))
+        var random: SilentRandom = SilentRandom(seed: 6)
+        dataset.addTake(SilentTake(id: "y", word: "yes", samples: SilentSynth.take("yes", &random)))
+        dataset.addTake(SilentTake(id: "n", word: "no", samples: SilentSynth.take("no", &random)))
+        XCTAssertNil(SilentEvaluator.requirement(dataset))
+    }
+
+    func testLeaveOneOutUsesTheMatrixAndSkipsSingleTakeWords() {
+        let d: [[Double]] = [[0, 1, 5, 5], [1, 0, 5, 5], [5, 5, 0, 2], [5, 5, 2, 0]]
+        let results = SilentEvaluator.leaveOneOut(d, labels: [0, 0, 1, 1], wordCount: 2, neighbors: 1)
+        XCTAssertEqual(results.map(\.guess), [0, 0, 1, 1])
+        XCTAssertEqual(results.map(\.distance), [1, 1, 2, 2])
+        XCTAssertEqual(SilentEvaluator.leaveOneOut(d, labels: [0, 1, 1, 1], wordCount: 2, neighbors: 1).count, 3)
+    }
+
+    func testLeaveOneOutOnThreeNeighboursMatchesSortingEveryDistance() {
+        var random: SilentRandom = SilentRandom(seed: 21)
+        let n: Int = 30
+        var d: [[Double]] = Array(repeating: Array(repeating: 0, count: n), count: n)
+        for i in 0..<n {
+            for j in (i + 1)..<n {
+                d[i][j] = (random.unit() * 8).rounded() / 4
+                d[j][i] = d[i][j]
+            }
+        }
+        let labels: [Int] = (0..<n).map { $0 % 3 }
+        let results = SilentEvaluator.leaveOneOut(d, labels: labels, wordCount: 3, neighbors: 3)
+        for (i, r) in results.enumerated() {
+            let scores: [Double] = (0..<3).map { (w: Int) -> Double in
+                let best: [Double] = Array(labels.indices.filter { $0 != i && labels[$0] == w }.map { d[i][$0] }.sorted().prefix(3))
+                return best.reduce(0, +) / Double(best.count)
+            }
+            XCTAssertEqual(r.distance, scores.min()!)
+            XCTAssertEqual(r.guess, scores.firstIndex(of: scores.min()!)!)
+        }
+        XCTAssertEqual(results.count, n)
+    }
+
+    func testCrossPlatformParity() throws {
+        let dataset: SilentDataset = SilentSynth.dataset(words: ["yes", "no", "help"], takes: 3, seed: 2026, acceleration: false)
+        let result: SilentEvaluation = try XCTUnwrap(SilentEvaluator.evaluate(dataset, channels: [.rotation, .attitude], permutations: 100))
+        XCTAssertEqual(result.evaluated, 9)
+        XCTAssertEqual(result.correct, 9)
+        XCTAssertEqual(result.pValue, 1.0 / 101.0, accuracy: 1e-12)
+        let frames: [[Double]] = SilentFeatures.frames(dataset.takes[0].samples, channels: [.rotation, .attitude])
+        XCTAssertEqual(frames.count, 26)
+        XCTAssertEqual(SilentDTW.distance(frames, SilentFeatures.frames(dataset.takes[1].samples, channels: [.rotation, .attitude])), 0.866728, accuracy: 1e-5)
+    }
+
+    func testSegmenterFindsAMouthedWordWithPreRoll() throws {
+        var random: SilentRandom = SilentRandom(seed: 8)
+        let quiet: [Double] = (0..<50).map { _ in 0.02 + 0.01 * random.unit() }
+        let noise: SilentNoiseFloor = try XCTUnwrap(SilentNoiseFloor.calibrate(quiet))
+        XCTAssertGreaterThan(noise.on, noise.off)
+        var segmenter: SilentSegmenter = SilentSegmenter(noise: noise)
+        var found: [[SilentSample]] = []
+        let word: [SilentSample] = SilentSynth.take("yes", &random, noise: 0.01)
+        for sample in word {
+            if let segment = segmenter.push(sample) { found.append(segment) }
+        }
+        let tail: Double = word.last!.t
+        for k in 1...20 {
+            let t: Double = tail + Double(k) / 25
+            if let segment = segmenter.push(SilentSample(t: t, rotationRate: .zero, attitude: .identity)) { found.append(segment) }
+        }
+        XCTAssertEqual(found.count, 1)
+        let segment: [SilentSample] = try XCTUnwrap(found.first)
+        XCTAssertLessThan(segment.first!.t, 0.3)
+        XCTAssertGreaterThan(segment.last!.t - segment.first!.t, 0.6)
+        XCTAssertFalse(segmenter.active)
+    }
+
+    func testSegmenterIgnoresAShortBump() throws {
+        let noise: SilentNoiseFloor = SilentNoiseFloor(floor: 0.02, spread: 0.005)
+        var segmenter: SilentSegmenter = SilentSegmenter(noise: noise)
+        var found: Int = 0
+        for k in 0..<40 {
+            let bump: Double = (10...12).contains(k) ? 1 : 0
+            if segmenter.push(SilentSample(t: Double(k) / 25, rotationRate: SilentVector(bump, 0, 0), attitude: .identity)) != nil { found += 1 }
+        }
+        XCTAssertEqual(found, 0)
+    }
+
+    func testDatasetCleansWordsAndRoundTripsJSON() throws {
+        var dataset: SilentDataset = .starter
+        XCTAssertFalse(dataset.addWord(" YES "))
+        XCTAssertTrue(dataset.addWord(" Thirsty ", phrase: "Could I have some water, please? "))
+        XCTAssertEqual(dataset.phrase("thirsty"), "Could I have some water, please?")
+        XCTAssertEqual(dataset.phrase("yes"), "yes")
+        var random: SilentRandom = SilentRandom(seed: 9)
+        dataset.addTake(SilentTake(id: "t1", word: "thirsty", samples: SilentSynth.take("yes", &random)))
+        dataset.addTake(SilentTake(id: "t2", word: "yes", samples: SilentSynth.take("yes", &random, acceleration: false)))
+        dataset.addTake(SilentTake(id: "t3", word: "unknown", samples: SilentSynth.take("yes", &random)))
+        XCTAssertEqual(dataset.takes.count, 2)
+        let back: SilentDataset = try XCTUnwrap(SilentDataset.decode(dataset.encoded()))
+        XCTAssertEqual(back.words, dataset.words)
+        XCTAssertEqual(back.takes.map(\.id), ["t1", "t2"])
+        XCTAssertNotNil(back.takes[0].samples[0].acceleration)
+        XCTAssertNil(back.takes[1].samples[0].acceleration)
+        XCTAssertEqual(back.takes[0].samples.count, dataset.takes[0].samples.count)
+        XCTAssertEqual(back.takes[0].samples[5].rotationRate.x, dataset.takes[0].samples[5].rotationRate.x, accuracy: 1e-5)
+        dataset.removeWord("thirsty")
+        XCTAssertEqual(dataset.takes.map(\.id), ["t2"])
+        dataset.removeLastTake("yes")
+        XCTAssertEqual(dataset.count("yes"), 0)
+        XCTAssertNil(SilentDataset.decode(Data("{\"version\":99,\"words\":[]}".utf8)))
+    }
+
+    func testTextSplitsSentencesIntoWords() {
+        XCTAssertEqual(SilentText.words("  Could you, PLEASE — help me? It’s late. "), ["could", "you", "please", "help", "me", "it's", "late"])
+        XCTAssertEqual(SilentText.words("'quoted' 42"), ["quoted", "42"])
+        XCTAssertEqual(SilentText.words("..."), [])
+        let vocabulary: Set<String> = Set(SilentText.sentences.flatMap(SilentText.words))
+        XCTAssertGreaterThan(vocabulary.count, 100)
+        XCTAssertTrue(["yes", "no", "help", "stop", "water"].allSatisfy(vocabulary.contains))
+    }
+
+    func testReadingScriptCyclesSentencesWithoutRepeatsAndMatchesAndroid() {
+        let sentences: [[String]] = (0..<4).map { ["s\($0)", "w"] }
+        let script: [[String]] = SilentReading.script(sentences, seed: 7, count: 20)
+        XCTAssertEqual(script.count, 20)
+        XCTAssertEqual(Set(sentences.map { s in script.filter { $0 == s }.count }), [5])
+        XCTAssertFalse(zip(script, script.dropFirst()).contains { $0 == $1 })
+        XCTAssertEqual(script.prefix(5).map { $0[0] }, ["s1", "s2", "s0", "s3", "s0"])
+        XCTAssertEqual(SilentReading.script([], seed: 1), [])
+    }
+
+    func testReadingPlanPrefersYourSentencesAndWordsWithFewTakes() {
+        var dataset: SilentDataset = .starter
+        XCTAssertTrue(dataset.addSentence("Pass the salt, please"))
+        XCTAssertFalse(dataset.addSentence("pass the SALT please"))
+        XCTAssertNotNil(dataset.addEntry("zebra"))
+        let pool: [[String]] = SilentReading.pool(dataset)
+        XCTAssertEqual(pool.first, ["pass", "the", "salt", "please"])
+        XCTAssertEqual(pool.last, ["zebra"])
+        XCTAssertEqual(pool.count, SilentText.sentences.count + 2)
+        let plan: [[String]] = SilentReading.plan(dataset, size: 3)
+        XCTAssertEqual(plan.count, 3)
+        XCTAssertEqual(plan[0], ["pass", "the", "salt", "please"])
+        var random: SilentRandom = SilentRandom(seed: 1)
+        for n in 0..<10 {
+            for word in ["pass", "the", "salt", "please"] { dataset.learn(SilentTake(id: "\(word)\(n)", word: word, samples: SilentSynth.take("yes", &random))) }
+        }
+        XCTAssertFalse(SilentReading.plan(dataset, size: 3).contains(["pass", "the", "salt", "please"]))
+        let reading: SilentReading = SilentReading(sentences: plan, seed: 5)
+        XCTAssertEqual(reading.sentences.count, SilentReading.scriptLength)
+        XCTAssertTrue(reading.sentences.allSatisfy(plan.contains))
+    }
+
+    func testDatasetLearnsNewWordsFromSentencesAndEntries() throws {
+        var dataset: SilentDataset = SilentDataset(words: [])
+        var random: SilentRandom = SilentRandom(seed: 2)
+        dataset.learn(SilentTake(id: "a", word: "coffee", samples: SilentSynth.take("yes", &random)))
+        XCTAssertEqual(dataset.words.map(\.word), ["coffee"])
+        XCTAssertEqual(dataset.counts(), ["coffee": 1])
+        XCTAssertEqual(dataset.addEntry("thirsty: Could I have some water?"), "thirsty")
+        XCTAssertEqual(dataset.phrase("thirsty"), "Could I have some water?")
+        XCTAssertEqual(dataset.addEntry("See you later"), "see")
+        XCTAssertEqual(dataset.sentences, ["See you later"])
+        XCTAssertNil(dataset.addEntry("coffee"))
+        let back: SilentDataset = try XCTUnwrap(SilentDataset.decode(dataset.encoded()))
+        XCTAssertEqual(back.sentences, ["See you later"])
+        XCTAssertEqual(back.words.map(\.word), ["coffee", "thirsty", "see", "you", "later"])
+        dataset.removeSentence("See you later")
+        XCTAssertEqual(dataset.sentences, [])
+    }
+
+    func testLanguageModelPrefersWordsThatFollow() {
+        let language: SilentLanguage = SilentLanguage(sentences: [["i", "would", "like", "water"], ["i", "would", "like", "coffee"], ["i", "need", "help"]])
+        XCTAssertGreaterThan(language.probability("would", after: "i", vocabulary: 10), language.probability("help", after: "i", vocabulary: 10))
+        XCTAssertGreaterThan(language.probability("i", after: nil, vocabulary: 10), language.probability("water", after: nil, vocabulary: 10))
+        XCTAssertGreaterThan(language.probability("unknown", after: "i", vocabulary: 10), 0)
+        let close: [(word: String, distance: Double)] = [("help", 1.0), ("would", 1.02), ("water", 2.0), ("coffee", 2.2)]
+        XCTAssertEqual(SilentScores.ranked(close, language: language, previous: "i").first?.word, "would")
+        XCTAssertEqual(SilentScores.ranked(close, language: nil, previous: "i").first?.word, "help")
+        let far: [(word: String, distance: Double)] = [("help", 0.5), ("would", 2.0), ("water", 2.1), ("coffee", 2.2)]
+        XCTAssertEqual(SilentScores.ranked(far, language: language, previous: "i").first?.word, "help")
+    }
+
+    func testEvaluationSamplesTheNewestTakesOfEachWord() {
+        let dataset: SilentDataset = SilentSynth.dataset(words: ["yes", "no"], takes: 5, seed: 3)
+        let kept: [SilentTake] = SilentEvaluator.sample(dataset.takes, perWord: 3, total: 5)
+        XCTAssertEqual(kept.map(\.id), ["no-2", "yes-3", "no-3", "yes-4", "no-4"])
+        XCTAssertEqual(SilentEvaluator.rounds(500, takes: 40), 500)
+        XCTAssertEqual(SilentEvaluator.rounds(500, takes: 600), 111)
+        XCTAssertEqual(SilentEvaluator.rounds(500, takes: 2000), 100)
+        XCTAssertEqual(SilentEvaluator.rounds(50, takes: 2000), 50)
+    }
+
+    func testEvaluationListsTheWorstMixups() {
+        let result: SilentEvaluation = SilentEvaluation(
+            words: ["a", "b", "c"], evaluated: 9, correct: 4, nullMean: 0.3, pValue: 0.2, permutations: 10,
+            confusion: [[1, 2, 0], [3, 1, 0], [0, 1, 2]], suggestedMaxDistance: nil)
+        let mixups = result.mixups(2)
+        XCTAssertEqual(mixups.map(\.word), ["b", "a"])
+        XCTAssertEqual(mixups.map(\.guess), ["a", "b"])
+        XCTAssertEqual(mixups.map(\.count), [3, 2])
+    }
+
+    func testScopeKeepsAWindowAndShowsDegrees() throws {
+        var scope: SilentScope = SilentScope()
+        var attitude: SilentQuaternion = .identity
+        for k in 0..<250 {
+            let t: Double = Double(k) / 25
+            let spin: SilentVector = SilentVector(1, 0, k < 25 ? 0.5 : 0)
+            attitude = (attitude * SilentQuaternion.fromRotationVector(SilentVector(0, 0, spin.z / 25))).normalized
+            scope.push(SilentSample(t: t, rotationRate: spin, attitude: attitude, acceleration: SilentVector(0, 0, 0.1)))
+        }
+        XCTAssertLessThanOrEqual(try XCTUnwrap(scope.samples.last).t - scope.samples[0].t, SilentScope.window)
+        let frames: [SilentScopeFrame] = scope.frames
+        let last: SilentScopeFrame = try XCTUnwrap(frames.last)
+        XCTAssertEqual(last.rotation.x, 57.29578, accuracy: 1e-4)
+        XCTAssertEqual(last.angle.z, 0.48 * 180 / Double.pi, accuracy: 1e-6)
+        XCTAssertEqual(last.acceleration?.z, 0.1)
+        scope.recentre()
+        XCTAssertEqual(try XCTUnwrap(scope.frames.last).angle.z, 0, accuracy: 1e-9)
+        scope.mark(Array(scope.samples.suffix(10)), label: "yes")
+        XCTAssertEqual(scope.marks.map(\.label), ["yes"])
+        for k in 250..<500 { scope.push(SilentSample(t: Double(k) / 25, rotationRate: .zero, attitude: attitude)) }
+        XCTAssertTrue(scope.marks.isEmpty)
+    }
+
+    func testSpectrumFindsTheNodFrequency() throws {
+        let values: [SilentVector] = (0..<100).map { SilentVector(0, sin(2 * Double.pi * 3.125 * Double($0) / 25), 0) }
+        let spectrum: SilentSpectrum = SilentScope.spectrum(values)
+        XCTAssertEqual(spectrum.power.count, 33)
+        XCTAssertEqual(spectrum.binHz, 25.0 / 64, accuracy: 1e-12)
+        XCTAssertEqual(try XCTUnwrap(spectrum.peakHz), 3.125, accuracy: 1e-9)
+        XCTAssertEqual(spectrum.power[8], 3.875669, accuracy: 1e-5)
+        XCTAssertNil(SilentScope.spectrum(Array(values.prefix(10))).peakHz)
+        XCTAssertNil(SilentScope.spectrum(Array(repeating: SilentVector(1, 1, 1), count: 64)).peakHz)
+    }
+
+    func testReadingLabelsEachHeardWordInOrderAfterAPause() {
+        var reading: SilentReading = SilentReading(sentences: [["yes", "no", "help", "stop"]], seed: 3, duration: 100)
+        let first: [String] = reading.sentence
+        var random: SilentRandom = SilentRandom(seed: 4)
+        var t: Double = 0
+        for word in first {
+            reading.hear(SilentSynth.shifted(SilentSynth.take(word, &random), by: t))
+            t += 2
+            XCTAssertTrue(reading.tick(t - 1.2).isEmpty)
+            XCTAssertTrue(reading.tick(t + 5, busy: true).isEmpty)
+        }
+        XCTAssertEqual(reading.position, 4)
+        let labelled: [(word: String, samples: [SilentSample])] = reading.tick(t + 5)
+        XCTAssertEqual(labelled.map(\.word), first)
+        XCTAssertEqual(reading.sentencesRead, 1)
+        XCTAssertEqual(reading.collected, 4)
+        XCTAssertEqual(reading.index, 1)
+        XCTAssertEqual(reading.position, 0)
+        XCTAssertEqual(reading.summary, "Saved 4 takes from 1 sentence.")
+        reading.hear(SilentSynth.take("yes", &random))
+        XCTAssertEqual(reading.position, 1)
+        reading.again()
+        XCTAssertEqual(reading.position, 0)
+        XCTAssertEqual(reading.index, 1)
+        reading.skip()
+        XCTAssertEqual(reading.index, 2)
+        reading.forget(4)
+        XCTAssertEqual(reading.collected, 0)
+        XCTAssertEqual(reading.sentencesRead, 0)
+    }
+
+    func testReadingDropsASentenceWhenTheWordCountIsOff() {
+        var reading: SilentReading = SilentReading(sentences: [["yes", "no", "help"]], seed: 3, duration: 100)
+        var random: SilentRandom = SilentRandom(seed: 5)
+        reading.hear(SilentSynth.take("yes", &random))
+        reading.hear(SilentSynth.shifted(SilentSynth.take("no", &random), by: 1.5))
+        XCTAssertTrue(reading.tick(10).isEmpty)
+        XCTAssertEqual(reading.index, 0)
+        XCTAssertEqual(reading.position, 0)
+        XCTAssertEqual(reading.missed, 1)
+        XCTAssertEqual(reading.notice, "Heard 2 of 3 words, so it was not saved. Read it again.")
+        for k in 0..<4 { reading.hear(SilentSynth.shifted(SilentSynth.take("yes", &random), by: 20 + Double(k) * 1.5)) }
+        XCTAssertTrue(reading.tick(40).isEmpty)
+        XCTAssertEqual(reading.missed, 2)
+        for k in 0..<3 { reading.hear(SilentSynth.shifted(SilentSynth.take("yes", &random), by: 50 + Double(k) * 1.5)) }
+        XCTAssertNil(reading.notice)
+        XCTAssertEqual(reading.tick(60).count, 3)
+        XCTAssertEqual(reading.summary, "Saved 3 takes from 1 sentence. 2 not saved: the word count was off.")
+    }
+
+    func testReadingRunsForItsDuration() {
+        var reading: SilentReading = SilentReading(sentences: [["yes", "no"]], seed: 1, duration: 300)
+        _ = reading.tick(1000)
+        _ = reading.tick(1072.6)
+        XCTAssertEqual(reading.clock, "1:12 of 5:00")
+        XCTAssertFalse(reading.timeUp)
+        _ = reading.tick(1300)
+        XCTAssertTrue(reading.done)
+        reading.hear([SilentSample(t: 1300, rotationRate: .zero, attitude: .identity)])
+        XCTAssertFalse(reading.done)
+        _ = reading.tick(1302)
+        XCTAssertTrue(reading.done)
+    }
+
+    func testSegmenterSplitsAHoldIntoWords() {
+        var random: SilentRandom = SilentRandom(seed: 6)
+        let words: [[SilentSample]] = [SilentSynth.take("yes", &random), SilentSynth.shifted(SilentSynth.take("no", &random), by: 1.6), SilentSynth.shifted(SilentSynth.take("help", &random), by: 3.2)]
+        let joined: [SilentSample] = words.flatMap { $0 }.sorted { $0.t < $1.t }
+        let parts: [[SilentSample]] = SilentSegmenter.split(joined, noise: SilentNoiseFloor(floor: 0.03, spread: 0.01))
+        XCTAssertEqual(parts.count, 3)
+        let cut: [SilentSample] = Array(joined.prefix { $0.t < 0.9 })
+        XCTAssertEqual(SilentSegmenter.split(cut, noise: SilentNoiseFloor(floor: 0.03, spread: 0.01)).count, 1)
+    }
+
+    func testPulseFindsAHeartbeatWhenStill() throws {
+        let still: [SilentSample] = SilentSynth.heartbeat(bpm: 72, seconds: 12, amplitude: 0.01)
+        let pulse: SilentPulse = try XCTUnwrap(SilentPulse.estimate(still))
+        XCTAssertEqual(pulse.bpm, 72, accuracy: 2)
+        XCTAssertGreaterThan(pulse.strength, SilentPulse.minimumStrength)
+        XCTAssertEqual(try XCTUnwrap(SilentPulse.estimate(SilentSynth.heartbeat(bpm: 55, seconds: 12, amplitude: 0.01))).bpm, 55, accuracy: 2)
+        XCTAssertNil(SilentPulse.estimate(Array(still.prefix(100))))
+        XCTAssertNil(SilentPulse.estimate(SilentSynth.heartbeat(bpm: 72, seconds: 12, amplitude: 0.5)))
+        XCTAssertNil(SilentPulse.estimate(SilentSynth.heartbeat(bpm: 72, seconds: 12, amplitude: 0)))
+    }
+
+    func testPulseMatchesAndroid() throws {
+        let pulse: SilentPulse = try XCTUnwrap(SilentPulse.estimate(SilentSynth.heartbeat(bpm: 72, seconds: 12, amplitude: 0.01)))
+        XCTAssertEqual(pulse.bpm, 72.160817782816, accuracy: 1e-6)
+        XCTAssertEqual(pulse.strength, 0.530359723840, accuracy: 1e-6)
+    }
+
+    func testDoctorFindsMislabelledTakesAndAStaleLimit() throws {
+        var dataset: SilentDataset = SilentSynth.dataset(words: ["yes", "no", "help"], takes: 6, seed: 7)
+        var random: SilentRandom = SilentRandom(seed: 8)
+        dataset.addTake(SilentTake(id: "wrong", word: "yes", samples: SilentSynth.take("no", &random)))
+        dataset.addTake(SilentTake(id: "flat", word: "help", samples: SilentSynth.take("help", &random, noise: 0).map { SilentSample(t: $0.t, rotationRate: .zero, attitude: .identity, acceleration: .zero) }))
+        let input: SilentDoctorInput = SilentDoctorInput(dataset: dataset, channels: SilentChannel.defaults, available: SilentChannel.defaults, minMargin: 0.08, maxDistance: 0.001, rate: 15, noise: SilentNoiseFloor(floor: 0.03, spread: 0.01), pulse: SilentPulse(bpm: 64, strength: 0.5))
+        let diagnosis: SilentDiagnosis = SilentDoctor.diagnose(input)
+        let titles: [String] = diagnosis.findings.map(\.title)
+        let drop: SilentFinding = try XCTUnwrap(diagnosis.findings.first { $0.title.hasSuffix("look wrong") })
+        guard case .dropTakes(let ids) = drop.fix else { return XCTFail("no drop fix") }
+        XCTAssertTrue(ids.contains("wrong"))
+        XCTAssertTrue(ids.contains("flat"))
+        XCTAssertLessThanOrEqual(ids.count, 4)
+        XCTAssertTrue(titles.contains("Earbuds send 15 readings a second"))
+        XCTAssertTrue(titles.contains("Earbuds feel your heartbeat, 64 bpm"))
+        XCTAssertTrue(titles.contains { $0.hasPrefix("Skip far-off turns away") })
+        XCTAssertEqual(diagnosis.findings.first { $0.title.hasPrefix("Skip far-off") }?.fix, .clearLimit)
+        XCTAssertGreaterThan(try XCTUnwrap(diagnosis.accuracy), 0.8)
+        XCTAssertEqual(diagnosis.findings.map(\.level), diagnosis.findings.map(\.level).sorted())
+        let cleaned: SilentDiagnosis = SilentDoctor.diagnose(SilentDoctorInput(dataset: SilentSynth.dataset(words: ["yes", "no"], takes: 4, seed: 9), channels: SilentChannel.defaults, available: SilentChannel.defaults, minMargin: 0.08, noise: SilentNoiseFloor(floor: 0.03, spread: 0.01)))
+        XCTAssertFalse(cleaned.findings.contains { $0.level == .problem })
+        XCTAssertEqual(SilentDoctor.diagnose(SilentDoctorInput(dataset: .starter, channels: SilentChannel.defaults, available: SilentChannel.defaults, minMargin: 0.08)).findings.map(\.fix), [.read, .calibrate])
+    }
+
+    func testDoctorSuggestsTheChannelThatSeparatesWords() throws {
+        var random: SilentRandom = SilentRandom(seed: 10)
+        var dataset: SilentDataset = SilentDataset(words: ["yes", "no"].map { SilentWord($0) })
+        for n in 0..<6 {
+            for word in ["yes", "no"] {
+                let base: [SilentSample] = SilentSynth.take("yes", &random)
+                let samples: [SilentSample] = base.map { (s: SilentSample) -> SilentSample in
+                    let a: SilentVector = word == "yes" ? SilentVector(0.4, 0, 0) : SilentVector(0, 0.4, 0)
+                    let wobble: SilentVector = SilentVector(random.unit() - 0.5, random.unit() - 0.5, random.unit() - 0.5)
+                    return SilentSample(t: s.t, rotationRate: s.rotationRate, attitude: s.attitude, acceleration: s.t > 0.4 && s.t < 0.9 ? a : SilentVector(wobble.x * 0.01, wobble.y * 0.01, wobble.z * 0.01))
+                }
+                dataset.addTake(SilentTake(id: "\(word)-\(n)", word: word, samples: samples))
+            }
+        }
+        let diagnosis: SilentDiagnosis = SilentDoctor.diagnose(SilentDoctorInput(dataset: dataset, channels: [.rotation], available: SilentChannel.defaults, minMargin: 0.08, noise: SilentNoiseFloor(floor: 0.03, spread: 0.01)))
+        let tip: SilentFinding = try XCTUnwrap(diagnosis.findings.first { if case .channels = $0.fix { return true } else { return false } })
+        guard case .channels(let channels) = tip.fix else { return XCTFail("no channel fix") }
+        XCTAssertTrue(channels.contains(.acceleration))
+    }
+
+    func testModelKeepsTheNewestTakesOfEachWord() {
+        let dataset: SilentDataset = SilentSynth.dataset(words: ["yes", "no"], takes: 5, seed: 11)
+        XCTAssertEqual(SilentModel(takes: dataset.takes, channels: SilentChannel.defaults, perWord: 3).templates.count, 6)
+        XCTAssertEqual(SilentModel(takes: dataset.takes, channels: SilentChannel.defaults).templates.count, 10)
+    }
+
+    func testManyTakesMatchOnThreeNeighbours() {
+        XCTAssertEqual(SilentEvaluator.neighbors(for: SilentSynth.dataset(words: ["yes", "no"], takes: 9, seed: 1)), 1)
+        var dataset: SilentDataset = SilentSynth.dataset(words: ["yes", "no"], takes: 10, seed: 1)
+        XCTAssertEqual(SilentEvaluator.neighbors(for: dataset), 3)
+        dataset.addWord("help")
+        XCTAssertEqual(SilentEvaluator.neighbors(for: dataset), 3)
+        dataset.removeTakes(["yes-0", "no-1"])
+        XCTAssertEqual(dataset.count("yes"), 9)
+        XCTAssertEqual(SilentEvaluator.neighbors(for: dataset), 1)
+    }
+
+    func testTranscriptUndoAndClear() {
+        var transcript: SilentTranscript = SilentTranscript()
+        transcript.append("help")
+        transcript.append("water")
+        XCTAssertEqual(transcript.text, "help water")
+        transcript.undo()
+        XCTAssertEqual(transcript.text, "help")
+        transcript.clear()
+        XCTAssertEqual(transcript.text, "")
+    }
+}

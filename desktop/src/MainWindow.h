@@ -124,6 +124,7 @@ namespace forkmesh::ui { struct GitCaptureResult; }
 namespace MarkdownRender { struct RepoLink; }
 namespace forkmesh::ui { class ChannelGroupTree; }
 namespace forkmesh::ui { class OnboardingTour; }
+namespace forkmesh::ui { class CompactCelebrationOverlay; }
 namespace forkmesh::ui { struct OnboardingStep; }
 namespace forkmesh::ui { enum class OnboardingTrack; }
 namespace forkmesh::ui { class WindowBackdrop; }
@@ -1047,9 +1048,18 @@ public:
     int testSessionsOpenId() const;
     bool testSessionsTranscriptIdle() const;
     int testSessionsTranscriptMatches(const QString &text);
-    void testSessionsComposerSend(const QString &text, int alsoTo = 0);
+    void testSessionsComposerSend(const QString &text);
     QString testSessionsComposerState() const;
     QStringList testSessionsRelayStrip() const;
+    QStringList testSessionsListLayout() const;
+    QStringList testSessionsContextMenu(int sessionId);
+    QStringList testSessionsHeaderMenu(const QString &label);
+    bool testSessionsHeaderAction(const QString &label, const QString &objectName);
+    bool testSessionsMenuAction(int sessionId, const QString &objectName);
+    bool testSessionsMenuKey(int sessionId, int key);
+    QString testSessionsNewSection(const QList<int> &sessionIds, const QString &name);
+    void testSetSessionsShowArchived(bool show);
+    void testSelectSessions(const QList<int> &sessionIds);
     void testCloudLogMonitorLine(const QString &line)
     {
         handleCloudLogMonitorLine(line);
@@ -2504,6 +2514,9 @@ public:
     void testReloadTeammatesPanel() { loadTeammatesPanel(); }
     QWidget *testSideRail() const { return m_sideRail; }
     QWidget *testSideRailBrowserPanel() const { return m_sideRailBrowserPanel; }
+    QWidget *testAgentPagesPanel() const { return m_agentPagesPanel; }
+    QTabWidget *testAgentPagesTabs() const { return m_agentPagesTabs; }
+    bool testDockAgentPage(QWidget *frame) { return dockAgentPage(frame); }
     void testRefreshSideRail() { refreshSideRail(); }
     void testSetSideRailEnabled(bool enabled) { setSideRailEnabled(enabled); }
     bool testDropOnSideRail(const QMimeData *mime, int index) { return dropOnSideRail(mime, index); }
@@ -2516,6 +2529,28 @@ public:
     QString testOpenTerminalTab(const QString &kind, const QString &command, const QString &cwd)
     {
         return openTerminalTab(kind, command, cwd, QString());
+    }
+    void testPromptAgentExternalCall(int sid, const QStringList &destinations,
+                                     const QStringList &pending, const QString &call,
+                                     std::function<void(bool, const QString &)> done)
+    {
+        promptAgentExternalCall(QStringLiteral("test:%1").arg(sid), QStringLiteral("%1:test").arg(sid),
+                                sid, QStringLiteral("Agent #%1").arg(sid), destinations, pending,
+                                call, std::move(done));
+    }
+    static QString testReadPullRangeBaseSha(const QString &dir, const QString &base,
+                                            const QString &head)
+    {
+        return readPullRangeSnapshot(dir, base, head).baseSha;
+    }
+    QJsonObject testCreateAgentFromIntake(int requesterId,
+                                          const forkmesh::agentintake::CreateRequest &request)
+    {
+        return createAgentFromIntake(requesterId, request);
+    }
+    QStringList testAgentRunDeniedPermissions(int sid) const
+    {
+        return agentRunRules(sid).deniedPermissions;
     }
     QJsonObject testTerminalRequest(int sessionId, const QString &terminalId, const QString &method,
                                     const QJsonObject &params)
@@ -3403,6 +3438,10 @@ public:
         return m_repoBranch;
     }
     QString testBrowsedBranch() const { return m_repoBranch; }
+    void testMergeOverviewEntryCommits(const QHash<QString, QByteArray> &records)
+    {
+        mergeOverviewEntryCommits(QString(), records);
+    }
     void testSwitchToAgentBranch(int sessionId) { switchToAgentBranch(sessionId); }
     int testCommitWorkspacePage() const;
     void testApplyGitLayout() { applyGitLayout(); }
@@ -3911,6 +3950,10 @@ private:
                                 bool ownsDesktopKey,
                                 const QString &instanceUrl);
     void cacheActiveAccountSession(const QString &instanceUrl);
+    void ensureAccountSession(std::function<void(const QString &)> done = {});
+    void finishAccountSessionRequest(const QString &error);
+    bool waitForAccountSession(const QUrl &url, std::function<void()> retry,
+                               std::function<void(const QString &)> fail = {});
     bool restoreCachedAccountSession(const QString &accountName,
                                      const QString &instanceUrl);
     QStringList accountDesktopKeysForSession(
@@ -4342,6 +4385,9 @@ private:
     void ensureSectionBuilt(int index);
     QWidget *buildMarketSection();
     void refreshMarketPage();
+    void refreshMarketPageIfChanged();
+    void queueMarketResidentRead();
+    void applyMarketResidentBytes(const QHash<QString, qint64> &resident);
     QPixmap marketPreviewPixmap(const QString &path, const QSize &box,
                                 QString *key = nullptr);
     void applyMarketPreview(const QString &key, const QImage &image);
@@ -4410,6 +4456,7 @@ private:
     void finishNativePackagePages();
     void showNativePackage(const QString &id);
     void openNativePackageLink(const QString &id);
+    bool openNativePackageWebPage(const QString &path);
     QUrl nativePackageLinkUrl(const QString &id) const;
     forkmesh::market::NativePackageWidget *nativeLoginStore(QString *name) const;
     forkmesh::market::NativePackageWidget *quickAddPackagePromptTarget() const;
@@ -5934,6 +5981,7 @@ private:
     // Relays / Nodes / Hosts pages as its first tabs.
     QWidget *buildNetworkDiagnosticsSection();
     void refreshNetworkDiagnostics();
+    void fadeNetworkEndpointRows();
     void updateNetworkCounts(int relays, int nodes, int hosts);
     // Green lamp on the Network rail button while a mirror node is being stood
     // up, mirroring what the Control rail shows during a site deploy.
@@ -6064,9 +6112,29 @@ private:
     void readSessionsExternalTranscript(int sessionId);
     void scheduleSessionsTranscriptSlice();
     void renderSessionsTranscriptSlice(quint64 generation);
-    void sendSessionsComposer();
+    int sessionsComposerTarget(QString *blocked = nullptr) const;
+    QWidget *sessionsComposerPane() const;
+    void sessionsComposerSent(int sessionId);
     void deliverToExternalSession(int sessionId, const QString &text);
     void showSessionsContextMenu(int sessionId, const QPoint &globalPos);
+    QMenu *buildSessionsContextMenu(int sessionId, QWidget *parent);
+    void showSessionsHeaderContextMenu(const QString &groupKey, const QPoint &globalPos);
+    QMenu *buildSessionsHeaderMenu(const QString &groupKey, QWidget *parent);
+    QList<int> sessionsSelectedIds() const;
+    void startNewSessionInSessionsPageFor(const QString &repoKey);
+    QString sessionsKey(const AgentSession &session) const;
+    bool sessionsPinned(const AgentSession &session) const;
+    bool sessionsArchived(const AgentSession &session) const;
+    QString sessionsSectionOf(const AgentSession &session) const;
+    QList<QPair<QString, QString>> sessionsSectionList() const;
+    void setSessionsPinned(const QList<int> &sessionIds, bool pinned);
+    void setSessionsArchived(const QList<int> &sessionIds, bool archived);
+    void moveSessionsToSection(const QList<int> &sessionIds, const QString &sectionId);
+    QString createSessionsSection(const QList<int> &sessionIds, const QString &name);
+    void promptNewSessionsSection(const QList<int> &sessionIds);
+    void saveSessionsOrganization();
+    QString sessionsForkBlocker(int sessionId);
+    void forkSessionFromSessionsPage(int sessionId);
     void promptSessionsMessage(int fromId, int toId);
     void fillSessionsPicker(QComboBox *combo, int keepId, int excludeId,
                             const QString &noneLabel);
@@ -6123,6 +6191,7 @@ private:
     StatsDashboard *m_statsDashboard = nullptr;
     bool m_statsNetworkRefreshQueued = false; // live Network requests repaint
     bool m_firewallRuleCountsQueued = false; // live Firewall Rules counts
+    bool m_networkDiagnosticsRefreshQueued = false;
     bool m_outdatedClientVersionWarned = false; // update popup already raised
     QLabel *m_statsStatus = nullptr;
     QTimer *m_statsRefreshTimer = nullptr;
@@ -6949,6 +7018,7 @@ private:
     void setAgentTeammateFilter(AgentTeammateFilter filter);
     QList<int> selectedAgentSessionIds() const;
     void deleteSelectedAgentSessions();
+    void deleteAgentSessionsConfirmed(const QList<int> &sessionIds);
     void refreshAgentTaskLinkUi(int sessionId);
     void reprioritizeAgentSessions(int sourceSessionId, int targetSessionId,
                                    bool placeAfterTarget);
@@ -7236,6 +7306,7 @@ private:
     void updateAgentsNavBadge();
     void refreshAgentDotMatrix();
     void refreshAgentDots();
+    void refreshAgentDotIntensities();
     void refreshActionRunStrip();
     QString actionWorkflowIconName(const ActionRun &run);
     void processAgentQueue();
@@ -7298,7 +7369,6 @@ private:
     QStringList runningAgentBlockers() const;
     void onAgentLog(int sessionId, const QString &text);
     void appendAgentRawLog(const QString &text);
-    void showAgentRawOutput();
     void showAgentRawLogEvent(const QJsonObject &event);
     void onAgentStatusChanged(int sessionId, const QString &status);
     void onAgentFinished(int sessionId, bool ok);
@@ -7804,6 +7874,8 @@ private:
                            const QString &path, const QString &dir,
                            const QString &keyPrefix, OverviewLoad load);
     QString overviewRequestFor(const QString &path) const;
+    void mergeOverviewEntryCommits(const QString &treeKey,
+                                   const QHash<QString, QByteArray> &records);
     void fillOverviewEntryCommits(const QString &dir, const QString &ref,
                                   const QString &treeKey,
                                   const QString &loadedKey,
@@ -8285,7 +8357,8 @@ private:
     };
     QSet<QString> m_worktreeGitBusy;
     void resolveWorktreeConflicts();
-    void commitWorktreeChanges(const QString &worktreePath, const QString &branch);
+    void commitWorktreeChanges(const QString &worktreePath, const QString &branch,
+                               std::function<void(bool)> onDone = {});
     void removeWorktree(const QString &worktreePath, const QString &branch,
                         bool confirm, bool alsoDeleteBranch = true,
                         std::function<void()> onDone = {});
@@ -8920,6 +8993,8 @@ private:
     void loadAgentReadState();
     QString agentReadKey(const AgentSession &session) const;
     bool agentSessionUnread(const AgentSession &session) const;
+    bool agentSessionUnreadable(const AgentSession &session) const;
+    void markAgentSessionUnread(int sessionId);
     bool agentSessionWatched(int sessionId) const;
     bool noteAgentSessionSeen(const AgentSession &session);
     void markAgentSessionRead(int sessionId);
@@ -8942,6 +9017,7 @@ private:
     bool sideRailBrowserOpen() const;
     void setSideRailBrowserOpen(bool open);
     void openInSideRailBrowser(const QString &address);
+    bool dockAgentPage(QWidget *frame);
     QWidget *buildTerminalsSection();
     forkmesh::ui::TerminalTabsPage *ensureTerminalsPage();
     void dockTerminals(bool sidePane);
@@ -9046,6 +9122,8 @@ private:
     int repoIndexForKey(const QString &repoKey) const;
     QString repoWorkflowRunsRoot(int repoIndex) const;
     QString repoWorkflowRunsFile(int repoIndex, const QString &workflowId) const;
+    QList<forkmesh::repoworkflows::Run> repoWorkflowRuns(int repoIndex,
+                                                         const QString &workflowId) const;
     bool findRepoWorkflow(int repoIndex, const QString &workflowId,
                           forkmesh::repoworkflows::Workflow *workflow) const;
     QString startRepoWorkflow(int repoIndex, const forkmesh::repoworkflows::Workflow &workflow,
@@ -9062,6 +9140,15 @@ private:
     void repoWorkflowRunChanged(const forkmesh::repoworkflows::Run &run);
     QString finishRepoWorkflowRun(const forkmesh::repoworkflows::Run &run, const QString &markdown);
     void checkRepoWorkflowSchedules();
+    struct RepoWorkflowScheduleScan {
+        int index = -1;
+        QString key;
+        QString checkout;
+        QList<forkmesh::repoworkflows::Listing> listings;
+        QHash<QString, qint64> lastStarted;
+    };
+    void applyRepoWorkflowSchedules(const QList<RepoWorkflowScheduleScan> &scans);
+    bool m_repoWorkflowScheduleScanPending = false;
     void triggerRepoWorkflowsForEvent(const QString &eventName, int repoIndex);
     bool repoWorkflowApproved(int repoIndex, const QString &path, const QString &name);
     QString repoWorkflowPath(int repoIndex, const QString &workflowId) const;
@@ -9083,7 +9170,8 @@ private:
                           const QString &workflowId) const;
     void showWorkflowPinDropIndicator(QWidget *strip, const QPoint &at);
     void hideWorkflowPinDropIndicator();
-    void refreshWorkflowPins();
+    void refreshWorkflowPins(
+        const QHash<QString, QList<forkmesh::repoworkflows::Listing>> &known = {});
     void showWorkflowPinMenu(const QString &repo, const QString &workflowId, const QPoint &globalPos);
     QPixmap repoWorkflowIcon(const forkmesh::repoworkflows::Workflow &workflow, int side) const;
     void notifyRepoWorkflowsChanged();
@@ -10788,6 +10876,9 @@ private:
     void refreshDirectFocus();
     void refreshDirectRoute();
     void refreshDevicePendingBanner();
+    QStringList pendingDirectDevices(const QString &conversation) const;
+    void decideDirectDevices(const QString conversation, const QStringList kids,
+                             bool approve);
     void noteDirectDevicePending(const QString &conversation, const QString &kid);
     void noteDirectSafetyChanged(const QString &conversation);
     void addChatSecurityLine(const QString &conversation, const QString &text);
@@ -11220,6 +11311,31 @@ private:
     int m_marketPreviewDecodes = 0;
     QTimer *m_marketStatsRefresh = nullptr;
     int m_marketPageBuilds = 0;
+    struct MarketPageInputs {
+        bool built = false;
+        QStringList packages;
+        QHash<QString, QPair<qint64, qint64>> counts;
+        QHash<QString, MarketPackageScore> scores;
+        QString theme;
+        QString settingsPackage;
+        int settingsTab = -1;
+        int sort = -1;
+        bool next = false;
+        bool modelRunning = false;
+        bool operator==(const MarketPageInputs &other) const
+        {
+            return built == other.built && packages == other.packages &&
+                   counts == other.counts && scores == other.scores &&
+                   theme == other.theme &&
+                   settingsPackage == other.settingsPackage &&
+                   settingsTab == other.settingsTab && sort == other.sort &&
+                   next == other.next && modelRunning == other.modelRunning;
+        }
+    };
+    MarketPageInputs marketPageInputs() const;
+    MarketPageInputs m_marketPageInputs;
+    QHash<QString, qint64> m_marketResidentBytes;
+    bool m_marketResidentPending = false;
     std::unique_ptr<forkmesh::market::PackageRegistry> m_packageRegistry;
     std::unique_ptr<forkmesh::capture::CaptureFeature> m_captureFeature;
     std::unique_ptr<forkmesh::ledger::LedgerFeature> m_ledgerFeature;
@@ -11702,7 +11818,9 @@ private:
     QLabel *m_directRouteLabel = nullptr;
     QWidget *m_devicePendingBanner = nullptr;
     QLabel *m_devicePendingLabel = nullptr;
-    QString m_devicePendingKid;
+    QPushButton *m_devicePendingApprove = nullptr;
+    QPushButton *m_devicePendingBlock = nullptr;
+    QStringList m_devicePendingKids;
     bool m_directMeshWired = false;
     bool m_directFocusHooked = false;
     QHash<QString, int> m_directServerCopies;
@@ -12304,6 +12422,7 @@ private:
     QTableWidget *m_networkEndpointsTable = nullptr;
     QTableWidget *m_networkDiagnosticsTable = nullptr;
     QPushButton *m_networkDiagnosticsRefreshButton = nullptr;
+    QHash<QString, int> m_networkEndpointProfileIndex;
     bool m_networkEndpointFadeScheduled = false;
     bool m_networkEndpointsUserSorted = false;
     QWidget *m_networkWebRequestsChart = nullptr;
@@ -13199,6 +13318,8 @@ private:
     QTimer *m_teammateRailClock = nullptr;
     QWidget *m_sideRail = nullptr;
     QWidget *m_sideRailBrowserPanel = nullptr;
+    QWidget *m_agentPagesPanel = nullptr;
+    QTabWidget *m_agentPagesTabs = nullptr;
     QBoxLayout *m_sideRailItemsLayout = nullptr;
     QPushButton *m_sideRailBrowserButton = nullptr;
     QTimer *m_sideRailRefreshTimer = nullptr;
@@ -13229,6 +13350,7 @@ private:
     QSet<int> m_teammateCreatorSessions;
     QSet<int> m_teammateDoneUnseen;
     QHash<QString, qint64> m_agentSeenFinishedAt;
+    QSet<QString> m_agentMarkedUnread;
     qint64 m_agentReadBaselineMs = 0;
     // Automatic @Name hand-offs are deliberately shallow so two teammates
     // cannot bounce a reply loop forever. Direct human mentions always start
@@ -13251,6 +13373,7 @@ private:
     };
     forkmesh::repoworkflows::Runner *m_repoWorkflowRunner = nullptr;
     QHash<int, RepoWorkflowHandle> m_repoWorkflowHandles;
+    QHash<QString, QList<forkmesh::repoworkflows::Run>> m_repoWorkflowRunsCache;
     int m_repoWorkflowHandleSerial = 0;
     bool m_repoWorkflowSwitchToTab = false;
     struct PendingRepoWorkflowApproval {
@@ -13671,6 +13794,9 @@ private:
     QString m_overviewSortKey = QStringLiteral("name");
     bool m_overviewSortDesc = false;
     void populateOverviewTree(); // (re)fill m_overviewList from m_overviewRows
+    void applyOverviewRowCommit(QTreeWidgetItem *item, const OverviewRow &row, bool next,
+                                int rowHeight);
+    bool refreshOverviewRowCommits();
     void showOverviewLoadingPlaceholders();
     QTextBrowser *m_readmeView = nullptr;
     QTreeWidget *m_repoFileTree = nullptr;
@@ -14189,6 +14315,8 @@ private:
     QTimer *m_notificationJournalTimer = nullptr; // debounced journal write
     QSet<QString> m_flashedWebAlertIds;
     QSet<QString> m_celebratedWebAlertIds;
+    QPointer<forkmesh::ui::CompactCelebrationOverlay> m_compactCelebration;
+    QStringList m_compactCelebrationTitles;
     bool m_webAlertsBaselineLoaded = false;
     QPushButton *m_notificationButton = nullptr;
     QTableWidget *m_notificationsTable = nullptr; // sortable Notifications page
@@ -14246,6 +14374,8 @@ private:
     ElidingStatusLabel *m_actionRunLogPath = nullptr;
     QLabel *m_actionApprovalBanner = nullptr;
     QPlainTextEdit *m_actionLog = nullptr;
+    int m_actionLogShownRunId = -1;
+    size_t m_actionLogShownHash = 0;
     QTextBrowser *m_actionDiff = nullptr;
     // Extra run panes docked to the right of the primary detail, left to right.
     QSplitter *m_actionDetailSplitter = nullptr;
@@ -14471,7 +14601,7 @@ private:
     QLineEdit *m_agentComposePrompt = nullptr;
     QComboBox *m_agentComposeProvider = nullptr;
     QPushButton *m_agentComposeButton = nullptr;
-    void startAgentFromComposer();
+    bool startAgentFromComposer();
     QWidget *m_agentDetail = nullptr; // collapsible detail panel (hidden until a row is picked)
     // The detail pane's own bottom padding, kept so the docked composer's
     // reserved band can be added to it and taken back off again.
@@ -14517,6 +14647,8 @@ private:
     QHash<QString, int> m_claudeDesktopLinkOwners;
     QTimer *m_claudeDesktopLinkTimer = nullptr;
     bool m_claudeDesktopBackfillRunning = false;
+    bool m_claudeAppSyncInFlight = false;
+    QSet<int> m_claudeAppTranscriptMissing;
     QPlainTextEdit *m_agentLog = nullptr;
     QStackedWidget *m_agentOutputStack = nullptr; // log (0) | embedded terminal (1)
     TerminalWidget *m_agentTerminal = nullptr;  // Claude Code runs here
@@ -14532,6 +14664,11 @@ private:
     ActivityRailButton *m_agentOutputModeButton = nullptr;
     bool m_agentRawOutputMode = false;
     void setAgentRawOutputMode(bool raw);
+    QPointer<QWidget> m_agentRawWindow;
+    QPointer<QPlainTextEdit> m_agentRawWindowLog;
+    int m_agentRawWindowSession = -1;
+    void ensureAgentRawWindow();
+    void refreshAgentRawWindow(bool force);
     // "Listen": the selected run's stream played as music (AgentSonifier.h).
     // One sonifier for the whole window, so any number of agents can be heard
     // at once, each in its own register and stereo seat.
@@ -14991,11 +15128,18 @@ private:
                                 const forkmesh::agentrules::Decision &decision);
     void promptAgentDestructiveCommand(const forkmesh::agentnet::Request &request,
                                        const forkmesh::agentrules::Decision &decision);
+    void promptAgentExternalCall(const QString &promptId, const QString &session, int sid,
+                                 const QString &label, const QStringList &destinations,
+                                 const QStringList &pending, const QString &call,
+                                 std::function<void(bool allowed, const QString &reason)> done);
+    void gateAgentBrowserUrl(int sid, const QUrl &url,
+                             std::function<void(const QString &refusal)> done);
     void answerAgentAccessFailure(const QString &id, const QString &context);
     void reportCodexAccessFailure(int sid, const QJsonObject &item);
     void showGlobalAgentRules();
     QHash<int, QPair<QString, QStringList>> m_teammateRunGrants;
     QPair<QString, QStringList> m_startingTeammateGrant;
+    QStringList m_startingAgentDeniedPermissions;
     bool m_startingTeammate = false;
     quint64 m_codexAccessFailureSeq = 0;
     std::unique_ptr<forkmesh::agentnet::Server> m_agentNetworkGate;
@@ -15049,7 +15193,7 @@ private:
     QString lastCodexThreadId(int sessionId) const;
     QString agentCliConversationId(int sessionId);
     QStringList claudeTranscriptConfigDirs() const;
-    void removeOrphanedClaudeTranscripts(const QString &worktreePath);
+    void removeOrphanedClaudeTranscripts(const QString &worktreePath, bool resweep = true);
     struct AgentTerminalHandoff {
         bool ok = false;
         QString program;
@@ -15101,6 +15245,7 @@ private:
     void backfillClaudeDesktopSessions();
     void queueClaudeDesktopLink(const QString &cliSessionId, bool front);
     void pumpClaudeDesktopLinks();
+    void syncClaudeAppSessions();
     void finishAgentCloudHandoff(int sessionId, const QString &branch,
                                  const QJsonObject &payload);
     void showAgentListContextMenu(const QPoint &viewportPos);
@@ -15284,6 +15429,7 @@ private:
                                   const ClaudeImportBatch &batch);
     void appendImportedClaudeEvents(int sessionId, const ClaudeImportBatch &batch,
                                     const QString &title);
+    void appendClaudeTranscriptEvents(int sessionId, const ClaudeImportBatch &batch);
     void syncImportedClaudeSessions();
     QHash<QString, int> importedClaudeSessionAgents() const;
     void scanExternalClaudeSessions();
@@ -15474,7 +15620,8 @@ private:
                                    const QString &baseBranch, int prNumber,
                                    const QString &title, const QString &task,
                                    const QString &provider,
-                                   const QString &model, bool held = false);
+                                   const QString &model, bool held = false,
+                                   const QString &modeOverride = QString());
     void requestCloudflareWorkspaceName(
         const QString &prompt, const QString &model,
         std::function<void(QString)> completion);
@@ -15967,6 +16114,8 @@ private:
     QPointer<QComboBox> m_chatRetentionCombo;
     QTimer *m_agentRecycleSweepTimer = nullptr; // periodic pruneExpiredChatHistory()
     bool m_agentRecyclePurgeInFlight = false;
+    bool m_agentRecycleReloadInFlight = false;
+    bool m_agentRecycleReloadPending = false;
     QHash<QString, MessageRow *> m_visibleRows; // messageId -> row (current conv)
     QString m_activeChatThreadRootId;
     QSplitter *m_chatSplit = nullptr;
@@ -16023,6 +16172,9 @@ private:
     QString m_accountSessionToken;
     QString m_accountSessionInstanceUrl;
     forkmesh::accounts::SessionCache m_accountSessionCache;
+    QPointer<QNetworkReply> m_accountSessionReply;
+    QList<std::function<void(const QString &)>> m_accountSessionWaiters;
+    qint64 m_accountSessionFailedAtMs = 0;
     bool m_accountSolanaVerified = false;
     bool m_accountDesktopCapable = false;
     QString m_accountTier = QStringLiteral("free");

@@ -1,4 +1,4 @@
-# Notes: inline comments and who is here
+# Notes: inline comments, chat and who is here
 
 Since 2026-10-31 everyone a note is shared with can leave comments on a
 passage of the note, reply, mention collaborators and resolve threads, and
@@ -94,6 +94,126 @@ the list with its quote shown as removed text, and nothing is highlighted.
 - Opening `/dashboard/notes?note=<id>&comment=<commentId>` opens the note
   with that thread shown.
 
+## Reactions
+
+Since 2026-11-04 anyone who can open a note can react with an emoji to a
+passage of it, and everyone else with the note open sees the reaction appear
+beside that passage. A reaction is anchored like an inline comment (quote,
+prefix, suffix, start, end, found again the same way, see
+[above](#finding-the-quoted-passage)); one with no quote is about the whole
+note.
+
+`note_reactions` (migration `0301_note_reactions.sql`) holds one row per
+reaction: `reaction_id`, `note_id`, `author_bi`, the anchor offsets,
+`created_at` and `data`, the sealed `{emoji, quote, prefix, suffix}`. Rows go
+with the note (`ON DELETE CASCADE`); a note holds at most 2000 reactions
+(`MAX_REACTIONS`). The table is in the rekey lists of `tools/next_rekey.py`.
+
+Reactions travel with the comments, so no client needed a new live path:
+
+- every comments answer also carries `reactions`, oldest first, each `{id,
+  author, emoji, quote, prefix, suffix, start, end, createdAt}`;
+- `POST /api/notes/<id>/reactions` with `{emoji, quote?, prefix?, suffix?,
+  start?, end?}` adds yours and answers 201 with the comments payload and the
+  new `reaction`. The same emoji from you on the same quote, prefix and suffix
+  answers 200 with the one already there instead of a copy;
+- `DELETE /api/notes/<id>/reactions/<reactionId>` removes it (its author or
+  the note's owner, `reaction_author_required` otherwise);
+- the emoji follows the note emoji rule (`_emoji` in `app/src/notes.py`: at
+  most 16 characters, no letters, spaces or plain digits), else
+  `invalid_reaction`; a full note is `too_many_reactions`, an unknown id
+  `reaction_not_found`;
+- every change sends `note-comments` to the room, and `commentsKey` gains the
+  reaction count and newest time when a note has reactions, so polling
+  clients reload too. Reactions are not logged in the activity and ping no
+  one.
+
+### What every client shows
+
+- **React** beside **Comment** wherever selecting text offers Comment, with
+  the quick set 👍 ❤️ 😂 🎉 😮 👀.
+- Reactions whose passages resolve to the same place form a group: one chip
+  per emoji with its count, in the accent colour when you are among the
+  people, naming them on hover or long press, and a "+" to add another emoji
+  there. A chip toggles your reaction; adding to someone else's chip reuses
+  their anchor so it joins the group. Reactions whose quote is no longer in
+  the note are hidden.
+- The web shows each group in a row under the block holding the passage, in
+  Live, Preview and Split's preview, with the passage quoted at its start;
+  whole-note reactions sit under the title. The desktop and the phones list the
+  groups at the top of the comments panel or sheet and mark the passages in
+  the editor ([desktop notes](../desktop/notes.md#reactions),
+  [phone notes](../native/notes.md)).
+
+## Chat
+
+Since 2026-11-03 the side panel next to a note has a Chat tab beside
+Comments, for talking with everyone who has the note open or can open it.
+Chat messages are not anchored to the text; select text and comment for that.
+
+`note_chat` (migration `0300_note_chat.sql`) holds one row per message:
+`message_id`, `note_id`, `author_bi`, `created_at` and `data`, the sealed
+`{body}`. Rows go with the note (`ON DELETE CASCADE`); a note keeps its newest
+500 messages (`MAX_CHAT`), older ones are dropped as new ones arrive, and a
+body is at most 2000 characters. The table is in the rekey lists of
+`tools/next_rekey.py` ([rekey](../operations/rekey.md)).
+
+The owner, editors and viewers can read and write the chat:
+
+- `GET /api/notes/<id>/chat` answers `messages` (oldest first, each `{id,
+  author, body, createdAt}`) and `canModerate` (you own the note).
+- `POST /api/notes/<id>/chat` with `{body}` answers 201, the list and the new
+  `message`; an empty or too long body is `invalid_message`.
+- `DELETE /api/notes/<id>/chat/<messageId>`: the author or the note's owner
+  (`message_author_required` otherwise, `message_not_found` for an unknown id).
+
+Every change sends `{"type": "note-chat"}` to the note's room, and the
+presence routes answer `chatKey` (message count and newest time) so polling
+clients reload when it moves. Clients count messages from others newer than
+the last one you saw in that note as unread, on the Chat button and tab.
+
+## The side column
+
+Since 2026-11-04 the note editor on the web and the desktop has one right
+column with four tabs, so the people working on a note see what is happening
+without leaving it:
+
+- **Comments**, the threads above.
+- **Chat**, the thread above.
+- **Activity**, the timeline from [notes](notes.md#on-the-page): views,
+  edits, shares, publishing, links and restores, newest first.
+- **History**, the saved versions (`GET /api/notes/<id>/versions`), newest
+  first, each with who saved it and when. **View** opens one read-only with
+  its title and formatted Markdown (`GET /api/notes/<id>/versions?version=<n>`
+  answers `version: {version, createdAt, author, title, markdown, emoji}` for
+  the owner, editors and viewers; `version_not_found`, `invalid_version`);
+  **Restore** (owner and editors) saves it as a new version.
+
+Every tab is live. On the socket, `note-activity` and `note-updated` reload
+Activity, `note-updated` reloads History, and `note-chat` reloads Chat. The
+desktop, which polls, reloads Activity and History when the presence answer's
+`activityKey` moves (the note's version, the number of events, their summed
+`hits` and the latest `last_at`, so a folded repeat view counts too). The
+comments and chat buttons, the Activity button and **Version history** in the
+menu all open the column on their tab. Phones have no room for a column:
+iOS and Android show History, Activity and Chat as tabs of one sheet
+([phone notes](../native/notes.md)).
+
+## Following someone
+
+Every client sends where its caret is: the web page sends `{"type":
+"cursor", clientId, line, column}` on the socket when the caret moves (and
+`line`/`column` with each draft), the desktop sends `line` and `column` with
+its presence poll. `line` is 1-based, `column` counts UTF-16 units, and 0
+means unknown. The room keeps each socket's last cursor and polled client's
+last line, passes them on in presence and cursor frames, and includes them in
+the `peers` the presence routes answer.
+
+Choosing Follow next to someone in the "Here now" list (the faces menu on the
+desktop) keeps their place in view: each time their line moves, the editor
+scrolls to it and marks it with their name and colour. Typing, Stop following,
+or the person leaving ends it.
+
 ## Who is here
 
 ### On the live socket
@@ -111,10 +231,10 @@ and when a socket closes tells the others `{"type": "leave", "clientId",
 The desktop does not link QtWebSockets, so it reaches the same room over
 HTTP:
 
-- `POST /api/notes/<id>/presence` with `{clientId, state}`, where `state` is
-  `viewing`, `editing` or `left`, registers the caller and answers `peers`,
-  everyone else in the room: `{clientId, name, state, via}`, `via` being
-  `live` (socket) or `poll`. The room passes the poll on to socket clients as
+- `POST /api/notes/<id>/presence` with `{clientId, state, line?, column?}`,
+  where `state` is `viewing`, `editing` or `left`, registers the caller and
+  answers `peers`, everyone else in the room: `{clientId, name, state, line,
+  column, via}`, `via` being `live` (socket) or `poll`. The room passes the poll on to socket clients as
   an ordinary presence frame (a `leave` frame for `left`), so the web and
   phones see desktop users too.
 - `GET /api/notes/<id>/presence[?clientId=<yours>]` answers `peers` without
@@ -123,7 +243,9 @@ HTTP:
   `state` is `invalid_presence`; a viewer's `editing` is stored as `viewing`.
 
 Both also answer `commentsKey`, the number of comments and the time of the
-latest change, so a polling client reloads comments only when it moves. A
+latest change, `chatKey`, the same for chat messages, and `activityKey` (see
+[the side column](#the-side-column)), so a polling client reloads comments,
+chat, activity or history only when they move. A
 polled peer is forgotten 20 seconds after its last poll; the desktop polls
 every 5 seconds while a note is open and sends `left` when it closes the note.
 Presence lives in the room's memory only: nothing about who opened a note is
@@ -139,8 +261,22 @@ picking the faces lists everyone with their state.
 
 ## Tests
 
+`app/tests/test_notes_reactions.py` covers reactions: sealed anchors,
+listing with the comments, no duplicates, the emoji rule, outsiders refused,
+delete permissions, removal with the note, the cap and the `commentsKey`.
 `app/tests/test_notes_comments.py` covers the API: creating threads and
 replies, quotes kept sealed, mentions kept only for collaborators and pinged,
 replies pinging the thread, edit and resolve permissions, deleting a thread
 with its replies, the cap, anonymous readers refused, removal with the note,
-and the presence routes.
+and the presence routes. `app/tests/test_notes_chat.py` covers the chat:
+sealed bodies, listing, the length rule, outsiders refused, deleting your own
+or (as owner) anyone's, the 500-message window, removal with the note, the
+`chatKey`, the `activityKey`, and the room remembering cursor lines for polling
+followers; `app/tests/test_notes.py` covers viewing one version.
+`app/browser_tests/tests/dashboard-notes-live.spec.js` drives the web page:
+Live as the default layout, Live mode block editing, reacting to a passage
+and seeing others' reactions arrive, the marks on blocks others are editing,
+commenting on a selection in a live block, following
+a collaborator, the chat tab with its unread count, and the column's Activity
+and History tabs updating from socket frames, viewing a version and opening
+History from the menu.

@@ -356,6 +356,31 @@ def test_waiting_runs_show_in_the_actions_tab_and_expire():
     assert statuses(runtime) == [(7, HEAD_1, "expired", "author")]
 
 
+def test_approving_an_old_waiting_run_gives_it_a_fresh_day_in_the_queue():
+    runtime, key, repo, _audit = world()
+    repo.add(7, HEAD_1, author="bob")
+    sync(runtime)
+    runtime.clock = NOW + runner_actions.QUEUED_TTL_MS * 3
+    status, data = checks(runtime, viewer="alice", method="POST",
+                          body={"action": "approve", "head": HEAD_1})
+    assert status == 200 and data["approved"] == 1
+    [job] = lease(runtime, key)
+    assert job["commit"] == HEAD_1
+    assert column(runtime, job["jobId"], "approved_by") == "alice"
+
+
+def test_an_approved_run_still_expires_a_day_after_approval():
+    runtime, key, repo, _audit = world()
+    repo.add(7, HEAD_1, author="bob")
+    sync(runtime)
+    runtime.clock = NOW + runner_actions.QUEUED_TTL_MS * 3
+    checks(runtime, viewer="alice", method="POST",
+           body={"action": "approve", "head": HEAD_1})
+    runtime.clock += runner_actions.QUEUED_TTL_MS + 1
+    assert lease(runtime, key) == []
+    assert statuses(runtime) == [(7, HEAD_1, "expired", "approved")]
+
+
 def test_approve_and_reject_from_the_actions_tab():
     runtime, _key, repo, _audit = world()
     repo.add(7, HEAD_1, author="bob")
@@ -404,3 +429,18 @@ def test_enqueue_refuses_a_head_ref_for_another_pull():
     assert run(runner_actions.enqueue_pull(
         runtime, "forkmesh", "site", 7, HEAD_1, "refs/pr/7/head", "main",
         BASE, "bob", "trusted")) == []
+
+
+def test_opening_one_pull_syncs_only_that_pull():
+    runtime, _key, repo, _audit = world(viewer="alice")
+    repo.add(7, HEAD_1)
+    repo.add(8, HEAD_2, author="carol")
+    status, _data = checks(runtime, viewer="alice", number=7)
+    assert status == 200
+    assert {row[0] for row in statuses(runtime)} == {7}
+    blob_paths = [path for operation, query in repo.reads
+                  if operation == "blobs" for path in query.get("path", [])]
+    assert ".forkmesh/pulls/7/pull.md" in blob_paths
+    assert ".forkmesh/pulls/8/pull.md" not in blob_paths
+    sync(runtime)
+    assert {row[0] for row in statuses(runtime)} == {7, 8}

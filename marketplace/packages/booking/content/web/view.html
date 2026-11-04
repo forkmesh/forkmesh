@@ -84,6 +84,7 @@
                   <div class="bkd-tabs px-2" role="tablist" aria-label="Booking sections">
                     <button type="button" role="tab" class="bkd-tab" data-booking-tab="upcoming" aria-selected="true">Upcoming<span data-booking-upcoming-count class="bkd-count"></span></button>
                     <button type="button" role="tab" class="bkd-tab" data-booking-tab="past" aria-selected="false">Past &amp; cancelled</button>
+                    <button type="button" role="tab" class="bkd-tab" data-booking-tab="visits" aria-selected="false">Visits<span data-booking-visits-count class="bkd-count"></span></button>
                     <button type="button" role="tab" class="bkd-tab" data-booking-tab="types" aria-selected="false">Meeting types</button>
                     <button type="button" role="tab" class="bkd-tab" data-booking-tab="hours" aria-selected="false">Hours</button>
                     <button type="button" role="tab" class="bkd-tab" data-booking-tab="page" aria-selected="false">Page &amp; email</button>
@@ -91,6 +92,7 @@
 
                   <div data-booking-panel="upcoming" role="tabpanel"><div data-booking-upcoming></div></div>
                   <div data-booking-panel="past" role="tabpanel" class="hidden"><div data-booking-past></div></div>
+                  <div data-booking-panel="visits" role="tabpanel" class="hidden"><div data-booking-visits></div></div>
 
                   <form data-booking-panel="types" data-booking-types-form role="tabpanel" class="hidden">
                     <div data-booking-types></div>
@@ -132,8 +134,9 @@
                         <label class="grid gap-1 text-xs text-muted-foreground">Guests reply to<input data-booking-field="replyTo" type="email" maxlength="254" class="bkd-input" placeholder="you@example.com"><span>Confirmations come from ForkMesh; replies go to this address. Leave it empty to keep your address private.</span></label>
                         <label class="grid gap-1 text-xs text-muted-foreground">Send my booking emails to<input data-booking-field="notifyEmail" type="email" maxlength="254" class="bkd-input" placeholder="you@example.com"></label>
                         <label class="flex items-center gap-2 text-sm text-foreground"><input data-booking-field="emailOwner" type="checkbox">Email me when someone books, moves or cancels</label>
+                        <label class="flex items-center gap-2 text-sm text-foreground"><input data-booking-field="notifyVisits" type="checkbox">Ping me when someone opens my page or starts picking a time</label>
                         <label class="flex items-center gap-2 text-sm text-foreground"><input data-booking-field="addToCalendar" type="checkbox">Add booked meetings to my ForkMesh calendar</label>
-                        <p class="text-xs text-muted-foreground">You always get a ForkMesh notification. Guests always get a confirmation, a reminder the day before, and an email when the meeting moves or is cancelled.</p>
+                        <p class="text-xs text-muted-foreground">You always get a ForkMesh notification for bookings. Guests always get a confirmation, a reminder the day before, and an email when the meeting moves or is cancelled.</p>
                       </div>
                     </div>
                     <div class="flex border-t border-border p-4"><button type="submit" class="fm-btn fm-btn-sm ml-auto">Save page</button></div>

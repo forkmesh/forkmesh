@@ -13,7 +13,8 @@ and their release status are in the
 | Desktop (Linux, Windows, macOS) | The install script in [Getting started](getting-started.md), or the installers on the downloads page | The full node: mirrors repositories, runs coding agents in their own worktrees, runs Actions, hosts and agents |
 | iPhone and iPad | [App Store](https://apps.apple.com/app/forkmesh/id6803060735) | A mobile node: browse, edit and commit, run and steer agents, chat and calls, review diffs, Siri, widgets |
 | Apple Watch | Installs with the iPhone app | Follow, steer and hear your agents from your wrist |
-| Android | Signed APK, `forkmesh-android-universal.apk`, from the downloads page | The iPhone app's features and look; a few newer chat and call changes are still being ported |
+| Android | Signed APK, `forkmesh-android-universal.apk`, from the downloads page | The iPhone app's features and look ([Android guide](mobile/android.md)) |
+| Chrome and Chromium browsers | The **Browser extension** page of the dashboard | Fill Password Vault logins, link mail to the CRM, update Marketing channels and mirror a repository in one click ([browser extension](browser-extension.md)) |
 
 ## Desktop
 
@@ -29,42 +30,38 @@ The phone is a node too: it holds its own key and has its own Git engine, so
 it can clone and commit without the desktop. You can start, steer, stop and
 merge agents running on your desktop or on cloud runners, review their diffs
 file by file, chat (direct messages are end-to-end encrypted) and make calls,
-and use the Market's phone tools. Guides:
+and use the Market's phone tools. Start with
+[getting started on a phone](mobile/getting-started.md); every phone guide is
+on the [phone apps](mobile/README.md) page, including
+[privacy and security](mobile/privacy-and-security.md),
 [Siri](mobile/siri.md), [Apple Health](mobile/apple-health.md),
-[editing files](mobile/mobile-file-editing.md),
+[editing files](mobile/mobile-file-editing.md) and
 [agent access](mobile/mobile-agent-access.md).
 
 ## Apple Watch
 
-The watch app is new and still growing. Today it works through your iPhone,
-which holds your session and keys:
-
-- **Agent list.** Every active and recent agent with its model, repository,
-  status, turns and tokens; running agents first.
-- **Live view.** Watch the agent work, with the last reply on screen.
-- **Controls.** Stop, Continue, Retry, and send a prompt by dictation or
-  Scribble.
-- **Review changes.** Read an agent's diff file by file and mark files as
-  reviewed.
-- **Listen.** Each agent plays as sound and haptics, so you can tell what it
-  is doing without looking. The optional Announcer also says short lines
-  such as "run done" or "is waiting for you".
-- **Siri.** Say "Start a new ForkMesh agent" to start one. Name a
-  repository, or it uses the repository and model you last used on the
-  phone.
-- **Complications and Smart Stack** show the current run at a glance.
-
-Next: a standalone mode that signs in on the watch itself, so it works
-without the phone nearby.
+The watch app works through your iPhone, which holds your session and keys:
+see the agent list and a live view, Stop, Continue and Retry, send a prompt by
+dictation, review diffs, hear each agent as sound and haptics, and start an
+agent with Siri. Everything it does is on the [Apple Watch](mobile/apple-watch.md)
+page.
 
 ## Android
 
 The Android app is built from the same design as the iPhone app (the same
 Liquid Glass theme) and talks to the same endpoints, so the server cannot
-tell them apart. New phone features land on iPhone first; each one is
-tracked until Android matches it, and a few recent chat and call changes
-(including group calls) are still on that list. It is distributed as a signed APK from the
-downloads page.
+tell them apart. Since 2026-10-28 every phone change ships in both apps in the
+same pull request; the few differences kept on purpose, such as a background
+connection in place of push, are on the [Android](mobile/android.md) page. It
+is distributed as a signed APK from the downloads page.
+
+## Browser extension
+
+The ForkMesh extension for Chrome serves the Password Vault, the CRM and
+Marketing from one sign-in, and mirrors a GitHub, GitLab, Codeberg or Gitea
+repository to your account from its page. Install it from the dashboard's
+**Browser extension** page; see the [browser extension](browser-extension.md)
+guide.
 
 Developer documentation for the native apps is in
 [docs/native/README.md](native/README.md).

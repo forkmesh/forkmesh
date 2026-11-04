@@ -642,7 +642,7 @@ public final class SettingsService {
 
     public var showTelemetryStrip: Bool {
         track()
-        return prefs.bool(forKey: SettingsService.showTelemetryStripKey) ?? true
+        return prefs.bool(forKey: SettingsService.showTelemetryStripKey) ?? false
     }
 
     public func setShowTelemetryStrip(_ v: Bool) {

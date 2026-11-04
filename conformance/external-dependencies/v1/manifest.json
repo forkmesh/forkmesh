@@ -1,7 +1,7 @@
 {
   "schema": "forkmesh-external-dependency-map-v1",
   "issue": 503,
-  "updated": "2026-10-24",
+  "updated": "2026-11-02",
   "documentation": "docs/external-dependency-map.md",
   "inventoryScope": {
     "include": [
@@ -156,17 +156,17 @@
       "hosts": ["archive.org", "s3.us.archive.org"],
       "configuredHosts": [],
       "credentials": [],
-      "observes": "The public repository identifier, the ForkMesh app's egress IP, the repository's public Git bundle, and the Internet Archive access key supplied by the repository owner. The owner-provided secret is sent only to the Internet Archive S3 endpoint and is stored encrypted by ForkMesh.",
+      "observes": "The public repository identifier, the ForkMesh app's egress IP, the repository's public Git bundle, and the Internet Archive access key supplied by the repository owner. Checking a backup reads the item's public file list (archive.org/metadata) to compare the bundle's SHA-1. The owner-provided secret is sent only to the Internet Archive S3 endpoint and is stored encrypted by ForkMesh.",
       "retention": "The Internet Archive retains uploaded public repository bundles and metadata under the archive account's policy. ForkMesh retains the encrypted sync configuration and recent upload status until the owner disconnects it.",
       "jurisdiction": "Internet Archive (United States).",
       "canonicalData": "None. The ForkMesh repository and its mirrors remain canonical; an Internet Archive item is an independently recoverable public backup copy.",
-      "outage": "Owners cannot verify archive credentials or upload a scheduled or requested public backup. Existing archive items and all ForkMesh repository, clone, and collaboration operations remain available.",
+      "outage": "Owners cannot verify archive credentials or upload a scheduled or requested public backup, and the Internet Archive plugin cannot confirm the archived copy, though it still compares mirrors with the recorded refs. Existing archive items and all ForkMesh repository, clone, and collaboration operations remain available.",
       "recovery": "The next scheduled or requested sync retries after the Internet Archive is reachable; the owner can also download a bundle from a ForkMesh mirror and upload it independently.",
       "alternative": "Self-host operators can retain Git bundles or mirror clones on their own storage; a public repository can be recovered from any ForkMesh mirror without the Internet Archive.",
-      "evidence": ["app/src/repository_archive_sync.py", "app/tests/test_repository_archive_sync.py"],
+      "evidence": ["marketplace/packages/internet-archive/content/worker/internet_archive.py", "marketplace/packages/internet-archive/tests/test_internet_archive.py"],
       "drills": [
-        "app/tests/test_repository_archive_sync.py::test_bad_input_and_refused_keys_are_reported",
-        "app/tests/test_repository_archive_sync.py::test_paused_disconnected_or_private_repositories_send_nothing"
+        "marketplace/packages/internet-archive/tests/test_internet_archive.py::test_bad_input_and_refused_keys_are_reported",
+        "marketplace/packages/internet-archive/tests/test_internet_archive.py::test_paused_disconnected_or_private_repositories_send_nothing"
       ]
     },
     {
@@ -802,6 +802,27 @@
       "drills": ["app/tests/test_comment_gifs.py::test_results_are_cached_and_upstream_failures_are_reported"]
     },
     {
+      "id": "devto-blog-posts",
+      "name": "dev.to for Home's blog card",
+      "categories": ["social"],
+      "components": ["app-browser"],
+      "necessity": "optional",
+      "hosts": ["dev.to"],
+      "configuredHosts": [],
+      "credentials": [],
+      "observes": "On an instance whose administrator set a dev.to account, every visitor's browser that opens Home reads that account's newest articles from dev.to without credentials and loads their cover images from media2.dev.to or dev-to-uploads.s3.amazonaws.com; dev.to and Amazon see the visitor's IP address and browser.",
+      "retention": "Set by dev.to (Forem) and Amazon Web Services.",
+      "jurisdiction": "Forem Systems, Inc. (United States); Amazon Web Services, Inc. (United States) for uploaded cover images.",
+      "canonicalData": "None; the posts are read on each Home load and not stored.",
+      "outage": "Home's blog card shows no posts; the rest of Home keeps working.",
+      "recovery": "None required; the next Home load reads the posts again.",
+      "alternative": "Leave the dev.to account unset, so Home shows the instance blog and no visitor contacts dev.to.",
+      "gap": "The privacy notice does not name dev.to yet, and no drill covers dev.to being unreachable.",
+      "privacyFinding": true,
+      "evidence": ["app/public/dashboard/js/05-repo-list-explorer.js", "app/src/instance_sidebar.py", "docs/app/repo-views.md"],
+      "drills": []
+    },
+    {
       "id": "video-mix-sources",
       "name": "Invidious and YouTube thumbnails for Video Mix DJ Studio",
       "categories": ["media-embed"],
@@ -977,6 +998,11 @@
       "dependency": "giphy",
       "contradicts": "Today, these are involved:",
       "finding": "Comment GIFs load from GIPHY's media hosts, which see the viewer's IP address, and GIF searches go to GIPHY, without the privacy notice naming it."
+    },
+    {
+      "dependency": "devto-blog-posts",
+      "contradicts": "Today, these are involved:",
+      "finding": "On an instance whose administrator set a dev.to account, Home's blog card makes every visitor's browser read posts and cover images from dev.to, without the privacy notice naming it."
     }
   ],
   "storedIdentifiers": [
@@ -1025,6 +1051,7 @@
     {"host": "claude.com", "kind": "link", "why": "Comment describing the login URL Claude CLIs print."},
     {"host": "ollama.com", "kind": "link", "why": "Gemma package download link."},
     {"host": "duckduckgo.com", "kind": "link", "why": "CRM package opens a web search in the user's browser."},
+    {"host": "calendar.google.com", "kind": "link", "why": "Booking package's add-to-Google-Calendar link."},
     {"host": "ai.google.dev", "kind": "link", "why": "Gemma package documentation link."},
     {"host": "developers.cloudflare.com", "kind": "documentation", "why": "Deploy script help text."},
     {"host": "docs.github.com", "kind": "documentation", "why": "Import token guidance."},
@@ -1034,7 +1061,6 @@
     {"host": "about.gitea.com", "kind": "documentation", "why": "Import provider terms."},
     {"host": "docs.gitea.com", "kind": "documentation", "why": "Import API usage guidance."},
     {"host": "modelcontextprotocol.io", "kind": "documentation", "why": "MCP server docstring."},
-    {"host": "forkmesh.your-domain", "kind": "documentation", "why": "Self-host placeholder in the docs landing page."},
     {"host": "www.w3.org", "kind": "namespace", "why": "XML, SVG, and ActivityStreams namespace identifiers."},
     {"host": "schema.org", "kind": "namespace", "why": "JSON-LD structured data vocabulary."},
     {"host": "www.ietf.org", "kind": "namespace", "why": "RTP transport-wide congestion control header-extension URI named in call SDP."},
@@ -1045,6 +1071,7 @@
     {"host": "docs.oasis-open.org", "kind": "namespace", "why": "WebFinger/XRD namespace."},
     {"host": "schemas.android.com", "kind": "namespace", "why": "Android XML namespace."},
     {"host": "www.apple.com", "kind": "namespace", "why": "Property list DTD identifier."},
+    {"host": "schemas.openxmlformats.org", "kind": "namespace", "why": "Office Open XML namespaces in the Spreadsheets package's .xlsx export."},
     {"host": "www.andymatuschak.org", "kind": "namespace", "why": "Sparkle appcast XML namespace."},
     {
       "host": "ads.google.com",

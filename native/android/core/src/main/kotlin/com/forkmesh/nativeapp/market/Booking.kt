@@ -28,7 +28,7 @@ object Booking {
         "video" to "Video call", "phone" to "Phone call", "place" to "In person", "custom" to "Other", "none" to "No location",
     )
     val LOCATION_HINTS: Map<String, String> = mapOf(
-        "video" to "https://meet.example.com/you", "phone" to "Leave empty to ask the guest for their number",
+        "video" to "Leave empty for a private ForkMesh video room", "phone" to "Leave empty to ask the guest for their number",
         "place" to "Address", "custom" to "Shown after booking", "none" to "",
     )
     private val CLOCK = Regex("^([01]\\d|2[0-3]):([0-5]\\d)$|^24:00$")
@@ -93,7 +93,7 @@ object Booking {
     }
 }
 
-data class BookingLocation(val kind: String = "video", val detail: String = "") {
+data class BookingLocation(val kind: String = "video", val detail: String = "", val room: Boolean = false) {
     val label: String get() = Booking.LOCATION_LABELS[kind] ?: kind
 
     fun body(): Map<String, Any?> = linkedMapOf("kind" to kind, "detail" to detail.trim())
@@ -101,7 +101,7 @@ data class BookingLocation(val kind: String = "video", val detail: String = "") 
     companion object {
         fun fromJson(value: Any?): BookingLocation {
             val json = value.asJsonMap()
-            return BookingLocation(json.str("kind").ifEmpty { "video" }, json.str("detail"))
+            return BookingLocation(json.str("kind").ifEmpty { "video" }, json.str("detail"), json.bool("room"))
         }
     }
 }
@@ -156,7 +156,15 @@ data class BookingItem(
 
     fun finished(nowMs: Long): Boolean = !cancelled && endAt < nowMs
 
-    fun where(): String = when (location.kind) {
+    fun joinUrl(): String =
+        if (location.kind == "video" && location.room && !cancelled && location.detail.startsWith("https://")) location.detail else ""
+
+    fun where(): String = when {
+        joinUrl().isNotEmpty() -> "ForkMesh video call, end-to-end encrypted"
+        else -> place()
+    }
+
+    private fun place(): String = when (location.kind) {
         "phone" -> location.detail.ifEmpty { guest.phone.ifEmpty { "Phone call" } }
         else -> location.detail.ifEmpty { if (location.kind == "none") "" else location.label }
     }
@@ -249,6 +257,7 @@ data class BookingSettings(
     val emailOwner: Boolean = true,
     val addToCalendar: Boolean = true,
     val checkCalendar: Boolean = true,
+    val notifyVisits: Boolean = true,
     val types: List<BookingType> = emptyList(),
 ) {
     val twentyFour: Boolean get() = timeFormat == "24h"
@@ -284,7 +293,7 @@ data class BookingSettings(
         "minNoticeMinutes" to minNoticeMinutes, "maxDaysAhead" to maxDaysAhead, "bufferMinutes" to bufferMinutes,
         "slotStepMinutes" to slotStepMinutes, "dailyLimit" to dailyLimit.coerceIn(0, 50), "replyTo" to replyTo.trim(),
         "notifyEmail" to notifyEmail.trim(), "emailOwner" to emailOwner, "addToCalendar" to addToCalendar,
-        "checkCalendar" to checkCalendar, "types" to types.map { it.body() },
+        "checkCalendar" to checkCalendar, "notifyVisits" to notifyVisits, "types" to types.map { it.body() },
     )
 
     companion object {
@@ -302,7 +311,7 @@ data class BookingSettings(
                 json.int("minNoticeMinutes", 240), json.int("maxDaysAhead", 60), json.int("bufferMinutes"),
                 json.int("slotStepMinutes"), json.int("dailyLimit"), json.str("replyTo"), json.str("notifyEmail"),
                 json["emailOwner"] != false, json["addToCalendar"] != false, json["checkCalendar"] != false,
-                json.maps("types").map(BookingType::fromJson),
+                json["notifyVisits"] != false, json.maps("types").map(BookingType::fromJson),
             )
         }
     }
@@ -322,6 +331,7 @@ data class BookingOverview(
     val upcoming: List<BookingItem> = emptyList(),
     val past: List<BookingItem> = emptyList(),
     val stats: BookingStats = BookingStats(),
+    val activity: PageActivity = PageActivity(),
 ) {
     val prefix: String get() = Booking.host(origin) + "/meet?"
 
@@ -336,6 +346,7 @@ data class BookingOverview(
             json.obj("links").mapValues { jsonText(it.value) }, BookingSettings.fromJson(json.obj("settings")),
             BookingOptions.fromJson(json.obj("options")), json.maps("upcoming").mapNotNull(BookingItem::fromJson),
             json.maps("past").mapNotNull(BookingItem::fromJson), BookingStats.fromJson(json.obj("stats")),
+            PageActivity.fromJson(json.obj("activity")),
         )
     }
 }

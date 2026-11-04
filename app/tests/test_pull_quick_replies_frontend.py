@@ -412,7 +412,9 @@ def test_the_page_wires_the_controls_and_the_bundle_is_current():
     assert "${model.open ? renderRepoPullQuickReplies(repo, number, parsed) : \"\"}" in CONTENT
     assert '<div data-repo-pull-conflict-slot class="fm-conflict-slot">' in CONTENT
     assert CONTENT.count("void hydrateRepoPullAttention(repo, number, parsed);") == 2
-    assert 'if (kind === "pulls") void hydrateRepoPullAttention(repo, number, parsed);' in CONTENT
+    assert 'if (kind === "pulls") void finishRepoPullLiveState(repo, number, parsed, pullLive);' in CONTENT
+    finish = CONTENT[CONTENT.index("async function finishRepoPullLiveState("):]
+    assert "void hydrateRepoPullAttention(repo, number, parsed);" in finish[:finish.index("\n  }\n")]
     for selector in (".fm-merge-quick {", ".fm-quick-reply {", ".fm-quick-reply-edit {",
                      ".fm-quick-reply button:focus-visible", ".fm-conflict-slot:empty { display: none; }",
                      ".fm-conflict-commands {", "min-height: 32px", "-webkit-touch-callout: none"):

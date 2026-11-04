@@ -57,6 +57,7 @@ public final class CrmModel {
     private func tabExists(_ tab: CrmTab, in data: CrmOrganizationData) -> Bool {
         switch tab {
         case .list, .pipeline, .noPipeline: return data.contactTabs.contains { $0.tab == tab }
+        case .network(let id): return CrmNetwork.named(id) != nil
         case .shared: return !data.sharedViews.isEmpty
         default: return true
         }
@@ -67,7 +68,8 @@ public final class CrmModel {
     public var activeView: CrmView? { data?.view(for: activeTab) }
 
     public var activeTitle: String {
-        data?.contactTabs.first { $0.tab == activeTab }?.title
+        if case .network(let id) = activeTab, let network = CrmNetwork.named(id) { return network.name }
+        return data?.contactTabs.first { $0.tab == activeTab }?.title
             ?? data?.workspaceTabs.first { $0.tab == activeTab }?.title ?? "CRM"
     }
 

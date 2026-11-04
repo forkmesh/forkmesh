@@ -144,10 +144,12 @@ RunResult runWorkflow(const QString &repository, const QString &commit,
                       const QMap<QString, QString> &variables = {},
                       const QString &repositoryName =
                           QStringLiteral("sandbox"),
-                      const QString &localCheckout = QString())
+                      const QString &localCheckout = QString(),
+                      int pullNumber = 0)
 {
     ActionRun run;
     run.id = runId;
+    run.pullNumber = pullNumber;
     run.owner = QStringLiteral("security");
     run.name = repositoryName;
     run.workflowPath = QStringLiteral(".forkmesh/security.yml");
@@ -744,6 +746,17 @@ int main(int argc, char **argv)
         check(!automatic.valid && automatic.error.contains(QStringLiteral("workflow_dispatch")),
               "sandbox: false is refused with any trigger besides workflow_dispatch");
     }
+    const ActionWorkflow pullBase = ActionFile::parse(
+        QStringLiteral(".forkmesh/ci.yml"),
+        QStringLiteral("on: [pull_request]\nsteps:\n  - run: echo base\n"));
+    const ActionWorkflow pullHead = ActionFile::parse(
+        QStringLiteral(".forkmesh/ci.yml"),
+        QStringLiteral("on: [workflow_dispatch]\nsandbox: false\nsteps:\n  - run: id\n"));
+    check(pullBase.triggersOnPullRequest() && pullHead.valid && !pullHead.sandbox &&
+              !pullHead.mayStartFromEvent() && pullBase.mayStartFromEvent(),
+          "a pull request's head copy cannot use the base copy's trigger to leave the sandbox");
+    check(!hostByHand.mayStartFromEvent() && sandboxed.mayStartFromEvent(),
+          "only sandboxed workflows may start from an event");
     const ActionWorkflow stepTimeout = ActionFile::parse(
         QStringLiteral(".forkmesh/long.yml"),
         QStringLiteral("on: push\njobs:\n  build:\n    steps:\n"
@@ -924,6 +937,21 @@ int main(int argc, char **argv)
                   host.log.contains(QStringLiteral("sandbox: false")),
               "sandbox: false runs every step as this user in the approved clone, with the "
               "real home and the repository's local checkout the workflow cannot override");
+        const QString hostMarker = temp.filePath(QStringLiteral("pull-left-the-sandbox"));
+        const QString hostPullWorkflow =
+            QStringLiteral("name: Host\non: [workflow_dispatch]\nsandbox: false\nsteps:\n"
+                           "  - name: must not run\n    run: touch %1\n")
+                .arg(hostMarker);
+        check(writeFile(workflowPath, hostPullWorkflow.toUtf8()),
+              "pull request host workflow fixture is written");
+        const QString hostPullCommit = commitAll(repository, QStringLiteral("pull host workflow"));
+        const RunResult hostPull =
+            runWorkflow(repository, hostPullCommit, hostPullWorkflow, &store, 179, limits, false,
+                        {}, QStringLiteral("sandbox"), localCheckout, 42);
+        check(hostPull.finished && hostPull.persisted.status == ActionStatus::Failed &&
+                  hostPull.log.contains(QStringLiteral("pull request run may not use sandbox")) &&
+                  !QFileInfo::exists(hostMarker),
+              "the runner refuses a pull request run that says sandbox: false");
 
         const QString timeoutWorkflow = QStringLiteral(
             "name: Timeout\non: push\nsteps:\n"

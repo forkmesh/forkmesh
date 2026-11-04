@@ -59,6 +59,10 @@ data class TourStop(
     }
 }
 
+data class TourShort(val headline: String, val line: String, val emblem: String? = null, val emblemBefore: String? = null)
+
+val TourStop.short: TourShort get() = TourCatalog.short[scene] ?: TourShort(title, message)
+
 data class TourPlace(val track: TourTrack, val stop: String) {
     val encoded: String get() = "${track.raw}:$stop"
 
@@ -232,4 +236,25 @@ object TourCatalog {
     fun index(place: TourPlace, stops: List<TourStop>): Int? = stops.indexOfFirst { it.id == place.stop }.takeIf { it >= 0 }
 
     fun symbols(track: TourTrack): List<String> = stops.filter { it.track == track }.map { it.icon }
+
+    val short: Map<TourScene, TourShort> = mapOf(
+        TourScene.HOME to TourShort("Home holds everything", "Every place in ForkMesh, with live counts."),
+        TourScene.AGENTS to TourShort("Agents that need you, first", "Approve, follow and stop every agent from one list."),
+        TourScene.NEW_AGENT to TourShort("One tap starts an agent", "Each star in the button is an agent running now.", emblem = "auto_awesome", emblemBefore = "agent"),
+        TourScene.INBOX to TourShort("One inbox for what needs you", "Tap the title to see only reviews, approvals or mentions."),
+        TourScene.HUB to TourShort("Your avatar is your hub", "Status, Pocket mode, Settings and signing out live here."),
+        TourScene.VOICE to TourShort("Hold to talk", "Say what to change. Let go and the agent starts.", emblem = "graphic_eq", emblemBefore = "to"),
+        TourScene.CODE to TourShort("Review and merge from your phone", "Read the diff, approve it and merge in one place."),
+        TourScene.PALETTE to TourShort("Commands for everything", "Run any action or jump anywhere by name.", emblem = "keyboard_command_key", emblemBefore = "for"),
+        TourScene.SEARCH to TourShort("Search everywhere at once", "Repos, people, code and chat in one field."),
+        TourScene.BAR to TourShort("Make the bar yours", "Hold an icon to move it, hide it or fold it away."),
+        TourScene.CHAT to TourShort("Chat where the work lives", "Channels, messages and #mesh, encrypted when private."),
+        TourScene.PROJECTS to TourShort("Projects keep work apart", "Each has its own account, repos and layout."),
+        TourScene.DESKTOPS to TourShort("Your desktops in your pocket", "See and run what your desktop is doing."),
+        TourScene.WORKSPACE to TourShort("Notes, tasks and your calendar", "The work around the code, as plugins."),
+        TourScene.MARKET to TourShort("Add more from the Market", "Plugins add icons to Home. Remove them just as fast."),
+        TourScene.PERSONAL to TourShort("Private tools for you", "Secrets, files and trackers that stay yours."),
+        TourScene.SYSTEM to TourShort("Outside the app", "Approve, reply and merge from notifications and widgets."),
+        TourScene.LOOKS to TourShort("Make it look like yours", "Icons, theme and wallpaper in Settings."),
+    )
 }

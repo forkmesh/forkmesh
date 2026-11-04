@@ -217,7 +217,8 @@ the ones picked into ordinary stored agents. The run side (resuming with
   else in the checkout.
 - **Transcript.** `ClaudeSessionImport::convertLines` turns typed prompts into
   `_local_user`, keeps assistant turns and tool results with the session id
-  stamped on them, drops sidechains, meta lines and command echoes, and clips
+  stamped on them, drops sidechains, meta lines, command echoes and
+  `<...>`-wrapped text blocks (a prompt's other blocks stay), and clips
   a tool result to 16 KB. The readable log gets both sides, so a later switch
   to Codex hands over the conversation.
 - **Mirroring.** While `claudeImport.bytes` is 0 or more, every 3 s tick
@@ -475,8 +476,16 @@ events for local, external and cloud runs alike. The Next styling is in
   policy and collaboration mode, without repeating developer instructions.
   Notice rows keep their source event for the raw log jump and appear during
   live updates and history replay in both layout modes.
-- **Raw log jump.** Clicking a row's gutter switches to Raw at the line of
-  the event that drew it (`m_rowSource`, `transcripttools::rawLogLineStart()`).
+- **Raw log jump.** Clicking a row's gutter opens the Raw window at the line
+  of the event that drew it (`m_rowSource`, `transcripttools::rawLogLineStart()`).
+- **Raw window.** The header's **Raw** button opens the run's raw output in
+  its own window (`agentRawWindow`) beside the main window instead of
+  swapping the transcript out, so both can be read at once. The button stays
+  checked while the window is open; clicking it again or closing the window
+  hides it. The window follows the selected session, appends live raw lines
+  (redacted like the inline log) while pinned to the bottom, and remembers its
+  place in `agents/rawWindowGeometry`; the first time it opens to the right
+  of the main window.
 
 ### Live task list
 
@@ -625,8 +634,11 @@ cannot drift.
   `QScrollBar::actionTriggered`, never on programmatic clamps.
 - `ScrollJumpButtons` shows a jump-to-latest arrow off the tail, with a dot
   when new content arrived.
-- Rebuilding the transcript on screen holds a grab of the last frame
-  (`setBatchHoldsFrame`) and restores the position in the same thaw.
+- Rebuilding the transcript on screen holds a copy of the last frame
+  (`setBatchHoldsFrame`) and restores the position in the same thaw. The copy
+  comes from the window's backing store (`kit::shownPixels`), not
+  `QWidget::grab`, which would polish every hidden widget in the window
+  ([diagnostics](diagnostics.md#rules-from-the-stall-runs-of-2026-10-31-and-2026-11-01)).
   `CacheLabel` estimates heights only from its on-screen width.
 - Sending a follow-up jumps to the tail; a resume keeps the rendered rows; a
   cloud follow-up is drawn at once until the relay history replaces it.

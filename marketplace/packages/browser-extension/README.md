@@ -5,12 +5,14 @@
 
 The ForkMesh extension for Chrome, as its own Market package, so one
 extension with one sign-in serves several packages and can be released on its
-own. What it does is documented in `content/extension/README.md`:
+own. The user guide is [docs/browser-extension.md](../../../docs/browser-extension.md)
+and the internals are [docs/marketplace/browser-extension.md](../../../docs/marketplace/browser-extension.md);
+the feature reference is `content/extension/README.md`:
 
 - fills and saves logins from the Password Vault (`vault` package);
 - links Gmail, Zoho Mail and Mastodon conversations to CRM contacts, links
   mail you send to the recipient's record, logs the people your own Mastodon
-  posts mention (adding the new ones as contacts), and files pages under a
+  posts mention as you send them (adding the new ones as contacts), and files pages under a
   contact (`crm` package);
 - sorts, searches and groups a Zoho Mail list by sender and selects, marks
   read, archives or deletes the shown messages in bulk through Zoho's own
@@ -21,7 +23,8 @@ own. What it does is documented in `content/extension/README.md`:
 - shows, in Chrome's side panel, the popup and a toolbar badge, which pages of
   the current site feed Marketing, with no script injected into channel sites;
 - shows a GitHub, GitLab, Codeberg or Gitea repository's size and details in
-  the popup, and mirrors it to your ForkMesh account in one click;
+  the popup, opens a size map and a code map of it in a tab, and mirrors it to
+  your ForkMesh account in one click;
 - walks the Reddit desk's watch list in one tab at a reader's pace when you
   ask, without clicking, typing, voting or posting.
 
@@ -52,6 +55,12 @@ vault package's files. Never edit them here: edit
 `marketplace/packages/vault/content/crypto/` and run
 `python3 marketplace/packages/vault/tools/sync_crypto.py`. Both packages' test
 suites fail when a copy has drifted.
+
+`content/extension/codemap.js` and `content/extension/vendor/three-0.184.0/`
+are copies of `app/public/assets/codemap/`, the code map on a repository's
+ForkMesh page. Never edit them here: edit the originals and run
+`python3 marketplace/packages/browser-extension/tools/sync_codemap.py`; the
+tests fail when a copy has drifted.
 
 ## Releasing
 

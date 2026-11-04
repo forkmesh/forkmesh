@@ -8,6 +8,10 @@ class CommentRuntime(FakeRuntime):
         super().__init__()
         self.db.executescript(
             (ROOT / "migrations" / "0296_note_comments.sql").read_text())
+        self.db.executescript(
+            (ROOT / "migrations" / "0300_note_chat.sql").read_text())
+        self.db.executescript(
+            (ROOT / "migrations" / "0301_note_reactions.sql").read_text())
         self.db.execute("PRAGMA foreign_keys=ON")
         self.users["carol"] = "user-carol"
         self.pings = []

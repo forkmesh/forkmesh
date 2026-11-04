@@ -128,8 +128,20 @@ class ChatTrust private constructor(val scope: String, private val store: Secret
         ) {
             return
         }
-        records[kid] = TrustRecord(kid, idk, acct, node, spk, TrustState.APPROVED, known?.firstSeen ?: now, known?.verified ?: false, now)
+        val heir = if (known == null) dropPredecessors(kid, acct, node) else null
+        val verified = known?.verified ?: heir?.verified ?: false
+        records[kid] = TrustRecord(kid, idk, acct, node, spk, TrustState.APPROVED, known?.firstSeen ?: now, verified, now)
         changed()
+    }
+
+    private fun dropPredecessors(kid: String, acct: String, node: String, keep: String = ""): TrustRecord? {
+        val old = records.values.filter { it.kid != kid && it.kid != ownKid && it.kid != keep && it.acct == acct && it.node == node }
+        val heir = old.maxByOrNull { it.lastSeen } ?: return null
+        for (record in old) {
+            records.remove(record.kid)
+            held.removeAll { it.kid == record.kid }
+        }
+        return heir
     }
 
     @Synchronized
@@ -139,6 +151,7 @@ class ChatTrust private constructor(val scope: String, private val store: Secret
         selfKid: String,
         now: Long,
         participants: Collection<String>? = null,
+        nodeBound: () -> Boolean = { false },
     ): BundleOutcome? {
         val kid = bundle["kid"] as String
         val idk = bundle["idk"] as String
@@ -155,13 +168,17 @@ class ChatTrust private constructor(val scope: String, private val store: Secret
             if (newer) changed()
             return BundleOutcome(kid, acct, node, known.state, isNew = false, updated = newer)
         }
+        val bound = policy == SealPolicy.STRICT && kid != selfKid && kid != ownKid && nodeBound()
+        if (bound && records.values.any { it.acct == acct && it.node == node && it.spkTs >= (spk["ts"] as Long) }) return null
+        val heir = if (bound) dropPredecessors(kid, acct, node, keep = selfKid) else null
         val state = when {
+            heir != null -> heir.state
             policy == SealPolicy.OPEN || kid == selfKid -> TrustState.APPROVED
             records.values.any { it.state == TrustState.APPROVED && it.acct == acct } -> TrustState.PENDING
             else -> TrustState.APPROVED
         }
-        records[kid] = TrustRecord(kid, idk, acct, node, spk, state, now, false, now)
-        if (state == TrustState.APPROVED) clearVerified()
+        records[kid] = TrustRecord(kid, idk, acct, node, spk, state, now, heir?.verified ?: false, now)
+        if (state == TrustState.APPROVED && heir == null) clearVerified()
         evict(selfKid)
         changed()
         return BundleOutcome(kid, acct, node, state, isNew = true, updated = true)

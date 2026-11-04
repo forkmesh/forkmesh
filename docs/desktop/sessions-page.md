@@ -3,8 +3,8 @@
 Part of [Desktop](README.md). The Sessions page is the Claude-desktop way to
 manage the sessions the [Agents page](agents-ui.md) lists: one list of every
 session (Claude app sessions included), the open session's live transcript,
-side panels with its progress and context, and a composer that talks to it or
-relays between sessions.
+side panels with its progress and context, and the global prompt composer
+docked under the transcript to talk to it.
 
 ## Code map
 
@@ -40,8 +40,8 @@ Rail **Sessions** (`sessionsNavButton`, rail key `sessions`, section
   then Queued) and **Recent** (newest first, at most 300). A delegate paints
   each row: status dot, title, repository · branch · model, age, unread dot
   and a `⇄ N` badge when the session sent or received messages from other
-  sessions. Right-click: Open in Agents, Continue, Stop, Send message to
-  another session…, Delete (confirms through `deleteAgentSessionFromRow`).
+  sessions. Right-click a row for its menu ([Row and header
+  menus](#row-and-header-menus)).
 - **Grouping.** The filter menu's **Group by** offers **Like the Claude app**
   (the default), **Repository** and **Status**, kept in `sessions/groupBy`.
   Like the Claude app lays the list out as the Claude desktop app's Code tab
@@ -51,12 +51,15 @@ Rail **Sessions** (`sessionsNavButton`, rail key `sessions`, section
   last six messages to or from the open session; click one to open the other
   session), and the page's own `ClaudeTranscriptView`. It never borrows the
   Agents page's view.
-- **Composer.** Enter sends, Shift+Enter adds a line. **To** defaults to the
-  open session; **Also send to** sends the same text to a second session;
-  **Forward last reply to…** sends the open session's latest reply to another
-  session. In new-session mode the row shows Repository and Agent instead,
-  and Send calls `startAdHocAgentForRepo` without leaving the page, then opens
-  the new session.
+- **Composer.** The page has no composer of its own. The footer prompt
+  (`#promptWrapper`) docks over the centre column, capped at 760 px and
+  centred, the way it docks over the Agents page's detail pane
+  (`positionGlobalFooterOverlays`, `sessionsComposerPane`). Its add button
+  and Enter go to the open session (`sessionsComposerTarget`); with no session
+  open, or in new-session mode, its new button starts one in the repository
+  and agent its own pickers hold. A page-local second composer had drifted
+  out of layout and duplicated the footer prompt, so it was removed;
+  forwarding a reply moved to the row menu.
 
 ## Claude app sessions
 
@@ -105,9 +108,52 @@ ForkMesh registers its own agents there is in
   headings put the fold chevron after the name, as the Claude app does
   (`kSessionTrailingChevronRole`).
 - Opening a Claude app row reads its transcript like an outside session
-  (`sessionsOutsideSession` gives the path), with the composer disabled.
-  Right-click: **Open in Claude app** (the `claude://resume` link) and
-  **Send its last reply to…**.
+  (`sessionsOutsideSession` gives the path); sending to it is refused with
+  the reason.
+  Its row menu opens it in the Claude app (the `claude://resume` link) and
+  offers **Send its last reply to…**; Rename, Fork, Mark as unread and Delete
+  are off, as those belong to the Claude app.
+
+## Row and header menus
+
+`buildSessionsContextMenu` and `buildSessionsHeaderMenu` follow the Claude
+app's Code tab menus.
+
+- **Row:** Open in (Agents, Claude app), Continue, Stop, Pin (P), Mark as
+  unread (U), Rename… (R), Fork (F), Move to section, Send message to another
+  session…, Send its last reply to…, Archive (A), Delete… (D). The letters work while the menu is open
+  (`SessionsMenuKeys`, since Qt does not fire shortcuts of a stand-alone
+  popup). A disabled entry's tooltip says why. The list allows
+  Ctrl/Shift-click; when the clicked row is in a selection of several, Pin,
+  Mark as unread, Move to section, Archive and Delete act on all of them.
+- **Header:** New session (with the repository picked under Group by
+  Repository), New section…, Rename section…, Move up, Move down, Select all,
+  Collapse all, Expand all, Archive all (N), Delete all sessions (N) (one
+  confirmation, `deleteAgentSessionsConfirmed`), Delete section. Only
+  sections made in ForkMesh can be renamed, moved or deleted; the Claude
+  app's own are read-only, because ForkMesh never writes the Claude app's
+  config.
+- **State.** Pins, section placement, ForkMesh sections and archived
+  sessions are ForkMesh's own (`sessions/pins`, `sessions/sectionOf`,
+  `sessions/sections`, `sessions/archived`), keyed by `agentReadKey` or, for
+  a Claude app row, `claude-app:<record>`. They override the Claude app's
+  pins and groups for that session, so unpinning a session the Claude app
+  pinned works. All three groupings show Pinned and the sections first;
+  Like the Claude app passes them to `arrangeSidebar`, and a ForkMesh section
+  shows while empty (`DesktopSection::keepEmpty`). Archived sessions leave the
+  list; the filter menu's **Archived sessions** shows them under an Archived
+  heading at the bottom.
+- **Mark as unread** adds the session to `agents/markedUnread`, which
+  `agentSessionUnread` honours until the session is next opened, so the open
+  session stays unread instead of being marked read by the next refresh.
+- **Fork** (local Claude Code sessions only) makes a new session that resumes
+  the source's conversation with `--fork-session`, through the import path
+  (`claudeImportId`/`claudeImportPath`; `ClaudeSessionImport::stage` copies
+  the transcript into the new run). The fork gets its own branch, created at
+  the source branch's last commit, and its own worktree on the next run, so
+  deleting it never touches the source's. Uncommitted changes in the source
+  worktree are not carried over. The fork keeps a copy of the source's
+  transcript and opens ready for the next message.
 
 ## Side panels
 
@@ -118,12 +164,13 @@ right column in Control Tower
 
 | Card | Shows |
 | --- | --- |
+| **Environment**, **Context** | Where the session runs and its context use (below) |
 | **Progress** | The to-do list from `TodoWrite`/`TaskCreate` and Codex plans, through `agenttasks::Tracker` |
 | **Sub-sessions** | Live subagents, shells and workflows with Stop ([agents-ui.md](agents-ui.md#sub-sessions)) |
 | **Outputs** | Files the agent wrote or edited, newest first, with line counts; a failed edit is taken back |
 | **Sources** | Files read, pages fetched, web searches, skills and connectors |
-| **Background** | Subagents and background shells with running/done/failed/stopped |
-| **Changes**, **Context**, **Environment** | The session's diff, context use and environment (below) |
+| **Background tasks** | Running and failed subagents and background shells, a running one with how long it has run; finished and stopped ones fold into one "N finished" row |
+| **Changes** | Files changed on the branch with their +/− line counts, uncommitted files with **Commit changes**, the pull request and conflicts |
 | **Tools** | Calls per tool and failures |
 
 - Outputs, Sources and Background come from `sessioninsights::Collector`
@@ -131,8 +178,11 @@ right column in Control Tower
   events the transcript gets: `renderSessionsTranscriptSlice` hands every
   queued event to the panel, and the panel folds them in 8 ms slices only
   while it is visible.
-- Every card is always shown, with a one-line hint while it is empty, so a
-  new session shows the full set from the first prompt.
+- A card shows only once it has something in it (`Card::empty`,
+  `applyVisibility`): an empty Progress, Sub-sessions, Outputs, Sources,
+  Background or Tools card is hidden, and so is Changes while the branch has
+  no changed or uncommitted files. Environment always shows. Move up and Move
+  down skip the hidden cards.
 - Drag a card's header to move it; the others make room as it passes and the
   list scrolls at the edges. Click the header to fold it. Right-click for
   Move up, Move down, Fold, Hide, Show panel and Reset panels.
@@ -140,14 +190,46 @@ right column in Control Tower
   `sessions/panelHidden` and `sessions/panelCollapsed`, shared by every
   place the stack shows. `normalizedCardOrder` keeps a saved order valid when
   a card is added: a new card goes after its default neighbour.
-- Clicking an output or a read file opens it; a page opens in the browser.
+- The default order starts with Environment, then Context. Only an order the
+  user changed is saved (`customCardOrder`): `sessions/panelOrder` is removed
+  while the order is the default, and a saved copy of an earlier default
+  (folding a card used to save the whole order) counts as not customised, so
+  it takes the new default while a real custom order stays.
+- Clicking an output or a read file shows it in the file manager (its folder,
+  or the folder itself), never through the file's own handler, so an agent
+  cannot plant a script and have a click run it. A page opens in the browser
+  only through `ChatLinkText::externalLinkUrl`, so a tool call's
+  `smb://` or `file://` URL is dropped instead of handed to the system
+  (`SessionSidePanels::openTargetUrl`; checked by
+  `desktop/tests/validate_body_link_schemes.py`).
 - The column opens whenever a session starts: **New session**, sending the
   first prompt, and every local launch (`startAgentRunner` calls
   `NextAccess::sessionStarted`) set `panelOpen` again even if it was hidden.
   The new-session screen shows the column too.
 - **Flat sections.** The cards have no background or box: each
   is a titled section with a thin line under it (none under the last shown
-  one, `sessionsLast`), so they sit closer together. The column has no border
+  one, `sessionsLast`), so they sit closer together. They follow the Claude
+  desktop app's session panel: a muted section title with no chevron until the
+  card is folded, 32 px rows with a 16 px muted icon and the text in the
+  foreground colour, muted trailing figures, 24 px rows in Context, and a 4 px
+  context bar with gaps between its parts. Environment shows the folder's name
+  with its parent after a dot (`141-relink · .worktrees`); Outputs use the code
+  icon; Changes puts the coloured +/− counts on its first row and in the header
+  only while folded.
+- **Commit changes** shows on the uncommitted row of a local session with a
+  worktree. It runs the Branches page's worktree commit
+  (`MainWindow::commitWorktreeChanges`: a commit message, then `git add -A` and
+  `git commit`), with its notices as flash messages since the Branches page is
+  not on screen. A commit sets the cached uncommitted count to 0, asks for a
+  fresh diff pass (`scheduleAgentLiveDiffRefresh`) and refills the panel if it
+  still shows that session.
+- **Running time.** A background task starts at its `tool_use` event's time:
+  the desktop's `_ts` receive stamp, or an imported transcript's `timestamp`,
+  else the last time seen in the stream (`sessioninsights::eventTimeMs`). With
+  no time at all the row says "running". The age reads `45s`, `22m` or
+  `1h 5m` (`elapsedText`) and a single-shot timer re-arms to the next second
+  (first minute) or minute boundary, only while the panel is visible and a
+  timed task runs. The column has no border
   of its own; the splitter handle is the one line between the transcript and
   the panels, in Control Tower (`agentCodeSplit`) and on the Sessions page.
 - **Context** reads like Claude Code's context panel: "N% used"
@@ -181,7 +263,14 @@ right column in Control Tower
     the configured window. "N% used" turns amber at 80% and red at 95%
     (`sessionsLevel` on `sessionsContextUsed`). The header's percentage shows
     only while the card is folded, since the open card already says it.
-- **Environment** ends with a **Remote control** switch, the global
+- **Environment** shows Claude Code's own **Claude Remote Control** setting
+  for Claude sessions on this desktop: On, Off or Default, from
+  `remoteControlAtStartup` ("Enable Remote Control for all sessions" in
+  Claude Code's `/config`), read from the active Claude account's
+  `settings.json` and then its `.claude.json`
+  (`agentaccounts::readClaudeRemoteControl`, cached by file time and size).
+  It is shown, not changed: Claude Code rewrites `.claude.json` while it runs.
+- **Environment** ends with a **Phone remote control** switch, the global
   phone-control switch (`localControl/remoteControl`, on by default;
   `MainWindow::setRemoteControlOn`). Under it, a connected phone shows its
   name and whether it reached the desktop on this network or through the
@@ -204,8 +293,8 @@ right column in Control Tower
 - **Sending.** Local and cloud sessions go through `sendPromptToAgentSession`.
   An external Claude Code session is messaged through `ClaudePeerMessaging`
   (the same peer check as the phone's outside-session prompt: refused or held
-  messages are reported). One with no messaging socket shows the composer
-  disabled with the reason.
+  messages are reported). Sending to one with no messaging socket is refused
+  with the reason.
 
 ## Messages between sessions
 
@@ -238,7 +327,7 @@ at most 200).
 ## Tests
 
 `forkmesh-window-tests --sessions-only` (rail placement, list, live
-transcript, composer, relays), `forkmesh-session-insights-tests`,
+transcript, composer, relays, row and header menus), `forkmesh-session-insights-tests`,
 `forkmesh-claude-desktop-sessions-tests`.
 
 ## New interface
@@ -272,8 +361,7 @@ layout (`MainWindowSessions.cpp`, `63-sessions.qss`).
   browser buttons: nothing on this page backs them.
 - **Transcript and composer.**
   - The transcript column is capped at 808 px and centred.
-  - The composer is a centred rounded card with ghost pickers, the open
-    session's mode and model, and a round send button.
-- **New-session mode.** The header is hidden. The composer moves under a
-  centred "Start a new session" heading with three starter cards, which fill
-  the prompt but never send.
+  - The docked footer prompt sits under it, centred, at most 760 px wide.
+- **New-session mode.** The header is hidden. A centred "Start a new session"
+  heading shows three starter cards, which fill the footer prompt but never
+  send.

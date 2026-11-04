@@ -1751,13 +1751,25 @@ echo seeded
 """
 
 
+def fleet_ssh_port() -> int:
+    try:
+        import next_common
+        return next_common.fleet_ssh_port()
+    except (ImportError, OSError, RuntimeError, ValueError):
+        return 22
+
+
 def seed_targets(hosts: list[tuple[str, str]], ssh_key: Path,
-                 known_hosts: Path | None = None) -> list[tuple[str, str, list[str]]]:
+                 known_hosts: Path | None = None,
+                 port: int | None = None) -> list[tuple[str, str, list[str]]]:
     options = ["-i", str(ssh_key), "-o", "IdentitiesOnly=yes"]
-    if known_hosts is not None:
-        options += ["-o", "StrictHostKeyChecking=yes",
-                    "-o", f"UserKnownHostsFile={known_hosts}"]
-    return [(name, ip, options) for name, ip in hosts]
+    if known_hosts is None:
+        return [(name, ip, options) for name, ip in hosts]
+    options += ["-o", "StrictHostKeyChecking=yes",
+                "-o", f"UserKnownHostsFile={known_hosts}"]
+    port = port or fleet_ssh_port()
+    return [(name, ip, options + ["-o", f"Port={port}", "-o", f"HostKeyAlias={ip}"])
+            for name, ip in hosts]
 
 
 def seed_mirrors(cas: Path, hashes: list[str],

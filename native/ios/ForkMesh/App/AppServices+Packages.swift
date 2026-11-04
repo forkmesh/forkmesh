@@ -5,6 +5,7 @@
 // Register destinations here, e.g.
 //     services.routes.register(.calendar, by: "WS19") { route in AnyView(CalendarScreen(route: route)) }
 
+import FMAccount
 import FMApi
 import FMPackages
 import SwiftUI
@@ -12,6 +13,9 @@ import SwiftUI
 @MainActor
 struct PackagesInstaller: AppServicesInstaller {
     func install(into services: AppServices) {
+        services.auth.onLocalSessionCleared = { [secure = services.secure, http = services.http] in
+            MastodonHub.forgetSignIn(store: secure, http: http)
+        }
         services.routes.register(.market, by: "WS19") { route in
             guard case .market(let filter) = route else { return AnyView(MarketDestination(filter: nil)) }
             return AnyView(MarketDestination(filter: filter))

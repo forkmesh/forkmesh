@@ -24,7 +24,7 @@ public enum RouteParser {
     static let reservedOwners: Set<String> = [
         "api", "dashboard", "assets", "static", ".well-known", "docs", "login", "logout", "signup", "auth",
         "admin", "world", "legal", "blog", "download", "downloads", "pricing", "help", "raw", "ws", "org", "orgs", "oauth",
-        "settings", "status", "ledger", "market", "search", "explore", "new", "privacy", "terms",
+        "settings", "status", "ledger", "market", "search", "explore", "new", "privacy", "terms", "call",
     ]
 
     private static let safeSegment = try! NSRegularExpression(pattern: "^[A-Za-z0-9._-]+$")
@@ -54,11 +54,22 @@ public enum RouteParser {
         let pathSegments = segments(components.percentEncodedPath)
         if scheme == customScheme {
             guard let host = components.host, !host.isEmpty else { return nil }
+            if host.lowercased() == "call" && pathSegments.isEmpty {
+                guard let meeting = MeetingLink.route(query: components.percentEncodedQuery, fragment: components.percentEncodedFragment)
+                else { return nil }
+                return ParsedLink(project: explicitProject, stack: [meeting])
+            }
             let all = [host] + pathSegments
             guard let stack = customRoutes(all, query: query, me: me) else { return nil }
             return ParsedLink(project: explicitProject, stack: stack)
         }
         guard scheme == "https", let host = components.host, isUniversalLinkHost(host) else { return nil }
+        if MeetingLink.isCallPath(components.percentEncodedPath) {
+            guard let meeting = MeetingLink.route(query: components.percentEncodedQuery, fragment: components.percentEncodedFragment)
+            else { return nil }
+            return ParsedLink(
+                project: explicitProject ?? projectId(forHost: host), stack: [meeting], explicitProject: explicitProject != nil)
+        }
         guard let stack = routes(segments: pathSegments, query: query, me: me) else { return nil }
         return ParsedLink(
             project: explicitProject ?? projectId(forHost: host), stack: stack, explicitProject: explicitProject != nil)
@@ -272,10 +283,12 @@ public enum RouteParser {
         case "glasses-alert": return [.glassesAlert]
         case "phone-security": return [.phoneSecurity]
         case "eye-control": return [.eyeControl]
+        case "silent-speech": return [.silentSpeech]
         case "ember": return tail.isEmpty ? [.ember(query["repo"].flatMap(RepoRef.init(slug:)))] : nil
         case "strata": return tail.isEmpty ? [.strata(query["repo"].flatMap(RepoRef.init(slug:)))] : nil
         case "synapse": return tail.isEmpty ? [.synapse(query["repo"].flatMap(RepoRef.init(slug:)))] : nil
         case "openwrt": return tail.isEmpty ? [.openWrtRouter] : nil
+        case "reticulum": return tail.isEmpty ? [.reticulum] : nil
         case "files": return tail.isEmpty ? [.fileExplorer] : nil
         case "nexus": return tail.isEmpty ? [.nexus] : nil
         case "face-changer": return [.faceChanger]
@@ -366,6 +379,8 @@ public enum RouteParser {
             return tail.isEmpty ? [.instanceFeed(post: instanceFeedPost(query["post"]))] : nil
         case "mastodon":
             return tail.isEmpty ? [.mastodon] : nil
+        case "reticulum":
+            return tail.isEmpty ? [.reticulum] : nil
         case "secure-drive":
             return tail.isEmpty ? [.secureDrive] : nil
         case "poker":

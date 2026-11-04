@@ -170,6 +170,7 @@ sealed class CrmTab(val id: String) {
     data class Sheet(val viewId: String) : CrmTab("list:$viewId")
     data class Pipeline(val flowId: String) : CrmTab("pipeline:$flowId")
     data object NoPipeline : CrmTab("no-pipeline")
+    data class Network(val networkId: String) : CrmTab("network:$networkId")
     data object Activity : CrmTab("activity")
     data object Mail : CrmTab("mail")
     data object Outreach : CrmTab("outreach")
@@ -177,7 +178,25 @@ sealed class CrmTab(val id: String) {
     data object Decks : CrmTab("decks")
     data object Shared : CrmTab("shared")
 
-    val isContacts: Boolean get() = this is Sheet || this is Pipeline || this is NoPipeline
+    val isContacts: Boolean get() = this is Sheet || this is Pipeline || this is NoPipeline || this is Network
+}
+
+data class CrmNetwork(val id: String, val name: String) {
+    fun has(contact: CrmContact): Boolean = contact.valueOf(id).isNotBlank()
+
+    companion object {
+        val ALL = listOf(
+            CrmNetwork("mastodon", "Mastodon"),
+            CrmNetwork("bluesky", "Bluesky"),
+            CrmNetwork("twitter", "X (Twitter)"),
+            CrmNetwork("linkedin", "LinkedIn"),
+            CrmNetwork("github", "GitHub"),
+        )
+
+        const val ICON = "public"
+
+        fun named(id: String): CrmNetwork? = ALL.firstOrNull { it.id == id }
+    }
 }
 
 data class CrmTabItem(val tab: CrmTab, val title: String, val icon: String, val count: Int?, val view: CrmView? = null, val flow: CrmFlow? = null)
@@ -241,6 +260,7 @@ fun CrmOrganizationData.contactsFor(tab: CrmTab): List<CrmContact> = when (tab) 
     is CrmTab.Sheet -> views.firstOrNull { it.id == tab.viewId }?.let { view -> contacts.filter { shows(it, view) } }.orEmpty()
     is CrmTab.Pipeline -> contacts.filter { it.flow == tab.flowId }
     CrmTab.NoPipeline -> strayContacts
+    is CrmTab.Network -> CrmNetwork.named(tab.networkId)?.let { network -> contacts.filter(network::has) }.orEmpty()
     else -> emptyList()
 }
 
@@ -272,6 +292,12 @@ val CrmOrganizationData.contactTabs: List<CrmTabItem>
         val stray = strayContacts.size
         if (stray > 0) items.add(CrmTabItem(CrmTab.NoPipeline, "No pipeline", "help_outline", stray))
         return items
+    }
+
+val CrmOrganizationData.networkTabs: List<CrmTabItem>
+    get() = CrmNetwork.ALL.mapNotNull { network ->
+        val count = contacts.count(network::has)
+        if (count > 0) CrmTabItem(CrmTab.Network(network.id), network.name, CrmNetwork.ICON, count) else null
     }
 
 val CrmOrganizationData.workspaceTabs: List<CrmTabItem>

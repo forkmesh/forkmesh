@@ -1,3 +1,4 @@
+#include "NoteComments.h"
 #include "NoteDocument.h"
 #include "NoteDocumentRender.h"
 
@@ -188,6 +189,52 @@ void testPageBreaks()
           "a break inside a code block is code");
 }
 
+void testImageOptionLines()
+{
+    const QString options = QStringLiteral(
+        "<!-- image: wrap=behind; align=left; width=80; height=60; rotate=0; margin=3.2; "
+        "x=20; y=30; pages=all; recolor=grayscale; transparency=40; brightness=0; "
+        "contrast=0 -->");
+    check(isImageOptionsLine(options), "an image options line is recognised");
+    check(isImageOptionsLine(QStringLiteral("  <!--IMAGE:-->  ")),
+          "upper case, no spaces and empty options are still an options line");
+    check(isImageOptionsLine(QStringLiteral("<!--  image: width=50  -->")),
+          "spaces inside the comment are allowed");
+    check(!isImageOptionsLine(QStringLiteral("<!-- image: width=50 --> text")),
+          "text after the comment is not an options line");
+    check(!isImageOptionsLine(QStringLiteral("text <!-- image: width=50 -->")),
+          "an options comment inside a line is not an options line");
+    check(!isImageOptionsLine(QStringLiteral("<!-- images: width=50 -->")) &&
+              !isImageOptionsLine(QStringLiteral("<!-- page: size=a4 -->")),
+          "only the image: word makes an options line");
+    check(!isPageLayoutLine(options) && !isPageBreakLine(options),
+          "an options line is neither a layout line nor a break");
+
+    const QList<NotePart> parts = noteParts(
+        QStringLiteral("Intro\n") + options + QStringLiteral("\n![Cat](cat.png)\nEnd"));
+    check(parts.size() == 1 && parts.first().kind == NotePartKind::Markdown &&
+              parts.first().markdown == QStringLiteral("Intro\n![Cat](cat.png)\nEnd"),
+          "the options line is hidden and the image below it stays");
+    check(noteParts(options + QStringLiteral("\r\n![Cat](cat.png)")).value(0).markdown ==
+              QStringLiteral("![Cat](cat.png)"),
+          "CRLF line ends are accepted");
+    const QList<NotePart> fenced = noteParts(
+        QStringLiteral("```\n") + options + QStringLiteral("\n```\n~~~~\n") + options +
+        QStringLiteral("\n~~~~"));
+    check(fenced.size() == 1 && fenced.first().markdown.count(options) == 2,
+          "an options line inside a code fence is code");
+    check(notePageLayout(options + QStringLiteral("\n<!-- page: size=letter -->")).size ==
+              PaperSize::Letter,
+          "an options line does not hide the layout line after it");
+    const PlaceholderMarkdown out = withObjectPlaceholders(
+        options + QStringLiteral("\n![Cat](cat.png)\n<!-- pagebreak -->\nEnd"),
+        QStringLiteral("tokx"));
+    check(!out.markdown.contains(QStringLiteral("image:")) &&
+              out.markdown.contains(QStringLiteral("![Cat](cat.png)")) &&
+              out.objects.size() == 1,
+          "the preview gets the image without its options line");
+}
+
 void testPlaceholders()
 {
     const QString token = QStringLiteral("tokx");
@@ -356,6 +403,118 @@ void testPreviewObjects()
     check(resized, "a narrower column redraws the figure in place");
 }
 
+void testDeferredPreviewFigure()
+{
+    const QString token = noteObjectToken();
+    const PlaceholderMarkdown placeholders = withObjectPlaceholders(
+        QStringLiteral("```svg\n") + kSvg + QStringLiteral("\n```"), token);
+    QTextDocument doc;
+    doc.setMarkdown(placeholders.markdown);
+    NoteRenderCache cache;
+    QList<QPair<QString, std::function<QImage()>>> deferred;
+    cache.defer = [&deferred](const QString &key, std::function<QImage()> make) {
+        deferred.append({key, std::move(make)});
+    };
+    NotePreviewStyle style;
+    style.columnWidth = 500;
+    applyNotePreviewObjects(&doc, token, placeholders.objects, style, cache);
+    check(deferred.size() == 1, "an uncached figure is handed to the worker");
+    QString name;
+    for (QTextBlock block = doc.begin(); block.isValid(); block = block.next())
+        for (auto it = block.begin(); !it.atEnd(); ++it)
+            if (it.fragment().charFormat().intProperty(NoteObjectKind) == int(NotePartKind::Figure))
+                name = it.fragment().charFormat().toImageFormat().name();
+    const auto centre = [&doc, &name] {
+        const QImage card = doc.resource(QTextDocument::ImageResource, QUrl(name)).value<QImage>();
+        return card.pixelColor(card.width() / 2, card.height() / 2 - 50);
+    };
+    check(!name.isEmpty() && centre() == QColor(Qt::white),
+          "the preview shows the empty card while the figure draws");
+    applyNotePreviewObjects(&doc, token, placeholders.objects, style, cache);
+    check(deferred.size() == 1, "a figure already drawing is not queued twice");
+    cache.store(deferred.first().first, deferred.first().second());
+    applyNotePreviewObjects(&doc, token, placeholders.objects, style, cache);
+    check(centre() == QColor(0x09, 0x69, 0xda), "the drawn figure replaces the empty card");
+}
+
+QJsonObject activityEvent(const QString &kind, const QString &actor, qint64 at,
+                          const QJsonObject &extra = {})
+{
+    QJsonObject event{{QStringLiteral("kind"), kind},
+                      {QStringLiteral("actor"), actor},
+                      {QStringLiteral("at"), double(at)}};
+    for (auto it = extra.begin(); it != extra.end(); ++it)
+        event.insert(it.key(), it.value());
+    return event;
+}
+
+void testSideColumnActivity()
+{
+    const qint64 now = 1'800'000'000'000LL;
+    const QJsonObject payload{
+        {QStringLiteral("counts"),
+         QJsonObject{{QStringLiteral("webViews"), 4},
+                     {QStringLiteral("webReaders"), 2},
+                     {QStringLiteral("webLastViewedAt"), double(now - 500)}}},
+        {QStringLiteral("events"),
+         QJsonArray{
+             activityEvent(QStringLiteral("share"), QStringLiteral("alice"), now,
+                           {{QStringLiteral("detail"),
+                             QJsonObject{{QStringLiteral("name"), QStringLiteral("bob")},
+                                         {QStringLiteral("role"), QStringLiteral("editor")}}}}),
+             activityEvent(QStringLiteral("edit"), QStringLiteral("bob"), now - 1000,
+                           {{QStringLiteral("version"), 4}}),
+             activityEvent(QStringLiteral("edit"), QStringLiteral("bob"), now - 2000,
+                           {{QStringLiteral("version"), 3}}),
+             activityEvent(QStringLiteral("edit"), QStringLiteral("bob"),
+                           now - 2000 - kNoteEditGroupMs - 1,
+                           {{QStringLiteral("version"), 2}}),
+             activityEvent(QStringLiteral("view"), QStringLiteral("bob"),
+                           now - 2 * kNoteEditGroupMs, {{QStringLiteral("count"), 3}}),
+             activityEvent(QStringLiteral("restore"), QStringLiteral("alice"),
+                           now - 3 * kNoteEditGroupMs,
+                           {{QStringLiteral("detail"),
+                             QJsonObject{{QStringLiteral("version"), 1},
+                                         {QStringLiteral("as"), 5}}}}),
+             activityEvent(QString(), QStringLiteral("x"), now),
+         }},
+    };
+    const QList<NoteActivityEntry> entries = noteActivityEntries(payload);
+    check(entries.size() == 6, "activity groups close edits and drops kindless events");
+    if (entries.size() != 6)
+        return;
+    check(entries.at(0).kind == QLatin1String("share") &&
+              noteActivityText(entries.at(0)) == QLatin1String("shared it with bob · can edit"),
+          "a share names the person and the role");
+    check(noteActivityActor(entries.at(0), QStringLiteral("Alice")) == QLatin1String("You"),
+          "your own events read You");
+    check(entries.at(1).kind == QLatin1String("web") &&
+              noteActivityText(entries.at(1)) ==
+                  QLatin1String("4 reads of the published page by 2 readers") &&
+              noteActivityActor(entries.at(1), QString()).isEmpty(),
+          "published page reads join the timeline without an actor");
+    check(noteActivityText(entries.at(2)) == QLatin1String("edited it · v3–v4, 2 saves"),
+          "saves by one person close together fold into one row");
+    check(noteActivityText(entries.at(3)) == QLatin1String("edited it · v2"),
+          "an older save starts a new row");
+    check(noteActivityText(entries.at(4)) == QLatin1String("viewed it 3 times") &&
+              noteActivityActor(entries.at(4), QStringLiteral("alice")) == QLatin1String("bob"),
+          "views keep their count and the viewer's name");
+    check(noteActivityText(entries.at(5)) == QLatin1String("restored version 1 as v5"),
+          "a restore names both versions");
+
+    const QList<NoteVersionEntry> versions = noteVersionEntries(QJsonArray{
+        QJsonObject{{QStringLiteral("version"), 2},
+                    {QStringLiteral("createdAt"), double(now)},
+                    {QStringLiteral("author"), QStringLiteral("bob")}},
+        QJsonObject{{QStringLiteral("version"), 0}},
+        QJsonObject{{QStringLiteral("version"), 1}, {QStringLiteral("createdAt"), double(now - 9)}},
+    });
+    check(versions.size() == 2 && versions.at(0).author == QLatin1String("bob") &&
+              versions.at(0).createdAt == now && versions.at(1).author.isEmpty(),
+          "history keeps numbered versions with who saved them and when");
+}
+
 }
 
 int main(int argc, char **argv)
@@ -365,11 +524,14 @@ int main(int argc, char **argv)
     testLayoutWriting();
     testFigures();
     testPageBreaks();
+    testImageOptionLines();
     testPlaceholders();
     testHeadings();
     testFileNames();
     testPreviewObjects();
+    testDeferredPreviewFigure();
     testPdf();
+    testSideColumnActivity();
     if (failures) {
         std::fprintf(stderr, "%d note document check(s) failed\n", failures);
         return 1;

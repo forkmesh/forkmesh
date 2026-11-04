@@ -40,6 +40,13 @@ resolves the parent key to. A fork of a fork goes under the top listed
 ancestor; a fork whose parent is not listed stays a top-level row. Forks do
 not use up top-level slots.
 
+A signed-in member's lists start with the organization's repositories, built
+from the org link (org name, repository name, `linkedNode`).
+`organizationEntryRepository` swaps that entry's `repo` for the catalog row the
+link points to, so forks naming that row as their parent nest under the
+organization's entry. The entry keeps the organization's address as its label
+and link, and on Home the catalog row's own entry is dropped as a duplicate.
+
 Forks sit below the unchanged parent row, indented behind a thin left border.
 Each is one compact line: the owner name (or `owner/name` when renamed), the
 ahead/behind badge, and on Home its view count, ordered by views. Past three

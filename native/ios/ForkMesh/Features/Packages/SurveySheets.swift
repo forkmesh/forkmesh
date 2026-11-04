@@ -106,6 +106,7 @@ struct SurveyEditor: View {
         Section {
             Toggle("One response per person", isOn: $draft.settings.oneResponsePerPerson)
             Toggle("Ping me on new responses", isOn: $draft.settings.notifyOnResponse)
+            Toggle("Ping me when someone opens or starts it", isOn: $draft.settings.notifyOnVisit)
             Toggle("Shuffle choice options", isOn: $draft.settings.shuffleOptions)
             Toggle("Open at a set time", isOn: timeToggle(\.opensAt, offset: 0))
             if draft.settings.opensAt > 0 {

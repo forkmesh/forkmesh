@@ -91,10 +91,12 @@ public enum PackageRoutes {
         case "glassesAlert": return .glassesAlert
         case "phoneSecurity": return .phoneSecurity
         case "eyeControl": return .eyeControl
+        case "silentSpeech": return .silentSpeech
         case "ember": return .ember(nil)
         case "strata": return .strata(nil)
         case "synapse": return .synapse(nil)
         case "openWrtRouter": return .openWrtRouter
+        case "reticulum": return .reticulum
         case "fileExplorer": return .fileExplorer
         case "faceChanger": return .faceChanger
         case "videoMixDjStudio": return .videoMixDjStudio

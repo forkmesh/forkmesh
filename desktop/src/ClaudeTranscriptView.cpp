@@ -11,6 +11,7 @@
 #include "Theme.h"
 #include "DesignTokens.h"
 #include "Tooltips.h"
+#include "UiKit.h"
 
 #include <QApplication>
 #include <QCoreApplication>
@@ -3722,7 +3723,7 @@ void ClaudeTranscriptView::beginBatchBuild()
             m_heldFrame = new HeldFrame(this);
         m_heldFrame->setStyleSheet(
             QStringLiteral("background:%1;").arg(m_p.canvas));
-        m_heldFrame->setPixmap(grab());
+        m_heldFrame->setPixmap(forkmesh::ui::kit::shownPixels(this));
         m_heldFrame->setGeometry(rect());
         m_heldFrame->raise();
         m_heldFrame->show();
@@ -6214,7 +6215,9 @@ QWidget *ClaudeTranscriptView::commandPanel(const QString &command,
         .arg(m_p.accent)));
     ph->addWidget(prompt, 0, Qt::AlignTop);
     auto *commandLine =
-        new CommandLineView(commandHtml(displayCommand), m_p, promptRow);
+        new CommandLineView(
+            commandHtml(CodexTranscriptStyle::clippedCommandLine(displayCommand)),
+            m_p, promptRow);
     // Hovering shows the full command, highlighted, in a solid card rather
     // than a QToolTip, which blinked on a live transcript (CommandHoverCard).
     commandLine->setHoverCommand([this, command] {

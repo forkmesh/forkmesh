@@ -28,7 +28,7 @@ object RouteParser {
     private val reservedOwners = setOf(
         "api", "dashboard", "assets", "static", ".well-known", "docs", "login", "logout", "signup", "auth",
         "admin", "world", "legal", "blog", "download", "downloads", "pricing", "help", "raw", "ws", "org", "orgs",
-        "settings", "status", "ledger", "market", "search", "explore", "new", "privacy", "terms", "oauth",
+        "settings", "status", "ledger", "market", "search", "explore", "new", "privacy", "terms", "oauth", "call",
     )
     private val safeSegment = Regex("^[A-Za-z0-9._-]+$")
     private val publishedNoteId = Regex("^[0-9a-f]{32}$")
@@ -75,12 +75,19 @@ object RouteParser {
         if (scheme == CUSTOM_SCHEME) {
             val host = uri.host ?: uri.rawAuthority ?: return null
             if (host.isEmpty()) return null
+            if (host.lowercase() == "call" && pathSegments.isEmpty()) {
+                return MeetingLink.route(uri.rawQuery, uri.rawFragment)?.let { ParsedLink(explicitProject, listOf(it)) }
+            }
             val stack = customRoutes(listOf(host) + pathSegments, query, me) ?: return null
             return ParsedLink(explicitProject, stack)
         }
         if (scheme != "https") return null
         val host = uri.host ?: return null
         if (!isUniversalLinkHost(host)) return null
+        if (pathSegments.size == 1 && pathSegments[0].lowercase() == "call") {
+            val meeting = MeetingLink.route(uri.rawQuery, uri.rawFragment) ?: return null
+            return ParsedLink(explicitProject ?: projectId(host), listOf(meeting), explicitProject != null)
+        }
         val stack = sharedPackage(pathSegments) ?: routes(pathSegments, query, me) ?: return null
         return ParsedLink(explicitProject ?: projectId(host), stack, explicitProject != null)
     }
@@ -261,11 +268,13 @@ object RouteParser {
             "surveys" -> if (first == null) listOf(Route.Surveys(query["org"]?.trim()?.takeIf { it.isNotEmpty() }, query["survey"]?.trim()?.takeIf { it.isNotEmpty() })) else null
             "face-changer" -> listOf(Route.FaceChanger)
             "phone-security" -> listOf(Route.PhoneSecurity)
+            "silent-speech" -> listOf(Route.SilentSpeech)
             "speech" -> listOf(Route.Speech)
             "ember" -> if (first == null) listOf(Route.Ember(RepoRef.parse(query["repo"]))) else null
             "strata" -> if (first == null) listOf(Route.Strata(RepoRef.parse(query["repo"]))) else null
             "synapse" -> if (first == null) listOf(Route.Synapse(RepoRef.parse(query["repo"]))) else null
             "openwrt" -> listOf(Route.OpenWrtRouter)
+            "reticulum" -> listOf(Route.Reticulum)
             "app-store-status" -> listOf(Route.AppStoreStatus)
             "booking" -> if (first == null) listOf(Route.Booking(query["booking"]?.trim()?.lowercase()?.takeIf(PackagesText::isHexId))) else null
             "runners" -> if (first == null) listOf(Route.Runners) else null
@@ -340,10 +349,12 @@ object RouteParser {
         "speech" -> listOf(Route.Speech)
         "glasses-alert" -> listOf(Route.GlassesAlert)
         "phone-security" -> listOf(Route.PhoneSecurity)
+        "silent-speech" -> listOf(Route.SilentSpeech)
         "ember" -> listOf(Route.Ember(null))
         "strata" -> listOf(Route.Strata(null))
         "synapse" -> listOf(Route.Synapse(null))
         "openwrt" -> listOf(Route.OpenWrtRouter)
+        "reticulum" -> listOf(Route.Reticulum)
         "face-changer" -> listOf(Route.FaceChanger)
         "app-store-status" -> listOf(Route.AppStoreStatus)
         "booking" -> listOf(Route.Booking(first?.lowercase()?.takeIf(PackagesText::isHexId)))

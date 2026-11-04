@@ -50,6 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -81,7 +82,11 @@ import com.forkmesh.nativeapp.notes.JsonObject
 import com.forkmesh.nativeapp.notes.NoteAccess
 import com.forkmesh.nativeapp.notes.NoteAccessSummary
 import com.forkmesh.nativeapp.notes.NoteAnchoring
+import com.forkmesh.nativeapp.notes.NoteChat
+import com.forkmesh.nativeapp.notes.NoteChatPayload
 import com.forkmesh.nativeapp.notes.NoteCommentText
+import com.forkmesh.nativeapp.notes.NoteHistory
+import com.forkmesh.nativeapp.notes.NoteLiveTab
 import com.forkmesh.nativeapp.notes.NoteEmoji
 import com.forkmesh.nativeapp.notes.NotePage
 import com.forkmesh.nativeapp.notes.NoteCommentsPayload
@@ -93,6 +98,9 @@ import com.forkmesh.nativeapp.notes.NoteLink
 import com.forkmesh.nativeapp.notes.NotePeer
 import com.forkmesh.nativeapp.notes.NotePresence
 import com.forkmesh.nativeapp.notes.NoteQuote
+import com.forkmesh.nativeapp.notes.NoteReactionAction
+import com.forkmesh.nativeapp.notes.NoteReactionGroup
+import com.forkmesh.nativeapp.notes.NoteReactions
 import com.forkmesh.nativeapp.notes.NoteReach
 import com.forkmesh.nativeapp.notes.NoteRowInfo
 import com.forkmesh.nativeapp.notes.NoteRows
@@ -110,10 +118,12 @@ import com.forkmesh.nativeapp.notes.jsonInt
 import com.forkmesh.nativeapp.notes.jsonObjects
 import com.forkmesh.nativeapp.notes.jsonString
 import com.forkmesh.nativeapp.platform.AppLifecycle
+import com.forkmesh.nativeapp.platform.Prefs
 import com.forkmesh.nativeapp.ui.kit.FmAvatar
 import com.forkmesh.nativeapp.ui.kit.FmCheckbox
 import com.forkmesh.nativeapp.ui.kit.FmCircularProgressIndicator
 import com.forkmesh.nativeapp.ui.kit.FmConfirmDialog
+import com.forkmesh.nativeapp.feature.docs.DocsBlockView
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenu
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenuItem
 import com.forkmesh.nativeapp.ui.kit.FmEmptyState
@@ -412,7 +422,16 @@ class NoteEditorScreen(private val noteId: String?, private val openComment: Str
     private var discarded = false
     private var confirmDiscard by mutableStateOf(false)
     private var confirmDelete by mutableStateOf(false)
-    private var showHistory by mutableStateOf(false)
+    private var liveTab by mutableStateOf<NoteLiveTab?>(null)
+    private var historySignal by mutableIntStateOf(0)
+    private var activitySignal by mutableIntStateOf(0)
+    private var chat by mutableStateOf(NoteChatPayload())
+    private var chatLoaded by mutableStateOf(false)
+    private var chatError by mutableStateOf("")
+    private var chatSignal by mutableIntStateOf(0)
+    private var chatBusy by mutableStateOf(false)
+    private var chatSeenAt by mutableLongStateOf(-1L)
+    private val chatStatus = FmStatus()
     private var showShare by mutableStateOf(false)
     private var showLinks by mutableStateOf(false)
     private var showPdf by mutableStateOf(false)
@@ -437,6 +456,8 @@ class NoteEditorScreen(private val noteId: String?, private val openComment: Str
     private var focusThread by mutableStateOf<String?>(null)
     private var pendingComment: String? = openComment
     private var highlightThread by mutableStateOf<String?>(null)
+    private var reactPicking by mutableStateOf(false)
+    private var reactQuote by mutableStateOf<NoteQuote?>(null)
     private var newEmoji by mutableStateOf("")
     private var pickingEmoji by mutableStateOf(false)
     private val editorFocus = FocusRequester()
@@ -467,6 +488,24 @@ class NoteEditorScreen(private val noteId: String?, private val openComment: Str
         highlightThread = thread.id
     }
 
+    private fun selectPassage(group: NoteReactionGroup) {
+        val range = group.range ?: return
+        if (range.last >= markdown.length) return
+        preview = false
+        body = body.copy(selection = TextRange(range.first, range.last + 1))
+        highlightThread = null
+    }
+
+    private fun startReact(quote: NoteQuote?) {
+        reactQuote = quote ?: return
+        reactPicking = true
+    }
+
+    private fun react(scope: kotlinx.coroutines.CoroutineScope, action: NoteReactionAction) {
+        val fallback = if (action is NoteReactionAction.Remove) "The reaction was not removed." else "The reaction was not added."
+        commentCall(scope, fallback, { api, note -> api.perform(note, action) }, report = if (showComments) commentStatus else status)
+    }
+
     private fun startComment(quote: NoteQuote?) {
         commentDraft = quote
         composing = true
@@ -475,7 +514,7 @@ class NoteEditorScreen(private val noteId: String?, private val openComment: Str
         showComments = true
     }
 
-    private fun commentCall(scope: kotlinx.coroutines.CoroutineScope, fallback: String, block: (NotesApi, String) -> NoteCommentsPayload, done: () -> Unit = {}) {
+    private fun commentCall(scope: kotlinx.coroutines.CoroutineScope, fallback: String, block: (NotesApi, String) -> NoteCommentsPayload, done: () -> Unit = {}, report: FmStatus = commentStatus) {
         val notes = api ?: return
         val current = id ?: return
         commentBusy = true
@@ -483,14 +522,33 @@ class NoteEditorScreen(private val noteId: String?, private val openComment: Str
             try {
                 comments = withContext(Dispatchers.IO) { block(notes, current) }
                 commentsLoaded = true
-                commentStatus.clear()
+                report.clear()
                 done()
             } catch (cancel: CancellationException) {
                 throw cancel
             } catch (thrown: Exception) {
-                commentStatus.error(NoteCommentText.error(thrown, fallback))
+                report.error(NoteCommentText.error(thrown, fallback))
             }
             commentBusy = false
+        }
+    }
+
+    private fun chatCall(scope: kotlinx.coroutines.CoroutineScope, fallback: String, block: (NotesApi, String) -> NoteChatPayload, done: () -> Unit = {}) {
+        val notes = api ?: return
+        val current = id ?: return
+        chatBusy = true
+        scope.launch {
+            try {
+                chat = withContext(Dispatchers.IO) { block(notes, current) }
+                chatLoaded = true
+                chatStatus.clear()
+                done()
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (thrown: Exception) {
+                chatStatus.error(NoteChat.error(thrown, fallback))
+            }
+            chatBusy = false
         }
     }
 
@@ -625,7 +683,32 @@ class NoteEditorScreen(private val noteId: String?, private val openComment: Str
             focusThread = thread.id
             showComments = true
         }
+        val seenPrefs = remember { Prefs(context, NoteChat.SEEN_PREFS) }
+        LaunchedEffect(openId) {
+            if (openId != null) chatSeenAt = seenPrefs.getLong(NoteChat.seenKey(openId), 0L)
+        }
+        LaunchedEffect(openId, loadedNote, chatSignal) {
+            if (openId == null || !loadedNote) return@LaunchedEffect
+            if (chatSignal > 0) delay(NoteChat.RELOAD_MS)
+            try {
+                chat = withContext(Dispatchers.IO) { notes.chat(openId) }
+                chatLoaded = true
+                chatError = ""
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (thrown: Exception) {
+                chatError = NoteChat.error(thrown, NoteChat.UNAVAILABLE)
+            }
+        }
+        val chatLatest = chat.latestAt
+        LaunchedEffect(openId, liveTab, chatLatest, chatLoaded) {
+            if (openId == null || liveTab != NoteLiveTab.Chat || !chatLoaded || chatLatest <= chatSeenAt) return@LaunchedEffect
+            chatSeenAt = chatLatest
+            seenPrefs.putLong(NoteChat.seenKey(openId), chatLatest)
+        }
+        val chatUnread = if (chatSeenAt < 0 || liveTab == NoteLiveTab.Chat) 0 else NoteChat.unread(chat.messages, me, chatSeenAt)
         val threads = remember(comments, markdown) { NoteThreads.build(comments.comments, markdown) }
+        val reactionGroups = remember(comments, markdown, me) { NoteReactions.groups(comments.reactions, markdown, me) }
         LaunchedEffect(titleText, markdown) {
             val socket = room ?: return@LaunchedEffect
             val live = presence ?: return@LaunchedEffect
@@ -679,6 +762,7 @@ class NoteEditorScreen(private val noteId: String?, private val openComment: Str
                         commentStatus.clear()
                         showComments = true
                     }
+                    NoteChatButton(chatUnread) { liveTab = NoteLiveTab.Chat }
                 }
                 if (opened || plugin != null) {
                     Box {
@@ -700,7 +784,8 @@ class NoteEditorScreen(private val noteId: String?, private val openComment: Str
                                         openExternalUrl(context, NotesLogic.publicUrl(origin, current))
                                     })
                                 }
-                                FmDropdownMenuItem(text = "History", onClick = { menu = false; showHistory = true })
+                                FmDropdownMenuItem(text = "History", icon = "history", onClick = { menu = false; liveTab = NoteLiveTab.History })
+                                FmDropdownMenuItem(text = "Activity", icon = "visibility", onClick = { menu = false; liveTab = NoteLiveTab.Activity })
                                 if (canEdit) FmDropdownMenuItem(text = "Linked issues and PRs", onClick = { menu = false; showLinks = true })
                                 FmDropdownMenuItem(text = "Export Markdown", onClick = {
                                     menu = false
@@ -798,6 +883,19 @@ class NoteEditorScreen(private val noteId: String?, private val openComment: Str
                                 tooltip = "Select text in the note to comment on it",
                                 height = 30.dp,
                             )
+                            Box {
+                                FmToneButton(
+                                    NoteReactions.REACT,
+                                    icon = "add_reaction_outlined",
+                                    onPressed = selected?.let { quote -> { startReact(quote) } },
+                                    tooltip = "Select text in the note to react to it",
+                                    height = 30.dp,
+                                )
+                                NoteReactionChoices(reactPicking, onDismiss = { reactPicking = false }) { emoji ->
+                                    reactPicking = false
+                                    react(scope, NoteReactionAction.Add(emoji, reactQuote))
+                                }
+                            }
                         }
                     }
                     if (!preview && canEdit) {
@@ -808,7 +906,17 @@ class NoteEditorScreen(private val noteId: String?, private val openComment: Str
                     }
                     Spacer(Modifier.height(4.dp))
                     if (preview) {
-                        MarkdownPreview(markdown, Modifier.weight(1f).fillMaxWidth()) { url -> NavigationFeature.openUri(context, url) }
+                        MarkdownPreview(
+                            markdown,
+                            Modifier.weight(1f).fillMaxWidth(),
+                            reactions = reactionGroups,
+                            onReactions = if (existing && note != null) ({
+                                composing = false
+                                commentDraft = null
+                                commentStatus.clear()
+                                showComments = true
+                            }) else null,
+                        ) { url -> NavigationFeature.openUri(context, url) }
                     } else {
                         MarkdownField(
                             body,
@@ -816,7 +924,9 @@ class NoteEditorScreen(private val noteId: String?, private val openComment: Str
                             !canEdit,
                             Modifier.weight(1f).fillMaxWidth().focusRequester(editorFocus),
                             highlight = highlightThread?.let { threads.find(it)?.anchor },
+                            marks = reactionGroups.mapNotNull { it.range },
                             onComment = if (existing && note != null) ({ NoteAnchoring.quote(markdown, body.selection.min, body.selection.max)?.let(::startComment) }) else null,
+                            onReact = if (existing && note != null) ({ startReact(NoteAnchoring.quote(markdown, body.selection.min, body.selection.max)) }) else null,
                         )
                     }
                 }
@@ -857,14 +967,39 @@ class NoteEditorScreen(private val noteId: String?, private val openComment: Str
                 onDismissRequest = { confirmDelete = false },
             )
         }
-        if (showHistory) {
+        val shownTab = liveTab
+        if (shownTab != null) {
             val current = id
             if (current != null) {
-                NoteHistorySheet(notes, current, version, canEdit, onDismiss = { showHistory = false }) { restored ->
-                    showHistory = false
+                NoteLiveSheet(
+                    api = notes,
+                    noteId = current,
+                    currentVersion = version,
+                    canRestore = canEdit,
+                    me = me,
+                    tab = shownTab,
+                    onTab = { liveTab = it },
+                    historySignal = historySignal,
+                    activitySignal = activitySignal,
+                    chat = NoteLiveChat(
+                        payload = chat,
+                        loaded = chatLoaded,
+                        error = chatError,
+                        unread = NoteChat.unread(chat.messages, me, chatSeenAt.coerceAtLeast(0L)).takeIf { shownTab != NoteLiveTab.Chat } ?: 0,
+                        busy = chatBusy,
+                        status = chatStatus,
+                        send = { body, done -> chatCall(scope, "The message was not sent.", { api, note -> api.sendChat(note, body) }, done) },
+                        delete = { message -> chatCall(scope, "The message was not deleted.", { api, note -> api.deleteChat(note, message.id) }) },
+                    ),
+                    onDismiss = {
+                        liveTab = null
+                        chatStatus.clear()
+                    },
+                ) { restored, restoredVersion ->
+                    liveTab = null
                     conflict = null
                     apply(restored)
-                    status.show("Version restored")
+                    status.show(NoteHistory.restored(restoredVersion))
                 }
             }
         }
@@ -956,7 +1091,17 @@ class NoteEditorScreen(private val noteId: String?, private val openComment: Str
                             runCatching { editorFocus.requestFocus() }
                         }
                     },
+                    react = { action -> react(scope, action) },
+                    pickPassage = { group ->
+                        showComments = false
+                        selectPassage(group)
+                        scope.launch {
+                            delay(150)
+                            runCatching { editorFocus.requestFocus() }
+                        }
+                    },
                 ),
+                reactions = reactionGroups,
                 onCompose = { startComment(null) },
                 onCancelCompose = {
                     composing = false
@@ -1028,6 +1173,7 @@ class NoteEditorScreen(private val noteId: String?, private val openComment: Str
             presence = live
             roomOpen = true
             if (commentsLoaded) commentsSignal++
+            if (chatLoaded) chatSignal++
             suspend fun send(text: String) {
                 withContext(Dispatchers.IO) { socket.sendText(text) }
             }
@@ -1055,8 +1201,12 @@ class NoteEditorScreen(private val noteId: String?, private val openComment: Str
                             savedMarkdown = event.markdown
                             body = TextFieldValue(event.markdown, body.selection.let { TextRange(it.min.coerceAtMost(event.markdown.length)) })
                         }
-                        is NoteRoomEvent.Updated -> if (event.version > version && !dirty && !saving) {
-                            scope.launch { runCatching { apply(withContext(Dispatchers.IO) { notes.get(current) }) } }
+                        is NoteRoomEvent.Updated -> {
+                            historySignal++
+                            activitySignal++
+                            if (event.version > version && !dirty && !saving) {
+                                scope.launch { runCatching { apply(withContext(Dispatchers.IO) { notes.get(current) }) } }
+                            }
                         }
                         NoteRoomEvent.Deleted -> {
                             discarded = true
@@ -1064,6 +1214,8 @@ class NoteEditorScreen(private val noteId: String?, private val openComment: Str
                         }
                         NoteRoomEvent.AccessChanged -> accessChanged = true
                         NoteRoomEvent.Comments -> commentsSignal++
+                        NoteRoomEvent.Activity -> activitySignal++
+                        NoteRoomEvent.Chat -> chatSignal++
                         is NoteRoomEvent.Left -> Unit
                         null -> Unit
                     }
@@ -1271,18 +1423,34 @@ private fun FormatToolbar(onFormat: (String) -> Unit) {
 }
 
 @Composable
-private fun MarkdownField(value: TextFieldValue, onChange: (TextFieldValue) -> Unit, readOnly: Boolean, modifier: Modifier, highlight: IntRange? = null, onComment: (() -> Unit)? = null) {
+private fun MarkdownField(
+    value: TextFieldValue,
+    onChange: (TextFieldValue) -> Unit,
+    readOnly: Boolean,
+    modifier: Modifier,
+    highlight: IntRange? = null,
+    marks: List<IntRange> = emptyList(),
+    onComment: (() -> Unit)? = null,
+    onReact: (() -> Unit)? = null,
+) {
     val c = Fm.colors
     val style = Fm.mono(size = Fm.text.bodyMedium.fontSize).copy(color = c.textPrimary)
     val mark = c.accent.copy(alpha = 0.22f)
-    val transformation = remember(highlight, mark) {
-        if (highlight == null) {
+    val reacted = c.accent.copy(alpha = 0.10f)
+    val transformation = remember(highlight, marks, mark, reacted) {
+        if (highlight == null && marks.isEmpty()) {
             VisualTransformation.None
         } else {
             VisualTransformation { text ->
-                val from = highlight.first.coerceIn(0, text.length)
-                val to = (highlight.last + 1).coerceIn(from, text.length)
-                val marked = AnnotatedString.Builder(text).apply { if (to > from) addStyle(SpanStyle(background = mark), from, to) }.toAnnotatedString()
+                val marked = AnnotatedString.Builder(text).apply {
+                    fun paint(range: IntRange, color: Color) {
+                        val from = range.first.coerceIn(0, text.length)
+                        val to = (range.last + 1).coerceIn(from, text.length)
+                        if (to > from) addStyle(SpanStyle(background = color), from, to)
+                    }
+                    for (range in marks) paint(range, reacted)
+                    highlight?.let { paint(it, mark) }
+                }.toAnnotatedString()
                 TransformedText(marked, OffsetMapping.Identity)
             }
         }
@@ -1303,6 +1471,12 @@ private fun MarkdownField(value: TextFieldValue, onChange: (TextFieldValue) -> U
                         onComment()
                     }
                 }
+                if (onReact != null && !value.selection.collapsed) {
+                    item(key = "note-react", label = NoteReactions.REACT) {
+                        close()
+                        onReact()
+                    }
+                }
             }
             .clip(RoundedCornerShape(FmRadius.md))
             .border(1.dp, c.border, RoundedCornerShape(FmRadius.md))
@@ -1317,7 +1491,13 @@ private fun MarkdownField(value: TextFieldValue, onChange: (TextFieldValue) -> U
 }
 
 @Composable
-private fun MarkdownPreview(markdown: String, modifier: Modifier, onLink: (String) -> Unit) {
+internal fun MarkdownPreview(
+    markdown: String,
+    modifier: Modifier,
+    reactions: List<NoteReactionGroup> = emptyList(),
+    onReactions: (() -> Unit)? = null,
+    onLink: (String) -> Unit,
+) {
     val references = remember(markdown) { DocsMarkdown.parse(markdown).references }
     val parts = remember(markdown) {
         NoteDocument.segments(markdown).mapNotNull { segment ->
@@ -1332,60 +1512,21 @@ private fun MarkdownPreview(markdown: String, modifier: Modifier, onLink: (Strin
         if (parts.isEmpty()) {
             Text("Nothing to preview yet.", style = Fm.text.bodyMedium.copy(color = Fm.colors.textTertiary))
         }
-        for (part in parts) NotePreviewPartView(part, references, onLink)
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun NoteHistorySheet(api: NotesApi, noteId: String, currentVersion: Long, canRestore: Boolean, onDismiss: () -> Unit, onRestored: (JsonObject) -> Unit) {
-    var versions by remember { mutableStateOf<List<JsonObject>?>(null) }
-    var error by remember { mutableStateOf("") }
-    var busy by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
-    val status = rememberFmStatus()
-    LaunchedEffect(noteId) {
-        try {
-            versions = withContext(Dispatchers.IO) { api.versions(noteId) }
-        } catch (thrown: Exception) {
-            error = apiErrorText(thrown, "History is unavailable.")
+        val placed = remember(parts, markdown, reactions) {
+            val probes = parts.flatMap { part -> if (part is NotePreviewPart.Blocks) part.blocks.map(NoteReactions::probe) else listOf(null) }
+            if (reactions.none { !it.isWhole }) List(probes.size) { emptyList<NoteReactionGroup>() } else NoteReactions.placed(reactions, NoteReactions.blockStarts(probes, markdown))
         }
-    }
-    FmModalBottomSheet(onDismissRequest = onDismiss) {
-        FmPanelHeader(title = "History")
-        FmInlineStatus(status, Modifier.padding(horizontal = 16.dp))
-        val list = versions
-        when {
-            list == null && error.isEmpty() -> Box(Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) { FmCircularProgressIndicator() }
-            list == null -> FmEmptyState("history", "History unavailable", message = error)
-            else -> LazyColumn(Modifier.fillMaxWidth().height(360.dp)) {
-                items(list) { entry ->
-                    val version = jsonInt(entry["version"])
-                    val author = jsonString(entry["author"])
-                    FmListRow(
-                        title = "Version $version",
-                        subtitle = listOf(relativeTime(jsonInt(entry["createdAt"])), author).filter { it.isNotEmpty() }.joinToString(" · "),
-                        showChevron = false,
-                        trailing = when {
-                            version == currentVersion -> ({ FmStatusBadge("Current", Fm.colors.accent) })
-                            canRestore -> ({
-                                FmTextButton(enabled = !busy, onClick = {
-                                    busy = true
-                                    scope.launch {
-                                        try {
-                                            onRestored(withContext(Dispatchers.IO) { api.restore(noteId, version, currentVersion) })
-                                        } catch (thrown: Exception) {
-                                            busy = false
-                                            status.error(apiErrorText(thrown, "That version was not restored."))
-                                        }
-                                    }
-                                }) { Text("Restore") }
-                            })
-                            else -> null
-                        },
-                    )
-                    FmRowDivider(indent = 16.dp)
+        var index = 0
+        for (part in parts) {
+            if (part is NotePreviewPart.Blocks) {
+                for (block in part.blocks) {
+                    DocsBlockView(block, references, onLink)
+                    val groups = placed.getOrNull(index++).orEmpty()
+                    if (groups.isNotEmpty()) NoteReactionSummary(groups, onReactions)
                 }
+            } else {
+                NotePreviewPartView(part, references, onLink)
+                index++
             }
         }
     }

@@ -152,7 +152,8 @@ void MainWindow::installAgentCommandApprovals()
                            ? kClaudeAutoModeLabel
                            : kAgentAskModeLabel;
             const QString where = call.external ? QStringLiteral("External call (%1)")
-                                                      .arg(call.target)
+                                                      .arg(call.destinations().join(
+                                                          QStringLiteral(", ")))
                                                 : QStringLiteral("Local command");
             if (agentModeSkipsPermissions(mode))
                 return approval(Approval::Allowed, QStringLiteral("Allowed"),

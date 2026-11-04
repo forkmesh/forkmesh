@@ -2,10 +2,12 @@
 
 #include "NativePackageExtension.h"
 #include "NoteComments.h"
+#include "NoteTools.h"
 
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QSet>
+#include <QTextEdit>
 #include <QUrl>
 
 #include <memory>
@@ -16,6 +18,7 @@ class QComboBox;
 class QLabel;
 class QLineEdit;
 class QListWidget;
+class QMenu;
 class QPushButton;
 class QSplitter;
 class QStackedWidget;
@@ -114,7 +117,21 @@ private:
     void hideNotePresence();
     void updateCommentControls();
     void setCommentsPanelOpen(bool open);
+    void toggleSidePanel(NoteSideTab tab);
+    void restoreNoteVersion(int version);
+    void setNoteFollow(const QString &name);
+    void followNotePeer(const NotePeer &peer);
+    void noteCaretMoved();
     void startNoteComment();
+    void startNoteReaction(const QString &emoji);
+    QMenu *noteReactionMenu(QWidget *parent);
+    void selectReactionPassage(const NoteReactionGroup &group);
+    void refreshEditorMarks();
+    void updateReactionMarks();
+    void setPeerMarks(const QList<NotePeer> &peers);
+    void placePeerLabels();
+    void applyEditorMarks();
+    QString editorMarkTip(bool preview, const QPoint &pos) const;
     CommentQuote noteSelectionQuote(bool *previewMiss = nullptr) const;
     void showCommentPassage(const CommentThread *thread);
     void clearCommentHighlight();
@@ -142,7 +159,11 @@ private:
     void openReferenceLink(const QString &href);
     void searchIndexChanged();
     bool noteAiEditAvailable() const;
+    bool startNoteAiEdit(const QString &instruction,
+                         forkmesh::notes::NoteTextRange range);
     void applyNoteAiEdit(const QString &reply, const QString &error);
+    forkmesh::notes::NoteTextRange aiSelectionRange() const;
+    void aiSelectionChanged();
     void stopNoteAiEdit();
     void promptTargetChanged();
 
@@ -180,6 +201,29 @@ private:
     NoteCommentsPanel *m_commentsPanel = nullptr;
     QPushButton *m_commentsButton = nullptr;
     QPushButton *m_commentButton = nullptr;
+    QPushButton *m_reactButton = nullptr;
+    QList<QTextEdit::ExtraSelection> m_focusMarks;
+    QList<QTextEdit::ExtraSelection> m_previewFocusMarks;
+    QList<QTextEdit::ExtraSelection> m_reactionMarks;
+    QStringList m_reactionTips;
+    QList<QTextEdit::ExtraSelection> m_previewReactionMarks;
+    QStringList m_previewReactionTips;
+    QList<QTextEdit::ExtraSelection> m_peerMarks;
+    QList<NotePeer> m_markedPeers;
+    QList<NoteEditingLine> m_editingLines;
+    QString m_editingSignature;
+    QList<QLabel *> m_peerLabels;
+    QPushButton *m_chatButton = nullptr;
+    QPushButton *m_activityButton = nullptr;
+    QPushButton *m_followStop = nullptr;
+    QList<NotePeer> m_peers;
+    QString m_followName;
+    int m_followLine = 0;
+    int m_followColumn = 0;
+    int m_presenceSentLine = 0;
+    QJsonValue m_chatKey;
+    bool m_preferLive = false;
+    bool m_openingNoteView = false;
     QWidget *m_presenceBox = nullptr;
     NotePresenceFaces *m_presenceFaces = nullptr;
     QLabel *m_presenceLine = nullptr;
@@ -188,6 +232,7 @@ private:
     QString m_presenceNoteId;
     QString m_presenceSentState;
     QJsonValue m_commentsKey;
+    QJsonValue m_activityKey;
     qint64 m_lastTypedMs = 0;
     int m_presenceSequence = 0;
     bool m_presenceInFlight = false;
@@ -211,6 +256,8 @@ private:
     QString m_aiEditNoteId;
     QString m_aiEditBase;
     QString m_aiEditBaseTitle;
+    forkmesh::notes::NoteTextRange m_aiEditRange;
+    bool m_aiPromptSelection = false;
     int m_aiEditSequence = 0;
 };
 

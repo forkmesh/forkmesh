@@ -141,6 +141,7 @@ public enum Route: Codable, Hashable, Sendable {
     case thread(channel: String, id: String)
     case dm(user: String)
     case discord(guild: String, channel: String?)
+    case meeting(room: String, key: String)
     // People and search (WS18, WS8)
     case profile(name: String)
     case people
@@ -193,7 +194,9 @@ public enum Route: Codable, Hashable, Sendable {
     case glassesAlert
     case phoneSecurity
     case eyeControl
+    case silentSpeech
     case openWrtRouter
+    case reticulum
     case fileExplorer
     case nexus
     case faceChanger
@@ -274,6 +277,7 @@ public enum Route: Codable, Hashable, Sendable {
         case .thread: return .thread
         case .dm: return .dm
         case .discord: return .discord
+        case .meeting: return .meeting
         case .profile: return .profile
         case .people: return .people
         case .docs: return .docs
@@ -321,7 +325,9 @@ public enum Route: Codable, Hashable, Sendable {
         case .glassesAlert: return .glassesAlert
         case .phoneSecurity: return .phoneSecurity
         case .eyeControl: return .eyeControl
+        case .silentSpeech: return .silentSpeech
         case .openWrtRouter: return .openWrtRouter
+        case .reticulum: return .reticulum
         case .fileExplorer: return .fileExplorer
         case .nexus: return .nexus
         case .faceChanger: return .faceChanger
@@ -363,12 +369,12 @@ public enum Route: Codable, Hashable, Sendable {
         case repos, repo, tree, file, fileHistory, codeMap, commits, commit, range, compare, conflicts
         case issue, newIssue, board, pull, review, discussion, run, release, project, milestones
         case repoSettings, localRepos, localRepo, quickEdit
-        case chat, channel, thread, dm, discord
+        case chat, channel, thread, dm, discord, meeting
         case profile, people, docs, search
         case notes, note, notePage, tasks, task, calendar, event, timers
         case desktops, desktop, hosts, host, runners, provision, network, node
         case market, package, crm, contact, crmOrg, marketing, analytics, competitors, invoices, surveys, booking, ads, ledger
-        case vault, coves, cove, calories, steps, water, sleep, sugarBreak, stretch, foodGuide, speech, glassesAlert, phoneSecurity, eyeControl, openWrtRouter, fileExplorer, nexus, faceChanger, videoMixDjStudio, poker, appStoreStatus, usage, rssReader, instanceFeed, mastodon, secureDrive, spiderRoom, workflows, localAI, activity, logs, diagnostics
+        case vault, coves, cove, calories, steps, water, sleep, sugarBreak, stretch, foodGuide, speech, glassesAlert, phoneSecurity, eyeControl, silentSpeech, openWrtRouter, reticulum, fileExplorer, nexus, faceChanger, videoMixDjStudio, poker, appStoreStatus, usage, rssReader, instanceFeed, mastodon, secureDrive, spiderRoom, workflows, localAI, activity, logs, diagnostics
         case ember, strata, synapse
         case stats, status, admin
         case settings, orgs, org, projects, projectAccess, tour, updateRequired
@@ -389,7 +395,7 @@ public enum Route: Codable, Hashable, Sendable {
             case .run, .release: return "WS14"
             case .project, .milestones, .notes, .note, .notePage, .tasks, .task, .calendar, .event, .timers: return "WS15"
             case .localRepos, .localRepo, .quickEdit: return "WS5"
-            case .chat, .channel, .thread, .dm, .discord: return "WS13"
+            case .chat, .channel, .thread, .dm, .discord, .meeting: return "WS13"
             case .profile, .people, .docs, .settings: return "WS18"
             case .search, .tour, .updateRequired, .launchedAgent: return "WS8"
             case .desktops, .desktop, .provision, .node: return "WS16"
@@ -398,7 +404,7 @@ public enum Route: Codable, Hashable, Sendable {
                 .booking, .ads, .ledger:
                 return "WS19"
             case .vault, .coves, .cove: return "WS21"
-            case .calories, .steps, .water, .sleep, .sugarBreak, .stretch, .foodGuide, .speech, .glassesAlert, .phoneSecurity, .eyeControl, .openWrtRouter, .fileExplorer, .nexus, .faceChanger, .videoMixDjStudio, .poker, .rssReader, .instanceFeed, .mastodon, .secureDrive, .spiderRoom, .workflows, .localAI, .ember, .strata, .synapse, .orgs,
+            case .calories, .steps, .water, .sleep, .sugarBreak, .stretch, .foodGuide, .speech, .glassesAlert, .phoneSecurity, .eyeControl, .silentSpeech, .openWrtRouter, .reticulum, .fileExplorer, .nexus, .faceChanger, .videoMixDjStudio, .poker, .rssReader, .instanceFeed, .mastodon, .secureDrive, .spiderRoom, .workflows, .localAI, .ember, .strata, .synapse, .orgs,
                 .org:
                 return "existing"
             case .projects, .projectAccess: return "WS1"

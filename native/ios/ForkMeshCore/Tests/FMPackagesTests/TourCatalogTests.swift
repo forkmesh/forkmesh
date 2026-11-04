@@ -15,6 +15,21 @@ final class TourCatalogTests: XCTestCase {
         XCTAssertEqual(everything.count, TourScene.allCases.count)
     }
 
+    func testEveryStopHasShortCopy() {
+        for scene in TourScene.allCases {
+            let short: TourShort? = TourCatalog.short[scene]
+            XCTAssertNotNil(short, scene.rawValue)
+            guard let short = short else { continue }
+            XCTAssertLessThanOrEqual(short.headline.split(separator: " ").count, 6, scene.rawValue)
+            XCTAssertLessThanOrEqual(short.line.split(separator: " ").count, 12, scene.rawValue)
+            XCTAssertEqual(short.emblem == nil, short.emblemBefore == nil, scene.rawValue)
+            if let before = short.emblemBefore {
+                XCTAssertTrue(short.headline.split(separator: " ").contains(Substring(before)), scene.rawValue)
+            }
+        }
+        XCTAssertLessThanOrEqual(TourCatalog.short.values.filter { $0.emblem != nil }.count, 3)
+    }
+
     func testEveryStopIsWritten() {
         XCTAssertEqual(Set(TourCatalog.stops.map(\.id)).count, TourCatalog.stops.count)
         for stop in TourCatalog.stops {

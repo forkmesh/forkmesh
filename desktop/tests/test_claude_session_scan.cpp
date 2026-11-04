@@ -253,6 +253,62 @@ static void importTests(const QString &home, const QString &repo)
           "staging into the folder the transcript already lives in is a no-op");
     check(!ClaudeSessionImport::stage(source, account, repo, QStringLiteral("../x"), &why),
           "a session id that is not a plain id is refused");
+
+    const ClaudeImportBatch reminded = ClaudeSessionImport::convertLines(
+        {userLine(repo,
+                  QJsonArray{QJsonObject{{QStringLiteral("type"), QStringLiteral("text")},
+                                         {QStringLiteral("text"),
+                                          QStringLiteral("<system-reminder>\nNow in the Claude "
+                                                         "app.\n</system-reminder>")}},
+                             QJsonObject{{QStringLiteral("type"), QStringLiteral("text")},
+                                         {QStringLiteral("text"),
+                                          QStringLiteral("where did it go?")}}})},
+        QStringLiteral("s1"));
+    check(reminded.events.size() == 1 &&
+              reminded.events.first().value(QStringLiteral("text")).toString() ==
+                  QStringLiteral("where did it go?"),
+          "a prompt behind a system reminder block still shows");
+
+    const auto entry = [](QJsonObject o, const QString &entrypoint) {
+        o.insert(QStringLiteral("entrypoint"), entrypoint);
+        return o;
+    };
+    const QString shared = home + QStringLiteral("/shared/a7d4.jsonl");
+    writeLines(shared,
+               {entry(userLine(repo, QStringLiteral("copied history")), QStringLiteral("claude-desktop")),
+                entry(userLine(repo, QStringLiteral("relink the wallet")), QStringLiteral("sdk-cli")),
+                entry(assistantLine(QStringLiteral("Not linked.")), QStringLiteral("sdk-cli")),
+                QJsonObject{{QStringLiteral("type"), QStringLiteral("last-prompt")}},
+                entry(userLine(repo, QStringLiteral("where did it go?")),
+                      QStringLiteral("claude-desktop")),
+                entry(assistantLine(QStringLiteral("It was erased.")),
+                      QStringLiteral("claude-desktop"))});
+    const ClaudeImportBatch foreign =
+        ClaudeSessionImport::convertForeign(shared, 0, QStringLiteral("a7d4"));
+    check(foreign.events.size() == 3, "only the turns taken outside ForkMesh are mirrored");
+    check(foreign.events.value(0).value(QStringLiteral("type")).toString() ==
+                  QStringLiteral("_local_notice") &&
+              foreign.events.value(0).value(QStringLiteral("text")).toString().contains(
+                  QStringLiteral("Claude app")),
+          "a turn typed in the Claude app is marked as such");
+    check(foreign.events.value(1).value(QStringLiteral("text")).toString() ==
+              QStringLiteral("where did it go?"),
+          "the Claude app's prompt is the user's turn");
+    check(foreign.events.value(2).value(QStringLiteral("session_id")).toString() ==
+              QStringLiteral("a7d4"),
+          "a mirrored answer carries the session id ForkMesh resumes");
+    check(!foreign.log.contains(QStringLiteral("copied history")) &&
+              !foreign.log.contains(QStringLiteral("relink the wallet")),
+          "history before ForkMesh's own first turn and ForkMesh's turns are not mirrored");
+    check(foreign.newOffset == QFileInfo(shared).size(), "the whole transcript is consumed");
+    check(ClaudeSessionImport::convertForeign(shared, foreign.newOffset, QStringLiteral("a7d4"))
+              .events.isEmpty(),
+          "nothing new means nothing mirrored");
+    const QList<QJsonObject> later{
+        entry(assistantLine(QStringLiteral("more")), QStringLiteral("cli"))};
+    check(ClaudeSessionImport::foreignLines(later, true).size() == 1 &&
+              ClaudeSessionImport::foreignLines(later, false).isEmpty(),
+          "a read that starts past ForkMesh's own lines keeps every outside line");
 }
 
 static void orphanedTranscriptTests(const QString &home)
@@ -323,6 +379,69 @@ static void orphanedTranscriptTests(const QString &home)
               !QFileInfo::exists(account + QStringLiteral("/file-history/linked-1")),
           "a link the Claude app reads goes with the account folder it points at");
     check(ClaudeSessionScan::removeOrphanedTranscripts(dirs, QStringLiteral("/")) == 0,
+          "the filesystem root is never a worktree");
+}
+
+static void orphanedDesktopRecordTests(const QString &home)
+{
+    const QString desktop = home + QStringLiteral("/desktop-records/Claude");
+    const QString org = desktop + QStringLiteral("/claude-code-sessions/acct/org");
+    const QString repo = home + QStringLiteral("/desktop-records/repo");
+    const QString worktree = repo + QStringLiteral("/.worktrees/12-merged");
+    const QString sibling = worktree + QStringLiteral("-v2");
+    QDir().mkpath(worktree + QStringLiteral("/sub"));
+    QDir().mkpath(sibling);
+    QDir().mkpath(org + QStringLiteral("/waiting-input"));
+    const auto record = [&org](const QString &id, const QJsonObject &fields) {
+        QJsonObject o = fields;
+        o.insert(QStringLiteral("sessionId"), QStringLiteral("local_") + id);
+        o.insert(QStringLiteral("cliSessionId"), id);
+        const QString path = org + QStringLiteral("/local_") + id + QStringLiteral(".json");
+        QFile f(path);
+        f.open(QIODevice::WriteOnly);
+        f.write(QJsonDocument(o).toJson());
+        return path;
+    };
+    const QString agent = record(QStringLiteral("agent-1"),
+                                 {{QStringLiteral("cwd"), worktree}});
+    const QString nested = record(QStringLiteral("nested-1"),
+                                  {{QStringLiteral("cwd"), worktree + QStringLiteral("/sub")}});
+    const QString moved = record(QStringLiteral("moved-1"),
+                                 {{QStringLiteral("cwd"), repo},
+                                  {QStringLiteral("originCwd"), worktree}});
+    const QString user = record(QStringLiteral("user-1"), {{QStringLiteral("cwd"), repo}});
+    const QString near = record(QStringLiteral("sibling-1"), {{QStringLiteral("cwd"), sibling}});
+    QFile waiting(org + QStringLiteral("/waiting-input/local_agent-1.json"));
+    waiting.open(QIODevice::WriteOnly);
+    waiting.close();
+
+    check(ClaudeSessionScan::removeOrphanedDesktopRecords(desktop, worktree) == 0 &&
+              QFileInfo::exists(agent),
+          "a worktree still on disk keeps its Claude app sessions");
+    check(ClaudeSessionScan::removeOrphanedDesktopRecords(QString(), worktree) == 0 &&
+              ClaudeSessionScan::removeOrphanedDesktopRecords(desktop, QString()) == 0,
+          "no Claude app folder or no worktree names nothing");
+
+    QDir(worktree).removeRecursively();
+    QStringList removed;
+    check(ClaudeSessionScan::removeOrphanedDesktopRecords(desktop, worktree, &removed) == 3,
+          "every Claude app session that ran in the deleted worktree is removed");
+    check(!QFileInfo::exists(agent) && !QFileInfo::exists(nested) && !QFileInfo::exists(moved),
+          "the sessions in it, under it and started in it are gone from the Claude app");
+    check(QFileInfo::exists(user) && QFileInfo::exists(near),
+          "the main checkout and a worktree sharing the name prefix keep their sessions");
+    check(!QFileInfo::exists(org + QStringLiteral("/waiting-input/local_agent-1.json")),
+          "the session's waiting-for-input mark goes with it");
+    QFile tombstone(org + QStringLiteral("/deleted_agent-1"));
+    check(tombstone.open(QIODevice::ReadOnly) && tombstone.readAll().toLongLong() > 0 &&
+              QFileInfo::exists(org + QStringLiteral("/deleted_moved-1")) &&
+              !QFileInfo::exists(org + QStringLiteral("/deleted_user-1")),
+          "the Claude app is told each removed session was deleted");
+    check(removed.contains(agent) && removed.size() == 3, "the removed records are reported");
+    check(ClaudeSessionScan::removeOrphanedDesktopRecords(desktop, worktree) == 0,
+          "a second pass finds nothing left");
+    check(ClaudeSessionScan::removeOrphanedDesktopRecords(desktop, QStringLiteral("/")) == 0 &&
+              QFileInfo::exists(user),
           "the filesystem root is never a worktree");
 }
 
@@ -417,6 +536,7 @@ int main(int argc, char **argv)
 
     importTests(home.path(), repo);
     orphanedTranscriptTests(home.path());
+    orphanedDesktopRecordTests(home.path());
 
     if (failures == 0)
         std::cout << "claude session scan tests passed\n";

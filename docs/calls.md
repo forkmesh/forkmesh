@@ -79,6 +79,30 @@ the server. On the web, stay on the channel during the call: if you switch to
 another one, people who join meanwhile see a blank tile for you until you
 come back.
 
+## Meetings from a booking link
+
+Meetings booked on a [Booking Page](marketplace/booking.md) with a video
+meeting type get their own room at a link like
+`app.forkmesh.com/call?…#…`. Anyone with the link joins in their browser, with
+no account. The room opens 30 minutes before the meeting.
+
+1. Open the link. Check your camera, pick a face, background, outfit or
+   voice, type your name and press **Join meeting**.
+2. The green lock means the call is end-to-end encrypted. Press it to see the
+   **meeting code** and read it aloud: everyone in the meeting sees the same
+   code.
+3. **Transcript** turns speech into text on your device, with no audio or
+   text sent anywhere. The first time, the browser may ask to download its
+   speech model. Everyone sees that you are transcribing. Copy or download
+   the text before you close the page.
+
+On a phone with the ForkMesh app, the link and the booking's **Join video
+call** open the meeting inside the app.
+
+The key is the part of the link after `#`. Browsers never send it to a server,
+so ForkMesh's call server cannot see or hear the meeting. Treat the link like a
+key. How it works: [meeting rooms](app/meeting-rooms.md).
+
 ## Verification codes
 
 Group calls on ForkMesh's newer call engine (on iPhone, and on the web in

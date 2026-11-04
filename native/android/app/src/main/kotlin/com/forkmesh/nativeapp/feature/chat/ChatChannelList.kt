@@ -498,7 +498,7 @@ private fun MemberGroupTile(group: MemberGroup, selected: Boolean, onTap: (() ->
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     style = Fm.text.bodyMedium.copy(
-                        color = if (selected) colors.textPrimary else colors.textSecondary,
+                        color = if (selected || group.self) colors.textPrimary else colors.textSecondary,
                         fontSize = FmType.small,
                         fontWeight = if (selected) FmType.emphasis else FmType.regular,
                     ),

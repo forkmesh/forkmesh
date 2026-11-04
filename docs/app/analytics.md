@@ -137,6 +137,18 @@ reason (an `Error`'s message and stack, or a shape such as `undefined`,
 are dropped by `knownNonActionableBrowserError` and by
 `_client_error_is_non_actionable` on the server.
 
+A first-party module that fails to link because an import names an export its
+dependency lacks (`does not provide an export named`, Safari's `Importing
+binding name ... is not found`, Firefox's `import not found`) means the page
+mixed files from two builds: the chat graph (`/chat.js` and its imports) is
+served without `?v=` and only revalidates, so a stale copy of one module next
+to a fresh importer breaks the whole page. The error listener reloads the page
+once (`forkmesh.staleModuleReload.v1` in `sessionStorage`, at most every five
+minutes) instead of reporting it; a second failure in that window is reported
+as usual, so a real missing export still reaches `error_log`. The World avoids
+the mix with content-hashed module URLs (`version_world_modules` in
+`app/tools/build_site_assets.py`).
+
 ## Recordings
 
 The package's Recordings tab (session replay) plays back a visit: the page as

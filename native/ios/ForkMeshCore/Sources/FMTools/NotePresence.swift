@@ -42,6 +42,8 @@ public enum NoteRoomEvent: Equatable, Sendable {
     case deleted
     case accessChanged
     case commentsChanged
+    case activityChanged
+    case chatChanged
 }
 
 public struct NotePresence: Sendable {
@@ -114,6 +116,8 @@ public struct NotePresence: Sendable {
         case "note-deleted": event = .deleted
         case "access-changed": event = .accessChanged
         case "note-comments": event = .commentsChanged
+        case "note-activity": event = .activityChanged
+        case "note-chat": event = .chatChanged
         default: event = nil
         }
         return (event, newcomer)

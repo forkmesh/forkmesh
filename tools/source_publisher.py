@@ -975,13 +975,10 @@ def cores_main(url: str) -> str:
 
 
 def cores_agreement(source: Path, oid: str) -> tuple:
-    cores = core_read_urls(source)
-    if not cores:
-        return True, ""
-    mains = {core["name"]: cores_main(core["url"]) for core in cores}
+    mains = {core["name"]: cores_main(core["url"]) for core in core_read_urls(source)}
     reachable = [name for name, main in mains.items() if main]
     holding = [name for name in reachable if mains[name] == oid]
-    if len(holding) >= 2 or (holding and len(holding) == len(reachable)):
+    if len(holding) >= 2:
         return True, ""
     return False, "only %d of %d reachable cores serve main %s; waiting for a second core" % (
         len(holding), len(reachable), oid[:12])

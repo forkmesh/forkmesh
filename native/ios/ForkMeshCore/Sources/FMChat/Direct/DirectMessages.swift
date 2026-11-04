@@ -371,14 +371,15 @@ public final class DirectMessageService {
         sleep: @escaping @Sendable (TimeInterval) async throws -> Void = { seconds in
             try await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000))
         },
-        viewOncePrefs: KeyValueStore? = nil, account: (@MainActor () -> String)? = nil
+        viewOncePrefs: KeyValueStore? = nil, account: (@MainActor () -> String)? = nil,
+        nodeIdentity: DeviceIdentity? = nil
     ) {
         self.viewOnce = ViewOnceStore(prefs: viewOncePrefs)
         self.accountName = account
         self.api = api
         self.connector = connector
         self.secureStore = secureStore
-        seals = RoomSealCache(secureStore: secureStore)
+        seals = RoomSealCache(secureStore: secureStore, nodeIdentity: nodeIdentity)
         self.origin = origin
         self.selfId = selfId
         self.displayName = displayName
@@ -1741,18 +1742,22 @@ extension DirectMessageService {
         devices(conversation).filter { $0.state == .pending }
     }
 
-    public func approveDevice(_ conversation: String, kid: String) async {
-        guard let record = record(for: conversation), let seal = await sealFor(record), seal.approve(kid) else { return }
+    @discardableResult
+    public func approveDevice(_ conversation: String, kid: String) async -> Bool {
+        guard let record = record(for: conversation), let seal = await sealFor(record), seal.approve(kid) else { return false }
         processHeld(seal, record: record)
         if let socket = sockets[record.id] { reseal(socket) }
         trustChanged()
+        return true
     }
 
-    public func blockDevice(_ conversation: String, kid: String) async {
+    @discardableResult
+    public func blockDevice(_ conversation: String, kid: String) async -> Bool {
         guard let record = record(for: conversation), let seal = await sealFor(record), kid != seal.keyId,
             seal.block(kid)
-        else { return }
+        else { return false }
         trustChanged()
+        return true
     }
 
     public func safetyNumber(_ conversation: String) -> ChatSafetyNumber? {

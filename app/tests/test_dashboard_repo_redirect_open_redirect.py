@@ -32,3 +32,14 @@ def test_router_uses_the_guarded_redirect():
     assert "if looks_like_repo_route(rest):" not in source
     entry = (APP / "src/entry.py").read_text(encoding="utf-8")
     assert 'dashboard_repo_redirect = _static_routes.export(' in entry
+
+
+def test_the_client_legacy_repo_parameter_never_leaves_the_origin():
+    import re
+    source = (APP / "public" / "dashboard" / "js" / "08-repo-detail-network.js").read_text(encoding="utf-8")
+    body = source[source.index('const repo = (params.get("repo")'):]
+    literal = re.search(r"if \(/(.+?)/\.test\(repo\)\)", body[:300]).group(1)
+    pattern = re.compile(literal.replace("\\/", "/"))
+    assert pattern.fullmatch("alice/tool")
+    for hostile in ("/evil.example/x", "//evil.example/x", "\\\\evil.example/x", "alice/tool/extra"):
+        assert not pattern.fullmatch(hostile), hostile

@@ -29,6 +29,7 @@ after a rename, falls back to the stored name (`display_name`).
 | Answer | Field |
 | --- | --- |
 | session, login and profile saves (`_account_public_payload`) | `nameCase` |
+| `GET /api/accounts/sessions` (`account`) | `nameCase` |
 | `GET /api/accounts/<name>` (any capitalization in the path) | `nameCase` |
 | `GET /api/orgs/<org>/members` (roster readers) | `nameCase` per member |
 | `GET /api/accounts/name-case?names=a,b,…` | `{"names": {"a": "A"}}` |
@@ -67,3 +68,15 @@ same page.
 Not covered yet: the network page's contributor leaderboard (it reads
 `users.username` in SQL), the World and chat rosters, and mentions inside
 Markdown, which keep the capitalization the author typed.
+
+## The Settings field keeps what you type
+
+A self-hosted mirror rebuilds the browser session from
+`GET /api/accounts/sessions` on every load (`hydratePortableMirrorSession`).
+That answer had no `nameCase`, so the session lost the casing, the field
+showed the lowercase name, and the profile read that followed rewrote the
+field as soon as it lost focus: a casing typed before that read finished was
+gone before Save. The sessions answer now carries `nameCase`, the rebuilt
+session keeps the stored casing of the same account when an answer has none,
+and the field is marked edited on input (`data-edited`) so no re-render
+replaces it until a successful save clears the mark.

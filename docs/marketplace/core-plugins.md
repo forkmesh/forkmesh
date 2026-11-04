@@ -36,6 +36,7 @@ state on the ForkMesh account and follow every device.
   `steps`, `water`, `sleep`, `sugar-break`, `stretch`, `food-guide` (mobile
   only), `phone-security` (mobile only, [phone-security.md](phone-security.md)),
   `eye-control` (mobile only, [eye-control.md](eye-control.md)),
+  `silent-speech` (mobile only, [silent-speech.md](silent-speech.md)),
   `runners` (mobile and desktop, [runners.md](runners.md)),
   `strata`, `ember`, `synapse` (mobile and desktop since 1.1.0; desktop
   installs from before are carried to the account,
@@ -50,7 +51,12 @@ state on the ForkMesh account and follow every device.
   ([repo-forum](../app/repo-forum.md)).
 
 Each package gates its feature's surfaces in every app (tabs, tiles, rail
-buttons, repository tabs). `crm` stays organization-installed; `market`,
+buttons, repository tabs). A package that a person opens as a page has one on
+every surface it lists: `bug-reports`, for example, is the Bugs page in the
+desktop's left rail and on Home, `/dashboard/bugs` on the web, and the Bug
+sheet on the phones ([its README](../../marketplace/packages/bug-reports/README.md)).
+`marketplace/tests/test_desktop_surfaces.py` fails when a package lists a
+desktop entrypoint that nothing on the desktop shows or gates. `crm` stays organization-installed; `market`,
 `repos`, `search` and `settings` stay core.
 
 Settings always keeps a way to sign in and out, so removing `sign-in` never
@@ -196,6 +202,9 @@ An account-synced install has places: `mobile`, `desktop` and `web`.
   `{"places": [...]}`; dependencies get the same places.
   `POST /api/plugins/@account/<id>/places` changes them (400
   `invalid_places`, 409 `plugin_not_installed`).
+- An administrator can narrow the places for the whole instance, or turn a
+  package off there, on the web Plugins page; `availablePlaces` then follows
+  that rule ([plugin-console.md](plugin-console.md#instance-wide-places)).
 - `GET /api/plugins/` (the web sidebar) lists an account-synced package only
   when `web` is one of its places. A dependency only has to be installed, not
   placed. An answer without `places` counts as every place.

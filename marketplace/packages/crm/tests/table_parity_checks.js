@@ -13,6 +13,8 @@ const exported = [
   "crmPictureFor", "crmPictureCache", "crmPictures", "crmWithContactEdit", "crmPatchContacts",
   "crmMarkContacted", "crmSelection", "crmSelectContact", "crmMenuSelection", "crmSort", "crmFilteredContacts",
   "crmVisibleColumns", "crmColumnLabel", "crmDeleteColumnItems", "crmListColumns",
+  "crmFollowBack", "crmFollowBackButton", "crmFollowAccount", "crmMastodonPluginFollowBack",
+  "crmMastodonPluginFollow", "crmContactControl", "crmBaseColumn",
 ];
 const page = new Function(
   "$", "$$", "session", "escapeHtml", "relativeTimeLabel",
@@ -269,6 +271,100 @@ same(page.crmCustomColumnLabel("deal_size"), "Deal size", "the key reads back as
   same(page.crmColumnLabel("mastodon-latest"), "Mastodon last update", "with the desktop's labels");
   same(page.crmDeleteColumnItems(page.crmListColumns().find((column) => column.field === "linked-emails")), [],
        "a computed column cannot be deleted");
+
+  view.views = [{ id: "list-a", name: "List A" }, { id: "list-b", name: "List B" }];
+  view.settings = { flows: [{ id: "press", name: "Press", stages: ["new", "pitched"] }] };
+  view.contacts = [
+    { id: "m1", name: "M1", mastodon: "a@mastodon.social", views: ["list-a"] },
+    { id: "m2", name: "M2", mastodon: "b@fosstodon.org", flow: "press", stage: "pitched" },
+    { id: "t1", name: "T1", twitter: "someone", views: ["list-b"] },
+    { id: "n1", name: "N1", mastodon: "  ", views: ["list-a"] },
+  ];
+  view.activeView = "network:mastodon";
+  same(page.crmFilteredContacts().map((contact) => contact.id).sort(), ["m1", "m2"],
+       "a network shows everyone with that profile, from every list and pipeline");
+  view.activeView = "network:twitter";
+  same(page.crmFilteredContacts().map((contact) => contact.id), ["t1"], "X (Twitter) lists its own people");
+  view.activeView = "network:myspace";
+  same(page.crmFilteredContacts(), [], "an unknown network opens nothing");
+  view.activeView = "list-a";
+  same(page.crmFilteredContacts().map((contact) => contact.id).sort(), ["m1", "n1"], "a list still shows only its members");
+
+  view.organization = "acme";
+  view.settings = { ...view.settings, mastodon: { account: "forkmesh@mastodon.social", connected: true } };
+  page.crmFollowBack.organization = "acme";
+  page.crmFollowBack.handles = new Set(["grace@fosstodon.org"]);
+  const follower = { id: "g", name: "Grace", mastodon: "@Grace@fosstodon.org" };
+  view.activeView = "network:mastodon";
+  const button = page.crmFollowBackButton(follower);
+  check(button.includes('data-crm-follow-back="grace@fosstodon.org"') && button.includes(">Follow back</button>"),
+        "a follower the account does not follow gets Follow back on the Mastodon network list");
+  check(button.includes("Follow them back from @forkmesh@mastodon.social"), "its tooltip names the account that follows");
+  check(!button.includes(`type="button" disabled`), "it is enabled until clicked");
+  page.crmFollowBack.following.add("grace@fosstodon.org");
+  check(page.crmFollowBackButton(follower).includes(`type="button" disabled`), "it is disabled while the follow is sent");
+  page.crmFollowBack.following.clear();
+  const stranger = page.crmFollowBackButton({ id: "m1", mastodon: "a@mastodon.social" });
+  check(stranger.includes('data-crm-follow-back="a@mastodon.social"') && stranger.includes(">Follow</button>"),
+        "a contact the account does not follow yet gets Follow");
+  check(stranger.includes("Follow @a@mastodon.social from @forkmesh@mastodon.social."), "its tooltip names the account that follows");
+  page.crmFollowBack.followed = new Set(["a@mastodon.social"]);
+  const followed = page.crmFollowBackButton({ id: "m1", mastodon: "a@mastodon.social" });
+  check(followed.includes('data-crm-following="a@mastodon.social"') && followed.includes(">Following</span>") && !followed.includes("data-crm-follow-back"),
+        "an account already followed shows Following instead of a button");
+  check(followed.includes("@forkmesh@mastodon.social already follows @a@mastodon.social."), "its tooltip names the account that follows");
+  same(page.crmFollowBackButton({ id: "me", mastodon: "@forkmesh@mastodon.social" }), "", "the organization's own account gets no button");
+  same(page.crmFollowBackButton({ id: "n", name: "No handle" }), "", "a contact without a Mastodon handle gets no button");
+  view.activeView = "list-a";
+  check(page.crmFollowBackButton(follower).includes(">Follow back</button>"), "other lists show it too");
+  check(page.crmContactControl(follower, page.crmBaseColumn("mastodon")).includes('data-crm-follow-back="grace@fosstodon.org"'),
+        "next to the handle in the Mastodon column");
+  same(page.crmContactControl({ id: "e", email: "e@example.org" }, page.crmBaseColumn("email")).includes("data-crm-follow-back"), false,
+       "and in no other column");
+  view.activeView = "network:mastodon";
+  view.organization = "other";
+  check(page.crmFollowBackButton(follower).includes(">Follow</button>"), "another organization's answer is not used");
+  check(page.crmFollowBackButton({ id: "m1", mastodon: "a@mastodon.social" }).includes(">Follow</button>"),
+        "nor its list of accounts already followed");
+  view.organization = "acme";
+  view.settings = { ...view.settings, mastodon: { account: "forkmesh@mastodon.social", connected: false } };
+  const loggedOut = page.crmFollowBackButton(follower);
+  check(loggedOut.includes(`type="button" disabled`) && loggedOut.includes(">Follow</button>"),
+        "without a logged-in Mastodon account the button shows but is disabled");
+  check(loggedOut.includes("Log in first"), "its tooltip says to log in first");
+
+  const stored = new Map();
+  globalThis.sessionStorage = { getItem: (key) => stored.get(key) ?? null };
+  stored.set("forkmesh.mastodon.session.v1", JSON.stringify({ instance: "https://hachyderm.io", token: "t0k" }));
+  const calls = [];
+  const reply = (body, link = "") => ({ ok: true, status: 200, json: async () => body,
+                                        headers: { get: (name) => (name === "link" ? link : null) } });
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, method: options.method, auth: options.headers.authorization });
+    if (url.endsWith("/verify_credentials")) return reply({ id: "7", acct: "Me", followers_count: 3 });
+    if (url.endsWith("/followers?limit=80")) return reply([{ acct: "grace@fosstodon.org" }, { acct: "local" }],
+                                                          '<https://hachyderm.io/api/v1/accounts/7/followers?max_id=2>; rel="next"');
+    if (url.includes("/followers?max_id=2")) return reply([{ acct: "ada@mastodon.social" }]);
+    if (url.endsWith("/following?limit=80")) return reply([{ acct: "ada@mastodon.social" }]);
+    if (url.includes("/api/v2/search?")) return reply({ accounts: [{ id: "42", acct: "grace@fosstodon.org" }] });
+    if (url.endsWith("/accounts/42/follow")) return reply({ following: true });
+    return { ok: false, status: 404, json: async () => ({}), headers: { get: () => null } };
+  };
+  const plugin = page.crmFollowAccount();
+  check(plugin.connected && plugin.plugin, "the Mastodon plugin's sign-in logs the list in when the organization has none");
+  check(!page.crmFollowBackButton(follower).includes(`type="button" disabled`),
+        "so Follow is enabled without an organization token");
+  const lists = await page.crmMastodonPluginFollowBack(plugin.session);
+  same(lists.account, "me@hachyderm.io", "it reads the plugin's own account");
+  same(lists.handles.sort(), ["grace@fosstodon.org", "local@hachyderm.io"], "followers it does not follow, across pages");
+  same(lists.following, ["ada@mastodon.social"], "and the accounts it follows");
+  check(calls.every((call) => call.url.startsWith("https://hachyderm.io/") && call.auth === "Bearer t0k"),
+        "every call goes to the plugin's instance with its token");
+  same(await page.crmMastodonPluginFollow(plugin.session, "grace@fosstodon.org"), { following: true, requested: false },
+       "Follow resolves the handle on the plugin's instance and follows it");
+  same(calls.at(-1).method, "POST", "the follow is a POST");
+  view.settings = { ...view.settings, mastodon: { account: "forkmesh@mastodon.social", connected: true } };
+  check(!page.crmFollowAccount().plugin, "an organization token still wins over the plugin's sign-in");
 
   if (failures) {
     console.error(`${failures} check(s) failed`);

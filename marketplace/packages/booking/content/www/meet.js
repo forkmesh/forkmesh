@@ -45,6 +45,8 @@
     error: "", notice: "", busy: false, form: { name: "", email: "", phone: "", notes: "" },
     jumped: false, bookableUntil: 0,
   };
+  const preview = new URLSearchParams(location.search).has("preview");
+  const seen = { viewed: false, left: false, booked: false, fields: new Set() };
 
   function h(tag, props, ...children) {
     const node = document.createElement(tag);
@@ -85,6 +87,36 @@
       throw error;
     }
     return payload;
+  }
+
+  function sessionId() {
+    const key = "forkmesh-booking-session:" + state.slug;
+    try {
+      let id = sessionStorage.getItem(key) || "";
+      if (!/^[0-9a-f]{32}$/.test(id)) {
+        id = [...crypto.getRandomValues(new Uint8Array(16))].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+        sessionStorage.setItem(key, id);
+      }
+      return id;
+    } catch (_) { return ""; }
+  }
+  function track(kind, detail = "", leaving = false, typeId = state.type?.id || "") {
+    if (preview || !state.slug || state.mode !== "book") return;
+    const url = `${API}/p/${state.slug}/track`;
+    const body = JSON.stringify({ kind, detail: String(detail), type: typeId, session: sessionId() });
+    try {
+      if (leaving && navigator.sendBeacon && navigator.sendBeacon(url, new Blob([body], { type: "text/plain;charset=UTF-8" }))) return;
+      void fetch(url, { method: "POST", credentials: "omit", cache: "no-store", keepalive: true, headers: { "content-type": "application/json" }, body }).catch(() => {});
+    } catch (_) { return; }
+  }
+  function trackField(event) {
+    const name = event.target?.name || "";
+    if (!["name", "email", "phone", "notes"].includes(name) || seen.fields.has(name)) return;
+    seen.fields.add(name); track("field", name);
+  }
+  function leave() {
+    if (!seen.viewed || seen.left || seen.booked || !["types", "calendar", "form"].includes(state.view)) return;
+    seen.left = true; track("leave", state.view, true);
   }
 
   function dayKey(ms, tz = state.tz) {
@@ -189,6 +221,7 @@
   }
   function chooseType(type) {
     state.type = type; state.typeId = type.id; setAddress(type);
+    track("type");
     void openCalendar();
   }
   function backToTypes() {
@@ -202,12 +235,13 @@
     const data = Object.fromEntries(new FormData(form).entries());
     state.form = { name: data.name || "", email: data.email || "", phone: data.phone || "", notes: data.notes || "" };
     state.busy = true; state.error = ""; render();
+    track("submit");
     try {
       const payload = await api(`/p/${state.slug}/${state.type.id}/book`, "POST", {
         name: data.name, email: data.email, phone: data.phone || "", notes: data.notes || "",
         website: data.website || "", startAt: state.slot, timezone: state.tz,
       });
-      state.booking = payload.booking; state.token = payload.booking.token; state.view = "done";
+      state.booking = payload.booking; state.token = payload.booking.token; state.view = "done"; seen.booked = true;
       state.notice = payload.emailed ? `We emailed the details to ${data.email}.` : "Your meeting is booked. The confirmation email could not be sent, so keep this page or add it to your calendar now.";
     } catch (error) {
       state.error = error.message;
@@ -336,7 +370,7 @@
         disabled: !open,
         "aria-pressed": key === state.day ? "true" : "false",
         "aria-label": `${keyLabel(key, { weekday: "long", day: "numeric", month: "long" })}${open ? `, ${open} open time${open > 1 ? "s" : ""}` : ", no open times"}`,
-        onclick: () => { state.day = key; state.slot = 0; state.error = ""; render(); root.querySelector(".bk-times")?.scrollIntoView({ block: "nearest", behavior: "smooth" }); },
+        onclick: () => { track("day", key); state.day = key; state.slot = 0; state.error = ""; render(); root.querySelector(".bk-times")?.scrollIntoView({ block: "nearest", behavior: "smooth" }); },
       }, h("span", { text: String(d) })));
     }
     const weekdays = [0, 1, 2, 3, 4, 5, 6].map((index) => h("span", { class: "bk-weekday", text: keyLabel(`2026-11-${String(2 + index).padStart(2, "0")}`, { weekday: "short" }) }));
@@ -347,25 +381,25 @@
       h("div", { class: "bk-cal" },
         h("h2", { class: "bk-h2", text: state.mode === "reschedule" ? "Pick a new time" : "Select a date & time" }),
         h("div", { class: "bk-month" },
-          h("button", { type: "button", class: "bk-nav", disabled: !canBack, "aria-label": "Previous month", onclick: () => showMonth(shiftMonth(month, -1)) }, icon("left")),
+          h("button", { type: "button", class: "bk-nav", disabled: !canBack, "aria-label": "Previous month", onclick: () => { track("month", monthId(shiftMonth(month, -1))); void showMonth(shiftMonth(month, -1)); } }, icon("left")),
           h("p", { class: "bk-month-title", text: monthTitle }),
-          h("button", { type: "button", class: "bk-nav", disabled: !canNext, "aria-label": "Next month", onclick: () => showMonth(next) }, icon("right"))),
+          h("button", { type: "button", class: "bk-nav", disabled: !canNext, "aria-label": "Next month", onclick: () => { track("month", monthId(next)); void showMonth(next); } }, icon("right"))),
         h("div", { class: "bk-grid" + (loading ? " bk-grid-loading" : "") }, weekdays, cells),
         none ? h("p", { class: "bk-hint", text: "No open times this month." }) : null,
         h("div", { class: "bk-prefs" },
           h("label", { class: "bk-zone" }, icon("globe", "bk-icon bk-icon-sm"),
             h("span", { class: "bk-sr", text: "Time zone" }),
-            h("select", { onchange: (event) => { state.tz = event.target.value; state.slots.clear(); void showMonth(state.month); } },
+            h("select", { onchange: (event) => { track("prefs", "timezone"); state.tz = event.target.value; state.slots.clear(); void showMonth(state.month); } },
               zones().map((tz) => h("option", { value: tz, selected: tz === state.tz }, zoneLabel(tz))))),
           h("div", { class: "bk-toggle", role: "group", "aria-label": "Clock" },
-            ["12h", "24h"].map((fmt) => h("button", { type: "button", "aria-pressed": state.fmt === fmt ? "true" : "false", onclick: () => { state.fmt = fmt; render(); } }, fmt))))),
+            ["12h", "24h"].map((fmt) => h("button", { type: "button", "aria-pressed": state.fmt === fmt ? "true" : "false", onclick: () => { track("prefs", fmt); state.fmt = fmt; render(); } }, fmt))))),
       h("div", { class: "bk-times" + (state.day ? " bk-times-open" : "") },
         state.day ? h("p", { class: "bk-times-day", text: keyLabel(state.day, { weekday: "long", day: "numeric", month: "long" }) }) : null,
         state.day ? h("ul", { class: "bk-slot-list" }, daySlots.map((slot) => h("li", { class: slot === state.slot ? "bk-slot-chosen" : "" },
-          h("button", { type: "button", class: "bk-slot", "aria-pressed": slot === state.slot ? "true" : "false", onclick: () => { state.slot = slot; state.error = ""; render(); } }, clock(slot)),
+          h("button", { type: "button", class: "bk-slot", "aria-pressed": slot === state.slot ? "true" : "false", onclick: () => { track("slot", slot); state.slot = slot; state.error = ""; render(); } }, clock(slot)),
           slot === state.slot ? h("button", {
             type: "button", class: "bk-slot-next", disabled: state.busy,
-            onclick: () => { if (state.mode === "reschedule") void confirmReschedule(); else { state.view = "form"; render(); root.querySelector("input[name=name]")?.focus(); } },
+            onclick: () => { if (state.mode === "reschedule") void confirmReschedule(); else { track("form"); state.view = "form"; render(); root.querySelector("input[name=name]")?.focus(); } },
           }, state.mode === "reschedule" ? (state.busy ? "Moving…" : "Confirm") : "Next") : null)))
           : h("p", { class: "bk-hint bk-times-hint", text: loading ? "Finding open times…" : "Pick a day to see open times." })));
   }
@@ -382,7 +416,7 @@
     return h("section", { class: "bk-panel bk-form-panel bk-animate" },
       h("button", { type: "button", class: "bk-link-back", onclick: () => { state.view = "calendar"; render(); } }, icon("left", "bk-icon bk-icon-sm"), "Change time"),
       h("h2", { class: "bk-h2", text: "Your details" }),
-      h("form", { class: "bk-form", onsubmit: submitBooking, novalidate: false },
+      h("form", { class: "bk-form", onsubmit: submitBooking, onfocusin: trackField, novalidate: false },
         field("Name", "name", { required: true, autocomplete: "name" }),
         field("Email", "email", { required: true, type: "email", autocomplete: "email", maxlength: 254 }, "We'll send the confirmation here."),
         type.askPhone ? field("Phone number", "phone", { required: true, type: "tel", autocomplete: "tel", maxlength: 32, inputmode: "tel" }, "The number to call you on.") : null,
@@ -399,7 +433,7 @@
         h("dd", {}, h("strong", { text: `${clock(booking.startAt, tz)} – ${clock(booking.endAt, tz)}` }), h("span", { text: longDay(booking.startAt, tz) }))),
       h("div", {}, h("dt", {}, icon("clock", "bk-icon bk-icon-sm"), "What"), h("dd", { text: `${booking.typeTitle}, ${minutesLabel(booking.minutes)}` })),
       booking.location?.text ? h("div", {}, h("dt", {}, icon(locationIcon(booking.location.kind), "bk-icon bk-icon-sm"), "Where"),
-        h("dd", {}, booking.location.url ? h("a", { href: booking.location.url, rel: "noopener noreferrer", target: "_blank", text: booking.location.url }) : booking.location.text)) : null,
+        h("dd", {}, booking.location.url ? h("a", { href: booking.location.url, rel: "noopener noreferrer", target: "_blank", text: booking.location.room ? "Join the video call (end-to-end encrypted)" : booking.location.url }) : booking.location.text)) : null,
       h("div", {}, h("dt", {}, icon("globe", "bk-icon bk-icon-sm"), "Time zone"), h("dd", { text: zoneLabel(tz) })));
   }
 
@@ -408,9 +442,9 @@
     return h("div", { class: "bk-add" },
       h("p", { class: "bk-add-title", text: "Add to your calendar" }),
       h("div", { class: "bk-add-row" },
-        h("a", { class: "bk-chip", href: links.google, target: "_blank", rel: "noopener noreferrer" }, "Google"),
-        h("a", { class: "bk-chip", href: links.outlook, target: "_blank", rel: "noopener noreferrer" }, "Outlook"),
-        h("button", { type: "button", class: "bk-chip", onclick: downloadIcs }, icon("download", "bk-icon bk-icon-sm"), "Apple / .ics")));
+        h("a", { class: "bk-chip", href: links.google, target: "_blank", rel: "noopener noreferrer", onclick: () => track("link", "google", true) }, "Google"),
+        h("a", { class: "bk-chip", href: links.outlook, target: "_blank", rel: "noopener noreferrer", onclick: () => track("link", "outlook", true) }, "Outlook"),
+        h("button", { type: "button", class: "bk-chip", onclick: () => { track("link", "ics"); downloadIcs(); } }, icon("download", "bk-icon bk-icon-sm"), "Apple / .ics")));
   }
 
   function donePanel() {
@@ -423,8 +457,8 @@
       summary(booking),
       calendarButtons(),
       h("div", { class: "bk-manage-row" },
-        h("a", { class: "bk-secondary", href: `?b=${booking.token}` }, "Reschedule or cancel"),
-        h("button", { type: "button", class: "bk-secondary", onclick: (event) => copyLink(event.currentTarget) }, icon("copy", "bk-icon bk-icon-sm"), h("span", { "data-label": "", text: "Copy private link" }))));
+        h("a", { class: "bk-secondary", href: `?b=${booking.token}`, onclick: () => track("link", "manage", true) }, "Reschedule or cancel"),
+        h("button", { type: "button", class: "bk-secondary", onclick: (event) => { track("link", "copy"); void copyLink(event.currentTarget); } }, icon("copy", "bk-icon bk-icon-sm"), h("span", { "data-label": "", text: "Copy private link" }))));
   }
 
   function managePanel() {
@@ -513,6 +547,8 @@
       const types = payload.page.types || [];
       const wanted = TYPE_RE.test(address.typeId || "") ? types.find((type) => type.id === address.typeId) : null;
       if (address.typeId && !wanted) state.error = ERRORS.meeting_type_not_found;
+      seen.viewed = true;
+      track("view", "", false, wanted?.id || "");
       if (wanted || types.length === 1) { state.type = wanted || types[0]; await openCalendar(); return; }
       state.view = "types"; render();
     } catch (error) {
@@ -520,5 +556,8 @@
     }
   }
 
+  document.querySelector("[data-bk-credit] a")?.addEventListener("click", () => track("link", "forkmesh", true));
+  addEventListener("pagehide", leave);
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") leave(); });
   if (root) void start();
 })();

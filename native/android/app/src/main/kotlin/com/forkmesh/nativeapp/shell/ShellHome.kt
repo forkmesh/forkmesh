@@ -308,9 +308,7 @@ internal fun ShellHomeGrid(
                                             .semantics { heading() },
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
-                                        Text(section.title.uppercase(), style = Fm.text.labelSmall.copy(fontSize = 12.sp, letterSpacing = 1.2.sp), color = Fm.colors.textTertiary)
-                                        Spacer(Modifier.width(FmSpace.x3))
-                                        Box(Modifier.weight(1f).height(1.dp).background(Fm.colors.border))
+                                        Text(section.title, style = Fm.text.titleSmall, color = Fm.colors.textSecondary)
                                     }
                                 }
                                 FmDropdownMenu(expanded = hideMenu == section.id, onDismissRequest = { hideMenu = null }, offset = DpOffset(FmSpace.x3, 0.dp)) {

@@ -2,6 +2,7 @@
 #include "AppArmorSystem.h"
 
 #include <QCoreApplication>
+#include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -330,15 +331,21 @@ void testInstallScript()
 
     QString script = adminInstallScript();
     script.replace(QStringLiteral("PATH=/usr/sbin:/usr/bin:/sbin:/bin"), QStringLiteral("PATH=%1:/usr/bin:/bin").arg(bin));
-    auto run = [&](const QString &src, const QString &target) {
+    auto digest = [](const QString &path) {
+        QFile file(path);
+        file.open(QIODevice::ReadOnly);
+        return QString::fromLatin1(QCryptographicHash::hash(file.readAll(), QCryptographicHash::Sha256).toHex());
+    };
+    auto runWith = [&](const QString &src, const QString &target, const QString &sum) {
         QProcess process;
         QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
         environment.insert(QStringLiteral("PARSER_LOG"), root + QStringLiteral("/parser.log"));
         process.setProcessEnvironment(environment);
-        process.start(sh, {QStringLiteral("-c"), script, QStringLiteral("sh"), src, target, backups, target});
+        process.start(sh, {QStringLiteral("-c"), script, QStringLiteral("sh"), src, target, backups, target, sum});
         process.waitForFinished(10000);
         return process.exitCode();
     };
+    auto run = [&](const QString &src, const QString &target) { return runWith(src, target, digest(src)); };
     auto read = [](const QString &path) {
         QFile file(path);
         file.open(QIODevice::ReadOnly);
@@ -356,6 +363,70 @@ void testInstallScript()
     for (const QString &name : QDir(backups).entryList(QDir::Files))
         movedAside = movedAside || name.contains(QStringLiteral(".rejected."));
     check(movedAside, QStringLiteral("rejected new file is kept in the backup folder"));
+
+    const QString guarded = root + QStringLiteral("/policy/local/guarded");
+    writeFile(root + QStringLiteral("/secret"), QStringLiteral("root only\n"));
+    QFile::link(root + QStringLiteral("/secret"), root + QStringLiteral("/swapped"));
+    check(runWith(root + QStringLiteral("/swapped"), guarded, digest(root + QStringLiteral("/secret"))) == 4 && !QFileInfo::exists(guarded),
+          QStringLiteral("a symlink source is refused even with the right hash"));
+    QDir(root).mkdir(QStringLiteral("folder"));
+    check(runWith(root + QStringLiteral("/folder"), guarded, digest(root + QStringLiteral("/good"))) == 4 && !QFileInfo::exists(guarded),
+          QStringLiteral("a source that is not a regular file is refused"));
+    check(runWith(root + QStringLiteral("/secret"), guarded, digest(root + QStringLiteral("/good"))) == 4 && !QFileInfo::exists(guarded),
+          QStringLiteral("a source whose content changed after approval is refused"));
+    check(read(dest) == QStringLiteral("new\n"), QStringLiteral("a refused install leaves the old file alone"));
+    bool leftover = false;
+    for (const QString &name : QDir(backups).entryList(QDir::Files | QDir::Hidden | QDir::NoDotAndDotDot))
+        leftover = leftover || name.startsWith(QStringLiteral(".stage."));
+    check(!leftover, QStringLiteral("no staged copy is left behind"));
+}
+
+void testAdvice()
+{
+    check(programDescription(QStringLiteral("/usr/sbin/cupsd")).contains(QStringLiteral("printing")), QStringLiteral("path profile names are described"));
+    check(programDescription(QStringLiteral("libreoffice-soffice")).contains(QStringLiteral("LibreOffice")), QStringLiteral("prefix descriptions"));
+    check(programDescription(QStringLiteral("snap.firefox.firefox")).contains(QStringLiteral("Snap")), QStringLiteral("snap profiles are described"));
+    check(programDescription(QStringLiteral("codex")).isEmpty(), QStringLiteral("exact names do not match longer ones"));
+    check(!modeExplanation(Mode::Complain).isEmpty() && modeExplanation(Mode::Unknown).isEmpty(), QStringLiteral("mode explanations"));
+
+    ProfileFacts facts;
+    facts.hasFile = true;
+    facts.liveKnown = true;
+    facts.loaded = true;
+    facts.logKnown = true;
+    facts.mode = Mode::Enforce;
+    QList<Advice> advice = profileAdvice(facts);
+    check(advice.size() == 1 && advice.first().tone == AdviceTone::Good, QStringLiteral("quiet enforce profile is fine"));
+    facts.denied = 3;
+    advice = profileAdvice(facts);
+    check(advice.size() == 1 && advice.first().action == AdviceAction::Events && advice.first().text.contains(QStringLiteral("3 accesses")),
+          QStringLiteral("enforce with denials points at the events"));
+    facts.mode = Mode::Complain;
+    facts.denied = 0;
+    facts.processes = 2;
+    advice = profileAdvice(facts);
+    check(advice.size() == 1 && advice.first().action == AdviceAction::Enforce, QStringLiteral("quiet running complain profile suggests enforce"));
+    facts.allowed = 1;
+    advice = profileAdvice(facts);
+    check(advice.size() == 1 && advice.first().action == AdviceAction::Events && advice.first().text.contains(QStringLiteral("1 access ")),
+          QStringLiteral("complain with allowed accesses points at the events"));
+    facts.loaded = false;
+    facts.missed = 1;
+    advice = profileAdvice(facts);
+    check(advice.size() == 3 && advice.first().action == AdviceAction::Reload && advice.at(1).text.contains(QStringLiteral("1 running process")),
+          QStringLiteral("unloaded profile and missed processes"));
+    facts.logKnown = false;
+    advice = profileAdvice(facts);
+    check(advice.last().action == AdviceAction::LiveView, QStringLiteral("unreadable log suggests live view"));
+    facts.disabled = true;
+    advice = profileAdvice(facts);
+    check(advice.size() == 1 && advice.first().action == AdviceAction::Enable, QStringLiteral("disabled profile suggests enable"));
+    facts.unconfinedFlag = true;
+    advice = profileAdvice(facts);
+    check(advice.size() == 1 && advice.first().action == AdviceAction::None, QStringLiteral("unconfined flag is left alone"));
+    facts.hasFile = false;
+    advice = profileAdvice(facts);
+    check(advice.size() == 1 && advice.first().text.contains(QStringLiteral("another tool")), QStringLiteral("profile without a file"));
 }
 
 }
@@ -372,6 +443,7 @@ int main(int argc, char **argv)
     testLabelsAndSections();
     testSnapshot();
     testInstallScript();
+    testAdvice();
     if (failures)
         qCritical("%d failure(s)", failures);
     return failures == 0 ? 0 : 1;

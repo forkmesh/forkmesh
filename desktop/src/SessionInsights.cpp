@@ -2,6 +2,7 @@
 
 #include "ClaudeTranscriptTools.h"
 
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -226,8 +227,31 @@ void Collector::clear()
     m_shells.clear();
     m_context = ContextUse();
     m_clock = 0;
+    m_eventMs = 0;
     m_calls = 0;
     m_errors = 0;
+}
+
+qint64 eventTimeMs(const QJsonObject &event)
+{
+    const QJsonValue stamp = event.value(QStringLiteral("_ts"));
+    if (stamp.isDouble() && stamp.toDouble() > 0)
+        return qint64(stamp.toDouble());
+    const QDateTime at = QDateTime::fromString(
+        event.value(QStringLiteral("timestamp")).toString(), Qt::ISODateWithMs);
+    return at.isValid() ? at.toMSecsSinceEpoch() : 0;
+}
+
+QString elapsedText(qint64 ms)
+{
+    const qint64 seconds = qMax<qint64>(0, ms / 1000);
+    if (seconds < 60)
+        return QStringLiteral("%1s").arg(seconds);
+    if (seconds < 3600)
+        return QStringLiteral("%1m").arg(seconds / 60);
+    const qint64 minutes = (seconds / 60) % 60;
+    return minutes == 0 ? QStringLiteral("%1h").arg(seconds / 3600)
+                        : QStringLiteral("%1h %2m").arg(seconds / 3600).arg(minutes);
 }
 
 bool Collector::ingest(const QJsonObject &event)
@@ -235,6 +259,8 @@ bool Collector::ingest(const QJsonObject &event)
     if (event.value(QStringLiteral("isSidechain")).toBool() ||
         event.value(QStringLiteral("isMeta")).toBool())
         return false;
+    if (const qint64 at = eventTimeMs(event); at > 0)
+        m_eventMs = at;
     bool changed = m_tasks.ingest(event);
     const QString type = event.value(QStringLiteral("type")).toString();
     applyContext(type, event);
@@ -457,6 +483,7 @@ bool Collector::applyToolUse(const QString &id, const QString &name, const QJson
         if (item.label.isEmpty())
             item.label = subagent ? QStringLiteral("Subagent") : QStringLiteral("Shell");
         item.status = QStringLiteral("running");
+        item.startedMs = m_eventMs;
         item.touched = ++m_clock;
         m_background.insert(id, item);
         m_pending[id].background = input.value(QStringLiteral("run_in_background")).toBool();
@@ -597,18 +624,31 @@ int Collector::runningBackground() const
 
 QStringList defaultCardOrder()
 {
-    return {QStringLiteral("progress"),   QStringLiteral("subsessions"),
-            QStringLiteral("outputs"),    QStringLiteral("sources"),
-            QStringLiteral("background"),
-            QStringLiteral("changes"),    QStringLiteral("context"),
-            QStringLiteral("environment"), QStringLiteral("tools")};
+    return {QStringLiteral("environment"), QStringLiteral("context"),
+            QStringLiteral("progress"),    QStringLiteral("subsessions"),
+            QStringLiteral("outputs"),     QStringLiteral("sources"),
+            QStringLiteral("background"),  QStringLiteral("changes"),
+            QStringLiteral("tools")};
+}
+
+bool customCardOrder(const QStringList &saved)
+{
+    static const QList<QStringList> former{
+        {QStringLiteral("progress"), QStringLiteral("outputs"), QStringLiteral("sources"),
+         QStringLiteral("background"), QStringLiteral("changes"), QStringLiteral("context"),
+         QStringLiteral("environment"), QStringLiteral("tools")},
+        {QStringLiteral("progress"), QStringLiteral("subsessions"), QStringLiteral("outputs"),
+         QStringLiteral("sources"), QStringLiteral("background"), QStringLiteral("changes"),
+         QStringLiteral("context"), QStringLiteral("environment"), QStringLiteral("tools")},
+    };
+    return !saved.isEmpty() && !former.contains(saved) && saved != defaultCardOrder();
 }
 
 QStringList normalizedCardOrder(const QStringList &saved)
 {
     const QStringList known = defaultCardOrder();
     QStringList order;
-    for (const QString &key : saved)
+    for (const QString &key : customCardOrder(saved) ? saved : QStringList())
         if (known.contains(key) && !order.contains(key))
             order << key;
     for (int index = 0; index < known.size(); ++index) {

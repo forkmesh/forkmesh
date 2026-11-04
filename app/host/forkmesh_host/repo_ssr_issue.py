@@ -2048,7 +2048,7 @@ def _render_issue(issue, ctx, owner, path, index, now, viewer, repo, prompt, rea
 
     assignees = assignees_with_claims(front_matter_list(
         "[%s]" % ", ".join(issue["assignees"])), events)
-    claim = ('<button type="button" data-repo-issue-claim="claim" class="mt-2 inline-flex '
+    claim = ('<button type="button" data-repo-issue-claim="claim" class="mt-2 flex w-fit '
              'items-center gap-1.5 text-[12px] text-muted-foreground '
              'hover:text-[var(--dashboard-link)]">%sAssign yourself</button>' % icon(
                  "user-plus", "h-3.5 w-3.5"))

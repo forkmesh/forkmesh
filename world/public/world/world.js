@@ -5069,6 +5069,7 @@ function worldNotificationNeedsAttention(item) {
 function worldNotificationIcon(item) {
   if (!item) return "✦";
   if (worldNotificationNeedsAttention(item)) return "⚠";
+  if (item.state === "up") return "✓";
   if (item.source === "global") return "📣";
   const kind = String(item.kind || "").trim().toLowerCase();
   return WORLD_NOTIFICATION_KIND_ICONS[kind] ||

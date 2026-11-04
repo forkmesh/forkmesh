@@ -2678,6 +2678,8 @@ public:
         ChromeDotGrid::holdAnimationClock(&m_ticking, false);
     }
 
+    const QVector<Dot> &dots() const { return m_dots; }
+
     void setDots(const QVector<Dot> &dots)
     {
         // adhoc #2104: the scanner tick calls this on every beat whether or not
@@ -4238,6 +4240,8 @@ const QString kAutoPrBountyAmountSetting =
 const QString kAutoPrBountyModeSetting = QStringLiteral("bounty/autoPrMode");
 const QString kSolanaLastBalanceSettingPrefix =
     QStringLiteral("profile/solanaLastBalance/");
+const QString kTipLastLinkedAddressSetting =
+    QStringLiteral("tips/lastLinkedAddress");
 const QString kWindowGeometrySetting = QStringLiteral("ui/windowGeometry");
 const QString kWindowOpacitySetting = QStringLiteral("ui/windowOpacity");
 constexpr int kMinimumWindowOpacityPercent = 30;
@@ -4300,6 +4304,8 @@ const QString kAgentSeenFinishedAtSetting =
     QStringLiteral("agents/seenFinishedAt");
 const QString kAgentReadBaselineSetting =
     QStringLiteral("agents/readBaselineMs");
+const QString kAgentMarkedUnreadSetting =
+    QStringLiteral("agents/markedUnread");
 // Order the left rail by how often each item is clicked, most clicked first
 // (MainWindow::applyRailOrder). The counts live under kRailClickCountsSetting,
 // keyed by a stable rail key rather than the caption, and are kept whether or

@@ -88,7 +88,22 @@ pages in the system browser. Only `http` and `https` load. The panel's width is
 dragged on its left edge (280 to 1200 px, `ui/sideRailBrowserWidth`, default
 420); whether it is open and the last address are kept in
 `ui/sideRailBrowserOpen` and `ui/sideRailBrowserUrl`. Agents keep using their
-own browser windows (`open_browser_window`); the side browser is the user's.
+own browser pages (`open_browser_window`, below); the side browser is the user's.
+
+## Agent pages
+
+`#agentPagesPanel` sits to the left of the side browser and holds the pages
+agents open with `open_browser_window`, one tab each (`#agentPagesTabs`,
+closable and movable, titled with the agent and page title). Opening a page
+turns the side rail on if it was off, shows the panel and selects the page's
+tab; a transcript link to the page selects it again. Closing a tab closes the
+agent's window, and the panel hides when its last tab goes; the **x** in the
+header closes every page. The width is dragged on the left edge (280 to
+1200 px, `ui/agentPagesWidth`, default 640). Pages still float in their own
+window when the side rail does not fit. Why: a floating window covered the
+transcript and had to be moved by hand on every page; docked, the page and
+the agent's work are side by side. Details:
+[MCP desktop tools](../tools/mcp-desktop-tools.md#browser-windows).
 
 ## Terminal pane and launcher
 
@@ -98,6 +113,12 @@ requests), `MainWindowSideRail.cpp` (the pane, `revealTerminals`,
 `TerminalBridge.*` (request parsing, key names, launch commands) and
 `TerminalWidget` (the existing pty terminal, which gained `sendInput`,
 `plainText` and an `outputArrived` signal).
+
+Only the sign-in terminals (the host agent login and the VM settings login)
+call `setOpensSignInLinks(true)`, so only they open a provider's sign-in page
+on their own when the output prints one. Any other terminal would open a
+real sign-in page for anything that prints its URL, such as `cat` on a repo
+file, which helps device-code phishing.
 
 - **One click.** The top bar's terminal button (in Next `topTerminalButton`,
   between the theme toggle and the side-rail toggle; in Classic a title-bar
@@ -179,6 +200,11 @@ Rules:
 - An agent below Auto mode (`agenthub::permissionRank` < 3) may list and read
   but not open, type or close (`mode_too_low`), because typing runs commands
   with the user's account.
+- An Auto agent whose run rules check its commands (external calls, destructive
+  commands, teammate permissions) or lock its folders gets `rules_gated` for
+  the same calls (`agentrules::agentTerminalWritesAllowed`). A terminal runs
+  outside the hook and the Landlock lock, so typing there would skip every
+  check; see [agent boundaries](../security/agent-host-boundaries.md).
 - Private tabs are left out of the list and refuse reads and input
   (`not_shared`), except the caller's own tab.
 - Tabs the user opened are not closed for an agent (`user_terminal`).

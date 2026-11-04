@@ -51,7 +51,9 @@ picture) is kept in the phone's secure store (Keychain on the iPhone, the
 encrypted store on Android) under `mastodon.session.v1`, scoped to the
 project like other secrets. One account per phone; it is not synced to
 ForkMesh. Signing out revokes the token on the server (`POST /oauth/revoke`).
-A 401 anywhere forgets the sign-in and returns to sign-in with the server
+Losing the ForkMesh session (sign-out or expiry) also forgets and revokes the
+Mastodon sign-in, so the next account on the phone does not inherit it
+([why](../native/ARCHITECTURE.md)). A 401 anywhere forgets the sign-in and returns to sign-in with the server
 filled in.
 
 Every request goes from the phone straight to the user's server; nothing
@@ -123,6 +125,21 @@ come from, and its thumbnail host prompt like other calls; pictures from any
 other host are marked as decoration (`markFaviconProbe`) so they are skipped
 silently instead of opening a firewall prompt per remote server, and a letter
 avatar is shown instead.
+
+The client holds the host's network manager and its in-flight replies through
+`QPointer`. The replies are children of that manager, and when the main window
+closes the manager is destroyed before the page, so `cancelAll()` from
+`~MastodonFeature` used to call `disconnect()` on freed replies (SIGSEGV in
+`Client::cancelAll`, report #23). `testClientOutlivesNetwork` deletes the
+manager with requests in flight and then cancels.
+
+`cancelAll()` disconnects a reply only from the client's own context, and
+touches no reply once the manager is gone. A bare `reply->disconnect()` also
+cut the network manager's `finished` and `destroyed` handlers, which close the
+reply's `net` ticket in the footer, so every cancelled read stayed listed as
+running, and it walked receivers the client does not own while the window was
+being torn down (report #24). `testCancelKeepsOtherObservers` checks that an
+outside observer still sees the reply finish and be deleted.
 
 ### What the page covers
 

@@ -450,7 +450,7 @@ func (a *runnerActions) ensureRoot() error {
 		return err
 	}
 	for _, entry := range entries {
-		if err := removeTreeUnder(root, filepath.Join(root, entry.Name())); err != nil {
+		if err := removeJobOwnedUnder(root, filepath.Join(root, entry.Name())); err != nil {
 			log.Printf("runner actions: %v", err)
 		}
 	}
@@ -773,12 +773,12 @@ func (a *runnerActions) runWorkflow(ctx context.Context, job runnerActionsJob, c
 		return actionFailed
 	}
 	work := filepath.Join(root, strconv.FormatInt(job.JobID, 10)+"-"+strconv.Itoa(index))
-	if err := removeTreeUnder(root, work); err != nil {
+	if err := removeJobOwnedUnder(root, work); err != nil {
 		fmt.Fprintf(sink, "==> ERROR: the run workspace could not be prepared.\n")
 		return actionFailed
 	}
 	defer func() {
-		if err := removeTreeUnder(root, work); err != nil {
+		if err := removeJobOwnedUnder(root, work); err != nil {
 			log.Printf("runner actions: %v", err)
 		}
 	}()
@@ -977,11 +977,6 @@ func (a *runnerActions) runWorkflow(ctx context.Context, job runnerActionsJob, c
 		dir := src
 		if step.WorkingDirectory != "" {
 			dir = filepath.Join(src, filepath.FromSlash(step.WorkingDirectory))
-			if info, err := os.Stat(dir); err != nil || !info.IsDir() {
-				fmt.Fprintf(sink, "==> ERROR: the working directory %s is not in the checkout.\n", step.WorkingDirectory)
-				failed = true
-				continue
-			}
 		}
 		stepCtx, stepCancel := runCtx, context.CancelFunc(func() {})
 		if step.TimeoutMinutes > 0 {
@@ -1067,8 +1062,8 @@ func (a *runnerActions) runStep(ctx context.Context, work string, env []string, 
 	if !strings.HasSuffix(script, "\n") {
 		script += "\n"
 	}
-	args, stdin := runnerStepInvocation(shell, env, script)
-	stderr, err := a.b.box.runner()(ctx, work, stdin, sink, "/usr/bin/env", args...)
+	args, stdin := runnerStepInvocation(shell, work, env, script)
+	stderr, err := a.b.box.runner()(ctx, runnerStepStartDir, stdin, sink, "/usr/bin/env", args...)
 	_, _ = sink.Write(stderr)
 	var exit *exec.ExitError
 	if errors.As(err, &exit) {
@@ -1079,12 +1074,18 @@ func (a *runnerActions) runStep(ctx context.Context, work string, env []string, 
 
 var runnerStepEnvName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
+const runnerStepStartDir = "/"
+
+func runnerStepShellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
+}
+
 // runnerStepInvocation is the `env` argv and the stdin script of one step.
 // The step's environment (secrets, the job token) travels in the script on
 // stdin, never in argv: a process's command line is readable by every local
 // user through /proc/<pid>/cmdline and ps, and is what exec auditing logs,
 // while the pipe and the shell's own environment are not.
-func runnerStepInvocation(shell string, env []string, script string) ([]string, string) {
+func runnerStepInvocation(shell, dir string, env []string, script string) ([]string, string) {
 	var prelude strings.Builder
 	prelude.WriteString("exec 2>&1\n")
 	for _, pair := range env {
@@ -1092,10 +1093,13 @@ func runnerStepInvocation(shell string, env []string, script string) ([]string, 
 		if !ok || !runnerStepEnvName.MatchString(name) {
 			continue
 		}
-		prelude.WriteString("export " + name + "='" +
-			strings.ReplaceAll(value, "'", `'\''`) + "' || :\n")
+		prelude.WriteString("export " + name + "=" + runnerStepShellQuote(value) + " || :\n")
 	}
 	prelude.WriteString("ulimit -c 0 2>/dev/null || true\nulimit -f 2097152 2>/dev/null || true\n")
+	if dir != "" {
+		prelude.WriteString("cd -- " + runnerStepShellQuote(dir) +
+			" || { echo '==> ERROR: the working directory is not in the checkout.'; exit 1; }\n")
+	}
 	return []string{"-i", shell, "-e", "-s"}, prelude.String() + script
 }
 

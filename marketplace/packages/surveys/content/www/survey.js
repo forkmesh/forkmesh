@@ -2,7 +2,18 @@
   const TOKEN_RE = /^[0-9a-f]{32}\.[0-9a-f]{24}$/;
   const token = String(new URLSearchParams(location.search).get("t") || "");
   const answeredKey = "forkmesh-survey-answered:" + token.slice(0, 32);
+  const sessionKey = "forkmesh-survey-session:" + token.slice(0, 32);
+  const preview = new URLSearchParams(location.search).has("preview");
+  const seen = { viewed: false, started: false, sent: false, left: false, questions: new Set() };
   let questions = [];
+
+  function savedTheme() {
+    try {
+      const theme = ["forkmesh.dashboard.theme", "forkmesh.theme"].map((key) => localStorage.getItem(key)).find((saved) => saved === "light" || saved === "dark");
+      if (theme) document.documentElement.classList.add(theme);
+    } catch (_) { return; }
+  }
+  savedTheme();
 
   function node(selector) { return document.querySelector(selector); }
   function text(selector, value) { const target = node(selector); if (target) target.textContent = value || ""; }
@@ -15,6 +26,64 @@
   }
   function remembered() { try { return localStorage.getItem(answeredKey) === "1"; } catch (_) { return false; } }
   function remember() { try { localStorage.setItem(answeredKey, "1"); } catch (_) { return; } }
+  function sessionId() {
+    try {
+      let id = sessionStorage.getItem(sessionKey) || "";
+      if (!/^[0-9a-f]{32}$/.test(id)) {
+        id = [...crypto.getRandomValues(new Uint8Array(16))].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+        sessionStorage.setItem(sessionKey, id);
+      }
+      return id;
+    } catch (_) { return ""; }
+  }
+  function track(kind, detail = "", leaving = false) {
+    if (preview || !TOKEN_RE.test(token)) return;
+    const url = "/api/surveys/-/public/" + token + "/track";
+    const body = JSON.stringify({ kind, detail: String(detail), session: sessionId() });
+    try {
+      if (leaving && navigator.sendBeacon && navigator.sendBeacon(url, new Blob([body], { type: "text/plain;charset=UTF-8" }))) return;
+      void fetch(url, { method: "POST", credentials: "omit", cache: "no-store", keepalive: true, headers: { "content-type": "application/json" }, body }).catch(() => {});
+    } catch (_) { return; }
+  }
+  function touched(event) {
+    const item = event.target.closest?.("[data-sv-question]");
+    if (!item || seen.sent) return;
+    if (!seen.started) { seen.started = true; track("start"); }
+    const id = item.dataset.svQuestion;
+    if (!seen.questions.has(id)) { seen.questions.add(id); track("answer", id); }
+  }
+  function answeredCount() { return questions.filter((question) => !empty(value(question))).length; }
+  function progress() {
+    let answered = 0;
+    for (const question of questions) {
+      const item = document.querySelector('[data-sv-question="' + question.id + '"]');
+      const filled = !empty(value(question));
+      if (filled) answered += 1;
+      if (!item) continue;
+      item.dataset.answered = String(filled);
+      if (filled && item.dataset.invalid === "true") item.dataset.invalid = "false";
+    }
+    text("[data-sv-progress-label]", answered + " of " + questions.length + " answered");
+    node("[data-sv-progress-bar]").parentElement.style.setProperty("--sv-progress", (questions.length ? Math.round((answered / questions.length) * 100) : 0) + "%");
+  }
+  function minutes(list) {
+    const seconds = list.reduce((total, question) => total + ({ paragraph: 60, text: 20, rating: 8 }[question.type] || 12), 0);
+    return Math.max(1, Math.round(seconds / 60));
+  }
+  function meta(list) {
+    const required = list.filter((question) => question.required).length;
+    const items = [
+      list.length + (list.length === 1 ? " question" : " questions"),
+      "About " + minutes(list) + " min",
+      required ? required + " required" : "All optional",
+    ];
+    node("[data-sv-meta]").replaceChildren(...items.map((item) => element("li", "", item)));
+  }
+  function leave() {
+    if (!seen.viewed || !questions.length || seen.sent || seen.left) return;
+    seen.left = true;
+    track("leave", String(Math.min(99, answeredCount())), true);
+  }
   function shuffled(items) {
     const copy = items.slice();
     for (let index = copy.length - 1; index > 0; index -= 1) {
@@ -30,9 +99,7 @@
     const label = element(tag, "", question.title);
     if (forId) label.htmlFor = forId;
     if (question.required) {
-      const mark = element("span", "sv-required", "*");
-      mark.setAttribute("aria-hidden", "true");
-      label.append(mark);
+      label.append(element("span", "sv-required", "Required"));
     }
     return label;
   }
@@ -89,7 +156,7 @@
     return wrapper;
   }
   function questionNode(question, shuffle) {
-    const item = element("li");
+    const item = element("li", "sv-q");
     item.dataset.svQuestion = question.id;
     if (question.type === "single" || question.type === "multiple") item.append(choiceQuestion(question, shuffle));
     else if (question.type === "rating") item.append(ratingQuestion(question));
@@ -107,8 +174,7 @@
   function empty(answer) { return answer === "" || (Array.isArray(answer) && !answer.length) || (typeof answer === "string" && !answer.trim()); }
   function mark(questionId) {
     document.querySelectorAll("[data-sv-question]").forEach((item) => {
-      const wrapper = item.firstElementChild;
-      if (wrapper) wrapper.dataset.invalid = String(item.dataset.svQuestion === questionId);
+      item.dataset.invalid = String(item.dataset.svQuestion === questionId);
     });
     const target = document.querySelector('[data-sv-question="' + questionId + '"]');
     if (target) target.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -123,6 +189,8 @@
     text("[data-sv-done-title]", title);
     text("[data-sv-thanks]", message);
     node("[data-sv-done]").hidden = false;
+    node("[data-sv-progress]").hidden = true;
+    node("[data-sv-progress-label]").hidden = true;
     window.scrollTo({ top: 0 });
   }
 
@@ -139,6 +207,7 @@
     }
     if (!Object.keys(answers).length) return error("Answer at least one question before sending.");
     error("");
+    track("submit");
     const button = node("[data-sv-submit]");
     button.disabled = true;
     try {
@@ -148,11 +217,12 @@
         body: JSON.stringify({ answers }),
       });
       const payload = await response.json().catch(() => ({}));
-      if (response.ok) { remember(); return done("Thank you", payload.thankYou); }
+      if (response.ok) { seen.sent = true; remember(); return done("Thank you", payload.thankYou); }
       if (payload.error === "already_responded") { remember(); return done("Already answered", "You have already answered this survey. Thank you."); }
       if (payload.error === "survey_closed") return done("This survey is closed", "It stopped taking answers before yours arrived.");
+      if (payload.error === "survey_storage_full") return done("This survey is full", "It cannot take more answers right now.");
       if (payload.error === "too_many_responses") return error("Too many answers came from your connection in the last hour. Try again later.");
-      if (payload.error === "answer_required") return error("Please answer every question marked *.", payload.question);
+      if (payload.error === "answer_required") return error("Please answer every required question.", payload.question);
       if (payload.error === "invalid_answer") return error("One answer could not be used. Check it and send again.", payload.question);
       if (response.status === 404) return done("Survey not found", "This survey is no longer available.");
       error("Your answers could not be sent. Try again in a moment.");
@@ -173,9 +243,16 @@
     if (survey.status !== "open") return status("This survey is closed and no longer takes answers.");
     if (survey.oneResponsePerPerson && remembered()) return status("You have already answered this survey. Thank you.");
     questions = survey.questions || [];
-    node("[data-sv-required-note]").hidden = !questions.some((question) => question.required);
+    meta(questions);
     node("[data-sv-questions]").replaceChildren(...questions.map((question) => questionNode(question, survey.shuffleOptions)));
     node("[data-sv-form]").addEventListener("submit", submit);
+    node("[data-sv-form]").addEventListener("focusin", touched);
+    node("[data-sv-form]").addEventListener("change", touched);
+    node("[data-sv-form]").addEventListener("input", progress);
+    node("[data-sv-form]").addEventListener("change", progress);
+    node("[data-sv-progress]").hidden = false;
+    node("[data-sv-progress-label]").hidden = false;
+    progress();
     node("[data-sv-form]").hidden = false;
     status("");
   }
@@ -191,8 +268,14 @@
     } catch (_) {
       return status("Could not load the survey. Try again in a moment.");
     }
+    seen.viewed = true;
+    track("view");
     render(payload.survey);
   }
+
+  document.querySelectorAll("[data-sv-credit] a, [data-sv-brand]").forEach((link) => link.addEventListener("click", () => track("link", "forkmesh", true)));
+  addEventListener("pagehide", leave);
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") leave(); });
 
   void load();
 })();

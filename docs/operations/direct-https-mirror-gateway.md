@@ -132,6 +132,14 @@ expiry-bounded grant and keep it in an HttpOnly cookie. Rendered documents are
 held in bounded LRU caches invalidated on generation change (SIGHUP, or SIGUSR1
 for the replica), never by time; large bodies stream.
 
+`POST /api/repo/<owner>/<repo>/issues` takes self-signed events from anyone, and
+the signature does not cover `meta` or `attachmentData`. So the gateway applies
+the relay's rules: attachment names must be `<8 hex>.<media extension>`, because
+any other name could replace the issue's own `issue-<n>.json` record, and `meta`
+keeps only labels, assignees, milestone, project and priority. The daemon repeats
+the name check and drops `reporter` and `reward*` from this path, since only the
+relay may set an author credit or a reward.
+
 ### SSH writes, pull requests and forks
 
 `tools/ssh_gateway.py` and `tools/ssh_authorization_broker.py` can authorize

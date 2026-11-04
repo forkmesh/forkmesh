@@ -4,7 +4,7 @@ window.ForkMeshDashboard.registerPage("mastodon", ({ select: $, escapeHtml, rela
   const read = () => { try { return JSON.parse(sessionStorage.getItem(STORE) || "null"); } catch (_) { return null; } };
   const save = () => sessionStorage.setItem(STORE, JSON.stringify(state.session));
   const clear = () => { sessionStorage.removeItem(STORE); state.session = null; state.account = null; };
-  const text = (html) => { const node = document.createElement("div"); node.innerHTML = String(html || ""); return node.textContent || ""; };
+  const text = (html) => new DOMParser().parseFromString(String(html || ""), "text/html").body.textContent || "";
   const instance = (raw) => {
     try { const url = new URL(String(raw || "")); return url.protocol === "https:" && url.pathname === "/" && !url.username && !url.password ? url.origin : ""; } catch (_) { return ""; }
   };

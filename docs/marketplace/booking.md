@@ -24,7 +24,9 @@ same page) and in the Booking screen of the iPhone and Android apps; guests use
 | `native/ios/ForkMesh/Features/Packages/BookingScreen.swift`, `BookingSettingsScreen.swift` | The iPhone Booking screen and its settings. |
 | `native/android/core/.../market/Booking.kt` | The Android app's decoding, labels, settings draft and API calls. |
 | `native/android/app/.../feature/booking/BookingScreens.kt` | The Android Booking screen and its settings. |
+| `app/public/call.html`, `call-room.js` | The meeting room each video booking links to ([meeting rooms](../app/meeting-rooms.md)). |
 | `tests/test_booking.py` | Worker tests against SQLite with a fake runtime. |
+| `tools/forkmesh_mcp_server.py` (`booking_get_page`, `booking_update_page`) | Agent tools that read and change the account's page, signed with `forkmesh-booking-request-v1` like the apps; see [agent tools](../agents/tools.md). |
 
 ## The short link
 
@@ -62,6 +64,68 @@ and every settings and booking row is sealed with it.
   guests taking the same start time at once.
 - `booking_rate`: hashed counters for the abuse limits below, pruned by the
   reminder hook.
+- `booking_visits`: one row per tracked event on the public page (see
+  [Visits](#visits)): kind, meeting type, a short detail, a visitor key, the
+  ping stage it raised, and the time. Plain columns, since every value comes
+  from a fixed list or pattern.
+
+## Visits
+
+The owner asked to be pinged and to see tracking when anyone opens or clicks
+around their booking page, so they know who is about to book (or gave up).
+`meet.js` posts one small event to `POST /api/booking/-/p/<slug>/track`
+(`{kind, detail, type, session}`, answered `202`) on these:
+
+| `kind` | When | `detail` |
+| --- | --- | --- |
+| `view` | the page loaded | empty |
+| `type` | a meeting type was clicked | empty (`type` is the type id) |
+| `month` | the month was changed | `YYYY-MM` |
+| `day` | a day was picked | `YYYY-MM-DD` |
+| `slot` | a time was picked | the start in milliseconds |
+| `form` | Next opened the details form | empty |
+| `field` | a form field was first focused | `name`, `email`, `phone`, `notes` |
+| `submit` | the booking form was sent | empty |
+| `prefs` | time zone or clock changed | `timezone`, `12h`, `24h` |
+| `link` | a calendar, manage, copy or credit link was used | `google`, `outlook`, `ics`, `copy`, `manage`, `forkmesh` |
+| `leave` | the tab was hidden or closed before booking | the view: `types`, `calendar`, `form` |
+
+Anything else is `invalid_event` (400): an unknown kind, a detail outside its
+list or pattern, or `type` naming a type the page does not offer (for other
+kinds an unknown type is dropped). Other body fields are ignored. Leaving is
+sent with `navigator.sendBeacon` so it survives the tab closing. The
+guest's manage link (`?b=`) and any link opened with `&preview` (what the
+dashboard's own links add) send nothing.
+
+**Privacy.** No address, user agent or text the visitor typed is stored. The
+visitor key is the first 32 hex of `blind("booking-visitor:<account>:<ip>")`,
+the same blinding the abuse limits use. In privacy mode the host never gives
+the package an address, so the key blinds a random id the page keeps in
+`sessionStorage` instead; with neither, the key is empty and the event counts
+but cannot ping. The dashboard shows only the key's first six characters.
+
+**Limits and retention.** One connection (or session in privacy mode) may send
+120 events an hour and one page takes 1,500 an hour (`rate_limited`, 429,
+through `booking_rate`). Each page keeps its newest 2,000 events, pruned on
+each `view`, and nothing older than 90 days (the reminder hook also prunes).
+
+**Pings.** A visitor's first `view` in a clock hour sends the owner a
+`plugin_activity` ping, "👀 Someone opened your booking page". When that
+visitor then picks a day or time, opens the form or fills a field, the same
+ping (same dedupe key) is rewritten to "🗓️ Someone is picking a time on your
+booking page" without buzzing the phone again. So one visitor makes at most
+one ping per page per hour, and one page at most ten an hour. The ping opens
+`/dashboard/booking?tab=visits`. "Ping me when someone opens my page or starts
+picking a time" (`notifyVisits`, on by default) turns them off; bookings still
+ping.
+
+**Summary.** The owner overview carries `activity`: `{days: 30, views,
+visitors, interactions, starts, submits, leaves, lastActivityAt, recent}`,
+counted over the last 30 days. `interactions` is every kind but `view` and
+`leave`, `starts` counts `form`, `submits` counts `submit`, and `recent` is the
+50 newest events as `{kind, type, detail, label, visitor, at}` with a ready
+sentence in `label`. The dashboard's Visits tab shows it; the export includes
+it, and uninstalling deletes the rows.
 
 ## Open times
 
@@ -114,6 +178,43 @@ checked with `hmac.compare_digest`. It can read the booking (without the
 guest's email), list open times excluding the booking itself, reschedule, and
 cancel until the meeting starts. Meeting links for video calls are only shown
 after booking; the public page shows the kind of location, not its details.
+The page shows a ForkMesh room as **Join the video call (end-to-end
+encrypted)**.
+
+## Video rooms
+
+The owner asked that new bookings get a ForkMesh meeting link instead of
+"Video call (link to follow)". A meeting type set to **Video call** with no
+link of its own now gives every booking its own room; a type with its own
+link (Zoom, Meet) keeps using it.
+
+- **Making one.** `_book` draws a room id (`new_id`, 32 hex) and a key
+  (SHA-256 of `new_secret`, 64 hex), and stores the location as
+  `{kind: "video", detail: "<app origin>/call?<room>#<key>", room: true}`
+  inside the sealed booking. `booking_rooms` maps `blind("booking-room:<room>")`
+  to the booking and the account; the key is never in a plain column.
+- **Where it shows.** The guest's and owner's emails get a **Join the video
+  call** button and the link under Where; the calendar event's meeting URL,
+  the guest's confirmation and manage page, the dashboard row and both phone
+  apps' booking rows show **Join video call**. Rescheduling keeps the room.
+- **Window.** The room opens 30 minutes before the start and closes two
+  hours after the end. `GET /api/booking/-/call/<room>` answers `{state,
+  title, host, accent, minutes, startAt, endAt, opensAt, closesAt, timezone,
+  now}` with `state` `early`, `open`, `ended` or `cancelled`, never the guest's
+  details. Outside the window the other routes answer 409 `room_<state>`.
+- **Tickets.** `POST .../ticket` asks the host's `runtime.call_ticket(room)`
+  ([`plugin_call_ticket`](../app/meeting-rooms.md#code-map)), a 60-second
+  call-server ticket for the room `plugin:booking:<room>` with a per-join
+  account hash, so the call server's limits work as for `/chat` (16 people).
+  Without `FORKMESH_CALLS_SECRET` and `FORKMESH_CALLS_NODES` it answers 503
+  `calls_unavailable`. One connection gets 90 tickets an hour and a room 240.
+- **Relay.** `POST .../signal` with `{box}` stores one sealed signalling box
+  (40 to 6,000 base64url characters, else 400 `invalid_signal`) in
+  `booking_room_signals` and answers 202; `GET .../signal?after=<seq>` lists
+  up to 200 newer boxes, or the last two minutes without `after`. The worker
+  cannot open a box. A room keeps its newest 400, a connection may post 1,500
+  an hour and a room 6,000, the reminder hook deletes boxes older than six
+  hours, and uninstalling deletes rooms and boxes.
 
 ## Abuse limits
 
@@ -137,8 +238,22 @@ saves the JSON (Android) or shares it (iPhone); uninstall exports first.
 Guests never need the app: `/meet` is a web page that works in any phone
 browser.
 
+A booking with a ForkMesh room reads "ForkMesh video call, end-to-end
+encrypted" with a **Join video call** link (`joinURL` on iPhone, `joinUrl()`
+on Android), hidden once it is cancelled; it opens the in-app Meeting screen
+([meeting rooms](../app/meeting-rooms.md#phones)). The video location's hint
+says to leave it empty for a private room.
+
 The settings screen edits weekly hours as text times (`HH:MM`); an end of
 `24:00` shows as `23:59` and is saved back as `24:00`, as on the web.
+
+Both apps show the [Visits](#visits) summary as one line on the Booking
+screen ("Last 30 days: 42 views · 12 visitors · 5 started · 3 sent · last
+activity 2h ago", or "No visits in the last 30 days"), formatted by
+`PageActivity` (`PageActivity.swift`, `PageActivity.kt`); the list of recent
+events stays on the web. The settings screen has the `notifyVisits` toggle
+next to the booking email one. An older server without `activity` reads as no
+visits.
 
 ## Checking it by hand
 

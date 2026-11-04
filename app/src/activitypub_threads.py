@@ -226,6 +226,8 @@ def normalize_activity(activity, remote_actor=None, context=None, received_ms=0)
         return {"ok": False, "reason": "invalid_identity"}
     if actor["id"].rstrip("/") != _https_url(fallback_actor).rstrip("/"):
         return {"ok": False, "reason": "author_mismatch"}
+    if urlparse(remote_id).hostname != urlparse(actor["id"]).hostname:
+        return {"ok": False, "reason": "foreign_object_id"}
     local_context = normalize_context(context)
     if not local_context:
         return {"ok": False, "reason": "unresolved_context"}

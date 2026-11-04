@@ -16,8 +16,32 @@ Where hosted repositories live is on
 Packs are bounded by the gateway's `limits.receiveMaxInputBytes` (git's
 `receive.maxInputSize`). Where core nodes host
 repositories (`HOSTED_GIT_CORE_NODES`) the form also offers private
-repositories, initial files and imports, up to 10 repositories of 200 MB per
-account.
+repositories, initial files and imports. Each account can keep up to 10
+repositories on the servers, and each repository can be up to 200 MB; an
+operator can change both numbers, and the create page shows the ones in force.
+
+## Your own device or the servers
+
+The create page first asks where the repository should live:
+
+- **Your own device.** The desktop app serves the repository from your
+  computer while it runs: on its **Repos** page choose **New repository…** or
+  **Import folder…**, then turn on **Serve** for it on the **Control** page. The
+  iPhone and Android app keeps a repository on the phone: on the **Repos** tab,
+  under **On this device**, tap **New repository** or **Import from Files**,
+  then open it and tap **Publish**. A phone never serves clones itself;
+  publishing sends a copy to the network so others can clone it while the phone
+  is off. Link the app to your account in **Settings › Nodes**.
+- **The servers.** No app needed: the repository is stored on the instance's
+  servers and you push with plain `git`. The page says how many servers there
+  are; when there is only one, there is only one copy, so keep your own clone.
+
+## Moving to your own device
+
+To move a repository from the servers to your computer, clone it with
+`git clone --mirror`, add that folder in the desktop app (**Import folder…**)
+and publish it from there. Once your node publishes it, the server copy is
+retired and it no longer counts towards your 10 repositories.
 
 ## Contributing without write access
 

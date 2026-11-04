@@ -98,22 +98,59 @@ function boot() {
   browser.pageResult = { filledUsername: true, filledPassword: true };
   const filled = await send({ type: "fm-vault-fill", id: registrar });
   check("fill types into the active tab", filled.ok && browser.injected.length === 1
-    && browser.injected[0].target.tabId === 7 && browser.injected[0].args.join("|") === "ops@acme.test|s3cret!|registrar.example");
-  const navigatedAway = await (async () => {
+    && browser.injected[0].target.tabId === 7 && browser.injected[0].args.join("|") === "ops@acme.test|s3cret!|registrar.example|");
+  const fillAt = (where, call = browser.injected[0]) => {
     const saved = globalThis.location;
-    globalThis.location = { hostname: "evil.example" };
-    try { return browser.injected[0].func(...browser.injected[0].args); } finally { globalThis.location = saved; }
-  })();
+    globalThis.location = where;
+    try { return call.func(...call.args); } finally { globalThis.location = saved; }
+  };
+  const navigatedAway = fillAt({ hostname: "evil.example", port: "" });
   check("a tab that navigated away after the check is not filled", navigatedAway.filledPassword === false && navigatedAway.filledUsername === false);
   check("fill targets the top frame only", !("allFrames" in browser.injected[0].target) && !("frameIds" in browser.injected[0].target));
   for (const url of ["https://evil.example/login", "https://registrar.example.evil.test/", "http://registrar.example/login",
-    "https://sub.registrar.example/", "https://notregistrar.example/", "chrome://extensions"]) {
+    "https://sub.registrar.example/", "https://notregistrar.example/", "chrome://extensions",
+    "https://registrar.example:8443/login", "https://registrar.example:80/login"]) {
     browser.tab.url = url;
     const refused = await send({ type: "fm-vault-fill", id: registrar });
     check(`no fill on ${url}`, refused.error === "site_mismatch" && browser.injected.length === 1);
   }
   browser.tab.url = "https://www.registrar.example/account";
   check("www. is the same site", (await send({ type: "fm-vault-fill", id: registrar })).ok === true);
+  browser.tab.url = "https://registrar.example:443/login";
+  check("the scheme's default port is the same site", (await send({ type: "fm-vault-fill", id: registrar })).ok === true
+    && browser.injected[browser.injected.length - 1].args[3] === "");
+
+  const panel = await page.save({ title: "Panel", username: "root", password: "panel-pw", url: "https://registrar.example:8443/admin" });
+  await send({ type: "fm-vault-items", url: browser.tab.url, refresh: true });
+  browser.tab.url = "https://registrar.example:8443/admin";
+  const onPort = await send({ type: "fm-vault-items", url: browser.tab.url });
+  check("a port only offers the logins saved for it", onPort.matches.map((item) => item.title).join() === "Panel");
+  browser.tab.url = "https://registrar.example/login";
+  check("the default port does not offer a port's login", !(await send({ type: "fm-vault-items", url: browser.tab.url })).matches.some((item) => item.id === panel));
+  check("no fill of a port's login on the default port", (await send({ type: "fm-vault-fill", id: panel })).error === "site_mismatch");
+  browser.tab.url = "https://registrar.example:9443/";
+  check("no fill of a port's login on another port", (await send({ type: "fm-vault-fill", id: panel })).error === "site_mismatch");
+  browser.tab.url = "https://registrar.example:8443/admin";
+  check("a port's login fills on its port", (await send({ type: "fm-vault-fill", id: panel })).ok === true);
+  const portFill = browser.injected[browser.injected.length - 1];
+  check("the port goes into the page check", portFill.args.join("|") === "root|panel-pw|registrar.example|8443");
+  check("a tab that moved to another port after the check is not filled", fillAt({ hostname: "registrar.example", port: "9443" }, portFill).filledPassword === false);
+  check("a tab that moved to the default port after the check is not filled", fillAt({ hostname: "registrar.example", port: "" }, portFill).filledPassword === false);
+  class FakeInput {
+    constructor(type) { this.type = type; this.disabled = false; this.readOnly = false; this.form = null; this.autocomplete = ""; this.name = ""; this.id = ""; }
+    get value() { return this.current || ""; }
+    set value(next) { this.current = next; }
+    getClientRects() { return [{}]; }
+    focus() {}
+    dispatchEvent() { return true; }
+  }
+  const fakeField = new FakeInput("password");
+  globalThis.HTMLInputElement = FakeInput;
+  globalThis.document = { querySelectorAll: () => [fakeField] };
+  globalThis.getComputedStyle = () => ({ visibility: "visible" });
+  const samePort = fillAt({ hostname: "registrar.example", port: "8443" }, portFill);
+  delete globalThis.HTMLInputElement; delete globalThis.document; delete globalThis.getComputedStyle;
+  check("the page on the saved port is filled", samePort.filledPassword === true && fakeField.value === "panel-pw");
   check("copy hands over one field on request", (await send({ type: "fm-vault-copy", id: bank, field: "password" })).value === "only-mine");
   check("copy refuses other fields", (await send({ type: "fm-vault-copy", id: bank, field: "notes" })).error === "item_not_found");
 

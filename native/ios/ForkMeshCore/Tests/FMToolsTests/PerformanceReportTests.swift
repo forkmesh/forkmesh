@@ -221,6 +221,27 @@ final class PerformanceReportTests: XCTestCase {
     }
 
     @MainActor
+    func testTrimmingKeepsEveryMainThreadSampleRowUntilTheLastPass() async {
+        let (telemetry, clock) = fixture()
+        let monitor = telemetry.monitor!
+        for i in 0..<5 {
+            monitor.recordSlowEvent(
+                kind: .eventLoop, name: "ui-isolate blocked \(i)", duration: .milliseconds(300 + i),
+                details: [
+                    "unnamedMs": 280, "sections": .string("step.\(i) 12ms, other.\(i) 8ms"),
+                    "finishedDuring": .string("api.GET /api/thing/\(i)"),
+                    "mainStack": .string("AttributeGraph < SwiftUICore < ForkMesh +0x\(i)0"),
+                ])
+            monitor.recordSlowEvent(kind: .operation, name: "api.GET /api/thing/\(i)", duration: .milliseconds(900 + i))
+        }
+        for i in 0..<40 { telemetry.log.add(.error, "GET app.forkmesh.com/api/path\(i)x HTTP 500 in 100ms") }
+        let text = PerformanceReport.text(telemetry: telemetry, now: clock.now, timeZone: utc, limit: 2400)
+        XCTAssertTrue(text.contains("trimmed to fit"), text)
+        XCTAssertTrue(text.contains("## Main thread during stalls (leaf images < app frames)\n5 samples in 5 stalls\n"), text)
+        for i in 0..<5 { XCTAssertTrue(text.contains("1x     AttributeGraph < SwiftUICore < ForkMesh +0x\(i)0"), text) }
+    }
+
+    @MainActor
     func testStallsKeepTheirOwnSectionWhenOperationsCrowdTheReport() async {
         let (telemetry, clock) = fixture()
         let monitor = telemetry.monitor!

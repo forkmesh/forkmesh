@@ -257,7 +257,7 @@ final class NotesParityTests: XCTestCase {
         visibility = "public"
         await editor.load()
         XCTAssertEqual(editor.publicLink?.absoluteString, "https://forkmesh.com/notes/\(noteId)")
-        XCTAssertEqual(editor.menuItems.map(\.value), ["history", "copy_link", "open_public", "export", "export_pdf"])
+        XCTAssertEqual(editor.menuItems.map(\.value), ["history", "activity", "copy_link", "open_public", "export", "export_pdf"])
     }
 
     func testParsesIssueAndPullReferences() {

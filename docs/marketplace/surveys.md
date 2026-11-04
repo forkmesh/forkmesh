@@ -19,9 +19,9 @@ People answer on a public page at `/survey?t=<token>` with no account.
 | --- | --- |
 | `content/worker/surveys.py` | The Worker API at `/api/surveys`: surveys, questions, publishing, the public read and submit routes, results, responses, CSV export, org export and purge. |
 | `content/web/view.html`, `content/web/page.js` | The dashboard page: totals, the survey list, the question editor, the detail sheet with results and responses. |
-| `content/www/survey.{html,js,css}` | The respondent's page at `/survey?t=<token>`. Built with no site header, analytics or `innerHTML`. |
+| `content/www/survey.{html,js,css}` | The respondent's page at `/survey?t=<token>`. Built with no site header, analytics or `innerHTML`. It borrows the documentation pages' look (their palette, kicker pill, cards and blue primary button), follows the visitor's saved site theme or their OS, numbers each question in its own card, and shows a progress bar and the question count, an estimated time and how many are required. |
 | `content/desktop/SurveysPage.{h,cpp}` | The native desktop page and its registration (`/api/surveys`, proof `forkmesh-surveys-request-v1`). |
-| `content/desktop/SurveysModel.{h,cpp}`, `content/desktop/tests/test_surveys_model.cpp` | The page's logic without widgets (labels, filters, allowed actions, question validation, result lines) and its Qt test, target `forkmesh-surveys-tests`. |
+| `content/desktop/SurveysModel.{h,cpp}`, `content/desktop/tests/test_surveys_model.cpp`, `content/desktop/tests/test_surveys_page.cpp` | The page's logic without widgets (labels, filters, allowed actions, question validation, result lines) and its Qt test, target `forkmesh-surveys-tests`; the page test drives `SurveysPage` against a fake `host.request`. |
 | `native/ios/ForkMeshCore/Sources/FMPackages/Survey*.swift`, `PackagesClient+Surveys.swift`; `native/ios/ForkMesh/Features/Packages/Survey*.swift` | iPhone models, client, screen model and screens. Tests: `FMPackagesTests/SurveysTests.swift`, `FMApiTests/SurveyRouteTests.swift`. |
 | `native/android/core/.../market/Surveys.kt`, `native/android/app/.../feature/market/SurveyScreens.kt` | Android models, client, screen state and screens. Test: `core/src/test/.../market/SurveysTest.kt`. |
 | `tests/test_surveys.py` | API, public submit, limits, results, export and lifecycle contracts against sqlite. |
@@ -78,7 +78,8 @@ questions.
 `settings` holds `oneResponsePerPerson` (default `false`), `opensAt` and
 `closesAt` (milliseconds, 0 for none), `maxResponses` (0 for no limit, at
 most 10,000), `notifyOnResponse` (default `true`: the creator gets a Ping,
-at most one per survey per hour) and `shuffleOptions` (default `false`: the
+at most one per survey per hour), `notifyOnVisit` (default `true`: visit
+Pings, see [Activity](#activity)) and `shuffleOptions` (default `false`: the
 public page shows choice options in random order).
 
 Each response records a respondent key: the first 32 hex characters of the
@@ -112,6 +113,7 @@ on the desktop) and membership of the organization; `plugin_not_installed`
 | `/api/surveys/<org>/items/<id>/export` | GET | `{filename, csv}`: one row per response, one column per question, `multiple` answers joined with `; ` |
 | `/api/surveys/-/public/<token>` | GET | `{survey: {title, description, questions, status, thankYou, oneResponsePerPerson, shuffleOptions, organization}}`; 404 `survey_not_found` for a draft, a bad token or an uninstalled plugin |
 | `/api/surveys/-/public/<token>` | POST | `{answers}` → `{thankYou}` (201); `survey_closed` (409) when not open |
+| `/api/surveys/-/public/<token>/track` | POST | `{kind, detail, session}` → 202; see [Activity](#activity) |
 
 Install, uninstall and export of all of an organization's surveys go through
 the shared plugin routes, `/api/plugins/<org>/surveys/{install,export,uninstall}`.
@@ -155,12 +157,64 @@ or `@` get a leading `'` so a spreadsheet does not run an answer as a
 formula.
 
 The overview `summary` is `{surveys, open, drafts, closed, responses,
-responsesLast7Days}`.
+responsesLast7Days}`. The detail also has `activity`, below.
+
+## Activity
+
+The owner asked for Pings and tracking whenever someone opens or works
+through a survey, so the creator sees who started and who gave up, not only
+who sent answers. `survey.js` posts one event per action to the track route:
+
+| `kind` | When | `detail` |
+| --- | --- | --- |
+| `view` | the page loaded (open, scheduled or closed) | empty |
+| `start` | the first question was focused or changed | empty |
+| `answer` | a question was first focused or changed | its question id |
+| `submit` | Send was pressed with valid answers | empty |
+| `link` | the ForkMesh credit link was clicked | `forkmesh` |
+| `leave` | the tab was hidden or closed before sending | questions answered, 0 to 99 |
+
+Anything else is `invalid_event` (400), including a question id the survey
+does not have; other body fields are ignored. Like submitting, the route needs
+an allowed origin. `leave` goes out with `navigator.sendBeacon`. Links opened
+with `&preview=1` (the dashboard's Preview and the desktop's Open) send
+nothing.
+
+**Privacy.** No address, answer text or user agent is stored. The visitor key
+is the first 32 hex of `blind("survey-visitor:<survey>:<ip>")`, blinded like
+the respondent key but with its own prefix, so visits cannot be joined to a
+response. In privacy mode it blinds a random id the page keeps in
+`sessionStorage`; with neither, the key is empty and the event counts but
+cannot ping. The apps show only the key's first six characters.
+
+**Limits and retention.** `survey_visits` holds `{kind, detail, visitor_key,
+pinged, created_at}`. One visitor may send 120 events per survey per hour and
+one survey takes 1,500 an hour (`rate_limited`, 429), counted from the table
+as the response limit is. Each survey keeps its newest 1,000 events and none
+older than 90 days, pruned on each `view`; deleting the survey or uninstalling
+removes them.
+
+**Pings.** A visitor's first `view` in a clock hour Pings the creator
+"👀 Someone opened your survey ‘Title’". When that visitor starts answering,
+the same Ping (same dedupe key) becomes "✍️ Someone started your survey
+‘Title’" without a second phone banner. So one visitor makes at most one Ping
+per survey per hour, and one survey at most ten an hour. Pings open
+`/dashboard/surveys?org=<org>&survey=<id>&tab=activity`. `notifyOnVisit`
+turns them off; response Pings follow `notifyOnResponse` as before.
+
+**Summary.** `activity` is `{days: 30, views, visitors, interactions, starts,
+submits, leaves, lastActivityAt, recent}` over the last 30 days;
+`interactions` is every kind but `view` and `leave`, and `recent` is the 50
+newest events as `{kind, detail, label, visitor, at}`, `label` a ready
+sentence such as "Answered “How was it?”". The web detail and the desktop
+page have an Activity tab, the phones show the summary line (see
+[Apps](#apps)), and the org export includes each survey's activity.
 
 ## Data
 
-Two tables, created when an organization installs the plugin and dropped
-when the last install is removed:
+Three tables, created when an organization installs the plugin and dropped
+when the last install is removed (`survey_visits` is described under
+[Activity](#activity)):
 
 - `survey_forms`: one row per survey. Status, counters and dates are plain
   columns; the title, description, thank-you text, questions and settings are
@@ -189,6 +243,10 @@ allows. Messages go to the open dialog's own error slot, as Invoicing does.
 badge, search hits on title, and `exportData()`. In Control Tower the list and
 the open survey sit side by side; in Focus a survey opens as its own page with
 a back button. "Open on the web" opens the dashboard page.
+The detail's Results, Responses and Activity tabs are built the first time
+each one is shown (`fillDetailTab`): `QTabWidget` measures every page for its
+height, so building all three laid out every answer's text on each redraw
+(report #23, [../desktop/diagnostics.md](../desktop/diagnostics.md#rules-from-report-23-2026-11-03)).
 
 **iPhone and Android.** A Business hub entry that appears once one of the
 user's organizations installs Surveys. The route is
@@ -196,3 +254,8 @@ user's organizations installs Surveys. The route is
 it. Both apps can create and edit surveys with every question type, open and
 close them, share the link with the system share sheet, read results and
 responses, delete responses and export the CSV through the share sheet.
+The survey detail shows the [Activity](#activity) summary as one line
+(formatted by `PageActivity` in `PageActivity.swift` and `PageActivity.kt`,
+shared with Booking), and the editor has the `notifyOnVisit` toggle beside
+`notifyOnResponse`. The recent event list is on the web and desktop only, to
+keep the phone detail short.

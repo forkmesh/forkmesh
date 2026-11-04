@@ -24,7 +24,15 @@ and the World. Part of [the App docs](README.md).
   (`_account_key_revoked`: owner signing keys, signed admin requests,
   heartbeat, finalize, rotate as the old or the new key), and a later desktop
   login replaces it. So revoking a stolen first desktop untrusts its key, and
-  it cannot rotate to a successor the owner cannot see.
+  it cannot rotate to a successor the owner cannot see. The key also comes off
+  every node this account owns, because a node record that kept it would still
+  accept its pushes, rotations and link grants; the owner relinks the node from
+  a new desktop.
+- A password reset or recovery-code reset also revokes every device key except
+  the account's primary key and its nodes' keys, and removes its SSH keys
+  (`_account_revoke_other_keys`), because someone who once had the password may
+  have bound their own key. The primary and node keys stay so a person who
+  forgot their password does not lose their identity.
 - Every other check that trusts the primary key reads it through
   `_trusted_primary_pubkey`, which answers "" when the key's device row is
   revoked or disabled: `_owner_pubkey` (private-repo view tokens and every
@@ -59,6 +67,46 @@ and the World. Part of [the App docs](README.md).
   `GET /api/accounts/devices`, `POST /api/accounts/devices/check`,
   `POST /api/accounts/devices/revoke-all`, `DELETE /api/accounts/devices/<id>`,
   `POST /api/accounts/logout`.
+
+## Desktop sessions from the account key
+
+A desktop signs in on launch with its Ed25519 key, not a password, so it had
+no session, and features that need one (an embedded dashboard page, the user
+status, runners) told a signed-in person to sign in.
+`POST /api/accounts/desktop-session` (`_account_desktop_session`) gives it one:
+
+- Body `nodeName`, `pubkey`, `ts`, `sig`, where `sig` signs
+  `forkmesh-desktop-session-v1\n<account>\n<pubkey>\n<ts>`; `ts` within
+  `LOGIN_MAX_SKEW_MS`.
+- The key must be one of the account's signing keys
+  (`_account_signing_pubkeys`: the primary key or an enabled `owner_sign`
+  device) and not revoked; user accounts only, like signed package requests.
+- An admin or two-factor account needs the primary key, the same bar as
+  signed admin requests (`_admin_authorized`), so a session never reaches
+  further than the key already could.
+- One use per signature: the request is recorded in `sensitive_audit_log`
+  and a replay is refused.
+- The session is tied to the key's `account_devices` row, and the device's
+  earlier sessions are revoked first, so relaunching does not use up the
+  20-session limit or push out browser sessions. Revoking the device revokes
+  it. No cookie is set.
+
+The desktop calls it after a key sign-in (`ensureAccountSession`,
+`desktop/src/MainWindowAccounts.cpp`); see
+[package modules](../desktop/package-modules.md#checking-sign-in). Tests:
+`app/tests/test_desktop_session.py`.
+
+## Guessing budgets stop correct guesses too
+
+A wrong password charges a source budget and a source+name budget. Once the
+source+name budget is spent, `_account_login` and `_password_git_account` answer
+429 before checking the password, so a correct guess looks like a wrong one.
+The budget belongs to the source, so a stranger cannot lock someone out by
+naming them. A source's own budget refuses correct passwords only past
+`LOGIN_SOURCE_HARD_FAILS` failures, so a few typos in a shared office do not
+block everyone there, while spraying many accounts from one address stops.
+A request with no client address metadata has only a name budget, so it stays
+unchecked until the password is verified.
 
 ## Password checks cost the same for unknown accounts
 
@@ -154,15 +202,6 @@ digits, 30 seconds); other accounts may enroll optionally.
     answer is `bad_totp` and send it as `totp`; the dashboard also sends its
     bearer token when it is not in cookie mode, so the own-session waiver
     applies there too.
-- Login refuses with 429 while the caller's source key or source+name key is
-  locked, even for the correct password, until the lock expires
-  (`_login_source_locked_until`, checked before the password). An attacker
-  can only lock the budgets of its own address, so the real user, signing in
-  from anywhere else, is never locked out. A request with no client address
-  falls back to the account-wide `login-local:` key, and that key, like
-  `login-totp:<name>`, still never refuses a correct password. Before
-  2026-11-01 no lock refused a correct password, so a locked attacker only saw
-  a different error code and kept guessing.
 - Address budgets charge an IPv6 address by its /64 (`_client_source_bucket`),
   the smallest block one customer is routed, so rotating addresses inside it
   buys no new guesses: login, signup, the signup backup check, node

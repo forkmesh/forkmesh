@@ -62,6 +62,7 @@ QString suggestionBody(const SuggestRequest &request, const QString &slug,
 
 int permissionRank(const QString &modeLabel, int unknownRank);
 bool messageAllowed(const QString &senderMode, const QString &targetMode);
+QString cappedAgentMode(const QString &wanted, const QString &callerMode);
 QString messageEnvelope(int senderId, const QString &senderTitle, const QString &text);
 QString messageLead(int senderId, const QString &senderTitle);
 

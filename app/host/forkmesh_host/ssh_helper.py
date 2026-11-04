@@ -182,8 +182,11 @@ async def keyscan(request, writer):
             stderr=asyncio.subprocess.DEVNULL)
         output, _ = await asyncio.wait_for(process.communicate(),
                                            KEYSCAN_TIMEOUT)
-    except (OSError, asyncio.TimeoutError):
+    except asyncio.TimeoutError:
         await send(writer, {"error": "no answer"})
+        return
+    except OSError:
+        await send(writer, {"error": "keyscan failed"})
         return
     keys = []
     for line in output.decode("utf-8", "replace").splitlines():

@@ -1,5 +1,6 @@
-// The account's markdown notes (`/api/notes`), one note's editor, its history sheet and its share
-// sheet. State: FMTools' NotesListModel, NoteEditorModel, NoteHistoryModel and NoteShareModel.
+// The account's markdown notes (`/api/notes`), one note's editor, its History · Activity · Chat sheet
+// and its share sheet. State: FMTools' NotesListModel, NoteEditorModel, NoteHistoryModel,
+// NoteActivityModel, NoteChatModel and NoteShareModel.
 
 import FMAccount
 import FMApi
@@ -410,7 +411,6 @@ struct NoteEditorScreen: View {
     @State private var notice: FmNotice?
     @State private var confirmDelete: Bool = false
     @State private var confirmDiscard: Bool = false
-    @State private var history: ToolsSheet<NoteHistoryModel>?
     @State private var share: ToolsSheet<NoteShareModel>?
     @State private var exportingPdf: Bool = false
 
@@ -439,6 +439,7 @@ struct NoteEditorScreen: View {
                 await model.recordView()
             }
             .task(id: model.comments?.noteId) { await model.comments?.load() }
+            .task(id: model.chat?.noteId) { await model.chat?.load() }
             .onChange(of: model.title) { (_: String, _: String) in model.edited() }
             .onChange(of: model.markdown) { (_: String, _: String) in model.edited() }
             .onDisappear {
@@ -464,10 +465,12 @@ struct NoteEditorScreen: View {
                     dismiss()
                 }
             }
-            .sheet(item: $history) { (box: ToolsSheet<NoteHistoryModel>) in
-                NoteHistorySheet(model: box.value) { (restored: JSONObject) in
-                    history = nil
-                    apply(model.applyRestored(restored))
+            .sheet(isPresented: liveShown(model)) {
+                if let history = model.history, let activity = model.activity, let chat = model.chat, let tab = model.liveTab {
+                    NoteLiveSheet(editor: model, history: history, activity: activity, chat: chat, tab: tab) { (restored: JSONObject, version: Int) in
+                        model.showLive(nil)
+                        apply(model.applyRestored(restored, version: version))
+                    }
                 }
             }
             .sheet(item: $share, onDismiss: {
@@ -483,6 +486,16 @@ struct NoteEditorScreen: View {
                     NoteCommentsSheet(editor: model, comments: comments)
                 }
             }
+    }
+
+    private func liveShown(_ model: NoteEditorModel) -> Binding<Bool> {
+        Binding<Bool>(
+            get: { model.liveTab != nil },
+            set: { (shown: Bool) in
+                if !shown {
+                    model.showLive(nil)
+                }
+            })
     }
 
     private func commentsShown(_ model: NoteEditorModel) -> Binding<Bool> {
@@ -507,6 +520,9 @@ struct NoteEditorScreen: View {
             }
             if let comments = model.comments {
                 NoteCommentsButton(comments: comments, onPressed: { model.commentsOpen = true })
+            }
+            if let chat = model.chat {
+                NoteChatButton(chat: chat, onPressed: { model.showLive(.chat) })
             }
             if model.showsMenu {
                 menu(model)
@@ -544,9 +560,9 @@ struct NoteEditorScreen: View {
     private func choose(_ value: String, _ model: NoteEditorModel) {
         switch value {
         case "history":
-            if let sheet = model.historyModel() {
-                history = ToolsSheet(sheet)
-            }
+            model.showLive(.history)
+        case "activity":
+            model.showLive(.activity)
         case "share":
             if let sheet = model.shareModel() {
                 share = ToolsSheet(sheet)
@@ -744,6 +760,16 @@ private struct NoteEditorBody: View {
                         model.commentOnSelection()
                     })
                     .accessibilityIdentifier("note-comment-selection")
+                    NoteReactionMenu(onPick: { (emoji: String) in
+                        Task { report(await model.reactOnSelection(emoji)) }
+                    }) {
+                        FmButtonLabel(label: NoteReactions.react, icon: "add_reaction_outlined", color: fm.accent, role: .labelLarge, busy: false)
+                            .padding(.horizontal, FmSpace.x3)
+                            .frame(minHeight: 32)
+                    }
+                    .disabled(model.selectedQuote == nil)
+                    .opacity(model.selectedQuote == nil ? 0.38 : 1)
+                    .accessibilityIdentifier("note-react-selection")
                 }
             }
         }
@@ -753,10 +779,11 @@ private struct NoteEditorBody: View {
     private var editor: some View {
         ZStack(alignment: .topLeading) {
             NoteTextView(
-                text: $model.markdown, editable: model.canEdit, highlight: model.highlightRange,
+                text: $model.markdown, editable: model.canEdit, highlight: model.highlightRange, marks: model.reactionMarks,
                 request: model.selectionRequest, canComment: model.canComment,
                 onSelect: { (range: Range<Int>) in model.selectionChanged(range) },
-                onComment: { model.commentOnSelection() })
+                onComment: { model.commentOnSelection() },
+                onReact: model.canComment ? { (emoji: String) in Task { report(await model.reactOnSelection(emoji)) } } : nil)
             if model.markdown.isEmpty {
                 Text("Write in markdown…")
                     .fmMono(size: FmType.small, color: fm.textTertiary)
@@ -773,7 +800,9 @@ private struct NoteEditorBody: View {
 
     private var preview: some View {
         ScrollView {
-            NotePreview(markdown: model.markdown)
+            NotePreview(
+                markdown: model.markdown, reactions: model.comments?.reactionGroups(markdown: model.markdown) ?? [],
+                onReactions: model.comments == nil ? nil : { model.commentsOpen = true })
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(FmSpace.x3)
         }
@@ -889,6 +918,21 @@ struct NotePreview: View {
     @Environment(\.fmPalette) private var fm
     let markdown: String
     var document: Bool = true
+    var reactions: [NoteReactionGroup] = []
+    var onReactions: (() -> Void)? = nil
+
+    private func placed(_ items: [NotePreviewItem]) -> [[NoteReactionGroup]] {
+        guard reactions.contains(where: { (group: NoteReactionGroup) in !group.whole }) else {
+            return Array(repeating: [], count: items.count)
+        }
+        let probes: [String?] = items.map { (item: NotePreviewItem) -> String? in
+            if case let .block(block) = item {
+                return NoteReactions.probe(block)
+            }
+            return nil
+        }
+        return NoteReactions.placed(reactions, starts: NoteReactions.blockStarts(probes, in: markdown))
+    }
 
     private var items: [NotePreviewItem] {
         let parts: [NoteDocumentPart] = document ? NoteDocument.parts(markdown) : [.markdown(markdown)]
@@ -908,6 +952,7 @@ struct NotePreview: View {
 
     var body: some View {
         let items: [NotePreviewItem] = self.items
+        let groups: [[NoteReactionGroup]] = placed(items)
         VStack(alignment: .leading, spacing: FmSpace.x2) {
             if items.isEmpty {
                 Text("Nothing written yet.")
@@ -915,6 +960,9 @@ struct NotePreview: View {
             }
             ForEach(Array(items.enumerated()), id: \.offset) { (pair: (offset: Int, element: NotePreviewItem)) in
                 item(pair.element)
+                if !groups[pair.offset].isEmpty {
+                    NoteReactionSummary(groups: groups[pair.offset], onPressed: onReactions)
+                }
             }
         }
         .textSelection(.enabled)
@@ -995,28 +1043,157 @@ struct NotePreview: View {
     }
 }
 
-/// Stored versions, newest first. Restoring writes the old text as a new version.
-private struct NoteHistorySheet: View {
+struct NoteChatButton: View {
     @Environment(\.fmPalette) private var fm
-    @Bindable var model: NoteHistoryModel
-    let onRestored: (JSONObject) -> Void
+    let chat: NoteChatModel
+    let onPressed: () -> Void
+
+    var body: some View {
+        FmIconButton(label: chat.buttonLabel, onPressed: onPressed) {
+            FmIcon("forum_outlined", size: 22, tone: .primary)
+                .overlay(alignment: .topTrailing) {
+                    if !chat.badge.isEmpty {
+                        Text(chat.badge)
+                            .fmText(.labelSmall, color: fm.onPrimary, tabular: true)
+                            .padding(.horizontal, 4)
+                            .frame(minWidth: 16, minHeight: 16)
+                            .background(fm.accent)
+                            .clipShape(Capsule())
+                            .offset(x: 8, y: -6)
+                    }
+                }
+        }
+        .accessibilityIdentifier("note-chat")
+    }
+}
+
+private struct NoteLiveSheet: View {
+    @Environment(\.fmPalette) private var fm
+    let editor: NoteEditorModel
+    let history: NoteHistoryModel
+    let activity: NoteActivityModel
+    let chat: NoteChatModel
+    let tab: NoteLiveTab
+    let onRestored: (JSONObject, Int) -> Void
     @State private var notice: FmNotice?
+    @State private var pendingRestore: Int?
+    @State private var pendingDelete: NoteChatMessage?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            FmPanelHeader(title: NoteHistoryModel.title)
+            FmPanelHeader(title: tab.label, subtitle: subtitle)
+            FmSegmentTabBar(tabs: tabs, index: NoteLiveTab.allCases.firstIndex(of: tab) ?? 0) { (index: Int) in
+                notice = nil
+                editor.showLive(NoteLiveTab.allCases[index])
+            }
+            .accessibilityIdentifier("note-live-tabs")
             if notice != nil {
                 FmNoticeLine($notice)
                     .padding(.horizontal, FmSpace.x4)
             }
-            content
+            switch tab {
+            case .history:
+                NoteHistoryTab(model: history, onNotice: { (next: FmNotice) in notice = next }, onRestore: { (version: Int) in
+                    pendingRestore = version
+                })
+            case .activity:
+                NoteActivityTab(model: activity)
+            case .chat:
+                NoteChatTab(model: chat, onNotice: { (next: FmNotice?) in notice = next }, onDelete: { (message: NoteChatMessage) in
+                    pendingDelete = message
+                })
+            }
         }
-        .task { await model.load() }
+        .task { await history.load() }
+        .task { await activity.load() }
         .fmSheetStyle(fitsContent: false)
+        .fmDialog(isPresented: restoreShown) {
+            restoreDialog
+        }
+        .fmDialog(isPresented: deleteShown) {
+            deleteDialog
+        }
     }
 
-    @ViewBuilder private var content: some View {
-        if let versions = model.versions {
+    private var subtitle: String? {
+        switch tab {
+        case .history:
+            return history.versions.map { (list: [JSONObject]) -> String in
+                NoteActivity.count(list.count, "saved version", "saved versions")
+            }
+        case .activity:
+            return activity.loaded ? activity.summary : nil
+        case .chat:
+            return chat.loaded ? NoteActivity.count(chat.messages.count, "message", "messages") : nil
+        }
+    }
+
+    private var tabs: [FmSegmentTab] {
+        NoteLiveTab.allCases.map { (item: NoteLiveTab) -> FmSegmentTab in
+            FmSegmentTab(label: item.label, count: item == .chat && chat.unread > 0 ? chat.unread : nil)
+        }
+    }
+
+    private var restoreShown: Binding<Bool> {
+        Binding<Bool>(get: { pendingRestore != nil }, set: { (shown: Bool) in if !shown { pendingRestore = nil } })
+    }
+
+    private var deleteShown: Binding<Bool> {
+        Binding<Bool>(get: { pendingDelete != nil }, set: { (shown: Bool) in if !shown { pendingDelete = nil } })
+    }
+
+    @ViewBuilder private var restoreDialog: some View {
+        if let version = pendingRestore {
+            let words: ToolsConfirmation = history.restoreConfirmation(version)
+            FmConfirmDialog(
+                title: words.title, message: words.message, confirmLabel: words.confirm, destructive: words.destructive,
+                onCancel: { pendingRestore = nil },
+                onConfirm: {
+                    pendingRestore = nil
+                    Task {
+                        let result: (note: JSONObject?, failure: String?) = await history.restore(version)
+                        if let note = result.note {
+                            onRestored(note, version)
+                        } else if let failure = result.failure {
+                            notice = FmNotice.error(failure)
+                        }
+                    }
+                })
+        }
+    }
+
+    @ViewBuilder private var deleteDialog: some View {
+        if let message = pendingDelete {
+            let words: ToolsConfirmation = chat.deleteConfirmation(message)
+            FmConfirmDialog(
+                title: words.title, message: words.message, confirmLabel: words.confirm, destructive: words.destructive,
+                onCancel: { pendingDelete = nil },
+                onConfirm: {
+                    pendingDelete = nil
+                    Task {
+                        let outcome: ToolsOutcome = await chat.delete(message)
+                        notice = outcome.notice.map { (next: ToolsNotice) -> FmNotice in FmNotice(next.message, isError: next.isError) }
+                    }
+                })
+        }
+    }
+}
+
+private struct NoteHistoryTab: View {
+    @Environment(\.fmPalette) private var fm
+    @Bindable var model: NoteHistoryModel
+    let onNotice: (FmNotice) -> Void
+    let onRestore: (Int) -> Void
+
+    var body: some View {
+        if let shown = model.shown {
+            versionView(shown)
+        } else if let versions = model.versions {
+            if versions.isEmpty {
+                Text(NoteHistoryModel.emptyMessage)
+                    .fmText(.bodyMedium, color: fm.textSecondary)
+                    .padding(FmSpace.x4)
+            }
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(Array(versions.enumerated()), id: \.offset) { (pair: (offset: Int, element: JSONObject)) in
@@ -1025,7 +1202,10 @@ private struct NoteHistorySheet: View {
                         }
                         FmListRow(
                             title: model.title(pair.element), subtitle: model.subtitle(pair.element),
-                            trailing: trailing(pair.element), showChevron: false)
+                            trailing: trailing(pair.element),
+                            onTap: model.busy ? nil : { view(model.version(pair.element)) },
+                            showChevron: false)
+                            .accessibilityIdentifier("note-version-\(model.version(pair.element))")
                     }
                 }
             }
@@ -1036,24 +1216,204 @@ private struct NoteHistorySheet: View {
         }
     }
 
-    private func trailing(_ entry: JSONObject) -> AnyView? {
-        if model.isCurrent(entry) {
-            return FmStatusBadge(label: "Current", color: fm.accent).fmAny
+    private func view(_ version: Int) {
+        Task {
+            if let failure = await model.view(version) {
+                onNotice(FmNotice.error(failure))
+            }
         }
-        if !model.canRestore {
-            return nil
-        }
+    }
+
+    private func trailing(_ entry: JSONObject) -> AnyView {
         let version: Int = model.version(entry)
-        return FmTextButton("Restore", onPressed: model.busy ? nil : {
-            Task {
-                let result: (note: JSONObject?, failure: String?) = await model.restore(version)
-                if let note = result.note {
-                    onRestored(note)
-                } else if let failure = result.failure {
-                    notice = FmNotice.error(failure)
+        return HStack(spacing: FmSpace.x1) {
+            FmTextButton("View", minHeight: 36, onPressed: model.busy ? nil : { view(version) })
+            if model.isCurrent(entry) {
+                FmStatusBadge(label: "Current", color: fm.accent)
+            } else if model.canRestore {
+                FmTextButton("Restore", minHeight: 36, onPressed: model.busy ? nil : { onRestore(version) })
+            }
+        }.fmAny
+    }
+
+    private func versionView(_ shown: NoteVersionSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: FmSpace.x2) {
+            HStack(spacing: FmSpace.x2) {
+                FmIconButton(icon: "arrow_back", label: "Back to all versions", onPressed: { model.closeView() })
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(model.viewTitle(shown))
+                        .fmText(.titleSmall)
+                    Text(model.viewSubtitle(shown))
+                        .fmText(.bodySmall, color: fm.textTertiary)
+                }
+                Spacer(minLength: 0)
+                if model.restorable(shown.version) {
+                    FmTextButton("Restore", onPressed: model.busy ? nil : { onRestore(shown.version) })
+                        .accessibilityIdentifier("note-version-restore")
                 }
             }
-        }).fmAny
+            .padding(.horizontal, FmSpace.x2)
+            ScrollView {
+                VStack(alignment: .leading, spacing: FmSpace.x2) {
+                    Text(shown.heading)
+                        .fmText(.titleLarge)
+                        .fixedSize(horizontal: false, vertical: true)
+                    NotePreview(markdown: shown.markdown)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, FmSpace.x4)
+                .padding(.bottom, FmSpace.x5)
+            }
+        }
+        .accessibilityIdentifier("note-version-view")
+    }
+}
+
+private struct NoteActivityTab: View {
+    @Environment(\.fmPalette) private var fm
+    let model: NoteActivityModel
+
+    var body: some View {
+        if model.loaded {
+            if model.entries.isEmpty {
+                Text(NoteActivity.emptyMessage)
+                    .fmText(.bodyMedium, color: fm.textSecondary)
+                    .padding(FmSpace.x4)
+            }
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(Array(model.entries.enumerated()), id: \.offset) { (pair: (offset: Int, element: NoteActivityEntry)) in
+                        if pair.offset > 0 {
+                            FmRowDivider(indent: 60)
+                        }
+                        row(pair.element)
+                    }
+                }
+            }
+            .accessibilityIdentifier("note-activity-list")
+        } else if model.error.isEmpty {
+            FmSkeletonList(rows: 6)
+        } else {
+            FmEmptyState(icon: "history", title: "Activity unavailable", message: model.error)
+        }
+    }
+
+    private func row(_ entry: NoteActivityEntry) -> some View {
+        let line: String = model.line(entry)
+        let time: String = model.when(entry)
+        return FmListRow(
+            title: line,
+            titleView: Text(line)
+                .fmText(.bodyMedium)
+                .fixedSize(horizontal: false, vertical: true)
+                .fmAny,
+            subtitle: time,
+            leading: FmIconTile(icon: entry.icon, size: 32, iconSize: 17).fmAny,
+            showChevron: false,
+            minHeight: 52)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(time.isEmpty ? line : "\(line), \(time)"))
+    }
+}
+
+private struct NoteChatTab: View {
+    @Environment(\.fmPalette) private var fm
+    @Bindable var model: NoteChatModel
+    let onNotice: (FmNotice?) -> Void
+    let onDelete: (NoteChatMessage) -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ScrollViewReader { (proxy: ScrollViewProxy) in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: FmSpace.x3) {
+                        content
+                    }
+                    .padding(.horizontal, FmSpace.x4)
+                    .padding(.vertical, FmSpace.x3)
+                }
+                .onAppear { scrollToEnd(proxy) }
+                .onChange(of: model.messages.count) { (_: Int, _: Int) in scrollToEnd(proxy) }
+            }
+            composer
+        }
+    }
+
+    private func scrollToEnd(_ proxy: ScrollViewProxy) {
+        guard let last = model.messages.last?.id else {
+            return
+        }
+        DispatchQueue.main.async {
+            proxy.scrollTo(last, anchor: .bottom)
+        }
+    }
+
+    @ViewBuilder private var content: some View {
+        if !model.loaded && model.error.isEmpty {
+            FmSkeletonList(rows: 3)
+        } else if !model.loaded {
+            FmEmptyState(icon: "forum_outlined", title: "Chat unavailable", message: model.error)
+        } else if model.messages.isEmpty {
+            Text(NoteChat.emptyMessage)
+                .fmText(.bodyMedium, color: fm.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.vertical, FmSpace.x3)
+        }
+        ForEach(model.messages) { (message: NoteChatMessage) in
+            row(message)
+                .id(message.id)
+        }
+    }
+
+    private func row(_ message: NoteChatMessage) -> some View {
+        HStack(alignment: .top, spacing: FmSpace.x2) {
+            Text(NoteAvatar.initials(message.author.isEmpty ? "?" : message.author))
+                .fmText(.labelSmall, color: fm.textPrimary)
+                .frame(width: 28, height: 28)
+                .background(fm.bgRaised)
+                .clipShape(Circle())
+                .overlay { Circle().strokeBorder(fm.border, lineWidth: 1) }
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .firstTextBaseline, spacing: FmSpace.x1) {
+                    Text(model.authorLabel(message))
+                        .fmText(.labelMedium)
+                    Text(model.when(message))
+                        .fmText(.bodySmall, color: fm.textTertiary)
+                    Spacer(minLength: 0)
+                    if model.canDelete(message) {
+                        FmIconButton(icon: "delete_outline", label: "Delete message", size: 18, color: fm.textTertiary, onPressed: model.busy ? nil : {
+                            onDelete(message)
+                        })
+                        .accessibilityIdentifier("note-chat-delete-\(message.id)")
+                    }
+                }
+                Text(message.body)
+                    .fmText(.bodyMedium)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private var composer: some View {
+        HStack(alignment: .bottom, spacing: FmSpace.x1) {
+            FmTextField(text: $model.draft, hint: NoteChat.hint, multiline: true)
+                .accessibilityIdentifier("note-chat-draft")
+            FmIconButton(icon: "send", label: "Send", size: 20, color: fm.accent, onPressed: model.canSend ? send : nil)
+                .accessibilityIdentifier("note-chat-send")
+        }
+        .padding(.horizontal, FmSpace.x4)
+        .padding(.top, FmSpace.x2)
+        .padding(.bottom, FmSpace.x4)
+    }
+
+    private func send() {
+        Task {
+            let outcome: ToolsOutcome = await model.post()
+            onNotice(outcome.notice.map { (next: ToolsNotice) -> FmNotice in FmNotice(next.message, isError: next.isError) })
+        }
     }
 }
 

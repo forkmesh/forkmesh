@@ -69,6 +69,7 @@ RELEASE_FILES = ("marketplace/catalog.json", "marketplace/manifest.schema.json",
 RELEASE_GLOBS = ("tools/next_*.py",)
 ROLL_PREFIXES = ("server/", "deploy/core/")
 ROLL_FILES = ("tools/mirror_gateway.py",)
+WEBSITE_PREFIXES = ("docs/",)
 RUNNER_ROLL_PREFIXES = ("server/",)
 RUNNER_ROLL_RETRY_SECONDS = 600
 RUNNERS_BUSY_EXIT = 3
@@ -162,7 +163,7 @@ WEBSITE_HEADER = "x-forkmesh-deploy-fingerprint"
 WEBSITE_TIMEOUT = 900
 
 
-WEBSITE_TREES = ("www", "marketplace")
+WEBSITE_TREES = ("www", "marketplace", "docs")
 
 
 def website_fingerprint(git, target) -> str:
@@ -199,10 +200,10 @@ def classify(paths) -> dict:
 
 def workflow_path_patterns(depth=PATH_DEPTH) -> list:
     patterns = []
-    for prefix in RELEASE_PREFIXES + ROLL_PREFIXES:
+    prefixes = RELEASE_PREFIXES + ROLL_PREFIXES + WEBSITE_PREFIXES
+    for prefix in prefixes:
         base = prefix.rstrip("/")
-        if any(prefix != other and prefix.startswith(other)
-               for other in RELEASE_PREFIXES + ROLL_PREFIXES):
+        if any(prefix != other and prefix.startswith(other) for other in prefixes):
             continue
         patterns += [base + "/*" * level for level in range(1, depth + 1)]
     return patterns + list(RELEASE_FILES) + list(ROLL_FILES) + [
@@ -1336,6 +1337,12 @@ class Pipeline:
                 self.say("catch-up: %s: FAILED: %s" % (name, error))
         return outcome
 
+    def website_env(self, bin_dir, **extra) -> dict:
+        home = self.scratch() / "website-home"
+        home.mkdir(parents=True, exist_ok=True)
+        return {"PATH": "%s:/usr/local/bin:/usr/bin:/bin" % bin_dir, "HOME": str(home),
+                "LANG": "C.UTF-8", "WRANGLER_SEND_METRICS": "false", **extra}
+
     def website(self, target, result):
         try:
             wanted = website_fingerprint(self.git, target)
@@ -1348,17 +1355,23 @@ class Pipeline:
             bin_dir = node22_bin()
             if bin_dir is None:
                 raise ToolError("Node 22 (~/.nvm/versions/node/v22*) is needed for wrangler")
-            worktree = self.worktree(target)
-            env = dict(os.environ)
-            env["PATH"] = "%s:%s" % (bin_dir, env.get("PATH", ""))
-            env["CLOUDFLARE_API_TOKEN"] = common.credential("cloudflare.env",
-                                                            "CLOUDFLARE_API_TOKEN")
-            env["CLOUDFLARE_ACCOUNT_ID"] = common.credential("cloudflare.env",
-                                                             "CLOUDFLARE_ACCOUNT_ID")
-            code = stream([str(bin_dir / "npx"), "--yes", "wrangler", "deploy",
+            www = Path(self.worktree(target)) / "www"
+            code = stream([str(bin_dir / "npm"), "ci", "--ignore-scripts", "--no-audit",
+                           "--no-fund"], self.say, cwd=str(www),
+                          env=self.website_env(bin_dir),
+                          timeout=WEBSITE_TIMEOUT, popen=self.popen)
+            if code != 0:
+                raise ToolError("npm ci exited %d" % code)
+            env = self.website_env(
+                bin_dir,
+                CLOUDFLARE_API_TOKEN=common.credential("cloudflare.env",
+                                                       "CLOUDFLARE_API_TOKEN"),
+                CLOUDFLARE_ACCOUNT_ID=common.credential("cloudflare.env",
+                                                        "CLOUDFLARE_ACCOUNT_ID"))
+            code = stream([str(www / "node_modules" / ".bin" / "wrangler"), "deploy",
                            "--config", "wrangler.production.toml",
                            "--var", "DEPLOY_FINGERPRINT:%s" % wanted],
-                          self.say, cwd=str(Path(worktree) / "www"), env=env,
+                          self.say, cwd=str(www), env=env,
                           timeout=WEBSITE_TIMEOUT, popen=self.popen)
             if code != 0:
                 raise ToolError("wrangler deploy exited %d" % code)
@@ -1429,7 +1442,7 @@ class Pipeline:
             self.say("gate 1: " + result["message"])
             return result
         if not changed["release"] and self.mode == "auto":
-            result.update(ok=True, message="no served-stack change between the deployed "
+            result.update(ok=True, message="no core-node change between the deployed "
                           "%s and %s" % (base[:12], rev))
             self.say("gate 1: " + result["message"])
             return result

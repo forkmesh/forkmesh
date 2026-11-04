@@ -55,6 +55,7 @@
               [data-view="crm"] .crm-person { display: grid; justify-items: center; gap: .25rem; min-width: 0; padding: .75rem .5rem; border: 1px solid rgb(var(--dashboard-border-rgb)); border-radius: 8px; background: rgb(var(--dashboard-card-rgb)); text-align: center; cursor: pointer; }
               [data-view="crm"] .crm-person:hover { border-color: rgb(var(--dashboard-foreground-rgb) / .35); }
               [data-view="crm"] .crm-person:focus-visible { outline: 2px solid rgb(var(--dashboard-ring-rgb)); outline-offset: 1px; }
+              [data-view="crm"] [data-crm-group-people][aria-pressed="true"],
               [data-view="crm"] [data-crm-people-toggle][aria-pressed="true"] { background: rgb(var(--dashboard-foreground-rgb) / .08); font-weight: 600; }
               [data-view="crm"] .crm-hue-1 { background: rgb(125 138 156 / .3); }
               [data-view="crm"] .crm-hue-2 { background: rgb(56 139 253 / .26); }
@@ -191,6 +192,7 @@
                       <button data-crm-users-import type="button" class="crm-menu-item hidden"><i data-lucide="user-round-plus" class="h-3.5 w-3.5 text-muted-foreground"></i><span data-crm-users-import-label>Import ForkMesh users</span></button>
                       <button data-crm-lists-open data-crm-requires-install type="button" title="Every list and pipeline list: its file, contacts, columns and who it is shared with" class="crm-menu-item hidden"><i data-lucide="list" class="h-3.5 w-3.5 text-muted-foreground"></i>Lists</button>
                       <button data-crm-export data-crm-requires-install type="button" class="crm-menu-item hidden"><i data-lucide="download" class="h-3.5 w-3.5 text-muted-foreground"></i>Export CSV</button>
+                      <button data-crm-open-spreadsheet data-crm-requires-install type="button" title="Edit the open list's contacts in a spreadsheet linked to the CRM" class="crm-menu-item hidden"><i data-lucide="sheet" class="h-3.5 w-3.5 text-muted-foreground"></i>Open list in spreadsheet</button>
                       <button data-crm-account-evidence data-crm-requires-install type="button" title="ForkMesh administrators: record which contacts have a ForkMesh account, pay or are on a trial" class="crm-menu-item hidden"><i data-lucide="badge-check" class="h-3.5 w-3.5 text-muted-foreground"></i>Check ForkMesh accounts</button>
                       <button data-crm-bulk-edit="owner" data-crm-requires-install type="button" class="crm-menu-item hidden"><i data-lucide="user-check" class="h-3.5 w-3.5 text-muted-foreground"></i>Assign shown contacts…</button>
                       <button data-crm-bulk-edit="addTags" data-crm-requires-install type="button" class="crm-menu-item hidden"><i data-lucide="tag" class="h-3.5 w-3.5 text-muted-foreground"></i>Tag shown contacts…</button>
@@ -219,6 +221,7 @@
                   <button data-crm-contact-new data-crm-requires-install type="button" class="hidden h-8 inline-flex items-center gap-1.5 rounded-md bg-cta px-3 text-xs font-semibold text-cta-foreground hover:bg-cta/90"><i data-lucide="user-plus" class="h-3.5 w-3.5"></i>Add contact</button>
                 </div>
               </header>
+              <button data-crm-leaderboard hidden type="button" title="Members with the most emails, outreach and toots over the last 7 days: open the Team leaderboard" class="mb-2 block max-w-full truncate text-left text-xs text-muted-foreground hover:text-foreground" style="font-variant-numeric:tabular-nums"></button>
 
               <div data-crm-zoho-bar role="status" aria-live="polite" class="mb-2 hidden rounded-md border border-border bg-card px-3 py-1.5 text-xs">
                 <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -263,7 +266,9 @@
                   <button data-crm-section-tab="contacts" id="crm-section-tab-contacts" type="button" role="tab" aria-controls="crm-section-contacts" aria-selected="true" hidden class="crm-side-item">Contacts<span data-crm-section-count="contacts" class="crm-side-count">0</span></button>
                   <button data-crm-section-tab="inbox" id="crm-section-tab-inbox" type="button" role="tab" aria-controls="crm-section-inbox" aria-selected="false" tabindex="-1" class="crm-side-item"><i data-lucide="inbox"></i><span class="crm-side-label">Inbox</span><span data-crm-section-count="inbox" class="crm-side-count">0</span></button>
                   <button data-crm-section-tab="outreach" id="crm-section-tab-outreach" type="button" role="tab" aria-controls="crm-section-outreach" aria-selected="false" tabindex="-1" class="crm-side-item"><i data-lucide="send"></i><span class="crm-side-label">Outreach</span></button>
+                  <button data-crm-section-tab="mastodon" id="crm-section-tab-mastodon" type="button" role="tab" aria-controls="crm-section-mastodon" aria-selected="false" tabindex="-1" title="Prepared toots to send one at a time, and which segments reply" class="crm-side-item"><i data-lucide="megaphone"></i><span class="crm-side-label">Mastodon</span></button>
                   <button data-crm-section-tab="team" id="crm-section-tab-team" type="button" role="tab" aria-controls="crm-section-team" aria-selected="false" tabindex="-1" class="crm-side-item"><i data-lucide="chart-column"></i><span class="crm-side-label">Team leaderboard</span></button>
+                  <button data-crm-section-tab="cleanup" id="crm-section-tab-cleanup" type="button" role="tab" aria-controls="crm-section-cleanup" aria-selected="false" tabindex="-1" title="People on more than one list: keep each on one list, with every record merged" class="crm-side-item"><i data-lucide="list-checks"></i><span class="crm-side-label">List cleanup</span></button>
                   <button data-crm-section-tab="zoho" id="crm-section-tab-zoho" type="button" role="tab" aria-controls="crm-section-zoho" aria-selected="false" tabindex="-1" class="crm-side-item"><i data-lucide="at-sign"></i><span class="crm-side-label">My Zoho Mail</span><span data-crm-my-zoho-dot class="crm-side-dot"></span></button>
                 </div>
                 <button data-crm-side-people type="button" aria-pressed="false" title="Everyone whose picture loaded, as a grid" class="crm-side-item"><i data-lucide="contact"></i><span class="crm-side-label">People with pictures</span></button>
@@ -274,6 +279,7 @@
 
               <div data-crm-section="contacts" id="crm-section-contacts" role="tabpanel" aria-labelledby="crm-section-tab-contacts">
                 <div data-crm-next aria-label="Who to contact next: reach out or follow up" hidden class="mb-2 grid gap-2 md:grid-cols-2"></div>
+                <div data-crm-mastodon-banner role="alert" hidden class="fm-flash fm-flash-warning mb-2"><i data-lucide="triangle-alert"></i><div class="fm-flash-body"><p data-crm-mastodon-banner-title class="fm-flash-title"></p><p data-crm-mastodon-banner-text></p></div><div class="fm-flash-actions"><button data-crm-mastodon-banner-action type="button" class="fm-btn fm-btn-sm"></button></div></div>
                 <section class="min-w-0 overflow-hidden rounded-lg border border-border bg-card">
                   <div data-crm-shared-banner class="hidden flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary px-3 py-2 text-xs text-muted-foreground">
                     <span data-crm-shared-banner-text></span>
@@ -306,6 +312,7 @@
                     <select data-crm-table-view aria-label="View" title="The columns the table shows" class="hidden rounded-md border border-border bg-background px-2 text-foreground sm:inline-block"></select>
                     <button data-crm-table-view-save type="button" title="Save these columns as a new view" class="hidden h-8 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs text-foreground hover:bg-secondary disabled:opacity-50">Save view</button>
                     <button data-crm-columns type="button" title="Choose which columns this view shows" class="hidden h-8 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs text-foreground hover:bg-secondary disabled:opacity-50 sm:inline-flex"><i data-lucide="sliders-horizontal" class="h-3.5 w-3.5 text-muted-foreground"></i>Columns</button>
+                    <button data-crm-group-people type="button" aria-pressed="true" title="One row per box: everyone at one company or project folds under the first, with +N to show the rest; click a box's name to open it" class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs text-foreground hover:bg-secondary disabled:opacity-50"><i data-lucide="users" class="h-3.5 w-3.5 text-muted-foreground"></i>Group by box</button>
                     <button data-crm-people-toggle type="button" aria-pressed="false" title="Everyone whose picture loaded, as a grid; the search box filters it" class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs text-foreground hover:bg-secondary disabled:opacity-50"><i data-lucide="contact" class="h-3.5 w-3.5 text-muted-foreground"></i>People</button>
                   </div>
                   <div data-crm-contact-cards class="grid gap-2 p-3 sm:hidden"></div>
@@ -329,7 +336,7 @@
                   <div data-crm-contact-empty class="hidden p-8 text-center text-sm text-muted-foreground">No contacts match this view.</div>
                   <div data-crm-grants-empty class="hidden p-8 text-center text-sm text-muted-foreground">
                     <p>This Grants pipeline is empty. Load the ranked list of grants, funds and credit programs, one row per program with its award, deadline and how to apply.</p>
-                    <button data-crm-grants-load type="button" class="fm-btn fm-btn-sm mt-3"><i data-lucide="download" class="h-3.5 w-3.5 text-muted-foreground"></i><span data-crm-grants-load-label>Load the 100 ranked grants</span></button>
+                    <button data-crm-grants-load type="button" class="fm-btn fm-btn-sm mt-3"><i data-lucide="download" class="h-3.5 w-3.5 text-muted-foreground"></i><span data-crm-grants-load-label>Load the ranked grants</span></button>
                   </div>
                 </section>
               </div>
@@ -397,10 +404,38 @@
               </section>
               </div>
 
+              <div data-crm-section="mastodon" id="crm-section-mastodon" role="tabpanel" aria-labelledby="crm-section-tab-mastodon" hidden>
+              <section data-crm-mastodon class="overflow-hidden rounded-lg border border-border bg-card">
+                <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border p-3">
+                  <div class="min-w-0 flex-1"><h2 class="text-sm font-semibold text-foreground">Mastodon outreach</h2><p data-crm-mastodon-stats class="text-xs text-muted-foreground" style="font-variant-numeric:tabular-nums">Prepared toots to internet-freedom maintainers, sent one at a time.</p></div>
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span data-crm-mastodon-hint role="status" aria-live="polite" class="text-xs text-muted-foreground"></span>
+                    <button data-crm-mastodon-prepare type="button" title="Copy the prompt an agent session starts from to research and write more toots" class="fm-btn fm-btn-sm" disabled>Prepare more</button>
+                  </div>
+                </div>
+                <p data-crm-mastodon-unavailable hidden class="p-6 text-center text-xs text-muted-foreground"></p>
+                <div data-crm-mastodon-body hidden>
+                  <div data-crm-mastodon-queue aria-label="Prepared toots" class="divide-y divide-border"></div>
+                  <p data-crm-mastodon-empty hidden class="p-6 text-center text-xs text-muted-foreground">Nothing prepared to send. Prepare more to have an agent research and write the next toots.</p>
+                  <button data-crm-mastodon-more hidden type="button" class="block w-full border-t border-border px-3 py-2 text-center text-xs text-muted-foreground hover:bg-secondary hover:text-foreground"></button>
+                  <div class="border-t border-border">
+                    <div class="px-3 pb-2 pt-3"><h3 class="text-xs font-semibold uppercase text-muted-foreground">Strategy</h3><p class="text-xs text-muted-foreground">Prepared, sent and answered toots by segment and by ask; the reply rate is replies per toot sent.</p></div>
+                    <div class="overflow-x-auto">
+                      <table class="w-full text-left text-sm" style="font-variant-numeric:tabular-nums">
+                        <thead class="border-y border-border text-xs text-muted-foreground"><tr><th class="px-3 py-1.5 font-semibold">Group</th><th class="px-3 py-1.5 text-right font-semibold">Prepared</th><th class="px-3 py-1.5 text-right font-semibold">Sent</th><th class="px-3 py-1.5 text-right font-semibold">Replied</th><th class="px-3 py-1.5 text-right font-semibold">Reply rate</th></tr></thead>
+                        <tbody data-crm-mastodon-strategy class="divide-y divide-border"></tbody>
+                      </table>
+                    </div>
+                    <p data-crm-mastodon-strategy-empty hidden class="p-4 text-center text-xs text-muted-foreground">No toots prepared yet.</p>
+                  </div>
+                </div>
+              </section>
+              </div>
+
               <div data-crm-section="team" id="crm-section-team" role="tabpanel" aria-labelledby="crm-section-tab-team" hidden>
               <section data-crm-team class="crm-team-viz overflow-hidden rounded-lg border border-border bg-card">
                 <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border p-3">
-                  <div><h2 class="text-sm font-semibold text-foreground">Team activity</h2><p data-crm-team-note class="text-xs text-muted-foreground">Emails logged or sent, founders outreach, and contacts added by each member, by day in your time zone.</p></div>
+                  <div><h2 class="text-sm font-semibold text-foreground">Team activity</h2><p data-crm-team-note class="text-xs text-muted-foreground">Emails logged or sent, founders outreach, Mastodon toots, and contacts added by each member, by day in your time zone.</p></div>
                   <div class="flex flex-wrap items-center gap-2">
                     <div data-crm-team-period role="group" aria-label="Period" class="inline-flex overflow-hidden rounded-md border border-border">
                       <button data-crm-team-period-option="7" type="button" aria-pressed="false" class="crm-layout-option">7 days</button>
@@ -413,7 +448,7 @@
                   <div class="overflow-hidden rounded-md border border-border">
                     <div class="border-b border-border p-3"><h3 class="text-xs font-semibold uppercase text-muted-foreground">Leaderboard</h3></div>
                     <table class="w-full text-left text-sm">
-                      <thead class="border-b border-border bg-secondary text-xs text-muted-foreground"><tr><th class="px-2 py-2 font-semibold">#</th><th class="px-2 py-2 font-semibold">Member</th><th class="px-2 py-2 text-right font-semibold">Emails</th><th class="px-2 py-2 text-right font-semibold">Outreach</th><th class="px-2 py-2 text-right font-semibold">Contacts</th><th class="px-2 py-2 text-right font-semibold">Touches</th></tr></thead>
+                      <thead class="border-b border-border bg-secondary text-xs text-muted-foreground"><tr><th class="px-2 py-2 font-semibold">#</th><th class="px-2 py-2 font-semibold">Member</th><th class="px-2 py-2 text-right font-semibold">Emails</th><th class="px-2 py-2 text-right font-semibold">Outreach</th><th class="px-2 py-2 text-right font-semibold">Toots</th><th class="px-2 py-2 text-right font-semibold">Contacts</th><th class="px-2 py-2 text-right font-semibold">Touches</th></tr></thead>
                       <tbody data-crm-team-board class="divide-y divide-border"></tbody>
                     </table>
                     <div data-crm-team-empty class="hidden p-6 text-center text-xs text-muted-foreground">No activity in this period yet.</div>
@@ -427,6 +462,26 @@
                     <div data-crm-team-table class="hidden max-h-80 overflow-y-auto"></div>
                   </div>
                 </div>
+              </section>
+              </div>
+
+              <div data-crm-section="cleanup" id="crm-section-cleanup" role="tabpanel" aria-labelledby="crm-section-tab-cleanup" hidden>
+              <section data-crm-cleanup class="overflow-hidden rounded-lg border border-border bg-card">
+                <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border p-3">
+                  <div class="min-w-0 flex-1"><h2 class="text-sm font-semibold text-foreground">List cleanup</h2><p data-crm-cleanup-note class="text-xs text-muted-foreground">People who show on more than one list, as one record or as several records of the same person (a shared email address or X account). Click a list to keep them there only: their records merge into one with every field, tag, note and email, and they leave the other lists.</p></div>
+                  <div class="flex flex-wrap items-center gap-2">
+                    <input data-crm-cleanup-search type="search" placeholder="Search name or email" aria-label="Search the people on more than one list" class="h-control rounded-md border border-border bg-background px-2 text-control text-foreground outline-none focus:ring-1 focus:ring-ring" />
+                    <select data-crm-cleanup-list aria-label="Only people on this list" class="h-control rounded-md border border-border bg-background px-2 text-control text-foreground"></select>
+                    <button data-crm-cleanup-keep-all type="button" hidden class="fm-btn fm-btn-sm"></button>
+                  </div>
+                </div>
+                <div class="overflow-x-auto">
+                  <table class="w-full text-left text-sm">
+                    <thead data-crm-cleanup-head class="border-b border-border bg-secondary text-xs text-muted-foreground"></thead>
+                    <tbody data-crm-cleanup-rows class="divide-y divide-border"></tbody>
+                  </table>
+                </div>
+                <p data-crm-cleanup-empty hidden class="p-6 text-center text-xs text-muted-foreground"></p>
               </section>
               </div>
 
@@ -512,6 +567,12 @@
               <div class="p-5">
                 <div class="mb-4 flex items-start justify-between gap-3"><div data-crm-detail-head class="min-w-0 flex-1"></div><button data-crm-dialog-close type="button" class="rounded p-1 text-muted-foreground hover:bg-secondary" aria-label="Close"><i data-lucide="x" class="h-4 w-4"></i></button></div>
                 <div data-crm-detail-body></div>
+              </div>
+            </dialog>
+            <dialog data-crm-box-dialog aria-label="Box" style="max-height:calc(100dvh - 1rem);overflow-y:auto" class="w-full max-w-3xl rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
+              <div class="p-5">
+                <div class="mb-4 flex items-start justify-between gap-3"><div data-crm-box-head class="min-w-0 flex-1"></div><button data-crm-dialog-close type="button" class="rounded p-1 text-muted-foreground hover:bg-secondary" aria-label="Close"><i data-lucide="x" class="h-4 w-4"></i></button></div>
+                <div data-crm-box-body></div>
               </div>
             </dialog>
             <dialog data-crm-zoho-guide-dialog style="max-height:calc(100dvh - 1rem);overflow-y:auto" class="w-full max-w-2xl rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">

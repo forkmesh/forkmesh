@@ -98,6 +98,24 @@ shows no chip. The mirror gateway's `.forkmesh/pulls` listing
 (`tools/mirror_gateway.py`) carries every committed review's
 `(reviewer, state)` in file order so the list can compute it.
 
+## People in the pull request list
+
+Each pull row stacks the avatars of everyone involved, latest first: whoever
+commented or reviewed last is the left face, drawn on top, and the author
+closes the stack unless they spoke since. Hovering the stack lists the names
+in that order. The same listing carries `pullPeople`, `{"<n>": [authorName, ...]}`:
+people are accounts, never the signing key in `author` (one person signs
+from several keys), so an event with no `authorName` adds no one. It is
+built in the same pass as `pullReviews` from every `NNNN-*.md` event whose
+type names a comment or review, latest file first with repeats dropped.
+Only `NNNN-review.md` files count toward `pullReviews`: a comment file
+whose front matter says `type: review` adds its author to `pullPeople`
+and nothing else.
+Comment files are many, so `pullPeople` has its own size check: when they do
+not fit the review bounds the listing leaves `pullPeople` out (rows show the
+author alone) and still carries `pullReviews`. `renderPullRowPeople` in
+`06-repo-content.js` and `pull_people` in `repo_views.py` draw it.
+
 The chip is a summary, not the merge gate. On a protected branch only an
 owner's or admin's approval counts
 ([branch-protection.md](branch-protection.md#approvals)), so a pull approved
@@ -170,6 +188,56 @@ base into the head branch (`update-pull-branch`, `_update_execute_locked`,
   mirror replays it onto the newest base at merge, so the row says it merges
   cleanly and needs no update rather than "N commits behind".
 - A visitor sees the commands to merge the base locally and push.
+
+## Merge from Files changed
+
+A maintainer usually decides while reading the diff, so the Files changed tab
+ends with a merge bar (`renderRepoPullFilesMergeBar`, slot
+`[data-repo-pull-files-merge-slot]`, styles `.fm-merge-files`). It is not a
+second merge implementation: it renders the same `repoPullMergeModel` and the
+same footer as the box (`renderRepoPullMergeFooter`: footer text, merge
+method, *Merge without review*, *Merge pull request*), and its buttons carry
+the same `data-repo-pull-merge` / `data-repo-pull-merge-override` attributes,
+so the one click handler runs `handleRepoPullMerge` with the same pins,
+re-pinning, review rule and owner override. Rows that are not green (changes
+requested, review required, failing or running checks, conflicts, unmet
+rules) are listed above the footer as chips; *Merge details* opens the full
+box on Conversation.
+
+`updateRepoPullMergePanel` repaints both, and `patchRepoPullMutationProgress`
+patches the live progress block in both slots, so the step list, timer and
+result read the same on either tab. Visitors who cannot merge see no bar: the
+diff stays a review surface for them.
+
+## Merged at once, with a celebration
+
+When the mirror confirms the merge, `celebrateRepoPullMerge` sets the record's
+status to `merged`, turns the header pill and the sticky bar's pill to
+the merged tone (`bg-primary`, "Merged") and repaints both merge panels, so nobody has to reload to see it.
+Confetti (the 🎉 reaction's `commentReactionConfetti`) bursts from whichever
+merge panel is on screen; it is skipped under `prefers-reduced-motion`. The
+activity refresh that follows keeps `merged` even if it reads a ledger commit
+from before the merge (`parsed.pullMerge.state === "merged"`), so the pill
+cannot flip back to Open.
+
+## Sticky header
+
+Like the issue page, a pull keeps a compact bar at the top of the page once
+its full header scrolls away (`[data-repo-record-sticky-bar]`, shown by
+`mountRecordStickyHeader`): the state pill, the title and number, and the
+section tabs. The bar's tabs are `data-repo-record-sticky-tab` buttons that
+switch sections through the same handler and `setRepoRecordSection`, so the
+address bar and both tab strips stay in step.
+
+## Live state arrives after the first paint
+
+The pull page paints once the record, diff, conversation and commits are read;
+agent activity, merge permission, readiness, merge base, checks, rules and
+required checks follow (`loadRepoPullLiveState`, `finishRepoPullLiveState`)
+and are patched into their slots. Until then `parsed.pullPending` is set and
+the model shows "Checking mergeability…", "Loading checks…" and "Loading merge
+readiness from the live mirror…", with no merge or override button, so nothing
+can be merged on partial state. The header button reads "Checking…".
 
 ## Live progress
 

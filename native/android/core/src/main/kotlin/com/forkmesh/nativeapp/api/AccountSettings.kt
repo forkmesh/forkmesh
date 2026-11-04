@@ -148,7 +148,7 @@ class AccountSettings(
         notifyListeners()
     }
 
-    val showTelemetryStrip: Boolean get() = prefs.getBool(SHOW_TELEMETRY_STRIP_KEY) ?: true
+    val showTelemetryStrip: Boolean get() = prefs.getBool(SHOW_TELEMETRY_STRIP_KEY) ?: false
 
     fun setShowTelemetryStrip(value: Boolean) {
         prefs.putBool(SHOW_TELEMETRY_STRIP_KEY, value)

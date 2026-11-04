@@ -640,7 +640,8 @@ textarea.fm-forum-input{min-height:90px;resize:vertical}
       else if (post.hidden && !moderator) body = '<p class="fm-forum-ago">An operator hid this post.</p>';
       else body = post.format === "markdown" ? renderMarkdown(post.raw || "", { repo }) : forumCookedHtml(post.cooked, ctx);
       const flag = post.hidden && moderator ? '<span class="fm-forum-tag">hidden</span>' : post.removed ? '<span class="fm-forum-tag">deleted</span>' : "";
-      const source = post.origin !== "forkmesh" && topic.source && host ? `${topic.source}/${escapeHtml(key)}` : "";
+      const sourceUrl = post.origin !== "forkmesh" && host ? forumOriginUrl(topic.source) : null;
+      const source = sourceUrl ? `${escapeHtml(sourceUrl.href.replace(/\/$/, ""))}/${escapeHtml(key)}` : "";
       const likeLabel = post.likeTotal === 1 ? "1 like" : `${post.likeTotal} likes`;
       const like = viewer.account && !post.mine && !post.removed
         ? `<button type="button" class="fm-forum-icon-btn" data-forum-like="${escapeHtml(key)}" aria-pressed="${post.liked ? "true" : "false"}" title="${post.liked ? "Unlike" : "Like"} (${likeLabel})"><i data-lucide="heart"></i>${post.likeTotal ? escapeHtml(forumCount(post.likeTotal)) : ""}</button>`
@@ -701,8 +702,9 @@ textarea.fm-forum-input{min-height:90px;resize:vertical}
       .map(([label, value]) => `<div><strong>${escapeHtml(forumCount(value))}</strong>${label}</div>`).join("");
     const state = topic.archived ? "This topic is archived." : topic.closed ? "This topic is closed for new replies." : topic.visible === false ? "This topic is unlisted." : "";
     const canReply = Boolean(viewer.account) && (viewer.moderator || (!topic.closed && !topic.archived));
-    const original = topic.origin !== "forkmesh" && topic.source && host
-      ? `<a class="fm-btn fm-btn-sm" href="${escapeHtml(topic.source)}" rel="nofollow noopener noreferrer" target="_blank" data-forum-original><i data-lucide="external-link" class="h-3.5 w-3.5"></i>Open on ${escapeHtml(host)}</a>`
+    const originalUrl = topic.origin !== "forkmesh" && host ? forumOriginUrl(topic.source) : null;
+    const original = originalUrl
+      ? `<a class="fm-btn fm-btn-sm" href="${escapeHtml(originalUrl.href)}" rel="nofollow noopener noreferrer" target="_blank" data-forum-original><i data-lucide="external-link" class="h-3.5 w-3.5"></i>Open on ${escapeHtml(host)}</a>`
       : "";
     const signIn = viewer.account ? "" : `<a class="fm-btn fm-btn-sm" href="/login?next=${encodeURIComponent(location.pathname)}">Sign in to reply</a>`;
     return `<header class="fm-forum-header"><div class="fm-forum-title-row"><h1>${forumStateIcons(topic)}${escapeHtml(topic.title || "")}</h1>${viewer.moderator ? forumOperatorMenuHtml(base, topic) : ""}</div><div class="fm-forum-row-meta">${forumChip(repo, base, topic.category_id)}${tags}</div></header><div class="mt-4" data-forum-posts>${forumPostsHtml(repo, base, topic, posts, extra)}</div>${more ? `<div class="fm-forum-more"><button type="button" class="fm-btn fm-btn-sm" data-forum-more-posts="1">Load more posts</button></div>` : ""}${stats ? `<div class="fm-forum-stats">${stats}</div>` : ""}<div class="fm-forum-reply">${state ? `<span class="fm-forum-ago mr-auto">${state}</span>` : ""}${original}${signIn}</div>${canReply ? `<div class="fm-forum-reply-box" data-forum-reply-box>${forumComposerHtml("post")}</div>` : ""}${suggested.length ? `<h2>New &amp; Unread Topics</h2>${forumTopicTableHtml(repo, base, suggested)}` : ""}`;

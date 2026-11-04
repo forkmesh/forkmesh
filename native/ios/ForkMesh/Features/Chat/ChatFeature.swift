@@ -215,20 +215,13 @@ final class LocalAuthPresencePrompt: PresencePrompt {
     func authenticate(reason: String) async -> Bool? {
         let context: LAContext = LAContext()
         var probeError: NSError?
-        // deviceOwnerAuthentication = biometrics OR passcode; nil when neither is set up.
         guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &probeError) else {
-            return nil
+            return probeError?.code == LAError.passcodeNotSet.rawValue ? nil : false
         }
         do {
             return try await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason)
-        } catch let error as LAError {
-            // A user cancel is a real "no"; anything else falls back to the dialog.
-            if error.code == .userCancel || error.code == .systemCancel || error.code == .appCancel {
-                return false
-            }
-            return nil
         } catch {
-            return nil
+            return false
         }
     }
 }

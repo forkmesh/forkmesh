@@ -61,6 +61,7 @@
 #include <QUuid>
 
 #include "SectionViewport.h"
+#include "UiKit.h"
 
 #include <algorithm>
 #include <cmath>
@@ -86,6 +87,16 @@ public:
         QString text;
         bool mine = false;
         QPixmap avatar;
+
+        bool operator==(const Line &other) const
+        {
+            return conversation == other.conversation && where == other.where &&
+                   who == other.who && when == other.when && text == other.text &&
+                   mine == other.mine &&
+                   (avatar.cacheKey() == other.avatar.cacheKey() ||
+                    avatar.toImage() == other.avatar.toImage());
+        }
+        bool operator!=(const Line &other) const { return !(*this == other); }
     };
 
     static constexpr int kAvatarPx = 16;
@@ -110,7 +121,10 @@ public:
 
     void setLines(const QList<Line> &lines)
     {
+        if (lines == m_lines)
+            return;
         m_lines = lines;
+        m_rowsKey.clear();
         rebuild();
         updateGeometry();
         update();
@@ -137,8 +151,7 @@ public:
     {
         const int rows = qMax(1, int(m_lines.size()));
         const QMargins margins = contentsMargins();
-        return QSize(QLabel::sizeHint().width(),
-                     rows * rowHeight() + (rows - 1) * kRowGap + margins.top() +
+        return QSize(0, rows * rowHeight() + (rows - 1) * kRowGap + margins.top() +
                          margins.bottom());
     }
 
@@ -148,7 +161,28 @@ protected:
     void paintEvent(QPaintEvent *event) override
     {
         QFrame::paintEvent(event);
+        const qreal dpr = devicePixelRatioF();
+        const QString key =
+            QStringList{QString::number(width()), QString::number(height()), QString::number(dpr),
+                        font().key(), Theme::color(Theme::Role::AccentFg).name(QColor::HexArgb),
+                        Theme::color(Theme::Role::FgSecondary).name(QColor::HexArgb),
+                        palette().color(QPalette::WindowText).name(QColor::HexArgb),
+                        Theme::nextOr(Theme::Role::FgMuted, QColor("#8b949e")).name(QColor::HexArgb)}
+                .join(QLatin1Char('|'));
+        if (key != m_rowsKey) {
+            m_rows = QPixmap(size() * dpr);
+            m_rows.setDevicePixelRatio(dpr);
+            m_rows.fill(Qt::transparent);
+            QPainter rows(&m_rows);
+            paintRows(rows);
+            m_rowsKey = key;
+        }
         QPainter painter(this);
+        painter.drawPixmap(0, 0, m_rows);
+    }
+
+    void paintRows(QPainter &painter)
+    {
         painter.setRenderHint(QPainter::Antialiasing);
         painter.setRenderHint(QPainter::SmoothPixmapTransform);
         const QRect area = contentsRect();
@@ -179,7 +213,7 @@ protected:
                 if (part.isEmpty())
                     return;
                 const QString shown =
-                    partMetrics.elidedText(part, Qt::ElideRight, maxWidth);
+                    kit::elideRightToWidth(part, partMetrics, maxWidth);
                 painter.setFont(partFont);
                 painter.setPen(color);
                 painter.drawText(QRect(x, y, qMax(0, area.right() - x + 1), rowH),
@@ -195,7 +229,7 @@ protected:
             painter.setPen(body);
             painter.drawText(QRect(textX, y, room, rowH),
                              Qt::AlignLeft | Qt::AlignVCenter,
-                             metrics.elidedText(line.text, Qt::ElideRight, room));
+                             kit::elideRightToWidth(line.text, metrics, room));
             y += rowH + kRowGap;
         }
     }
@@ -219,13 +253,16 @@ private:
             rows << QStringList{line.where, line.who, line.when}
                             .join(QLatin1Char(' '))
                             .toHtmlEscaped() +
-                        QStringLiteral(": ") + line.text.toHtmlEscaped();
+                        QStringLiteral(": ") +
+                        kit::cellDisplayText(line.text).toHtmlEscaped();
         const QString html = rows.join(QStringLiteral("<br>"));
         if (text() != html)
             setText(html);
     }
 
     QList<Line> m_lines;
+    QPixmap m_rows;
+    QString m_rowsKey;
 };
 
 class FloatingPromptBar : public QWidget
@@ -2891,10 +2928,8 @@ void MainWindow::initializeDeferredGlobalLogDock()
         return;
     forkmesh::StartupTraceStep step(
         QStringLiteral("post-paint: build global agent composer"));
-    QWidget *logDock = buildNetworkLogDock();
-    if (!logDock)
+    if (!buildNetworkLogDock())
         return;
-    logDock->setParent(m_globalOverlayHost);
     loadPromptOverlayPlacement();
     positionGlobalFooterOverlays();
     setupGenieSpider();
@@ -3487,7 +3522,7 @@ void MainWindow::setDebugLogTailVisible(bool visible)
 
 QWidget *MainWindow::buildNetworkLogDock()
 {
-    auto *dock = new QWidget;
+    auto *dock = new QWidget(m_globalOverlayHost);
     m_footerDock = dock;
     dock->setObjectName("logDock");
     const bool next = Theme::isNext();
@@ -3961,14 +3996,23 @@ QWidget *MainWindow::buildNetworkLogDock()
             }
             // An empty send is "continue", as it is for a local session.
             sendCloudAgentFollowUp(cloud, typed);
+            sessionsComposerSent(cloud);
             return;
         }
         // What is on screen names the conversation — the transcript open above,
         // the agent whose branch diff is being read, or the agent attached to
         // the selected pull request. Only when none is showing does the last
         // selection stand in.
+        QString sessionsBlocked;
+        const int sessionsOpen = sessionsComposerTarget(&sessionsBlocked);
+        if (!sessionsBlocked.isEmpty()) {
+            flashMessage(sessionsBlocked, true);
+            return;
+        }
         const int onScreen = quickAddFollowUpAgentSessionId();
-        const int target = onScreen >= 0 ? onScreen : m_selectedAgentSessionId;
+        const int target = sessionsOpen != 0 ? sessionsOpen
+                           : onScreen >= 0  ? onScreen
+                                            : m_selectedAgentSessionId;
         if (isExternalSession(target) && !isCloudSession(target) &&
             m_externalSurfaced.contains(target)) {
             if (typed.isEmpty())
@@ -3984,6 +4028,7 @@ QWidget *MainWindow::buildNetworkLogDock()
             recordQuickAddHistory(typed);
             m_issueQuickAdd->clear();
             sendPromptToExternalClaudeSession(target, typed);
+            sessionsComposerSent(target);
             return;
         }
         if (target < 0) {
@@ -4011,6 +4056,7 @@ QWidget *MainWindow::buildNetworkLogDock()
         if (target == m_selectedAgentSessionId && m_agentTranscript)
             m_agentTranscript->jumpToBottom();
         sendPromptToAgentSession(target, prompt);
+        sessionsComposerSent(target);
     });
 
     m_quickAddSendToChannelButton = new QPushButton;
@@ -4657,16 +4703,14 @@ void MainWindow::resetPromptOverlayPlacement()
 
 void MainWindow::savePromptOverlayPlacement()
 {
-    QSettings settings;
-    using forkmesh::settings::put;
-    put(settings, QLatin1String(kPromptFloatingSetting), m_promptOverlayFloating);
-    put(settings, QLatin1String(kPromptFloatPosSetting), m_promptOverlayPos);
-    put(settings, QLatin1String(kPromptFloatSizeSetting), m_promptOverlaySize);
-    put(settings, QLatin1String(kPromptDetachedSetting), m_promptOverlayDetached);
     if (m_promptOverlayDetached && m_promptDetachWindow)
         m_promptDetachGeometry = m_promptDetachWindow->geometry();
-    put(settings, QLatin1String(kPromptDetachGeometrySetting),
-        m_promptDetachGeometry);
+    QSettings settings;
+    if (m_promptDetachGeometry.isNull() &&
+        !settings.contains(QLatin1String(kPromptDetachGeometrySetting)))
+        return;
+    forkmesh::settings::put(settings, QLatin1String(kPromptDetachGeometrySetting),
+                            m_promptDetachGeometry);
 }
 
 void MainWindow::loadPromptOverlayPlacement()
@@ -4676,11 +4720,13 @@ void MainWindow::loadPromptOverlayPlacement()
     QSettings settings;
     m_promptDetachGeometry =
         settings.value(QLatin1String(kPromptDetachGeometrySetting)).toRect();
+    for (const char *stale : {kPromptFloatingSetting, kPromptFloatPosSetting,
+                              kPromptFloatSizeSetting, kPromptDetachedSetting})
+        forkmesh::settings::drop(settings, QLatin1String(stale));
     m_promptOverlayFloating = false;
     m_promptOverlayDetached = false;
     m_promptOverlaySize = QSize();
     m_promptOverlayPos = QPoint();
-    savePromptOverlayPlacement();
 }
 
 bool MainWindow::handlePromptPlacementEvent(QObject *object, QEvent *event)
@@ -4913,23 +4959,38 @@ void MainWindow::positionGlobalFooterOverlays()
     // is what lets the session list keep running to the bottom of the window.
     // Pinning the composer to the pane's own left edge -- rather than to the
     // dock's midpoint -- keeps the two lined up wherever the splitter sits.
-    const bool promptOverDetailPane =
-        dockAgentPrompt && m_agentDetail && !m_agentDetail->isHidden() &&
-        m_globalOverlayHost->isAncestorOf(m_agentDetail);
+    QWidget *const sessionsPane = sessionsComposerPane();
+    const bool dockSessionsPrompt =
+        !onAgents && anchoredPrompt && !m_promptOverlayCollapsed &&
+        sessionsPane && !sessionsPane->isHidden() && sessionsPageOnScreen() &&
+        m_globalOverlayHost->isAncestorOf(sessionsPane);
+    QWidget *dockPane = nullptr;
+    if (dockAgentPrompt && m_agentDetail && !m_agentDetail->isHidden() &&
+        m_globalOverlayHost->isAncestorOf(m_agentDetail))
+        dockPane = m_agentDetail;
+    else if (dockSessionsPrompt)
+        dockPane = sessionsPane;
+    const bool promptOverDetailPane = dockPane != nullptr;
+    const bool dockedPrompt = dockAgentPrompt || dockSessionsPrompt;
     const QRect detailRect =
         promptOverDetailPane
-            ? QRect(m_agentDetail->mapTo(m_globalOverlayHost, QPoint()),
-                    m_agentDetail->size())
+            ? QRect(dockPane->mapTo(m_globalOverlayHost, QPoint()), dockPane->size())
             : QRect();
+    constexpr int kSessionsComposerWidth = 760;
+    const int paneInset =
+        dockSessionsPrompt
+            ? qMax(16, (detailRect.width() - kSessionsComposerWidth) / 2)
+            : 0;
 
     if (m_footerLeftRegion)
-        m_footerLeftRegion->setVisible(m_logOverlayExpanded && !onAgents);
+        m_footerLeftRegion->setVisible(m_logOverlayExpanded && !onAgents &&
+                                       !dockSessionsPrompt);
     if (auto *dockRow = qobject_cast<QHBoxLayout *>(m_footerDock->layout())) {
         // On an open agent, the footer itself becomes the detail pane's exact
         // width. Dropping its horizontal inset keeps the prompt snug against
         // both transcript edges instead of leaving a narrow gutter.
-        dockRow->setContentsMargins(promptOverDetailPane ? 0 : 8, 8,
-                                    promptOverDetailPane ? 0 : 8, 0);
+        dockRow->setContentsMargins(promptOverDetailPane ? paneInset : 8, 8,
+                                    promptOverDetailPane ? paneInset : 8, 0);
         QLayoutItem *spacerSlot = dockRow->itemAt(1);
         QSpacerItem *spacer = spacerSlot ? spacerSlot->spacerItem() : nullptr;
         const QSizePolicy::Policy spacerPolicy =
@@ -4944,7 +5005,7 @@ void MainWindow::positionGlobalFooterOverlays()
         }
         dockRow->setStretch(1, promptOverDetailPane ? 0 : 1); // transparent spacer
         const Qt::Alignment promptAlignment =
-            dockAgentPrompt ? Qt::AlignBottom : Qt::AlignRight | Qt::AlignBottom;
+            dockedPrompt ? Qt::AlignBottom : Qt::AlignRight | Qt::AlignBottom;
         const int promptSlot = dockRow->indexOf(m_promptOverlayHost);
         QLayoutItem *promptItem =
             promptSlot >= 0 ? dockRow->itemAt(promptSlot) : nullptr;
@@ -4966,13 +5027,15 @@ void MainWindow::positionGlobalFooterOverlays()
             m_issueQuickAdd->setMaximumHeight(m_issueQuickAdd->minimumHeight());
             m_promptOverlayHost->setMinimumSize(0, 0);
             m_promptOverlayHost->setMaximumSize(
-                dockAgentPrompt ? QWIDGETSIZE_MAX : 560, QWIDGETSIZE_MAX);
+                dockedPrompt ? QWIDGETSIZE_MAX : 560, QWIDGETSIZE_MAX);
             m_promptOverlayHost->setFixedHeight(m_promptAnchoredHeight);
             m_promptOverlayHost->setSizePolicy(QSizePolicy::Expanding,
                                                QSizePolicy::Fixed);
             m_userAvatarNavButton->setToolTip(
                 dockAgentPrompt
                     ? QStringLiteral("The prompt is docked on the Agents page")
+                : dockSessionsPrompt
+                    ? QStringLiteral("The prompt is docked on the Sessions page")
                     : QStringLiteral("Collapse the prompt overlay"));
         } else {
             m_promptOverlayHost->setMinimumSize(0, 0);
@@ -4986,7 +5049,7 @@ void MainWindow::positionGlobalFooterOverlays()
                     : QStringLiteral("Collapse the prompt overlay"));
         }
     }
-    forkmesh::ui::NextAccess::placeWorkspaceComposer(*this, promptOverDetailPane);
+    forkmesh::ui::NextAccess::placeWorkspaceComposer(*this, dockPane);
     if (m_promptOverlayFloating && !m_promptOverlayDetached && m_promptOverlayHost) {
         clampPromptOverlayIntoHost();
         m_promptOverlayHost->show();
@@ -5032,7 +5095,8 @@ void MainWindow::positionGlobalFooterOverlays()
     reserveComposerBand(m_agentsPage, 0,
                         dockAgentPrompt && !promptOverDetailPane ? height : 0);
     reserveComposerBand(m_agentDetail, m_agentDetailBaseBottomMargin,
-                        promptOverDetailPane ? height : 0);
+                        dockPane == m_agentDetail ? height : 0);
+    reserveComposerBand(sessionsPane, 0, dockSessionsPrompt ? height : 0);
     m_footerDock->setGeometry(
         promptOverDetailPane ? detailRect.x() : kHorizontalMargin,
         qMax(0, m_globalOverlayHost->height() - height),

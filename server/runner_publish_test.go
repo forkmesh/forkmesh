@@ -2,8 +2,10 @@ package mirrornode
 
 import (
 	"context"
+	"crypto/rand"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -215,4 +217,75 @@ func TestSessionHomeCredentialsFlowOnlyAsCredentials(t *testing.T) {
 		t.Fatalf("copy-in followed a planted symlink: %q", raw)
 	}
 	box.closeSession(home)
+}
+
+func TestRunnerPublishCopiesALargeBundleWithoutHoldingItInMemory(t *testing.T) {
+	const size = 48 << 20
+	_, bare := makeBareRepo(t)
+	work := t.TempDir()
+	workdir := filepath.Join(work, "sess")
+	box := jobSandbox{workRoot: work, memoryMax: "700M", cpuQuota: "90%"}
+	b := &runnerBackend{cfg: &RunnerConfig{WorkRoot: work}, box: box}
+	if err := os.Mkdir(filepath.Join(work, jobPublishDir), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	repo := b.publishRepo(workdir)
+	run(t, ".", "git", "clone", "--quiet", "--bare", bare, repo)
+	run(t, ".", "git", "clone", "--quiet", repo, workdir)
+	run(t, workdir, "git", "config", "user.email", "job@example.test")
+	run(t, workdir, "git", "config", "user.name", "Job")
+	if err := box.openSession(box.homeFor(workdir)); err != nil {
+		t.Fatal(err)
+	}
+	blob := make([]byte, size)
+	if _, err := rand.Read(blob); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workdir, "blob.bin"), blob, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	blob = nil
+	session := &agentSession{Branch: "agent/large", BaseBranch: "main", Title: "large"}
+	job := agentWork{job: agentJob{RepositoryOwner: "core1", RepositoryName: "proj",
+		CloneURL: "http://127.0.0.1:1/v1/runner/core1/proj.git", PushRef: "refs/heads/agent/large"}}
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	_, err := b.publish(context.Background(), job, session, workdir)
+	runtime.ReadMemStats(&after)
+	if err == nil || !strings.Contains(err.Error(), "push") {
+		t.Fatalf("publish should reach the unreachable core and stop at the push: %v", err)
+	}
+	if b.publishRef(context.Background(), repo, "refs/fm/result") == "" {
+		t.Fatal("the bundle was not imported")
+	}
+	if grew := after.TotalAlloc - before.TotalAlloc; grew > size/2 {
+		t.Fatalf("publishing held the bundle in memory: %d bytes allocated", grew)
+	}
+}
+
+func TestCopyOwnedFileRefusesAFileOverItsLimit(t *testing.T) {
+	dir := t.TempDir()
+	source, target := filepath.Join(dir, "source"), filepath.Join(dir, "target")
+	if err := os.WriteFile(source, []byte("12345"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := copyOwnedFile(source, target, 0, 4); err == nil {
+		t.Fatal("an oversized file was copied")
+	}
+	if _, err := os.Lstat(target); !os.IsNotExist(err) {
+		t.Fatalf("a refused copy left a file: %v", err)
+	}
+	if err := copyOwnedFile(source, target, 0, 5); err != nil {
+		t.Fatal(err)
+	}
+	if got := readTestFile(t, target); got != "12345" {
+		t.Fatalf("copied %q", got)
+	}
+	link := filepath.Join(dir, "link")
+	if err := os.Symlink(source, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := copyOwnedFile(link, filepath.Join(dir, "other"), 0, 5); err == nil {
+		t.Fatal("a symlink was followed")
+	}
 }

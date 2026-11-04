@@ -17,11 +17,23 @@ def test_seed_targets_pin_known_hosts_only_when_given(tmp_path):
     assert mirrors == [("m1", "10.0.0.1",
                         ["-i", str(tmp_path / "vultr"), "-o", "IdentitiesOnly=yes"])]
     cores = release_host.seed_targets(
-        [("n1", "10.0.0.2")], tmp_path / "fleet", tmp_path / "known_hosts")
+        [("n1", "10.0.0.2")], tmp_path / "fleet", tmp_path / "known_hosts", port=822)
     assert cores[0][2] == [
         "-i", str(tmp_path / "fleet"), "-o", "IdentitiesOnly=yes",
         "-o", "StrictHostKeyChecking=yes",
-        "-o", "UserKnownHostsFile=%s" % (tmp_path / "known_hosts")]
+        "-o", "UserKnownHostsFile=%s" % (tmp_path / "known_hosts"),
+        "-o", "Port=822", "-o", "HostKeyAlias=10.0.0.2"]
+
+
+def test_seed_targets_reach_cores_on_the_fleet_ssh_port(tmp_path, monkeypatch):
+    monkeypatch.setenv("FMNEXT_SSH_PORT", "2222")
+    cores = release_host.seed_targets(
+        [("n1", "10.0.0.2"), ("n2", "10.0.0.3")], tmp_path / "fleet", tmp_path / "kh")
+    assert [options[-4:] for _, _, options in cores] == [
+        ["-o", "Port=2222", "-o", "HostKeyAlias=10.0.0.2"],
+        ["-o", "Port=2222", "-o", "HostKeyAlias=10.0.0.3"]]
+    mirrors = release_host.seed_targets([("m1", "10.0.0.1")], tmp_path / "vultr")
+    assert not any(option.startswith("Port=") for option in mirrors[0][2])
 
 
 def test_seed_mirrors_uses_each_hosts_own_key(tmp_path, monkeypatch):

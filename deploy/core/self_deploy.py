@@ -72,6 +72,8 @@ NO_GO_NOTE = ("daemon or gateway changes need a roll from the desktop "
 RUNNER_NOTE = "daemon rolled on the cores; runners wait for the desktop"
 VERSION_RE = re.compile(r"project\s*\(\s*ForkMesh\s+VERSION\s+([0-9][0-9.]*)")
 TEST_DIRS = frozenset({"tests", "tests_rqlite", "tests_cluster", "browser_tests"})
+CLONE_ENV = {"PATH": "/usr/bin:/bin", "GIT_CONFIG_NOSYSTEM": "1",
+             "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_NO_LAZY_FETCH": "1", "LANG": "C"}
 
 
 class Problem(Exception):
@@ -210,12 +212,17 @@ class Agent:
         self.upstream = ""
         self.sleep = time.sleep
 
+    def repository_user(self):
+        return ["runuser", "-u", self.config.get("repositoryUser") or "forkmesh-node",
+                "--"] if os.geteuid() == 0 else []
+
     def git(self, *args, check=True):
         completed = self.run(
-            ["git", "-c", "safe.directory=*", "--git-dir=" + self.git_dir, *args],
+            [*self.repository_user(), "git", "--git-dir=" + self.git_dir, *args],
             capture_output=True, text=True, timeout=120,
             env={"PATH": "/usr/bin:/bin", "GIT_CONFIG_NOSYSTEM": "1",
-                 "GIT_CONFIG_GLOBAL": "/dev/null", "LANG": "C"})
+                 "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_NO_LAZY_FETCH": "1",
+                 "LANG": "C"})
         if check and completed.returncode != 0:
             raise Problem("git %s: %s" % (args[0], (completed.stderr or "").strip()[:200]))
         return completed
@@ -582,9 +589,10 @@ class Agent:
         out = work / "out"
         self.check_run(["git", "-c", "safe.directory=*", "clone", "--quiet",
                         "--no-hardlinks", "--no-checkout", self.git_dir, str(clone)],
-                       "clone")
+                       "clone", env=CLONE_ENV)
         self.check_run(["git", "-c", "safe.directory=*", "-C", str(clone),
-                        "checkout", "--quiet", "--detach", target], "checkout")
+                        "checkout", "--quiet", "--detach", target], "checkout",
+                       env=CLONE_ENV)
         out.mkdir()
         self.prepare_config(work / "config")
         self.check_run(["chown", "-R", "%s:%s" % (self.build_user(), self.build_user()),

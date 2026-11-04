@@ -13,6 +13,7 @@
     "pings": initPingsPage,
     "agents": initAgentsPage,
     "docs": initDocsPage,
+    "plugins": initPluginsPage,
     "apps": initAppsPage,
     "apps-build": initAppsBuildPage,
     "tasks": initTasksPage,

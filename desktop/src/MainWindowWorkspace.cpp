@@ -1287,7 +1287,7 @@ void NextAccess::installWorkspace(MainWindow &window)
     QObject::connect(chrome->panelClose, &QPushButton::clicked, chrome,
                      command(CmdClosePanel));
 
-    auto *stack = new QStackedWidget;
+    auto *stack = new QStackedWidget(window.m_workspaceTerminalDock);
     stack->setObjectName(QStringLiteral("workspacePanelStack"));
     chrome->hosts[TabTerminal] = paneHost(QStringLiteral("workspaceTerminalHost"));
     chrome->hosts[TabChanges] = paneHost(QStringLiteral("workspaceChangesHost"));
@@ -1296,9 +1296,9 @@ void NextAccess::installWorkspace(MainWindow &window)
     stack->addWidget(chrome->hosts[TabChanges]);
     stack->addWidget(chrome->hosts[TabBrowser]);
     chrome->hosts[TabDetails] = paneHost(QStringLiteral("workspaceDetailsHost"));
-    chrome->details = new SessionSidePanels;
-    chrome->hosts[TabDetails]->layout()->addWidget(chrome->details);
     stack->addWidget(chrome->hosts[TabDetails]);
+    chrome->details = new SessionSidePanels(chrome->hosts[TabDetails]);
+    chrome->hosts[TabDetails]->layout()->addWidget(chrome->details);
     dockLayout->removeWidget(window.m_workspaceTerminal);
     window.m_workspaceTerminal->setParent(chrome->hosts[TabTerminal]);
     chrome->hosts[TabTerminal]->layout()->addWidget(window.m_workspaceTerminal);
@@ -2176,11 +2176,7 @@ void NextAccess::fillWorkspaceMenu(MainWindow &window, QMenu *menu, int which)
     addProxy(menu, window.m_agentSignInRunnerButton, QStringLiteral("key"));
     menu->addSeparator();
     addProxy(menu, window.m_agentOutputModeButton, QStringLiteral("terminal"),
-             window.m_agentOutputModeButton &&
-                     window.m_agentOutputModeButton->text() ==
-                         QLatin1String("Raw")
-                 ? QStringLiteral("Show raw output")
-                 : QStringLiteral("Show transcript"));
+             QStringLiteral("Raw output window"));
     addProxy(menu, window.m_agentListenButton, QStringLiteral("unmute"));
     QAction *details =
         menu->addAction(glyph(QStringLiteral("info"), Theme::Role::FgMuted),
@@ -2195,7 +2191,7 @@ void NextAccess::fillWorkspaceMenu(MainWindow &window, QMenu *menu, int which)
              QStringLiteral("Delete session"));
 }
 
-void NextAccess::placeWorkspaceComposer(MainWindow &window, bool overDetail)
+void NextAccess::placeWorkspaceComposer(MainWindow &window, QWidget *pane)
 {
     if (!window.m_footerDock || !window.m_promptOverlayHost)
         return;
@@ -2204,7 +2200,7 @@ void NextAccess::placeWorkspaceComposer(MainWindow &window, bool overDetail)
         return;
     Chrome *chrome = chromeOf(window);
     const bool centred = chrome && chrome->applied && chrome->composerReady &&
-                         overDetail && !window.m_promptOverlayCollapsed &&
+                         pane && !window.m_promptOverlayCollapsed &&
                          !window.m_promptOverlayFloating &&
                          !window.m_promptOverlayDetached;
     if (chrome && chrome->composerReady && centred != chrome->composerDocked) {
@@ -2250,7 +2246,7 @@ void NextAccess::placeWorkspaceComposer(MainWindow &window, bool overDetail)
     window.m_promptOverlayHost->setFixedHeight(host);
     if (window.m_issueQuickAdd)
         window.m_issueQuickAdd->setMaximumHeight(QWIDGETSIZE_MAX);
-    const int available = window.m_agentDetail ? window.m_agentDetail->width() : 0;
+    const int available = pane->width();
     const int side = qMax(kComposerSidePad, (available - kComposerWidth) / 2);
     row->setContentsMargins(side, 8, side, kComposerBottomPad);
     row->invalidate();

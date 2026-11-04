@@ -6,7 +6,7 @@ Part of [the App docs](README.md). The web Notes page
 `marketplace/packages/notes/content/web/view.html`) offers the same Notes
 features as the desktop ([desktop notes](../desktop/notes.md)) and the phone
 apps ([native notes](../native/notes.md)). This page covers sharing and the
-access link, the activity log, turning a note into a task or an issue, body
+access link, Live mode, the activity log, turning a note into a task or an issue, body
 search, and the differences between platforms.
 
 ## Sharing with people
@@ -157,22 +157,24 @@ shares), so the list needs no request per row.
 - **The "Shared with …" line** wraps onto a second line instead of being cut
   off after the first name or two, breaks long names, and ends with an
   ellipsis only past two lines; hovering it shows the whole list.
-- **The Activity column** (the pulse button next to Share) lists the events
+- **The Activity tab** of the note's right column (the pulse button next to
+  Share; see [the side column](notes-comments.md#the-side-column)) lists the events
   newest first, each with an icon, the person ("You" for yourself), what they
   did and when. Saves by the same person within 30 minutes are one line
   ("edited it · v12–v14, 3 saves"). Above the list, the three numbers are also
-  filters: Views, History (edits, creation and restores, with a link to
-  Version history) and Actions; picking the same one again, or **Show all**,
+  filters: Views, History (edits, creation and restores, with a link to the
+  History tab) and Actions; picking the same one again, or **Show all**,
   shows everything.
 - On windows of 1280 px and wider the column sits beside the editor and is
   open until you close it; narrower, it slides over the editor and starts
-  closed. The choice is remembered (`forkmesh.notes.activity`).
+  closed. Whether it is open is remembered (`forkmesh.notes.activity`), and
+  which tab (`forkmesh.notes.sideTab`).
 - Opening a note records a view; saving, sharing, publishing, linking and
   restoring refresh the column, as do `note-activity` and `note-updated`
   messages from collaborators.
 
-The desktop, iOS and Android apps read the same listing, so their view
-counts include members' views, but they have no Activity column yet.
+The desktop shows the same timeline in its side panel, and iOS and Android
+in the note's History · Activity · Chat sheet.
 
 ## Unread notes and the last edit
 
@@ -256,13 +258,74 @@ plain listing, without Markdown). A query over 200 characters is
 "Searching notes…" when there are none. Native clients can use the same
 parameter.
 
+## Live mode
+
+Write, Split, Preview, Live and Pages ([Pages](notes-documents.md#pages))
+sit in the editor's layout switch (remembered
+in `forkmesh.notes.layout`; people who can only view always get Preview).
+Since 2026-11-04 a note opens in Live until you pick another layout; the key
+was renamed from `forkmesh.notes.mode` then, so people whose old default
+(Split) had been saved start in Live once too. Live is the preview you can
+edit: the note is cut into blocks at blank lines
+(a fenced code block stays whole), each rendered on its own, and clicking a
+block turns it into a box holding that block's Markdown, with the caret near
+where you clicked. Typing writes the block back into the note, which autosaves
+and sends drafts as in Write. Escape, or clicking elsewhere, renders it again;
+Up at the start or Down at the end of a block moves to the one before or
+after; Ctrl/⌘+B and +I format the selection; clicking below the last block
+starts a new paragraph, and an empty block is dropped when you leave it. The
+title is editable in place. Unchanged blocks keep their rendered elements, so
+images do not reload while you type, and edits from others re-render the
+blocks around the one you are in. Selecting text in a rendered block or in the
+block you are editing offers Comment as in the other modes
+([notes comments](notes-comments.md)), and React, whose chips then sit
+under the block ([reactions](notes-comments.md#reactions)).
+
+While others edit, the block holding each one's caret line gets a bar in
+their colour and their name at its corner (`renderNotePeerMarks`), from the
+`line` their cursor, draft and presence frames carry, so you see where
+everyone is typing as their edits arrive. Split's preview and Preview mark
+the element at that line the same way. A mark goes when the person stops
+editing for 10 seconds or leaves.
+
+## Split mode, the outline and pasted images
+
+In Split the Markdown and the preview scroll together. The pane you last
+pointed at, scrolled or typed in leads and the other follows, so the follower's
+own scroll events, and a re-render clamping the preview, never pull the leader
+back. Headings are the anchors: `noteOutlineHeadings` finds the `#` lines
+outside fenced code (the renderer's rules), their places in the textarea come
+from one hidden mirror of it, and `noteOutlineTargets` pairs them with the
+preview's `h1`-`h6` by text. Between two anchors the position is
+interpolated, so a note without headings scrolls in proportion. The anchors
+are measured once and dropped when the preview re-renders, a pane resizes or a
+preview image loads. Following a collaborator turns the sync off, since
+following places both panes itself.
+
+The list button in the editor bar shows the outline: the note's headings,
+indented by level, beside the editor (remembered in `forkmesh.notes.outline`;
+hidden on phone-width screens). Clicking one puts the caret on that heading
+and scrolls the Markdown to it, or scrolls the preview in Preview and Live;
+the section you are reading is highlighted as you scroll.
+
+Pasting an image (a screenshot, or an image copied from another app) into the
+Markdown or a Live block inserts `![image](data:image/...;base64,...)` on its
+own line, the inline form [note documents](notes-documents.md) already
+render. A note holds at most 512 KB of Markdown (`MAX_MARKDOWN` in
+`app/src/notes.py`, which cuts anything longer), so an image keeps its own
+bytes only if it is at most 1600 px wide and fits in 360 KB and the note's
+remaining room; otherwise it is redrawn 1600, 1200, 900 or 600 px wide as
+PNG, WebP and JPEG and the smallest that fits is used. When none fits the
+note says so and inserts nothing. A paste that also carries text (a
+spreadsheet cell, a web page) pastes the text, as before.
+
 ## The same features on every platform
 
 The web page, the desktop ([desktop notes](../desktop/notes.md)), iOS and
 Android ([native notes](../native/notes.md)) offer the same Notes features:
 filters with counts and title-and-body search (`GET /api/notes?query=`,
 [above](#search-covers-the-body)),
-autosave, write and preview with a format bar, Keep mine / Take theirs on a
+autosave, write, preview and Live with a format bar, Keep mine / Take theirs on a
 save conflict, the share panel with suggestions and role changes, the link for
 people with access, opening `/dashboard/notes?note=<id>`, publishing with a
 copyable public link, version history, linked issues and pull requests,
@@ -270,17 +333,33 @@ Markdown export, delete, and turning a note into a task or an issue.
 
 Known differences:
 
-- Live presence and inline comments run everywhere
+- Live presence, inline comments and reactions run everywhere
   ([notes comments](notes-comments.md)). The web and phones use the note's
   socket; the desktop does not link QtWebSockets, so it polls
-  `/api/notes/<id>/presence` every 5 seconds instead.
+  `/api/notes/<id>/presence` every 5 seconds instead (every second while
+  following someone, every 2 while the chat is open).
+- Live mode, following someone and the note chat are on the web and the
+  desktop; the phone apps do not have them yet. Both open notes in Live by
+  default. The marks showing where others are editing are on the web (Live,
+  Split and Preview) and the desktop (Write and Live). On the web Live renders the
+  note block by block and turns the block you click into its Markdown; on the
+  desktop Live styles the Markdown in place and shows the marks only on the
+  caret's line ([desktop notes](../desktop/notes.md#live-mode)).
 - The desktop editor has Write and Preview tabs but no split view; phones
-  have no room for one.
+  have no room for one. The outline beside the editor, pasting images
+  from the clipboard, the Pages view and image options are on the web only
+  for now; the other clients hide the options line and show the image as
+  before ([image options](notes-documents.md#image-options)).
 - The desktop autosaves Cloud-only notes. Local and Local + cloud notes save
   with the Save button, because each local save adds an on-disk snapshot.
 - On iOS the format bar adds text at the end of the note: the text editor
   cannot report the selection before iOS 18.
 - Local (on-disk) notes are a desktop feature.
+- Writing with AI on a selection: the web asks the site's Workers AI through
+  `POST /api/notes/assist` ([notes assist](notes-assist.md)); the desktop asks
+  the default local agent (Claude Code or Codex) through the composer and the
+  editor's right-click menu ([desktop notes](../desktop/notes.md#rewriting-a-selection)),
+  with the same quick actions. The phone apps do not have it yet.
 
 ## Tests
 
@@ -301,3 +380,7 @@ Known differences:
   picking, already-shared principals left out, the access link row and copy,
   opening `?note=<id>`, body search, the task body with the published link,
   and the issue dialog (bad repository, then a filed issue).
+- `app/browser_tests/tests/dashboard-notes-live.spec.js` also covers the
+  outline (jumping to a section, the highlighted section, remembered open),
+  Split's scroll sync in both directions, and pasting a small image, a wide
+  one made 1600 px wide, and a paste with text that leaves the image out.

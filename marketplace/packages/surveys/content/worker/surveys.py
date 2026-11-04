@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 import csv
 import hmac
 import io
+import ipaddress
 import re
 
 
@@ -19,7 +20,21 @@ MAX_RESPONSES_LISTED = 2000
 MAX_RESULT_ROWS = 2000
 MAX_TEXT_ANSWERS = 20
 HOURLY_PER_RESPONDENT = 10
+SOURCE_HOURLY_RESPONSES = 60
+SOURCE_HOURLY_CHARS = 4 * 1024 * 1024
+MAX_ORG_RESPONSE_CHARS = 32 * 1024 * 1024
+MAX_VISITS = 1000
+MAX_RECENT_VISITS = 50
+VISIT_RETAIN_MS = 90 * 24 * 60 * 60 * 1000
+VISIT_SUMMARY_DAYS = 30
+VISITOR_HOURLY_EVENTS = 120
+SURVEY_HOURLY_EVENTS = 1500
+SURVEY_HOURLY_VISIT_PINGS = 10
+TRACK_KINDS = ("view", "start", "answer", "submit", "link", "leave")
+TRACK_START_KINDS = frozenset({"start", "answer"})
+TRACK_LINKS = frozenset({"forkmesh"})
 MANAGER_ROLES = frozenset({"owner", "admin"})
+ORG_READ_ONLY_ROLES = frozenset({"auditor"})
 STATUSES = ("draft", "open", "closed")
 QUESTION_TYPES = ("single", "multiple", "text", "paragraph", "rating")
 CHOICE_TYPES = frozenset({"single", "multiple"})
@@ -31,6 +46,8 @@ ORG_RE = re.compile(r"^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 ID_RE = re.compile(r"^[0-9a-f]{32}$")
 QID_RE = re.compile(r"^[0-9a-f]{8}$")
 TOKEN_RE = re.compile(r"^([0-9a-f]{32})\.([0-9a-f]{24})$")
+SESSION_RE = re.compile(r"^[0-9a-f]{32}$")
+COUNT_RE = re.compile(r"^(?:0|[1-9]\d?)$")
 ORIGIN_RE = re.compile(r"^https://[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?(?::[0-9]{1,5})?$")
 DEFAULT_SETTINGS = {
     "oneResponsePerPerson": False,
@@ -38,6 +55,7 @@ DEFAULT_SETTINGS = {
     "closesAt": 0,
     "maxResponses": 0,
     "notifyOnResponse": True,
+    "notifyOnVisit": True,
     "shuffleOptions": False,
 }
 DEFAULT_THANK_YOU = "Thank you for answering."
@@ -84,8 +102,35 @@ DATA_SCHEMA_UP = [
         BEFORE INSERT ON survey_responses
         WHEN (SELECT COUNT(*) FROM survey_responses WHERE survey_id=NEW.survey_id)>=10000
         BEGIN SELECT RAISE(ABORT,'survey_responses_full'); END""",
+    """CREATE TABLE IF NOT EXISTS survey_visits (
+        visit_id TEXT PRIMARY KEY,
+        org_bi TEXT NOT NULL,
+        survey_id TEXT NOT NULL REFERENCES survey_forms(survey_id) ON DELETE CASCADE,
+        visitor_key TEXT NOT NULL DEFAULT '',
+        kind TEXT NOT NULL,
+        detail TEXT NOT NULL DEFAULT '',
+        pinged INTEGER NOT NULL DEFAULT 0 CHECK(pinged IN (0,1,2)),
+        created_at INTEGER NOT NULL CHECK(created_at >= 0))""",
+    "CREATE INDEX IF NOT EXISTS idx_survey_visits_survey "
+    "ON survey_visits(survey_id,created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_survey_visits_visitor "
+    "ON survey_visits(survey_id,visitor_key,created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_survey_visits_org ON survey_visits(org_bi,created_at)",
+    """CREATE TABLE IF NOT EXISTS survey_usage (
+        org_bi TEXT PRIMARY KEY,
+        chars INTEGER NOT NULL DEFAULT 0 CHECK(chars >= 0))""",
+    """CREATE TABLE IF NOT EXISTS survey_sources (
+        bucket TEXT PRIMARY KEY,
+        responses INTEGER NOT NULL DEFAULT 0 CHECK(responses >= 0),
+        chars INTEGER NOT NULL DEFAULT 0 CHECK(chars >= 0),
+        expires_at INTEGER NOT NULL)""",
+    "CREATE INDEX IF NOT EXISTS idx_survey_sources_expires ON survey_sources(expires_at)",
 ]
 DATA_SCHEMA_DOWN = [
+    "DROP TABLE IF EXISTS survey_visits",
+    "DROP INDEX IF EXISTS idx_survey_sources_expires",
+    "DROP TABLE IF EXISTS survey_sources",
+    "DROP TABLE IF EXISTS survey_usage",
     "DROP TABLE IF EXISTS survey_responses",
     "DROP TABLE IF EXISTS survey_forms",
 ]
@@ -96,6 +141,8 @@ FORM_COLUMNS = (
     "published_at,closed_at,notified_at,created_by_bi,created_by_name,updated_by_name,"
     "created_at,updated_at,data"
 )
+
+_SCHEMA_READY = False
 
 
 def _response(runtime, payload, status=200, allow=""):
@@ -142,9 +189,9 @@ def _route(path):
     clean = str(path or "").rstrip("/")
     if clean == PREFIX:
         return ("organizations",)
-    match = re.fullmatch(r"/api/surveys/-/public/([0-9a-f]{32}\.[0-9a-f]{24})", clean)
+    match = re.fullmatch(r"/api/surveys/-/public/([0-9a-f]{32}\.[0-9a-f]{24})(/track)?", clean)
     if match:
-        return ("public", match.group(1))
+        return ("track" if match.group(2) else "public", match.group(1))
     match = re.fullmatch(
         r"/api/surveys/([a-z][a-z0-9-]{0,62})"
         r"(?:/(items)(?:/([0-9a-f]{32})"
@@ -166,7 +213,7 @@ def _settings(value, existing=None):
         if isinstance(existing, dict) and key in existing:
             result[key] = existing[key]
     value = value if isinstance(value, dict) else {}
-    for key in ("oneResponsePerPerson", "notifyOnResponse", "shuffleOptions"):
+    for key in ("oneResponsePerPerson", "notifyOnResponse", "notifyOnVisit", "shuffleOptions"):
         if key in value:
             result[key] = value.get(key) is True
     for key in ("opensAt", "closesAt"):
@@ -174,7 +221,7 @@ def _settings(value, existing=None):
             result[key] = _stamp(value.get(key))
     if "maxResponses" in value:
         result["maxResponses"] = min(MAX_RESPONSES, max(0, _integer(value.get("maxResponses"))))
-    for key in ("oneResponsePerPerson", "notifyOnResponse", "shuffleOptions"):
+    for key in ("oneResponsePerPerson", "notifyOnResponse", "notifyOnVisit", "shuffleOptions"):
         result[key] = result[key] is True
     for key in ("opensAt", "closesAt", "maxResponses"):
         result[key] = _integer(result[key])
@@ -311,11 +358,8 @@ def _link_origin(runtime):
     configured = str(secret("LINK_ORIGIN") if secret else "").rstrip("/").lower()
     if ORIGIN_RE.fullmatch(configured):
         return configured
-    for source in ("request_origin", "public_origin"):
-        origin = str(getattr(runtime, source, lambda: "")() or "").rstrip("/").lower()
-        if ORIGIN_RE.fullmatch(origin):
-            return origin
-    return LINK_ORIGIN
+    origin = str(getattr(runtime, "public_origin", lambda: "")() or "").rstrip("/").lower()
+    return origin if ORIGIN_RE.fullmatch(origin) else LINK_ORIGIN
 
 
 async def _row(runtime, org_bi, survey_id):
@@ -517,6 +561,7 @@ async def _full_survey(runtime, org_bi, survey_id, viewer):
     survey["questions"] = questions
     survey["results"] = _results(questions, [item["answers"] for item in responses])
     survey["resultsCounted"] = len(responses)
+    survey["activity"] = await _activity(runtime, survey_id, questions, runtime.now())
     return survey
 
 
@@ -680,9 +725,11 @@ async def _delete(runtime, row, org_bi, viewer, actor):
     account_bi, role = viewer
     if role not in MANAGER_ROLES and str(row.get("created_by_bi") or "") != account_bi:
         return _response(runtime, {"error": "survey_delete_forbidden"}, 403)
+    await runtime.d1_run("DELETE FROM survey_visits WHERE survey_id=?", row["survey_id"])
     await runtime.d1_run("DELETE FROM survey_responses WHERE survey_id=?", row["survey_id"])
     await runtime.d1_run(
         "DELETE FROM survey_forms WHERE org_bi=? AND survey_id=?", org_bi, row["survey_id"])
+    await _recount_usage(runtime, org_bi)
     await runtime.audit(actor, "survey.delete", "survey", row["survey_id"])
     return _response(runtime, {"ok": True, "deleted": row["survey_id"]})
 
@@ -696,6 +743,21 @@ async def _recount(runtime, survey_id):
         _integer((row or {}).get("n")), _integer((row or {}).get("last")), survey_id)
 
 
+async def _recount_usage(runtime, org_bi):
+    row = await runtime.d1_first(
+        "SELECT COALESCE(SUM(LENGTH(data)),0) AS chars FROM survey_responses WHERE org_bi=?", org_bi)
+    chars = _integer((row or {}).get("chars"))
+    await runtime.d1_run(
+        "INSERT INTO survey_usage(org_bi,chars) VALUES(?,?) "
+        "ON CONFLICT(org_bi) DO UPDATE SET chars=excluded.chars", org_bi, chars)
+    return chars
+
+
+async def _org_chars(runtime, org_bi):
+    row = await runtime.d1_first("SELECT chars FROM survey_usage WHERE org_bi=?", org_bi)
+    return _integer(row.get("chars")) if row else await _recount_usage(runtime, org_bi)
+
+
 async def _delete_response(runtime, row, org_bi, viewer, actor, response_id):
     found = await runtime.d1_first(
         "SELECT response_id FROM survey_responses WHERE survey_id=? AND response_id=?",
@@ -706,6 +768,7 @@ async def _delete_response(runtime, row, org_bi, viewer, actor, response_id):
         "DELETE FROM survey_responses WHERE survey_id=? AND response_id=?",
         row["survey_id"], response_id)
     await _recount(runtime, row["survey_id"])
+    await _recount_usage(runtime, org_bi)
     await runtime.audit(actor, "survey.response.delete", "survey", row["survey_id"])
     return _response(runtime, {"ok": True, "deleted": response_id, "survey": await _full_survey(
         runtime, org_bi, row["survey_id"], viewer)})
@@ -781,11 +844,40 @@ def _visitor(runtime):
     return visitor() if visitor else {}
 
 
-async def _respondent_key(runtime, survey_id):
+def _source(runtime):
     address = str((_visitor(runtime) or {}).get("ip") or "").strip()
-    if not address:
+    try:
+        parsed = ipaddress.ip_address(address)
+    except ValueError:
+        return address
+    if parsed.version == 4:
+        return address
+    return str(parsed.ipv4_mapped or ipaddress.ip_network(address + "/64", strict=False))
+
+
+async def _respondent_key(runtime, survey_id):
+    source = _source(runtime)
+    if not source:
         return ""
-    return (await runtime.blind("survey-respondent:%s:%s" % (survey_id, address)))[:32]
+    return (await runtime.blind("survey-respondent:%s:%s" % (survey_id, source)))[:32]
+
+
+async def _spend_source(runtime, size, now):
+    source = _source(runtime)
+    if not source:
+        return True
+    hour = now // HOUR_MS
+    bucket = await runtime.blind("survey-source:%s:%d" % (source, hour))
+    row = await runtime.d1_first("SELECT responses,chars FROM survey_sources WHERE bucket=?", bucket)
+    if row and (_integer(row.get("responses")) >= SOURCE_HOURLY_RESPONSES
+                or _integer(row.get("chars")) + size > SOURCE_HOURLY_CHARS):
+        return False
+    await runtime.d1_run("DELETE FROM survey_sources WHERE expires_at<?", now)
+    await runtime.d1_run(
+        "INSERT INTO survey_sources(bucket,responses,chars,expires_at) VALUES(?,1,?,?) "
+        "ON CONFLICT(bucket) DO UPDATE SET responses=responses+1,chars=chars+excluded.chars",
+        bucket, size, (hour + 1) * HOUR_MS)
+    return True
 
 
 async def _notify_creator(runtime, row, data, now):
@@ -835,12 +927,16 @@ async def _submit(runtime, token, body):
             "AND submitted_at>=?", survey_id, key, now - HOUR_MS)
         if _integer((recent or {}).get("n")) >= HOURLY_PER_RESPONDENT:
             return _response(runtime, {"error": "too_many_responses"}, 429)
+    sealed = await runtime.seal({"answers": answers})
+    if await _org_chars(runtime, row["org_bi"]) + len(sealed) > MAX_ORG_RESPONSE_CHARS:
+        return _response(runtime, {"error": "survey_storage_full"}, 409)
+    if not await _spend_source(runtime, len(sealed), now):
+        return _response(runtime, {"error": "too_many_responses"}, 429)
     try:
         await runtime.d1_run(
             "INSERT INTO survey_responses(response_id,org_bi,survey_id,respondent_key,"
             "submitted_at,data) VALUES(?,?,?,?,?,?)",
-            runtime.new_id(), row["org_bi"], survey_id, key, now,
-            await runtime.seal({"answers": answers}))
+            runtime.new_id(), row["org_bi"], survey_id, key, now, sealed)
     except Exception as failure:
         if _full_error(failure, "survey_responses_full"):
             return _response(runtime, {"error": "survey_closed", "status": "closed"}, 409)
@@ -848,9 +944,157 @@ async def _submit(runtime, token, body):
     await runtime.d1_run(
         "UPDATE survey_forms SET response_count=response_count+1,last_response_at=? "
         "WHERE survey_id=?", now, survey_id)
+    await runtime.d1_run(
+        "UPDATE survey_usage SET chars=chars+? WHERE org_bi=?", len(sealed), row["org_bi"])
     await _notify_creator(runtime, row, data, now)
     return _response(runtime, {
         "ok": True, "thankYou": str(data.get("thankYou") or DEFAULT_THANK_YOU)}, 201)
+
+
+def _track_detail(kind, value, questions):
+    detail = _clean(value, 16).lower()
+    if kind == "answer":
+        return detail if detail in {question["id"] for question in questions} else None
+    if kind == "link":
+        return detail if detail in TRACK_LINKS else None
+    if kind == "leave":
+        return detail if COUNT_RE.fullmatch(detail) else None
+    return "" if not detail else None
+
+
+async def _visit_key(runtime, survey_id, session):
+    address = str((_visitor(runtime) or {}).get("ip") or "").strip()
+    if address:
+        return (await runtime.blind("survey-visitor:%s:%s" % (survey_id, address)))[:32]
+    session = str(session or "").lower()
+    if SESSION_RE.fullmatch(session):
+        return (await runtime.blind("survey-visitor-session:%s:%s" % (survey_id, session)))[:32]
+    return ""
+
+
+async def _count(runtime, sql, *args):
+    row = await runtime.d1_first(sql, *args)
+    return _integer((row or {}).get("n"))
+
+
+async def _visit_ping(runtime, row, data, key, kind, now):
+    stage = 1 if kind == "view" else 2 if kind in TRACK_START_KINDS else 0
+    notify = getattr(runtime, "notify", None)
+    creator = _clean(row.get("created_by_name"), 64).lower()
+    if (not stage or not key or notify is None or not creator
+            or not _settings(data.get("settings"))["notifyOnVisit"]):
+        return 0
+    survey_id = row["survey_id"]
+    hour = now - now % HOUR_MS
+    prior = await _count(
+        runtime, "SELECT COALESCE(MAX(pinged),0) AS n FROM survey_visits "
+        "WHERE survey_id=? AND visitor_key=? AND created_at>=?", survey_id, key, hour)
+    if prior >= stage:
+        return 0
+    if await _count(runtime, "SELECT COUNT(*) AS n FROM survey_visits WHERE survey_id=? "
+                    "AND pinged>0 AND created_at>=?", survey_id, hour) >= SURVEY_HOURLY_VISIT_PINGS:
+        return 0
+    title = str(data.get("title") or "Untitled survey")
+    count = _integer(row.get("response_count"))
+    try:
+        sent = await notify(
+            creator, "plugin_activity",
+            ("👀 Someone opened your survey ‘%s’" if stage == 1
+             else "✍️ Someone started your survey ‘%s’") % title,
+            body="%d %s so far" % (count, "response" if count == 1 else "responses"),
+            href="%s?org=%s&survey=%s&tab=activity" % (PAGE_PATH, row.get("org_name"), survey_id),
+            dedupe="survey-visit:%s:%s:%d" % (survey_id, key, hour // HOUR_MS),
+            push=prior == 0)
+    except Exception:
+        return 0
+    return stage if sent else 0
+
+
+async def _track(runtime, token, body):
+    row = await _public_row(runtime, token)
+    if not row:
+        return _response(runtime, {"error": "survey_not_found"}, 404)
+    data = await _open_data(runtime, row)
+    kind = _clean(body.get("kind"), 16).lower()
+    detail = (_track_detail(kind, body.get("detail"), _stored_questions(data.get("questions")))
+              if kind in TRACK_KINDS else None)
+    if detail is None:
+        return _response(runtime, {"error": "invalid_event"}, 400)
+    now = runtime.now()
+    survey_id = row["survey_id"]
+    key = await _visit_key(runtime, survey_id, body.get("session"))
+    if key and await _count(
+            runtime, "SELECT COUNT(*) AS n FROM survey_visits WHERE survey_id=? AND visitor_key=? "
+            "AND created_at>=?", survey_id, key, now - HOUR_MS) >= VISITOR_HOURLY_EVENTS:
+        return _response(runtime, {"error": "rate_limited"}, 429)
+    if await _count(runtime, "SELECT COUNT(*) AS n FROM survey_visits WHERE survey_id=? "
+                    "AND created_at>=?", survey_id, now - HOUR_MS) >= SURVEY_HOURLY_EVENTS:
+        return _response(runtime, {"error": "rate_limited"}, 429)
+    pinged = await _visit_ping(runtime, row, data, key, kind, now)
+    await runtime.d1_run(
+        "INSERT INTO survey_visits(visit_id,org_bi,survey_id,visitor_key,kind,detail,pinged,"
+        "created_at) VALUES(?,?,?,?,?,?,?,?)",
+        runtime.new_id(), row["org_bi"], survey_id, key, kind, detail, pinged, now)
+    if kind == "view":
+        await runtime.d1_run(
+            "DELETE FROM survey_visits WHERE survey_id=? AND (created_at<? OR visit_id NOT IN ("
+            "SELECT visit_id FROM survey_visits WHERE survey_id=? "
+            "ORDER BY created_at DESC,visit_id DESC LIMIT ?))",
+            survey_id, now - VISIT_RETAIN_MS, survey_id, MAX_VISITS)
+    return _response(runtime, {"ok": True}, 202)
+
+
+def _visit_label(row, titles):
+    kind, detail = str(row.get("kind") or ""), str(row.get("detail") or "")
+    if kind == "view":
+        return "Opened the survey"
+    if kind == "start":
+        return "Started answering"
+    if kind == "answer":
+        title = titles.get(detail)
+        return ("Answered “%s”" % title) if title else "Answered a question"
+    if kind == "submit":
+        return "Sent their answers"
+    if kind == "link":
+        return "Clicked the ForkMesh link"
+    if kind == "leave":
+        count = _integer(detail)
+        if not count:
+            return "Left without answering"
+        return "Left after answering %d %s" % (count, "question" if count == 1 else "questions")
+    return kind
+
+
+async def _activity(runtime, survey_id, questions, now, limit=MAX_RECENT_VISITS):
+    row = await runtime.d1_first(
+        "SELECT SUM(kind='view') AS views,"
+        "SUM(kind NOT IN ('view','leave')) AS interactions,"
+        "SUM(kind='start') AS starts,SUM(kind='submit') AS submits,SUM(kind='leave') AS leaves,"
+        "COUNT(DISTINCT CASE WHEN visitor_key<>'' THEN visitor_key END) AS visitors,"
+        "COALESCE(MAX(created_at),0) AS last FROM survey_visits "
+        "WHERE survey_id=? AND created_at>=?", survey_id, now - VISIT_SUMMARY_DAYS * DAY_MS)
+    row = row or {}
+    rows = await runtime.d1_all(
+        "SELECT kind,detail,visitor_key,created_at FROM survey_visits WHERE survey_id=? "
+        "ORDER BY created_at DESC,visit_id DESC LIMIT ?", survey_id, limit)
+    titles = {question["id"]: question["title"] for question in questions}
+    return {
+        "days": VISIT_SUMMARY_DAYS,
+        "views": _integer(row.get("views")),
+        "visitors": _integer(row.get("visitors")),
+        "interactions": _integer(row.get("interactions")),
+        "starts": _integer(row.get("starts")),
+        "submits": _integer(row.get("submits")),
+        "leaves": _integer(row.get("leaves")),
+        "lastActivityAt": _integer(row.get("last")),
+        "recent": [{
+            "kind": str(item.get("kind") or ""),
+            "detail": str(item.get("detail") or ""),
+            "label": _visit_label(item, titles),
+            "visitor": str(item.get("visitor_key") or "")[:6],
+            "at": _integer(item.get("created_at")),
+        } for item in rows or []],
+    }
 
 
 async def org_has_data(runtime, org_bi):
@@ -870,6 +1114,8 @@ async def export_org_data(runtime, org_bi, org_name):
         survey.pop("publicUrl", None)
         survey["questions"] = _stored_questions(data.get("questions"))
         survey["responses"] = await _responses(runtime, row["survey_id"], MAX_RESPONSES)
+        survey["activity"] = await _activity(runtime, row["survey_id"], survey["questions"], now,
+                                             MAX_VISITS)
         surveys.append(survey)
     return {
         "plugin": PLUGIN_ID,
@@ -881,8 +1127,10 @@ async def export_org_data(runtime, org_bi, org_name):
 
 
 async def purge_org_data(runtime, org_bi):
+    await runtime.d1_run("DELETE FROM survey_visits WHERE org_bi=?", org_bi)
     await runtime.d1_run("DELETE FROM survey_responses WHERE org_bi=?", org_bi)
     await runtime.d1_run("DELETE FROM survey_forms WHERE org_bi=?", org_bi)
+    await runtime.d1_run("DELETE FROM survey_usage WHERE org_bi=?", org_bi)
 
 
 def _allowed(route):
@@ -891,6 +1139,8 @@ def _allowed(route):
         return ("GET",)
     if kind == "public":
         return ("GET", "POST")
+    if kind == "track":
+        return ("POST",)
     _, _, resource, item, action, response_id = route
     if not resource:
         return ("GET",)
@@ -905,12 +1155,20 @@ def _allowed(route):
     return ("GET", "PATCH", "DELETE")
 
 
+async def _ensure_tables(runtime):
+    global _SCHEMA_READY
+    if _SCHEMA_READY:
+        return
+    for statement in DATA_SCHEMA_UP:
+        await runtime.d1_run(statement)
+    _SCHEMA_READY = True
+
+
 async def _public_schema_ready(runtime):
     if not await runtime.d1_first(
             "SELECT plugin FROM org_plugin_installs WHERE plugin=? LIMIT 1", PLUGIN_ID):
         return False
-    for statement in DATA_SCHEMA_UP:
-        await runtime.d1_run(statement)
+    await _ensure_tables(runtime)
     return True
 
 
@@ -933,16 +1191,19 @@ async def handle(runtime, path):
     if method not in allowed:
         return _response(runtime, {"error": "method_not_allowed"}, 405, ", ".join(allowed))
     await runtime.ensure_schema()
-    if route[0] == "public":
+    if route[0] in ("public", "track"):
         if method != "GET" and not runtime.same_origin():
             return _response(runtime, {"error": "origin_not_allowed"}, 403)
-        if not await _public_schema_ready(runtime):
+        if (not await _token_survey(runtime, route[1])
+                or not await _public_schema_ready(runtime)):
             return _response(runtime, {"error": "survey_not_found"}, 404)
         if method == "GET":
             return await _public(runtime, route[1])
         body, failure = await _body(runtime)
         if failure:
             return failure
+        if route[0] == "track":
+            return await _track(runtime, route[1], body)
         return await _submit(runtime, route[1], body)
     if method != "GET" and not runtime.same_origin():
         return _response(runtime, {"error": "origin_not_allowed"}, 403)
@@ -963,11 +1224,12 @@ async def handle(runtime, path):
     org_bi, role = await runtime.organization(org_name, account_bi)
     if not org_bi or not role:
         return _response(runtime, {"error": "organization_not_found"}, 404)
+    if role in ORG_READ_ONLY_ROLES and method not in ("GET", "HEAD"):
+        return _response(runtime, {"error": "read_only_role"}, 403)
     if not await runtime.plugin_installed(org_bi, PLUGIN_ID):
         return _response(runtime, {"error": "plugin_not_installed", "organization": org_name,
                                    "canInstall": role in MANAGER_ROLES}, 409)
-    for statement in DATA_SCHEMA_UP:
-        await runtime.d1_run(statement)
+    await _ensure_tables(runtime)
     viewer = (account_bi, role)
     if not resource:
         return await _overview(runtime, org_bi, org_name, viewer)

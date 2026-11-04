@@ -238,6 +238,59 @@ def test_the_forkmesh_organization_is_described_without_a_saved_brief():
     assert "## Their recent activity with us\n- We have never contacted them." in prompt
 
 
+def _offer_pages(runtime):
+    runtime.db.execute("CREATE TABLE booking_pages (account_bi TEXT, slug TEXT, enabled INTEGER)")
+    runtime.db.execute("INSERT INTO booking_pages VALUES ('bi:alice','alice-meets',1)")
+    runtime.db.execute("INSERT INTO booking_pages VALUES ('bi:bob','bob-meets',1)")
+    runtime.db.execute("CREATE TABLE survey_forms (survey_id TEXT, org_bi TEXT, status TEXT, "
+                       "published_at INTEGER, data TEXT)")
+    org_bi = runtime.db.execute("SELECT org_bi FROM crm_contacts LIMIT 1").fetchone()[0]
+    for survey_id, status, title in ((f"{1:032x}", "open", "Hosting needs"),
+                                     (f"{2:032x}", "draft", "Unpublished")):
+        runtime.db.execute("INSERT INTO survey_forms VALUES (?,?,?,?,?)",
+                           (survey_id, org_bi, status, 1, "sealed:" + json.dumps({"title": title})))
+
+
+def test_the_email_panel_gets_the_prompt_with_sender_mission_and_pages_without_sending():
+    runtime = AiRuntime([])
+    sam = _contact(runtime, name="Sam", email="sam@example.com", flow="customers")
+    _offer_pages(runtime)
+    drafted = _send(runtime, sam, promptOnly=True)
+    assert drafted["status"] == 200, drafted
+    data = drafted["data"]
+    assert data["preview"] is True and data["to"] == "sam@example.com"
+    assert runtime.prompts == [] and runtime.mailtrap_calls == []
+    offers = {offer["label"]: offer["url"] for offer in data["offers"]}
+    assert offers["Book a meeting with me"].endswith("/meet?alice-meets")
+    survey = offers["Survey: Hosting needs"]
+    assert "/survey?t=" + f"{1:032x}" + "." in survey and "Unpublished" not in str(offers)
+    assert "bob-meets" not in data["prompt"]
+    assert "## About me, the sender" in data["prompt"] and "writing as alice" in data["prompt"]
+    assert "## Pages you may offer" in data["prompt"] and survey in data["prompt"]
+    sent = _send(runtime, sam, subject="Quick question",
+                 text="Hi Sam, could you tell us what you need from code hosting?\n\n" + survey
+                      + "\n\n" + data["link"], model="Claude Code")
+    assert sent["status"] == 201, sent
+    assert runtime.mailtrap_calls[-1][1]["tracked"] is True
+    contact = call(runtime.use("GET"), "/api/crm/acme/contacts/" + sam)["data"]["contact"]
+    assert contact["lastContactedAt"] > 0
+
+
+def test_without_booking_or_surveys_installed_the_prompt_offers_no_pages():
+    runtime = AiRuntime([])
+    sam = _contact(runtime, name="Sam", email="sam@example.com", flow="customers")
+    data = _send(runtime, sam, promptOnly=True)["data"]
+    assert data["offers"] == [] and "## Pages you may offer" not in data["prompt"]
+
+
+def test_the_forkmesh_organization_states_its_mission():
+    prompt = crm._auto_email_prompt(
+        "forkmesh", "Jett", crm.AUTO_EMAIL_FORKMESH_BRIEF, {"name": "Sam"}, "reach",
+        "referral", "https://forkmesh.com/r/jett", "", "", [], [], "",
+        mission=crm.AUTO_EMAIL_FORKMESH_MISSION, actor="jett")
+    assert "## Our mission\n" + crm.AUTO_EMAIL_FORKMESH_MISSION in prompt
+
+
 def test_drafts_with_placeholders_or_invented_links_are_refused():
     runtime = AiRuntime([_draft("Hi [Name]"),
                          _draft("Fine", extra="\nhttps://invented.example/x")])

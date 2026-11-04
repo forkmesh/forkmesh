@@ -91,6 +91,7 @@ struct NativePackageHost {
                        NativePackageSpecialAgentActionHandler)>
         specialAgentAction;
     std::function<QString()> accountName;
+    std::function<bool()> accountSignedIn;
     std::function<void(const QString &)> openDirectMessage;
     std::function<void(const QString &)> openUserProfile;
     std::function<QList<NativePackageRepository>()> repositories;
@@ -108,6 +109,7 @@ struct NativePackageHost {
     std::function<void(const QString &, QWidget *, NativePackageLoginHandler)>
         findLogins;
     std::function<void(const QString &)> openWebPage;
+    std::function<QJsonObject()> mastodonSignIn;
     std::function<QJsonObject()> repositoryWorkflows;
     std::function<void(const QString &, const QString &, const QString &,
                        const QJsonObject &, NativePackageReplyHandler)>
@@ -127,6 +129,7 @@ struct NativePackageHost {
     std::function<void(QWidget *)> attachPackageMenu;
     std::function<QUrl(const QString &)> accountApiUrl;
     std::function<QString(const QUrl &)> accountSessionToken;
+    std::function<void(std::function<void(const QString &)>)> requestAccountSession;
     std::function<bool(const QString &, const QString &, QString *, QString *,
                        QString *)>
         signProof;
@@ -140,6 +143,7 @@ struct NativePackageHost {
                        NativePackageReplyHandler)>
         windowRequest;
     std::function<QPixmap(const QString &)> accountPicture;
+    std::function<bool(const QString &, const QUrl &)> authorizeConnection;
 };
 
 struct NativePackagePromptTarget {

@@ -2537,6 +2537,8 @@ void MainWindow::animateRunningAgentIcons()
     advanceAgentSpinPhases();
     const bool refreshMeta = agentDetailMetaRefreshDue(m_agentSpinTicks);
     QSignalBlocker block(m_agentTable);
+    const bool tableShown = m_agentTable->isVisible();
+    const QRect onScreen = m_agentTable->viewport()->rect();
     for (int r = 0; r < m_agentTable->rowCount(); ++r) {
         QTableWidgetItem *idItem = m_agentTable->item(r, kAgentIdColumn);
         if (!idItem)
@@ -2544,16 +2546,19 @@ void MainWindow::animateRunningAgentIcons()
         const AgentSession *s = findAgentSession(idItem->data(Qt::UserRole).toInt());
         if (!s || s->merged || s->status != AgentStatus::Running)
             continue;
-        const qreal angle = agentSpinAngle(*s);
-        const QPixmap lead =
-            agentLeadGlyphPixmap(*s, agentSessionPullAvatar(*s), angle);
-        idItem->setIcon(lead.isNull() ? QIcon() : QIcon(lead));
-        idItem->setData(kAgentSpinAngleRole, angle);
-        m_agentTable->viewport()->update(m_agentTable->visualItemRect(idItem));
-        if (m_agentListView == AgentListView::Full)
-            if (QTableWidgetItem *issueItem = m_agentTable->item(r, kAgentIssueColumn))
-                m_agentTable->viewport()->update(
-                    m_agentTable->visualItemRect(issueItem));
+        const QRect leadRect = m_agentTable->visualItemRect(idItem);
+        if (tableShown && leadRect.intersects(onScreen)) {
+            const qreal angle = agentSpinAngle(*s);
+            const QPixmap lead =
+                agentLeadGlyphPixmap(*s, agentSessionPullAvatar(*s), angle);
+            idItem->setIcon(lead.isNull() ? QIcon() : QIcon(lead));
+            idItem->setData(kAgentSpinAngleRole, angle);
+            m_agentTable->viewport()->update(leadRect);
+            if (m_agentListView == AgentListView::Full)
+                if (QTableWidgetItem *issueItem = m_agentTable->item(r, kAgentIssueColumn))
+                    m_agentTable->viewport()->update(
+                        m_agentTable->visualItemRect(issueItem));
+        }
         if (QTableWidgetItem *issueItem = m_agentTable->item(r, kAgentIssueColumn)) {
             const QString progress = agentTaskProgress(s->id);
             if (issueItem->data(kAgentTaskProgressRole).toString() != progress) {
@@ -2662,7 +2667,7 @@ void MainWindow::onScannerTick()
             continue;
         anyActive = true;
     }
-    refreshAgentDots();
+    refreshAgentDotIntensities();
     if (!anyActive && m_scannerTimer)
         m_scannerTimer->stop();
 }

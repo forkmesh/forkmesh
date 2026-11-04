@@ -48,6 +48,106 @@ GitHub's meaning, where ```` ```svg ```` is code.
 Ordinary images (`![alt](url)`, `data:image/png;base64,…`) work as before
 and also print in the PDF.
 
+## Image options
+
+Since 2026-11-04 an image can carry Google Docs' image options: size and
+rotation, text wrapping, a place anywhere on the page, recolouring,
+transparency, brightness and contrast. They live in a line directly above the
+image's line, outside a code block:
+
+```markdown
+<!-- image: wrap=behind; width=210; height=297; pages=all; recolor=grayscale -->
+![Company logo](data:image/png;base64,…)
+```
+
+The line applies to the first image on the next line, when that line starts
+with the image. Like the layout line it is an HTML comment, so other Markdown
+viewers hide it, and every client hides it in its preview and PDF. The web
+applies the options; the desktop and the phones hide the line and show the
+image as before. Keys are lower case and `;`-separated; a missing or unknown
+key or value uses the default, and numbers are clamped and kept to one
+decimal. Lengths are millimetres, so they mean the same on screen and on
+paper.
+
+| Key | Values | Default |
+| --- | --- | --- |
+| `wrap` | `inline`, `wrap` (text flows around it), `break` (on its own line), `behind` and `front` (placed on the page, behind or in front of the text) | `inline` |
+| `align` | `left`, `center`, `right` (for `wrap` and `break`; `wrap` uses left or right) | `left` |
+| `width`, `height` | 0–2000 mm; 0 is the natural size, and a width alone keeps the aspect ratio | 0 |
+| `rotate` | −360–360 degrees | 0 |
+| `margin` | 0–100 mm between a wrapped image and the text | 3.2 |
+| `x`, `y` | −2000–2000 mm from the page's top-left corner (`behind` and `front`) | 0 |
+| `pages` | `anchor` (the page the image's line lands on), `all`, `first`, `rest` | `anchor` |
+| `recolor` | `none`, `grayscale`, `sepia`, `negative` | `none` |
+| `transparency` | 0–100 | 0 |
+| `brightness`, `contrast` | −100–100 | 0 |
+
+Writing the options keeps only the keys that differ from the defaults, in
+the table's order, and drops the line when none do. A background is just an
+image `behind` the text that fills the page: **Background** in Pages inserts
+one with `x=0; y=0`, the paper's width and height and `pages=all` at the end
+of the note (and writes the layout line first, so it stays the first
+`<!-- page: -->`-style line).
+
+### On the web
+
+Clicking an image in Live or Pages selects it (`selectNoteImage` in
+`app/public/dashboard/js/09-notes.js`): a frame with a corner handle that
+resizes it, and a toolbar under it with **Edit** (the Image options panel), the
+text wrapping menu (In line, Wrap text, Break text, Behind text, In front of
+text), **Comment** and **React** (anchored to the image's line, like a
+selection) and a bin that deletes it. An image behind or in front of the text
+can be dragged on the page in Pages. Delete or Backspace removes the selected
+image and its options line; Escape lets go of it. An image added with
+**Image** or **Background** is selected as soon as it shows.
+
+In Pages the text window sits above a Behind text image, so a click anywhere
+over that image (outside a link) picks it through the text. A drag starts
+after 3 px, so a click only selects; it moves the image with `translate`
+once per frame and writes x and y once, on release. A change that only moves,
+sizes or restyles a Behind or In front image restyles the copies already on
+the pages instead of laying the note out again, so a drag or a slider never
+reloads the page frame.
+
+Ctrl+Z (Cmd+Z) undoes the last image change (insert, move, resize, wrapping,
+options, alt text, delete) and Ctrl+Shift+Z or Ctrl+Y redoes it, while focus
+is not in a text field. The browser's own undo cannot do this, because these
+changes write the Markdown with a script. The 50-step history is kept per
+note and is dropped when the Markdown has changed some other way since, such
+as typing or a collaborator's edit, so an undo never throws away text.
+
+The Image options panel follows Google Docs: Size & rotation (width and
+height in inches, or centimetres on A4, their scale against the image's
+natural size, lock aspect ratio, angle and a 90° turn), Text wrapping with
+alignment and the margin from the text, Position (x and y from the page's
+corner, which pages it shows on, Fill the page, Center on page; only for
+Behind and In front of text), Recolor, Adjustments (transparency,
+brightness, contrast) and Alt text (the image's title and its Markdown alt
+text). Every change writes the options line, which autosaves and reaches
+collaborators like any edit.
+
+## Pages
+
+Since 2026-11-04 the web editor's layout switch has a fifth choice, **Pages**:
+the note as it prints, page by page on a grey desk, at "Fit width" or a set
+zoom, with the page count, **Image**, **Background** and **Export PDF** above
+it. It is the same document the PDF prints, so what you see is what you get.
+
+`paginateNoteDocument` lays the print document out in a column per page
+(CSS multi-column with the paper's content width and height, the cover,
+contents and page breaks ending a column), measures how many columns it
+fills, and builds one paper-sized page per column: the images placed
+`behind` the text, a window at the margins onto that column of the text, the
+images placed `in front`, and the page number. Heading ids stay only on the
+page that shows them, so the contents still link. The view runs in a
+sandboxed frame without scripts (`allow-same-origin`, so the page can measure
+and wire it).
+
+Export PDF on the web now prints these pages: the print frame is paginated
+the same way after it loads, with `@page { margin: 0 }`, so a background
+reaches the paper's edge and the PDF matches Pages exactly. Clipped text is
+not painted, so each line is in the PDF once.
+
 ## Page breaks
 
 A line, outside a code block, whose text is `<!-- pagebreak -->` (any case,
@@ -119,8 +219,9 @@ the note text, so it saves like any other edit (autosave or Save).
 - **Web** (`app/public/dashboard/js/09-notes.js`): builds the print document in
   a hidden frame (sandboxed: no scripts) and opens the browser's print dialog, where **Save as PDF**
   writes the file; the frame's title is the file name without `.pdf`, which
-  browsers use as the suggested name. CSS `@page` carries size and margins and
-  the page numbers in the bottom-centre margin box.
+  browsers use as the suggested name. The document's `@page` rule carries the
+  size and margins; once loaded, the frame is laid out into paper-sized pages
+  as in [Pages](#pages), which draw their own numbers and image options.
 - **Desktop** (`NotesPage::exportPdf`, rules in `desktop/src/NoteDocument.h`, drawing in
   `desktop/src/NoteDocumentRender.h`):
   asks for the file and writes it with `QPdfWriter`, laying out a
@@ -132,6 +233,14 @@ the note text, so it saves like any other edit (autosave or Save).
   to the system print service, where **Save as PDF** writes the file; the
   WebView is Chromium, so `@page` sizes, margins and numbers apply as on the
   web. Details for both phones: `docs/native/notes.md`.
+
+## Versions beside the document
+
+The editor's right column ([the side column](notes-comments.md#the-side-column))
+has a History tab that opens any saved version read-only (on the web drawn
+like the preview, figures and page breaks included), next to Activity and the
+collaborators' Chat. A restored version brings back its layout line and
+figures with the rest of the Markdown.
 
 ## Shared cases
 
@@ -154,13 +263,26 @@ Every client's tests cover at least these:
 | a 262145-byte SVG body | code block |
 | `<!-- pagebreak -->`, `<!--PAGEBREAK-->`, `  <!--  pagebreak  -->  ` | page break |
 | `<!-- pagebreak --> text` | not a page break |
+| `<!-- image: wrap=behind -->` + `![a](a.png)` | the first line hidden, the image shown |
+| `<!-- image: wrap=front -->` inside a code fence | code |
 | title "Project Proposal", "", "  ", "Ünïcode / x" | `project-proposal.pdf`, `note.pdf`, `note.pdf`, `n-code-x.pdf` (the Markdown slug rule) |
 
 ## Tests
 
+- `app/tests/test_notes_images.py`: reading and writing image options, adding,
+  replacing and removing the line, the renderer hiding it and marking the
+  image's paragraph, mapping images to lines, page geometry, and the
+  published page hiding it.
+- `app/browser_tests/tests/dashboard-notes-live.spec.js`: Pages with page
+  numbers, the image toolbar, wrap menu and options panel placing an image
+  behind every page, recoloured, with alt text, the PDF frame laid out the
+  same way, resizing and wrapping an image in Live, and a Background added in
+  Pages being selected, moved, picked through the text, deleted, undone and
+  redone.
 - `app/tests/test_notes_documents.py`: the web page's layout parsing and
   writing, figure detection and size cap, page break detection, the print
-  document and file name, and the published page's figures.
+  document and file name, the published page's figures, and the right
+  column's four tabs.
 - `app/browser_tests/tests/dashboard-notes-pdf.spec.js`: the preview's figure
   and page break, the Export PDF sheet saving the layout line, the sandboxed
   print frame, and a viewer exporting without saving.

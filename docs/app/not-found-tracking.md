@@ -109,12 +109,19 @@ writes a dot that way, and in the 404 log every such path came from a scanner.
 | `cms` | 2 | `wp-*`, `xmlrpc`, `phpmyadmin`, `adminer*` deeper in a path, `actuator` (also under `/api/`), `solr`, `server-status`; first-segment products (`jenkins`, `grafana`, `kibana`, `rabbitmq`, `airflow`, `jupyter`, `administrator`, `elmah`, `nacos`, `zabbix`, `webmin`, `portainer`, debug toolbars, `fpm-status`); infrastructure APIs: pprof, Consul `/v1/{agent,catalog,status,health}/`, etcd `/v3/kv/`, Docker `/v1.NN/`, Elasticsearch `/_cat`, `/_search`, ..., Sentry `/api/0/`, GitLab `/api/v4/ci/`, `/rails/`, Metabase `api/session/properties` (also under `/metabase/`, `/bi/`, ...), XWiki `/bin/{get,view}/Main/`, Atlassian `/rest/api/1.0/`, Joomla `/media/system/js/`, Strapi `/api/users-permissions`, CKAN `/api/action/datastore_search*`, SQL endpoints `/api/{db,data,rds}/{query,execute}`, Tomcat `/manager/html`, LLM proxies (`bedrock-runtime`, `/v1/models`) |
 | `backup` | 2 | last segment ending `.bak`, `.old`, `.swp`/`.swn`, `~`, `.zip`, `.tar.gz`, `.tbz2`, `.zst`, `.war`, `.log`, `.log.N`; `db`/`database`/`dump`/`backup`/`users` `.csv`/`.json`/`.xml`; anything under `/var/log/` |
 | `config` | 1 | `.yml`, `.ini`, `.conf`, `.toml`, `config*`, `appsettings*`, `Dockerfile`, `Jenkinsfile`, `web.config`, `vercel.json`, build and dependency files (`go.sum`, `requirements.txt`, `Makefile`, `CMakeLists.txt`, `build.sh`, `pom.xml`, `manage.py`, ...), `node_modules`, `venv`, API-doc discovery (`swagger*`, `api-docs`, `openapi.json`, `graphiql`, `graphql`, `redoc`, `altair`), other dot-segments |
-| `recon` | 1 | First segment only: directory guesses (`backup/`, `db/`, `keys`, `secrets`, `certs/`, `mysql`, `redis`, `kafka`, `console`, `debug`, `shell`, `terminal`, `proxy`, `fetch`, `render`, `screenshot`, `metrics`, `whoami`, `vendor/`, `uploads/`, `themes/`, `_next/`, `terraform/`, `ansible/`, ...), mail-provider names (`mailgun`, `sendgrid`, `ses`, `smtp`, ...), version files (`README.md`, `CHANGELOG.txt`, `LICENSE.txt`, `version.json`, `build-info`, `MANIFEST.in`), `reconx-*` canaries |
+| `recon` | 1 | First segment only: directory guesses (`backup/`, `db/`, `keys`, `secrets`, `certs/`, `mysql`, `redis`, `kafka`, `console`, `debug`, `shell`, `terminal`, `proxy`, `fetch`, `render`, `screenshot`, `metrics`, `whoami`, `vendor/`, `uploads/`, `themes/`, `_next/`, `terraform/`, `ansible/`, ...), mail-provider names (`mailgun`, `sendgrid`, `ses`, `smtp`, ...), version files (`README.md`, `CHANGELOG.txt`, `LICENSE.txt`, `version.json`, `build-info`, `MANIFEST.in`), build-metadata names (`BUILD_REV`, `GIT_SHA`, `BUILD_NUMBER`), `reconx-*` canaries |
 
 Product names and recon words count only as the first segment and
 credential-variable names only as the last, so a marketplace package or
 repository called `jenkins`, `kafka` or `aws-credentials` is never a probe, and
-an `/owner/MY_REPO` path is never read as an environment variable. Repository
+an `/owner/MY_REPO` path is never read as an environment variable. A build-metadata name (`build`, `git`, `release`, `commit` or `version`,
+ending in `rev`, `sha`, `id`, `number`, `tag`, ...) is never an environment
+variable either: on 2026-11-03 an agent on the operator's workstation looked
+for the deployed release with `/BUILD_REV` (the marker file in each core's
+release folder) and `/version`, and the one `secret` point set banned the
+operator's IPv6 /64 from the App, World and Git for a week. It is now `recon`,
+so both requests together score 2. A name that also names a credential
+(`GIT_TOKEN`, `RELEASE_KEY`) is still `secret`. Repository
 routes win over signatures (`/rails/rails/blob/...` is a repository). Words a
 person types (`/admin`, `/login`, `/settings`, `/contact`, `/mail`, `/security`)
 stay unclassified. A recon word weighs 1, so it bans only alongside two more
@@ -189,6 +196,17 @@ deep or repository `/api/…` paths, and ordinary asset extensions.
   `probe-ban:fleet-or-mirror-host`).
 - Bans block the App, World and proxied site routes, not the static
   forkmesh.com files.
+- **An administrator's network is never banned.** A visitor whose address
+  (the IPv4 address or the IPv6 /64) is the sign-in address of a live
+  session of an `is_admin` account (not revoked, not expired, seen in the
+  last 30 days) is not banned when it reaches 3 points: its score is reset
+  and `observe` answers `trusted`. Each sweep also lifts an active ban on
+  such a network (`lifted_by` "admin sign-in"). The operator's coding agents
+  run `curl` from the workstation, with no `Sec-Fetch-Site`, and each new
+  path they guess can look like a probe: on 2026-11-03 a `/BUILD_REV` ban
+  stayed in force after the classifier fix and kept the operator's desktop,
+  web and git out. Trust comes only from an administrator's session, so a
+  scanner cannot earn it by opening an ordinary account.
 
 ### Modes
 
@@ -206,7 +224,8 @@ Outside `ban`, the next sweep deletes every `auto-probe-*` rule.
 
 ### Sweep
 
-Cron phase `probe-bans`, every 5 minutes: delete `auto-probe-*` rules without
+Cron phase `probe-bans`, every 5 minutes: lift active bans on an
+administrator's network (above); delete `auto-probe-*` rules without
 an active enforced ban; delete `probe_bans` rows expired over 7 days ago;
 delete `probe_visitors` unseen for 90 days and not banned; prune the memory
 table; lift active bans on autoscaled nodes and live mirrors (see Safety

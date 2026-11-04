@@ -508,7 +508,8 @@ void MainWindow::flyToComposer(QWidget *from)
     auto *ghost = new QLabel(host);
     ghost->setObjectName(QStringLiteral("composerFlyGhost"));
     ghost->setAttribute(Qt::WA_TransparentForMouseEvents);
-    ghost->setPixmap(from->grab());
+    const QPixmap shown = forkmesh::ui::kit::shownPixels(from);
+    ghost->setPixmap(shown.isNull() ? from->grab() : shown);
     ghost->setScaledContents(true);
     ghost->setGeometry(start);
     auto *opacity = new QGraphicsOpacityEffect(ghost);

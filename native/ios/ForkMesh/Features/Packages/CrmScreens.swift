@@ -286,7 +286,7 @@ struct CrmHeader: View {
             }
             switch model.section {
             case .contacts:
-                CrmTabChips(model: model, items: data.contactTabs)
+                CrmTabChips(model: model, items: data.contactTabs, networks: data.networkTabs)
             case .activity:
                 CrmTabChips(model: model, items: data.workspaceTabs)
             default:
@@ -307,7 +307,7 @@ struct CrmTabContent: View {
 
     var body: some View {
         switch model.activeTab {
-        case .list, .pipeline, .noPipeline:
+        case .list, .pipeline, .noPipeline, .network:
             CrmContactList(model: model, data: data, selecting: $selecting, selection: $selection, present: present)
         case .activity:
             CrmActivityPane(model: model, data: data, present: present)
