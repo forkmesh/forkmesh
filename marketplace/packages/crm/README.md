@@ -518,7 +518,17 @@ Every toot sent is a linked message (`provider: "mastodon"`), as before.
   The toots sync with a token holding `read:notifications` also reads
   mentions and logs those from known contacts as inbound.
 - `activity` gains a `toots` kind (outbound Mastodon toots per member per
-  day) for the leaderboard.
+  day) for the leaderboard; Mastodon rows no longer count as `emails`.
+- The `mastodon_*` fields never count as a contact's handles
+  (`MASTODON_OUTREACH_FIELDS` in `_contact_handles`), so a draft that names
+  someone else cannot match them.
+- Agents use the MCP tools `crm_mastodon_outreach` (queue and counts, no
+  prompt) and `crm_save_mastodon_drafts` (`tools/forkmesh_mcp_server.py`).
+
+Code: `_mastodon_outreach`, `_save_mastodon_drafts`, `_mastodon_send`,
+`_mastodon_outreach_step` (called from `_link_message`), `_sync_mentions`,
+`_mastodon_toot_rows`, `_mastodon_length`. Tests:
+`tests/test_mastodon_outreach.py`, `tools/test_forkmesh_mcp_server.py`.
 
 ### Clients
 
@@ -547,6 +557,15 @@ Every toot sent is a linked message (`provider: "mastodon"`), as before.
 - **Leaderboard strip**: every CRM page shows one small line under its header,
   the top three members over 7 days by emails, outreach and toots
   (`7 days · <name> <n> · …`); it opens the Team leaderboard.
+- The web Team leaderboard has a **Toots** column and counts toots in its
+  total, so the strip and the page agree; the strip opens it at 7 days. A
+  `follow-first` card hides **Send** (the web cannot follow) and offers
+  **Open profile**; after the share fallback the card stays until the toot is
+  logged. Code (web): `loadCrmMastodon`, `renderCrmMastodon`,
+  `crmMastodonCardHtml`, `crmMastodonStrategyHtml`, `crmTootLength`,
+  `sendCrmMastodon`, `skipCrmMastodon`, `prepareCrmMastodon`,
+  `renderCrmLeaderboardStrip`, `crmLeaderboardTop`. Tests:
+  `tests/test_web_mastodon.py` with `tests/mastodon_page_checks.js`.
 - The desktop's celebration for a tracked email or toot is a small card in the
   middle of the window (fixed 14/11 pt text, at most 420 px wide, no
   full-window confetti, 3.5 s, click-through); several in a row update one
