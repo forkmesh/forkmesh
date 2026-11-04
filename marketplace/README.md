@@ -146,6 +146,7 @@ Planned extractions are described in
 | [`capture`](packages/capture/manifest.json) | Desktop region capture and annotation. |
 | [`discord`](packages/discord/manifest.json) | Desktop Discord bot connector; removable without leaving its token, history or avatars. |
 | [`ledger`](packages/ledger/manifest.json) | Link to the host's public financial ledger plus private local expense and income records; never handles wallet secrets. |
+| [`reticulum`](packages/reticulum/manifest.json) | Desktop connector for the Reticulum mesh network: live map, traffic and announce charts, path lookups and interface management. |
 | [`vault`](packages/vault/manifest.json) | End-to-end encrypted password vault (Argon2id, AES-256-GCM, X25519 + ML-KEM-768 via X-Wing, Ed25519). The server holds no key. Clients: web, browser extension, desktop and mobile. |
 | [`browser-extension`](packages/browser-extension/manifest.json) | The ForkMesh Chrome extension for the vault, CRM and Marketing; no worker module. |
 | [`analytics`](packages/analytics/manifest.json) | First-party product analytics with a public write-key route, sealed event batches and no stored IP addresses. |

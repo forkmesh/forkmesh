@@ -143,6 +143,7 @@ struct NativePackageHost {
                        NativePackageReplyHandler)>
         windowRequest;
     std::function<QPixmap(const QString &)> accountPicture;
+    std::function<bool(const QString &, const QUrl &)> authorizeConnection;
 };
 
 struct NativePackagePromptTarget {

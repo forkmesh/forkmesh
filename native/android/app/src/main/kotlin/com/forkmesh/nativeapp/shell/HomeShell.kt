@@ -350,6 +350,7 @@ class HomeShell : Screen() {
             Route.Kind.Hosts to ShellMenuBadge(runnerAttention.size),
             Route.Kind.Tasks to ShellMenuBadge(badges.assignedTasks),
             Route.Kind.RssReader to ShellMenuBadge(rssUnread),
+            Route.Kind.Reticulum to ShellMenuBadge(com.forkmesh.nativeapp.feature.reticulum.ReticulumState.shared.unread),
         )
     }
 
