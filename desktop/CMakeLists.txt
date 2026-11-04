@@ -1114,6 +1114,8 @@ set(FORKMESH_APP_SOURCES
     src/HiddenUnicodeGuard.cpp
     src/CopyFormatting.h
     src/CopyFormatting.cpp
+    src/InlineImageResources.h
+    src/InlineImageResources.cpp
     src/AdBannerWidget.h
     src/AdBannerWidget.cpp
     src/SecretDiffBanner.h
@@ -3749,6 +3751,17 @@ forkmesh_link_opengl(forkmesh-window-tests)
         set_target_properties(forkmesh-copy-formatting-tests PROPERTIES MACOSX_BUNDLE FALSE)
     endif()
 
+    qt_add_executable(forkmesh-inline-image-resources-tests
+        tests/test_inline_image_resources.cpp
+        src/InlineImageResources.h
+        src/InlineImageResources.cpp
+    )
+    target_link_libraries(forkmesh-inline-image-resources-tests PRIVATE Qt6::Widgets)
+    target_include_directories(forkmesh-inline-image-resources-tests PRIVATE src)
+    if(APPLE)
+        set_target_properties(forkmesh-inline-image-resources-tests PROPERTIES MACOSX_BUNDLE FALSE)
+    endif()
+
     qt_add_executable(forkmesh-genie-vitals-tests
         tests/test_genie_vitals.cpp
         src/GenieVitals.h
@@ -4541,6 +4554,10 @@ forkmesh_link_opengl(forkmesh-perf-tests)
              COMMAND forkmesh-hidden-unicode-tests)
     add_test(NAME forkmesh-copy-formatting-tests
              COMMAND forkmesh-copy-formatting-tests)
+    add_test(NAME forkmesh-inline-image-resources-tests
+             COMMAND forkmesh-inline-image-resources-tests)
+    set_tests_properties(forkmesh-inline-image-resources-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_test(NAME forkmesh-genie-vitals-tests
              COMMAND forkmesh-genie-vitals-tests)
     add_test(NAME forkmesh-genie-landmarks-tests
@@ -4930,6 +4947,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-message-box-clicks-tests
         forkmesh-hidden-unicode-tests
         forkmesh-copy-formatting-tests
+        forkmesh-inline-image-resources-tests
         forkmesh-tests forkmesh-window-tests
         forkmesh-qt-runtime-diagnostics-tests
         forkmesh-prompt-spellcheck-tests

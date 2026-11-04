@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-04", "area": "Desktop", "text": "Diffs with avatars and agent transcripts with very long commands no longer freeze the window."},
   {"date": "2026-11-04", "area": "Android", "text": "Minimizing a call on a locked phone now hides the app behind the lock screen until you unlock."},
   {"date": "2026-11-04", "area": "iPhone", "text": "Telling, continuing or stopping an agent with Siri now asks you to unlock your iPhone first."},
   {"date": "2026-11-04", "area": "Market", "text": "Browser extension 2.34.0 opens a wider, more compact window that shows two sections per row and remembers which ones you left open, and Zoho Mail's Select and Delete now act on exactly the messages shown, even with a message open."},

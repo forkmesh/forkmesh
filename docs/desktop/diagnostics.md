@@ -808,6 +808,31 @@ returned, so summed frame totals overstate a function's own cost.
   keys are dropped once, and the startup no longer rewrites and fsyncs
   `ForkMesh.conf` after every session that ended with the prompt floating.
 
+### Rules from report #26 (2026-11-04)
+
+- **Register inline images, do not inline them.** Qt keeps a `data:` image as
+  its URL and bytes. Every layout and paint parses the URL again and decodes
+  the PNG again, so a merge certificate or leaderboard full of avatars blocked
+  the GUI thread for 9.4 s while the window resized.
+  `forkmesh::ui::adoptInlineImages` (`InlineImageResources.h`) decodes each
+  picture once and stores it as a pixmap resource on the diff document under
+  a short `fm-inline:<sha1>` URL. It rewrites only `<img>` sources, so diff
+  text that mentions a data URL stays as it is. The diff view's `setHtml` and
+  `insertHtml` calls in `MainWindowShared.cpp` go through it. A 400-row test
+  lays out in about half the time (`forkmesh-inline-image-resources-tests`).
+- **Lay out only what you measure.** `updateBranchDiffActiveOutline` runs on
+  every resize. It asks for the document height only when the active file is
+  the last one, because that is the only case that needs it.
+- **Clip one-line commands.** A transcript command card shows the command
+  flattened onto one line, and a long heredoc made a rich-text label tens of
+  thousands of characters wide (3.5 s in `addCommand`). The card now shows
+  the first 480 characters (`CodexTranscriptStyle::clippedCommandLine`); the
+  hover card still shows the whole command. `singleLineCommand` no longer
+  copies the rest of the command at every newline: 20,000 lines took 2.9 s
+  before and take 11 ms now (`forkmesh-codex-tests`).
+- Not fixed: opening the Market rebuilds every card (2.5 s, x34). It is still
+  rebuilt on each open by design; see "Market page build" above.
+
 ### Startup: installed package pages after first paint
 
 Building every installed package's page inside `buildChatPage` costs seconds

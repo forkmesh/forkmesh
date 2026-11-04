@@ -72,11 +72,11 @@ inline QString commandText(const QJsonObject &input)
     return argv.join(QLatin1Char(' ')).trimmed();
 }
 
-inline bool shellLineBreakNeedsSeparator(const QString &before,
-                                         const QString &after)
+inline bool shellLineBreakNeedsSeparator(QStringView before,
+                                         QStringView after)
 {
-    const QString left = before.trimmed();
-    const QString right = after.trimmed();
+    const QStringView left = before.trimmed();
+    const QStringView right = after.trimmed();
     if (left.isEmpty() || right.isEmpty())
         return false;
     for (const QString &tail :
@@ -130,7 +130,7 @@ inline QString singleLineCommand(const QString &raw)
             while (next < command.size() && command.at(next).isSpace()
                    && command.at(next) != QLatin1Char('\n'))
                 ++next;
-            const QString remainder = command.mid(next);
+            const QStringView remainder = QStringView(command).sliced(next);
             if (!out.isEmpty() && next < command.size()) {
                 if (shellLineBreakNeedsSeparator(out, remainder))
                     out += QStringLiteral("; ");
@@ -156,6 +156,16 @@ inline QString singleLineCommand(const QString &raw)
             quote = QChar();
     }
     return out.trimmed();
+}
+
+inline QString clippedCommandLine(const QString &line, int maxChars = 480)
+{
+    if (line.size() <= maxChars)
+        return line;
+    int cut = maxChars;
+    if (cut > 0 && line.at(cut - 1).isHighSurrogate())
+        --cut;
+    return line.left(cut) + QChar(0x2026);
 }
 
 inline QStringList shellWords(const QString &line)
