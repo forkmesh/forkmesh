@@ -4240,6 +4240,8 @@ const QString kAutoPrBountyAmountSetting =
 const QString kAutoPrBountyModeSetting = QStringLiteral("bounty/autoPrMode");
 const QString kSolanaLastBalanceSettingPrefix =
     QStringLiteral("profile/solanaLastBalance/");
+const QString kTipLastLinkedAddressSetting =
+    QStringLiteral("tips/lastLinkedAddress");
 const QString kWindowGeometrySetting = QStringLiteral("ui/windowGeometry");
 const QString kWindowOpacitySetting = QStringLiteral("ui/windowOpacity");
 constexpr int kMinimumWindowOpacityPercent = 30;

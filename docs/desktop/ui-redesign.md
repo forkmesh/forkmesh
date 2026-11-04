@@ -1582,6 +1582,22 @@ totals, wallets, the payout plan), so it is unchanged. The page carries the
     - "Link wallet" opens the same section and focuses the profile's
       "Link a wallet…" button (`m_profileTipLinkButton`), which is where the
       hint already points.
+    - **Key file missing:** the payment wallet lives only in
+      `<data>/tips/tip-key.vault`, so a lost file used to look like a wallet
+      that was never linked (found 2026-11-03, after the 2026-09-22 data
+      wipe). `refreshTipWalletControls` now keeps the linked address in
+      `tips/lastLinkedAddress`; "Remove wallet" clears it. When the setting
+      names an address the vault no longer holds, the card says "Key file
+      missing" with that address, the button reads "Relink wallet", and the
+      profile's wallet section says the same. Re-importing the key is the only
+      fix, so the hourly box backup (`forkmesh-backup-minimal.sh`) now
+      includes `data/core/tips/`.
+    - **Back up a generated wallet.** The lost wallet had been generated in
+      the app, so the vault held its only copy and the passphrase alone could
+      not rebuild it. Linking a key made with "Generate" now ends in a "Back
+      up the new wallet now" prompt whose default opens the existing export
+      (`exportTipWalletSecret`); an imported key keeps the old notice, since
+      it already exists elsewhere.
   - **QR popover** (`#ledgerWalletQrMenu`): the existing `QrCode` encoder
     draws the real `solana:<address>` code on a white rounded tile
     (`ledgerQrTile`). Under it are the short mono address (the full one in
