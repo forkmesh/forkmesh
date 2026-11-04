@@ -1523,3 +1523,154 @@ def test_mastodon_follow_uses_the_mastodon_plugin_sign_in_without_an_org_token()
     assert "/api/v2/search" in _feature_body("followFromPlugin")
     assert '"Authorization"' in _feature_body("mastodonSignedCall")
     assert "pluginMastodonErrorText" in _feature_body("updateMastodonBar")
+
+
+def test_desktop_mastodon_tab_reads_the_queue_and_waits_for_the_route():
+    assert 'tabs->addTab(mastodonPage, QStringLiteral("Mastodon"))' in FEATURE
+    assert 'mastodonPage->setProperty("crmPageIcon"' in FEATURE
+    assert ("if (m_tabs->currentWidget() == m_mastodonPage)\n"
+            "            loadMastodonOutreach(true);") in FEATURE
+    load = _feature_body("loadMastodonOutreach")
+    assert 'organizationPath(QStringLiteral("/mastodon"))' in load
+    assert 'QByteArrayLiteral("GET")' in load and '"?tz="' in load
+    assert 'code == QLatin1String("not_found")' in load
+    assert 'code == QLatin1String("method_not_allowed")' in load
+    assert 'QStringLiteral("unavailable")' in load
+    assert "if (checkReplies)\n            checkMastodonReplies(true);" in load
+    assert "QTimer" not in load
+    render = _feature_body("renderMastodonOutreach")
+    assert "Not available yet" in render
+    assert '"dailyTarget"' in render and "kMastodonDailyTarget" in render
+    assert 'stats.value(QStringLiteral("today"))' in render
+    assert 'stats.value(QStringLiteral("week"))' in render
+    assert '"segments"' in render and '"asks"' in render
+    assert "100.0 * replied / sent" in render
+    assert 'QStringLiteral("Reply rate")' in FEATURE
+    card = _feature_body("mastodonOutreachCard")
+    for field in ("mastodon_segment", "mastodon_ask", "mastodon_why", "mastodon_draft",
+                  "mastodon_prepared", "mastodon_status"):
+        assert f'"{field}"' in card
+    assert "mastodonProfileUrl(handle)" in card and "setOpenExternalLinks(true)" in card
+    assert "mastodonLength(draft->toPlainText())" in card
+    assert "used > kMastodonTootLimit" in card and "Theme::Role::Danger" in card
+    assert 'status == QLatin1String("follow-first")' in card
+    assert 'QStringLiteral("Follow")' in card and 'QStringLiteral("Send")' in card
+    assert 'QStringLiteral("Skip")' in card
+
+
+def test_desktop_counts_a_toot_the_way_mastodon_does():
+    length = _feature_body("mastodonLength")
+    assert "kMastodonLinkLength" in length
+    assert "constexpr int kMastodonLinkLength = 23;" in FEATURE
+    assert "https?://" in length
+    assert 'QStringLiteral("\\\\1@\\\\2")' in length
+    assert "toUcs4().size()" in length
+    assert "constexpr int kMastodonTootLimit = 500;" in FEATURE
+
+
+def test_desktop_sends_a_prepared_toot_with_the_signed_in_account():
+    send = _feature_body("sendMastodonDraft")
+    assert "m_mastodonSending.contains(contactId)" in send
+    assert "m_mastodonSending.insert(contactId)" in send
+    assert "if (!follower.plugin)" in send
+    assert send.index("if (!follower.plugin)") < send.index("/api/v1/accounts/lookup")
+    assert "mastodonShareUrl(account, draft)" in send
+    assert '"/api/v1/accounts/lookup"' in send and '"acct"' in send
+    assert '"/api/v1/accounts/relationships"' in send and '"id[]"' in send
+    assert "locked && !following" in send
+    assert 'QStringLiteral("follow-first")' in send
+    assert send.index("locked && !following") < send.index("postMastodonDraft(")
+    share = _feature_body("mastodonShareUrl")
+    assert '"https://%1/share?text=%2"' in share and "QUrl::toPercentEncoding" in share
+    assert 'QStringLiteral("mastodon.social")' in share
+    post = _feature_body("postMastodonDraft")
+    assert '"/api/v1/statuses"' in post and 'QByteArrayLiteral("POST")' in post
+    assert '{QStringLiteral("visibility"), QStringLiteral("direct")}' in post
+    assert "body, idempotency" in post
+    signed = _feature_body("mastodonSignedCall")
+    assert '"Idempotency-Key"' in signed and "sendCustomRequest(call, verb, body)" in signed
+    log = _feature_body("logMastodonDraft")
+    assert '"/emails/toot"' in log
+    assert '{QStringLiteral("direction"), QStringLiteral("outbound")}' in log
+    assert "draft.left(kMastodonSubjectLength)" in log
+    assert "constexpr int kMastodonSubjectLength = 180;" in FEATURE
+    assert '{QStringLiteral("mastodon_status"), QStringLiteral("sent")}' in log
+    assert '{QStringLiteral("mastodon_draft"), draft}' in log
+    assert log.index('"/emails/toot"') < log.index("saveMastodonFields(")
+    assert "dropMastodonOutreachItem(contactId)" in log
+    fields = _feature_body("saveMastodonFields")
+    assert 'QByteArrayLiteral("PATCH")' in fields
+    assert '"/contacts/") + contactId' in fields
+    assert 'QJsonObject{{QStringLiteral("fields"), fields}}' in fields
+
+
+def test_desktop_skip_follow_and_reply_check_update_the_contact():
+    skip = _feature_body("skipMastodonDraft")
+    assert '{QStringLiteral("mastodon_status"), QStringLiteral("skipped")}' in skip
+    follow = _feature_body("followMastodonDraft")
+    assert "m_mastodonFollowCards.insert(key, contactId)" in follow
+    assert "followMastodonBack(key)" in follow
+    finish = _feature_body("finishMastodonFollow")
+    assert 'QStringLiteral("follow-requested")' in finish
+    assert "m_mastodonFollowCards.take(key)" in finish
+    replies = _feature_body("checkMastodonReplies")
+    assert '"/api/v1/notifications"' in replies
+    assert '"types[]"' in replies and 'QStringLiteral("mention")' in replies
+    assert 'QStringLiteral("40")' in replies
+    assert '"mastodon_status") !=\n            QLatin1String("sent")' in replies
+    assert '{QStringLiteral("direction"), QStringLiteral("inbound")}' in replies
+    assert "loadOrganization();" in replies and "loadMastodonOutreach(false);" in replies
+    assert "[this] { checkMastodonReplies(false); }" in FEATURE
+
+
+def test_prepare_more_starts_an_agent_session_through_the_window_command():
+    assert "m_windowCommand(host.windowCommand)" in FEATURE
+    prepare = _feature_body("prepareMoreMastodon")
+    assert 'text(m_mastodonOutreach, "prompt")' in prepare
+    assert ('m_windowCommand(QStringLiteral("agent.start"), '
+            'QJsonObject{{QStringLiteral("text"), prompt}})') in prepare
+    assert "The prompt is in the agent composer" in prepare
+    bridge = (REPO / "desktop" / "src" / "MainWindowTaskBridge.cpp").read_text(encoding="utf-8")
+    start = bridge.split('command == QLatin1String("agent.start")', 1)[1].split("\n    }\n", 1)[0]
+    assert "m_issueQuickAdd->setPlainText(text)" in start
+    assert "setPromptOverlayCollapsed(false)" in start
+    assert "return startAgentFromComposer();" in start
+    launch = (REPO / "desktop" / "src" / "MainWindowAgentLaunch.cpp").read_text(encoding="utf-8")
+    composer = launch.split("bool MainWindow::startAgentFromComposer()", 1)[1].split("\n}\n", 1)[0]
+    assert "resolveAgentRepositoryIndex(issuesRepoIndex())" in composer
+    assert "m_issueQuickAdd->setFocus();\n        return false;" in composer
+    assert "startAdHocAgentForRepo(repoIndex, prompt, provider" in composer
+    assert 'command.startsWith(QLatin1String("task."))' in HOST
+
+
+def test_desktop_leaderboard_strip_sits_under_the_header_and_opens_the_leaderboard():
+    strip_at = FEATURE.index("outer->addWidget(m_leaderStrip);")
+    assert FEATURE.index("outer->addLayout(heading);") < strip_at
+    assert strip_at < FEATURE.index("outer->addWidget(m_zohoBar);")
+    assert "m_tabs->setCurrentWidget(m_teamPage)" in FEATURE
+    line = _feature_body("leaderboardLine")
+    assert '{"emails", "outreach", "toots"}' in line
+    assert "kLeaderboardDays" in line and "kLeaderboardTop" in line
+    assert '"%1 days"' in line and "total > 0" in line
+    assert "constexpr int kLeaderboardDays = 7;" in FEATURE
+    assert "constexpr int kLeaderboardTop = 3;" in FEATURE
+    strip = _feature_body("renderLeaderboardStrip")
+    assert "m_leaderStrip->setVisible(!line.isEmpty())" in strip
+    assert "renderLeaderboardStrip();" in _feature_body("applyOrganization")
+
+
+def test_web_alert_celebration_is_one_compact_card():
+    actions = (REPO / "desktop" / "src" / "MainWindowActions.cpp").read_text(encoding="utf-8")
+    celebrate = actions.split("void MainWindow::celebrateFreshWebAlerts()", 1)[1]
+    celebrate = celebrate.split("\n}\n", 1)[0]
+    assert "CelebrationOverlay(" not in celebrate.replace("CompactCelebrationOverlay(", "")
+    assert "m_compactCelebration->showMessage(headline, body)" in celebrate
+    assert "new forkmesh::ui::CompactCelebrationOverlay(this, headline, body)" in celebrate
+    assert "celebrationHeadline(m_compactCelebrationTitles)" in celebrate
+    overlay = (REPO / "desktop" / "src" / "CompactCelebration.h").read_text(encoding="utf-8")
+    for constant in ("kDurationMs = 3500", "kMaxCardWidth = 420", "kWindowMargin = 24",
+                     "kHeadlinePoints = 14.0", "kDetailPoints = 11.0"):
+        assert constant in overlay
+    navigation = (REPO / "desktop" / "src" / "MainWindowNavigation.cpp").read_text(
+        encoding="utf-8")
+    assert "new forkmesh::ui::CelebrationOverlay(this);" in navigation

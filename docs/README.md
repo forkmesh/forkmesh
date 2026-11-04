@@ -189,6 +189,7 @@ Each part has one home page; its topic pages link back to it.
 | 🌐 | Website, docs site and the Cloud Dragon mascot | `www/`, `app/tools/docs_site.py` | [www/README.md](www/README.md), [Cloud Dragon](www/cloud-dragon.md) |
 | 📱 | Phone apps (iOS, watchOS, Android) | `native/` | [native/README.md](native/README.md) |
 | 🛍️ | Marketplace packages and plugins | `marketplace/` | [marketplace/README.md](marketplace/README.md) |
+| 🧰 | Plugin console: the web admin page for every package (installs, instance places, tables, logs) | `app/src/plugin_console.py`, `app/public/dashboard/js/09-plugins.js` | [marketplace/plugin-console.md](marketplace/plugin-console.md) |
 | 🧩 | Browser extension | `marketplace/packages/browser-extension/` | [marketplace/browser-extension.md](marketplace/browser-extension.md) |
 | 🌍 | World (3D) and Office (2D) | `world/`, `office/` | [world/README.md](world/README.md), [office/README.md](office/README.md) |
 | 🛰️ | Fleet, deploys and operator tools | `deploy/`, `tools/next_*.py` | [operations/README.md](operations/README.md) |

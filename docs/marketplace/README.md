@@ -15,6 +15,7 @@ documentation; the package format, lifecycle and publishing rules are in
 | [package-system.md](package-system.md) | Code map, host sockets, desktop page contract, server module runtime, manifest fields, build, test, release, security and traps |
 | [plugins.md](plugins.md) | Plugins versus switches, and which plugins a build adds to the core (`marketplace/plugins.json`) |
 | [core-plugins.md](core-plugins.md) | Built-in features as account-synced switches, off by default in new projects |
+| [plugin-console.md](plugin-console.md) | The web admin Plugins page: every package's installs, tables, logs, export, and instance-wide places |
 | [market.md](market.md) | Packs and guides, sorting, Install all, share links, public package pages, the plugin page menu, preview images |
 | [ratings.md](ratings.md) | Star ratings, required improvement reviews, maintainer replies and moderation |
 
