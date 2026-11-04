@@ -54380,6 +54380,7 @@ Your reply
     const form = section.querySelector("[data-ai-review-settings-form]");
     form.querySelector("[data-ai-review-enabled]").checked = data.enabled === true;
     form.querySelector("[data-ai-review-default-on]").checked = data.defaultOn === true;
+    form.querySelector("[data-ai-review-notes]").checked = data.notesAssist !== false;
     form.querySelector("[data-ai-review-account]").value = data.accountId || "";
     const select = form.querySelector("[data-ai-review-model]");
     select.innerHTML = (data.models || []).map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.label)}${item.default ? " (default)" : ""}</option>`).join("");
@@ -54417,6 +54418,7 @@ Your reply
         const reply = await aiReviewPost("/api/ai-review/settings", {
           enabled: form.querySelector("[data-ai-review-enabled]").checked,
           defaultOn: form.querySelector("[data-ai-review-default-on]").checked,
+          notesAssist: form.querySelector("[data-ai-review-notes]").checked,
           accountId: form.querySelector("[data-ai-review-account]").value.trim(),
           model: form.querySelector("[data-ai-review-model]").value,
           dailyCap: number("[data-ai-review-daily-cap]"),
@@ -61180,7 +61182,7 @@ Your reply
     "docs": "/dashboard-page-docs.js?v=1f739446a623",
     "hackathon": "/dashboard-page-hackathon.js?v=22656013417d",
     "links": "/dashboard-page-links.js?v=d86c45ee2e66",
-    "notes": "/dashboard-page-notes.js?v=119e102328d4",
+    "notes": "/dashboard-page-notes.js?v=3b0bd7907872",
     "referrals": "/dashboard-page-referrals.js?v=9e46b4b9d5e8",
     "repo-activity": "/dashboard-page-repo-activity.js?v=38ff59fc7239",
     "repo-forum": "/dashboard-page-repo-forum.js?v=e5892a79b3e7",

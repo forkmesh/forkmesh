@@ -11862,6 +11862,13 @@ class _NotesRuntime(_WorldCommunityRuntime):
         return clean_string(
             (record or {}).get("name") or "", MAX_NODE_NAME).lower()
 
+    async def assist_config(self):
+        config = await ai_review_settings(self.env)
+        return config if ai_review_notes_ready(config) else None
+
+    async def assist_call(self, config, messages):
+        return await ai_review_call_provider(self.env, config, messages)
+
     async def viewer(self, note_id):
         """Blind per-note reader key behind a published note's view count.
 
@@ -17049,6 +17056,9 @@ ai_review_handler = _ai_review.export("handler")
 ai_review_cron = _ai_review.export("run_cron")
 ai_review_enqueue = _ai_review.export("enqueue")
 ai_review_note_push = _ai_review.export("note_push")
+ai_review_settings = _ai_review.export("settings")
+ai_review_notes_ready = _ai_review.export("notes_ready")
+ai_review_call_provider = _ai_review.export("call_provider")
 recent_push_remember = _recent_pushes.export("remember")
 recent_push_forget = _recent_pushes.export("forget_branches")
 recent_push_mark_pulled = _recent_pushes.export("mark_pulled")

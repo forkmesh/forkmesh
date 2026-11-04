@@ -12,6 +12,8 @@
  ],
  "notes": [
   {"date": "2026-11-04", "area": "Market", "text": "Internet Archive is now a plugin: it backs up public repositories to archive.org and, when a repository's source is offline, shows which mirrors still match the archived copy."},
+  {"date": "2026-11-04", "area": "Other improvements", "text": "Web Notes: select text and choose Ask AI to clean it up, check grammar, change the tone or follow your own instruction, then replace the selection or insert the result below it."},
+  {"date": "2026-11-04", "area": "Desktop", "text": "Notes: select text and type in the prompt to have AI rewrite just that part, or right-click it for Ask AI quick actions such as Clean up and Check grammar."},
   {"date": "2026-11-04", "area": "Android", "text": "An inbox item shows only its back button at the top, a ping has one back button instead of two, and the Agents tools each sit in their own small glass square."},
   {"date": "2026-11-04", "area": "iPhone", "text": "An inbox item shows only its back button at the top, a ping has one back button instead of two, and the Agents tools each sit in their own small glass square under the title."},
   {"date": "2026-11-04", "area": "Desktop", "text": "Text you copy anywhere in the desktop now pastes with its line breaks, paragraph spacing, list markers and table columns."},
