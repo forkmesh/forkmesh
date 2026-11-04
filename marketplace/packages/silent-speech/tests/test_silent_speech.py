@@ -66,7 +66,22 @@ def test_core_has_no_platform_imports_and_matches_on_both_phones():
     assert imports == {"Foundation"}
     kotlin = _read(KOTLIN / "silentspeech" / "SilentSpeech.kt")
     assert "import android" not in kotlin
-    for name in ("SilentDTW", "SilentEvaluator", "SilentSegmenter", "SilentNoiseFloor", "SilentDataset", "SilentRandom", "SilentReading"):
+    for name in ("SilentDTW", "SilentEvaluator", "SilentSegmenter", "SilentNoiseFloor", "SilentDataset", "SilentRandom", "SilentReading", "SilentText", "SilentLanguage", "SilentScope"):
         assert name in swift and name in kotlin, name
-    for constant in ("0.25", "0.12", "500", "0x5EED", "1.4826", "0.08"):
+    for constant in ("0.25", "0.12", "500", "0x5EED", "1.4826", "0.08", "600", "40_000_000", "64"):
         assert constant in swift and constant in kotlin, constant
+
+
+def test_both_phones_read_the_same_sentences():
+    swift = _read(CORE / "FMTools" / "SilentSpeechModels.swift")
+    kotlin = _read(KOTLIN / "silentspeech" / "SilentSpeech.kt")
+
+    def sentences(text, start, close):
+        block = text[text.index(start) + len(start):]
+        block = block[: block.index(close)]
+        return [line.strip().rstrip(",").strip('"') for line in block.splitlines() if line.strip().startswith('"')]
+
+    ios = sentences(swift, "public static let sentences: [String] = [", "]")
+    android = sentences(kotlin, "val SENTENCES: List<String> = listOf(", ")")
+    assert len(ios) >= 20
+    assert ios == android

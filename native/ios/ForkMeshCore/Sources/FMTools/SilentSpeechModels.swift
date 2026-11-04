@@ -112,14 +112,6 @@ public enum SilentChannel: String, CaseIterable, Sendable {
         }
     }
 
-    public var detail: String {
-        switch self {
-        case .acceleration: return "How the earbuds move, without gravity. AirPods only."
-        case .rotation: return "How fast your head turns and tilts."
-        case .attitude: return "How far your head has turned since the word began."
-        }
-    }
-
     public static let defaults: Set<SilentChannel> = Set(SilentChannel.allCases)
 }
 
@@ -292,12 +284,20 @@ public struct SilentMatch: Equatable, Sendable {
     public let word: String
     public let distance: Double
     public let runnerUp: String?
-    public let runnerUpDistance: Double?
+    public let margin: Double
     public let accepted: Bool
 
-    public var margin: Double {
-        guard let second = runnerUpDistance, second.isFinite, second > 0 else { return 1 }
-        return max(0, min(1, (second - distance) / second))
+    public init(word: String, distance: Double, runnerUp: String?, margin: Double, accepted: Bool) {
+        self.word = word
+        self.distance = distance
+        self.runnerUp = runnerUp
+        self.margin = margin
+        self.accepted = accepted
+    }
+
+    public static func margin(_ first: Double, _ second: Double?) -> Double {
+        guard let second, second.isFinite, second > 0 else { return 1 }
+        return max(0, min(1, (second - first) / second))
     }
 
     public var summary: String {
@@ -322,6 +322,52 @@ public enum SilentScores {
         }
         return scored.enumerated().sorted { ($0.element.distance, $0.offset) < ($1.element.distance, $1.offset) }.map(\.element)
     }
+
+    public static func ranked(_ scores: [(word: String, distance: Double)], language: SilentLanguage?, previous: String?) -> [(word: String, distance: Double, effective: Double)] {
+        guard let language, scores.count > 1 else { return scores.map { ($0.word, $0.distance, $0.distance) } }
+        let best: Double = scores[0].distance
+        let middle: Double = scores[scores.count / 2].distance
+        let tau: Double = max((middle - best) / 2, best * 0.05, 1e-6)
+        let costs: [Double] = scores.map { language.cost($0.word, after: previous, vocabulary: scores.count) }
+        let lowest: Double = costs.min() ?? 0
+        let adjusted: [(word: String, distance: Double, effective: Double)] = scores.indices.map { (i: Int) -> (word: String, distance: Double, effective: Double) in
+            (scores[i].word, scores[i].distance, scores[i].distance + SilentLanguage.weight * tau * (costs[i] - lowest))
+        }
+        return adjusted.enumerated().sorted { ($0.element.effective, $0.offset) < ($1.element.effective, $1.offset) }.map(\.element)
+    }
+}
+
+public struct SilentLanguage: Equatable, Sendable {
+    public static let weight: Double = 0.5
+    public static let smoothing: Double = 2
+
+    public private(set) var unigrams: [String: Int] = [:]
+    public private(set) var bigrams: [String: [String: Int]] = [:]
+    public private(set) var total: Int = 0
+
+    public init(sentences: [[String]]) {
+        for sentence in sentences where !sentence.isEmpty {
+            var previous: String = ""
+            for word in sentence {
+                unigrams[word, default: 0] += 1
+                bigrams[previous, default: [:]][word, default: 0] += 1
+                total += 1
+                previous = word
+            }
+        }
+    }
+
+    public func probability(_ word: String, after previous: String?, vocabulary: Int) -> Double {
+        let size: Double = Double(max(vocabulary, unigrams.count, 1))
+        let unigram: Double = (Double(unigrams[word] ?? 0) + 1) / (Double(total) + size)
+        let context: [String: Int] = bigrams[previous ?? ""] ?? [:]
+        let seen: Double = Double(context.values.reduce(0, +))
+        return (Double(context[word] ?? 0) + SilentLanguage.smoothing * unigram) / (seen + SilentLanguage.smoothing)
+    }
+
+    public func cost(_ word: String, after previous: String?, vocabulary: Int) -> Double {
+        -log(probability(word, after: previous, vocabulary: vocabulary))
+    }
 }
 
 public struct SilentModel: Sendable {
@@ -329,10 +375,12 @@ public struct SilentModel: Sendable {
     public let neighbors: Int
     public let normalizer: SilentNormalizer
     public let templates: [(word: String, frames: [[Double]])]
+    public let language: SilentLanguage?
 
-    public init(takes: [SilentTake], channels: Set<SilentChannel>, neighbors: Int = 1) {
+    public init(takes: [SilentTake], channels: Set<SilentChannel>, neighbors: Int = 1, language: SilentLanguage? = nil) {
         self.channels = channels
         self.neighbors = neighbors
+        self.language = language
         let raw: [(word: String, frames: [[Double]])] = takes.map { ($0.word, SilentFeatures.frames($0.samples, channels: channels)) }.filter { !$0.frames.isEmpty }
         let normalizer: SilentNormalizer = SilentNormalizer(raw.map(\.frames))
         self.normalizer = normalizer
@@ -341,16 +389,16 @@ public struct SilentModel: Sendable {
 
     public var words: Set<String> { Set(templates.map(\.word)) }
 
-    public func match(_ samples: [SilentSample], maxDistance: Double?, minMargin: Double) -> SilentMatch? {
+    public func match(_ samples: [SilentSample], maxDistance: Double?, minMargin: Double, previous: String? = nil) -> SilentMatch? {
         let frames: [[Double]] = normalizer.apply(SilentFeatures.frames(samples, channels: channels))
         guard !frames.isEmpty, !templates.isEmpty else { return nil }
         let distances: [(word: String, distance: Double)] = templates.map { ($0.word, SilentDTW.distance(frames, $0.frames)) }
-        let scores: [(word: String, distance: Double)] = SilentScores.perWord(distances, neighbors: neighbors)
-        guard let best = scores.first else { return nil }
-        let second: (word: String, distance: Double)? = scores.count > 1 ? scores[1] : nil
-        let candidate: SilentMatch = SilentMatch(word: best.word, distance: best.distance, runnerUp: second?.word, runnerUpDistance: second?.distance, accepted: true)
-        let accepted: Bool = (maxDistance.map { best.distance <= $0 } ?? true) && (second == nil || candidate.margin >= minMargin)
-        return SilentMatch(word: best.word, distance: best.distance, runnerUp: second?.word, runnerUpDistance: second?.distance, accepted: accepted)
+        let ranked = SilentScores.ranked(SilentScores.perWord(distances, neighbors: neighbors), language: language, previous: previous)
+        guard let best = ranked.first else { return nil }
+        let second = ranked.count > 1 ? ranked[1] : nil
+        let margin: Double = SilentMatch.margin(best.effective, second?.effective)
+        let accepted: Bool = (maxDistance.map { best.distance <= $0 } ?? true) && (second == nil || margin >= minMargin)
+        return SilentMatch(word: best.word, distance: best.distance, runnerUp: second?.word, margin: margin, accepted: accepted)
     }
 }
 
@@ -391,6 +439,17 @@ public struct SilentEvaluation: Equatable, Sendable {
     public let confusion: [[Int]]
     public let suggestedMaxDistance: Double?
 
+    public init(words: [String], evaluated: Int, correct: Int, nullMean: Double, pValue: Double, permutations: Int, confusion: [[Int]], suggestedMaxDistance: Double?) {
+        self.words = words
+        self.evaluated = evaluated
+        self.correct = correct
+        self.nullMean = nullMean
+        self.pValue = pValue
+        self.permutations = permutations
+        self.confusion = confusion
+        self.suggestedMaxDistance = suggestedMaxDistance
+    }
+
     public var accuracy: Double { evaluated > 0 ? Double(correct) / Double(evaluated) : 0 }
     public var chance: Double { words.isEmpty ? 0 : 1 / Double(words.count) }
     public var significant: Bool { pValue < 0.05 }
@@ -405,6 +464,16 @@ public struct SilentEvaluation: Equatable, Sendable {
         return "\(p): not yet better than chance. Record more takes, or mouth the words more clearly."
     }
 
+    public func mixups(_ limit: Int = 3) -> [(word: String, guess: String, count: Int)] {
+        var out: [(word: String, guess: String, count: Int)] = []
+        for row in words.indices {
+            for column in words.indices where row != column && confusion[row][column] > 0 {
+                out.append((words[row], words[column], confusion[row][column]))
+            }
+        }
+        return Array(out.enumerated().sorted { (-$0.element.count, $0.offset) < (-$1.element.count, $1.offset) }.map(\.element).prefix(limit))
+    }
+
     static func percent(_ value: Double) -> String { "\(Int((value * 100).rounded()))%" }
 }
 
@@ -414,6 +483,26 @@ public enum SilentEvaluator {
     public static let minimumTakes: Int = 2
     public static let manyTakes: Int = 10
     public static let manyNeighbors: Int = 3
+    public static let maxPerWord: Int = 12
+    public static let maxTakes: Int = 600
+    public static let minimumPermutations: Int = 100
+    public static let budget: Int = 40_000_000
+
+    public static func rounds(_ requested: Int, takes: Int) -> Int {
+        min(requested, max(minimumPermutations, budget / max(1, takes * takes)))
+    }
+
+    public static func sample(_ takes: [SilentTake], perWord: Int = SilentEvaluator.maxPerWord, total: Int = SilentEvaluator.maxTakes) -> [SilentTake] {
+        var seen: [String: Int] = [:]
+        var kept: [Int] = []
+        for i in takes.indices.reversed() where kept.count < total {
+            let n: Int = seen[takes[i].word, default: 0]
+            guard n < perWord else { continue }
+            seen[takes[i].word] = n + 1
+            kept.append(i)
+        }
+        return kept.reversed().map { takes[$0] }
+    }
 
     public static func neighbors(for dataset: SilentDataset) -> Int {
         let counts: [Int] = dataset.words.map { dataset.count($0.word) }.filter { $0 > 0 }
@@ -486,22 +575,29 @@ public enum SilentEvaluator {
 
     public static func evaluate(_ dataset: SilentDataset, channels: Set<SilentChannel>, neighbors: Int = 1, permutations: Int = SilentEvaluator.permutations, seed: UInt64 = SilentEvaluator.seed) -> SilentEvaluation? {
         guard requirement(dataset) == nil else { return nil }
-        let words: [String] = dataset.words.map(\.word).filter { dataset.count($0) >= minimumTakes }
-        let takes: [SilentTake] = dataset.takes.filter { words.contains($0.word) }
+        let sampled: [SilentTake] = sample(dataset.takes)
+        var counts: [String: Int] = [:]
+        for take in sampled { counts[take.word, default: 0] += 1 }
+        let words: [String] = dataset.words.map(\.word).filter { counts[$0, default: 0] >= minimumTakes }
+        guard words.count >= 2 else { return nil }
+        let chosen: Set<String> = Set(words)
+        let takes: [SilentTake] = sampled.filter { chosen.contains($0.word) }
         let model: SilentModel = SilentModel(takes: takes, channels: channels, neighbors: neighbors)
         guard !model.templates.isEmpty else { return nil }
-        let labels: [Int] = model.templates.map { words.firstIndex(of: $0.word) ?? 0 }
+        let index: [String: Int] = Dictionary(uniqueKeysWithValues: words.enumerated().map { ($1, $0) })
+        let labels: [Int] = model.templates.map { index[$0.word] ?? 0 }
         let d: [[Double]] = matrix(model.templates.map(\.frames))
         let results = leaveOneOut(d, labels: labels, wordCount: words.count, neighbors: neighbors)
         guard !results.isEmpty else { return nil }
         let correct: Int = results.filter { $0.truth == $0.guess }.count
         var confusion: [[Int]] = Array(repeating: Array(repeating: 0, count: words.count), count: words.count)
         for r in results { confusion[r.truth][r.guess] += 1 }
+        let rounds: Int = SilentEvaluator.rounds(permutations, takes: labels.count)
         var random: SilentRandom = SilentRandom(seed: seed)
         var shuffled: [Int] = labels
         var atLeast: Int = 0
         var nullTotal: Double = 0
-        for _ in 0..<permutations {
+        for _ in 0..<rounds {
             random.shuffle(&shuffled)
             let null = leaveOneOut(d, labels: shuffled, wordCount: words.count, neighbors: neighbors)
             let hits: Int = null.filter { $0.truth == $0.guess }.count
@@ -512,8 +608,8 @@ public enum SilentEvaluator {
         let suggested: Double? = good.count >= 3 ? good[max(0, Int((0.9 * Double(good.count)).rounded(.up)) - 1)] * 1.25 : nil
         return SilentEvaluation(
             words: words, evaluated: results.count, correct: correct,
-            nullMean: permutations > 0 ? nullTotal / Double(permutations) : 0,
-            pValue: Double(1 + atLeast) / Double(1 + permutations), permutations: permutations,
+            nullMean: rounds > 0 ? nullTotal / Double(rounds) : 0,
+            pValue: Double(1 + atLeast) / Double(1 + rounds), permutations: rounds,
             confusion: confusion, suggestedMaxDistance: suggested)
     }
 }
@@ -610,9 +706,54 @@ public struct SilentSegmenter: Sendable {
     }
 }
 
+public enum SilentText {
+    public static let sentences: [String] = [
+        "Can you help me please",
+        "I would like some water",
+        "Yes that sounds good to me",
+        "No thank you I am fine",
+        "Please stop for a moment",
+        "Where are we going today",
+        "What time is it now",
+        "I need to go home soon",
+        "Call me when you are ready",
+        "Let us meet again tomorrow",
+        "The weather is nice outside",
+        "I am feeling tired tonight",
+        "Turn the music down a little",
+        "Open the door for me",
+        "How was your day at work",
+        "We should eat something first",
+        "Send a message to my friend",
+        "I do not know the answer",
+        "Bring me a cup of coffee",
+        "Wait here I will be back",
+        "That is a really good idea",
+        "Could you speak more slowly",
+        "Read the next page out loud",
+        "My phone battery is almost empty",
+        "Remind me to buy some bread",
+        "Good morning how did you sleep",
+        "I love you very much",
+        "Is there anything else you need",
+        "Show me the way to the station",
+        "Thank you for your help",
+    ]
+
+    public static func words(_ text: String) -> [String] {
+        let cleaned: String = String(text.lowercased().map { (c: Character) -> Character in
+            if c == "\u{2019}" { return "'" }
+            return c.isLetter || c.isNumber || c == "'" ? c : " "
+        })
+        return cleaned.split(separator: " ").map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "'")) }.filter { !$0.isEmpty }
+    }
+}
+
 public struct SilentReading: Equatable, Sendable {
     public static let duration: Double = 300
     public static let scriptLength: Int = 100
+    public static let sessionSentences: Int = 8
+    public static let chunk: Int = 5
 
     public let sentences: [[String]]
     public let duration: Double
@@ -623,25 +764,47 @@ public struct SilentReading: Equatable, Sendable {
     public private(set) var sentencesRead: Int = 0
     public private(set) var collected: Int = 0
 
-    public init(words: [String], seed: UInt64, duration: Double = SilentReading.duration) {
-        sentences = SilentReading.script(words, seed: seed)
+    public init(sentences: [[String]], seed: UInt64, duration: Double = SilentReading.duration) {
+        self.sentences = SilentReading.script(sentences, seed: seed)
         self.duration = duration
     }
 
-    public static func length(_ wordCount: Int) -> Int { min(6, max(4, wordCount)) }
-
-    public static func script(_ words: [String], seed: UInt64, count: Int = SilentReading.scriptLength) -> [[String]] {
-        guard !words.isEmpty else { return [] }
-        let length: Int = length(words.count)
-        var random: SilentRandom = SilentRandom(seed: seed)
-        var pool: [Int] = []
-        while pool.count < count * length {
-            var order: [Int] = Array(words.indices)
-            random.shuffle(&order)
-            if let last = pool.last, order.count > 1, order[0] == last { order.swapAt(0, 1) }
-            pool.append(contentsOf: order)
+    public static func pool(_ dataset: SilentDataset) -> [[String]] {
+        var out: [[String]] = []
+        for text in dataset.sentences + SilentText.sentences {
+            let words: [String] = SilentText.words(text)
+            if !words.isEmpty && !out.contains(words) { out.append(words) }
         }
-        return (0..<count).map { (s: Int) -> [String] in pool[(s * length)..<((s + 1) * length)].map { words[$0] } }
+        let covered: Set<String> = Set(out.flatMap { $0 })
+        let orphans: [String] = dataset.words.map(\.word).filter { !covered.contains($0) }
+        for start in stride(from: 0, to: orphans.count, by: chunk) {
+            out.append(Array(orphans[start..<min(orphans.count, start + chunk)]))
+        }
+        return out
+    }
+
+    public static func plan(_ dataset: SilentDataset, size: Int = SilentReading.sessionSentences) -> [[String]] {
+        let counts: [String: Int] = dataset.counts()
+        let pool: [[String]] = pool(dataset)
+        let scored: [(sentence: [String], score: Double, order: Int)] = pool.enumerated().map { (item: (offset: Int, element: [String])) -> (sentence: [String], score: Double, order: Int) in
+            let total: Int = item.element.reduce(0) { $0 + min(counts[$1, default: 0], 10) }
+            return (item.element, Double(total) / Double(item.element.count), item.offset)
+        }
+        return scored.sorted { ($0.score, $0.order) < ($1.score, $1.order) }.prefix(max(1, size)).map(\.sentence)
+    }
+
+    public static func script(_ sentences: [[String]], seed: UInt64, count: Int = SilentReading.scriptLength) -> [[String]] {
+        let usable: [[String]] = sentences.filter { !$0.isEmpty }
+        guard !usable.isEmpty else { return [] }
+        var random: SilentRandom = SilentRandom(seed: seed)
+        var order: [Int] = []
+        while order.count < count {
+            var pass: [Int] = Array(usable.indices)
+            random.shuffle(&pass)
+            if let last = order.last, pass.count > 1, pass[0] == last { pass.swapAt(0, 1) }
+            order.append(contentsOf: pass)
+        }
+        return order.prefix(count).map { usable[$0] }
     }
 
     public var sentence: [String] { sentences.isEmpty ? [] : sentences[index % sentences.count] }
@@ -693,18 +856,136 @@ public struct SilentReading: Equatable, Sendable {
     }
 }
 
+public struct SilentScopeFrame: Equatable, Sendable {
+    public let t: Double
+    public let rotation: SilentVector
+    public let angle: SilentVector
+    public let acceleration: SilentVector?
+    public let energy: Double
+}
+
+public struct SilentMark: Equatable, Sendable {
+    public let start: Double
+    public let end: Double
+    public let label: String
+}
+
+public struct SilentSpectrum: Equatable, Sendable {
+    public let power: [Double]
+    public let binHz: Double
+    public let peakHz: Double?
+
+    public static let empty: SilentSpectrum = SilentSpectrum(power: [], binHz: SilentFeatures.rate / Double(SilentScope.spectrumSize), peakHz: nil)
+}
+
+public struct SilentScope: Sendable {
+    public static let window: Double = 6
+    public static let spectrumSize: Int = 64
+    public static let minimumSpectrum: Int = 16
+    public static let lowestPeakHz: Double = 0.5
+    public static let degrees: Double = 180 / Double.pi
+
+    public private(set) var samples: [SilentSample] = []
+    public private(set) var reference: SilentQuaternion?
+    public private(set) var marks: [SilentMark] = []
+
+    public init() {}
+
+    public var latest: Double? { samples.last?.t }
+
+    public mutating func push(_ sample: SilentSample) {
+        if reference == nil { reference = sample.attitude }
+        samples.append(sample)
+        let start: Double = sample.t - SilentScope.window
+        if let first = samples.firstIndex(where: { $0.t >= start }), first > 0 { samples.removeFirst(first) }
+        marks.removeAll { $0.end < start }
+    }
+
+    public mutating func recentre() {
+        reference = samples.last?.attitude ?? reference
+    }
+
+    public mutating func mark(_ segment: [SilentSample], label: String) {
+        guard let first = segment.first, let last = segment.last else { return }
+        marks.append(SilentMark(start: first.t, end: last.t, label: label))
+    }
+
+    public mutating func clear() {
+        samples.removeAll()
+        marks.removeAll()
+        reference = nil
+    }
+
+    public var frames: [SilentScopeFrame] {
+        let origin: SilentQuaternion = (reference ?? samples.first?.attitude ?? .identity).conjugate
+        let d: Double = SilentScope.degrees
+        return SilentFeatures.resampled(samples).map { (s: SilentSample) -> SilentScopeFrame in
+            let r: SilentVector = s.rotationRate
+            let a: SilentVector = (origin * s.attitude).rotationVector
+            return SilentScopeFrame(t: s.t, rotation: SilentVector(r.x * d, r.y * d, r.z * d), angle: SilentVector(a.x * d, a.y * d, a.z * d), acceleration: s.acceleration, energy: s.energy)
+        }
+    }
+
+    public var spectrum: SilentSpectrum { SilentScope.spectrum(frames.map(\.rotation)) }
+
+    public static func spectrum(_ values: [SilentVector], size: Int = SilentScope.spectrumSize, rate: Double = SilentFeatures.rate) -> SilentSpectrum {
+        let binHz: Double = rate / Double(size)
+        let tail: [SilentVector] = Array(values.suffix(size))
+        guard tail.count >= minimumSpectrum else { return SilentSpectrum(power: [], binHz: binHz, peakHz: nil) }
+        let n: Int = tail.count
+        let pad: Int = size - n
+        var power: [Double] = Array(repeating: 0, count: size / 2 + 1)
+        for axis in 0..<3 {
+            let raw: [Double] = tail.map { axis == 0 ? $0.x : (axis == 1 ? $0.y : $0.z) }
+            let mean: Double = raw.reduce(0, +) / Double(n)
+            var signal: [Double] = Array(repeating: 0, count: size)
+            for i in 0..<n {
+                let hann: Double = n > 1 ? 0.5 - 0.5 * cos(2 * Double.pi * Double(i) / Double(n - 1)) : 1
+                signal[pad + i] = (raw[i] - mean) * hann
+            }
+            for k in 0...(size / 2) {
+                var re: Double = 0
+                var im: Double = 0
+                for i in 0..<size {
+                    let phase: Double = 2 * Double.pi * Double(k * i) / Double(size)
+                    re += signal[i] * cos(phase)
+                    im -= signal[i] * sin(phase)
+                }
+                power[k] += (re * re + im * im) / Double(size)
+            }
+        }
+        var peak: Int?
+        for k in power.indices where Double(k) * binHz >= lowestPeakHz && power[k] > 1e-6 {
+            if peak.map({ power[k] > power[$0] }) ?? true { peak = k }
+        }
+        return SilentSpectrum(power: power, binHz: binHz, peakHz: peak.map { Double($0) * binHz })
+    }
+}
+
 public struct SilentDataset: Equatable, Sendable {
     public var words: [SilentWord]
     public var takes: [SilentTake]
+    public var sentences: [String]
 
-    public init(words: [SilentWord], takes: [SilentTake] = []) {
+    public init(words: [SilentWord], takes: [SilentTake] = [], sentences: [String] = []) {
         self.words = words
         self.takes = takes
+        self.sentences = sentences
     }
 
     public static let starter: SilentDataset = SilentDataset(words: ["yes", "no", "help", "stop", "water"].map { SilentWord($0) })
 
     public func count(_ word: String) -> Int { takes.filter { $0.word == word }.count }
+
+    public func counts() -> [String: Int] {
+        var out: [String: Int] = [:]
+        for take in takes { out[take.word, default: 0] += 1 }
+        return out
+    }
+
+    public var language: SilentLanguage {
+        SilentLanguage(sentences: (sentences + SilentText.sentences).map(SilentText.words))
+    }
 
     public static func clean(_ word: String) -> String {
         word.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -716,6 +997,37 @@ public struct SilentDataset: Equatable, Sendable {
         guard !name.isEmpty, !words.contains(where: { $0.word == name }) else { return false }
         words.append(SilentWord(name, phrase: phrase.trimmingCharacters(in: .whitespacesAndNewlines)))
         return true
+    }
+
+    @discardableResult
+    public mutating func addSentence(_ text: String) -> Bool {
+        let words: [String] = SilentText.words(text)
+        let trimmed: String = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard words.count >= 2, !sentences.contains(where: { SilentText.words($0) == words }) else { return false }
+        sentences.append(trimmed)
+        words.forEach { addWord($0) }
+        return true
+    }
+
+    public mutating func addEntry(_ text: String) -> String? {
+        if let colon = text.firstIndex(of: ":") {
+            let word: String = SilentDataset.clean(String(text[..<colon]))
+            guard addWord(word, phrase: String(text[text.index(after: colon)...])) else { return nil }
+            return word
+        }
+        let words: [String] = SilentText.words(text)
+        if words.count >= 2 { return addSentence(text) ? words.first : nil }
+        guard let word = words.first, addWord(word) else { return nil }
+        return word
+    }
+
+    public mutating func removeSentence(_ text: String) {
+        sentences.removeAll { $0 == text }
+    }
+
+    public mutating func learn(_ take: SilentTake) {
+        addWord(take.word)
+        addTake(take)
     }
 
     public mutating func setPhrase(_ phrase: String, for word: String) {
@@ -748,6 +1060,7 @@ public struct SilentDataset: Equatable, Sendable {
 
     public func json() -> [String: Any] {
         [
+            "sentences": sentences,
             "version": SilentDataset.version,
             "words": words.map { ["word": $0.word, "phrase": $0.phrase] },
             "takes": takes.map { (take: SilentTake) -> [String: Any] in
@@ -767,7 +1080,7 @@ public struct SilentDataset: Equatable, Sendable {
 
     public static func decode(_ object: [String: Any]) -> SilentDataset? {
         guard (object["version"] as? Int ?? 0) <= version, let rawWords = object["words"] as? [[String: Any]] else { return nil }
-        var dataset: SilentDataset = SilentDataset(words: [])
+        var dataset: SilentDataset = SilentDataset(words: [], sentences: (object["sentences"] as? [Any] ?? []).compactMap { $0 as? String })
         for raw in rawWords {
             if let word = raw["word"] as? String { dataset.addWord(word, phrase: raw["phrase"] as? String ?? "") }
         }

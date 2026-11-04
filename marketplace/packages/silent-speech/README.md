@@ -1,7 +1,8 @@
 # Silent Speech
 
 An experimental **Silent Speech** section in the iPhone and Android apps:
-teach it a few words, then mouth them without a sound. Earbuds that track
+read everyday sentences to it for five minutes, then mouth any of their
+words without a sound. Earbuds that track
 your head feel the small movements your jaw and face make, and the phone
 writes the word down, or says it aloud. Nothing is sent anywhere.
 
@@ -14,24 +15,32 @@ asked whether AirPods head motion can tell mouthed words apart.
 - **Earbuds.** On iPhone: AirPods Pro, AirPods Max, AirPods (3rd generation
   and later) or Beats Fit Pro. On Android 13 or later: earbuds that expose a
   head tracker, such as Pixel Buds Pro or Galaxy Buds with 360 Audio.
-- **Teach.** Tap **Read sentences for 5 minutes**: it shows short sentences
-  made of your words and highlights the next one to mouth. Mouth each word
-  with a short stop between words; every word becomes a take, so five
-  minutes gives each word dozens of takes. You can also pick a word, hold the
-  button, mouth it and let go. Takes are kept on the phone. Add your own
-  words, and optionally a phrase to say instead ("thirsty" can say "Could I
-  have some water, please?").
+- **Watch.** The top of the page draws the last six seconds of head motion:
+  turning speed, head angle and (iPhone) movement on all three axes, the
+  motion energy with each heard word shaded and named, and the frequency
+  spectrum with its peak. Tap ↻ to zero the head angle.
+- **Teach.** Tap **Read sentences · 5 min**: it shows short everyday
+  sentences and highlights the next word to mouth. Mouth each word with a
+  short stop between words; every word becomes a take. Each session picks
+  the 8 sentences whose words have the fewest takes, so a few sessions cover
+  more than a hundred words. Add your own sentence or word in **Words**
+  (type `thirsty: Could I have some water, please?` to have a word say a
+  phrase), or pick a word there, hold the button, mouth it and let go.
+  Takes are kept on the phone.
 - **Check.** Tests every take against all the others, then against 500
   shuffles of the labels, and says whether your head motion really tells the
-  words apart better than chance, with a table of what was taken for what.
-- **Speak silently.** Hold the button and mouth a word, or turn on **Listen
-  without holding**: it measures how still you are for two seconds, then
-  picks out words by themselves. Recognised words build a transcript you can
-  copy or have read aloud.
+  words apart better than chance, with a mix-up map and the words most often
+  taken for others.
+- **Speak silently.** Hold the button and mouth a word, or turn on
+  **Hands-free**: it measures how still you are for two seconds, then picks
+  out words by themselves. It also guesses which word is likely to come next
+  from the sentences, to settle close calls. Recognised words build a
+  transcript you can copy or have read aloud.
 
 ## Limits
 
-- A small vocabulary, trained by you for you. Reseating the earbuds can
+- Trained by you for you, and words that move the jaw alike stay hard to
+  tell apart. Reseating the earbuds can
   change the signal; record a few fresh takes if it starts missing.
 - Earbuds report head motion, not the voice: the speech accelerometer and the
   inward microphones are not open to apps.

@@ -3,11 +3,13 @@ package com.forkmesh.nativeapp.silentspeech
 import com.forkmesh.nativeapp.json.Json
 import java.util.Locale
 import java.util.UUID
+import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.ceil
 import kotlin.math.cos
 import kotlin.math.floor
+import kotlin.math.ln
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -86,10 +88,10 @@ data class SilentSample(
     }
 }
 
-enum class SilentChannel(val wire: String, val label: String, val detail: String) {
-    ACCELERATION("acceleration", "Movement", "How the earbuds move, without gravity. AirPods only."),
-    ROTATION("rotation", "Turning speed", "How fast your head turns and tilts."),
-    ATTITUDE("attitude", "Head angle", "How far your head has turned since the word began.");
+enum class SilentChannel(val wire: String, val label: String) {
+    ACCELERATION("acceleration", "Movement"),
+    ROTATION("rotation", "Turning speed"),
+    ATTITUDE("attitude", "Head angle");
 
     companion object {
         val DEFAULTS: Set<SilentChannel> = entries.toSet()
@@ -246,19 +248,21 @@ data class SilentMatch(
     val word: String,
     val distance: Double,
     val runnerUp: String?,
-    val runnerUpDistance: Double?,
+    val margin: Double,
     val accepted: Boolean,
 ) {
-    val margin: Double
-        get() {
-            val second = runnerUpDistance ?: return 1.0
-            if (!second.isFinite() || second <= 0) return 1.0
-            return ((second - distance) / second).coerceIn(0.0, 1.0)
-        }
-
     val summary: String
         get() = if (accepted) "$word · ${(margin * 100).roundToInt()}% ahead of ${runnerUp ?: "nothing"}" else "Not sure · closest was $word"
+
+    companion object {
+        fun margin(first: Double, second: Double?): Double {
+            if (second == null || !second.isFinite() || second <= 0) return 1.0
+            return ((second - first) / second).coerceIn(0.0, 1.0)
+        }
+    }
 }
+
+data class SilentRanked(val word: String, val distance: Double, val effective: Double)
 
 object SilentScores {
     fun perWord(distances: List<Pair<String, Double>>, neighbors: Int): List<Pair<String, Double>> {
@@ -270,9 +274,55 @@ object SilentScores {
             Triple(word, best.sum() / best.size, index)
         }.sortedWith(compareBy({ it.second }, { it.third })).map { it.first to it.second }
     }
+
+    fun ranked(scores: List<Pair<String, Double>>, language: SilentLanguage?, previous: String?): List<SilentRanked> {
+        if (language == null || scores.size < 2) return scores.map { SilentRanked(it.first, it.second, it.second) }
+        val best = scores[0].second
+        val middle = scores[scores.size / 2].second
+        val tau = maxOf((middle - best) / 2, best * 0.05, 1e-6)
+        val costs = scores.map { language.cost(it.first, previous, scores.size) }
+        val lowest = costs.min()
+        return scores.indices.map { i -> SilentRanked(scores[i].first, scores[i].second, scores[i].second + SilentLanguage.WEIGHT * tau * (costs[i] - lowest)) }
+            .withIndex().sortedWith(compareBy({ it.value.effective }, { it.index })).map { it.value }
+    }
 }
 
-class SilentModel(takes: List<SilentTake>, val channels: Set<SilentChannel>, val neighbors: Int = 1) {
+class SilentLanguage(sentences: List<List<String>>) {
+    val unigrams = HashMap<String, Int>()
+    val bigrams = HashMap<String, HashMap<String, Int>>()
+    var total = 0
+        private set
+
+    init {
+        for (sentence in sentences) {
+            var previous = ""
+            for (word in sentence) {
+                unigrams[word] = (unigrams[word] ?: 0) + 1
+                val context = bigrams.getOrPut(previous) { HashMap() }
+                context[word] = (context[word] ?: 0) + 1
+                total++
+                previous = word
+            }
+        }
+    }
+
+    fun probability(word: String, previous: String?, vocabulary: Int): Double {
+        val size = maxOf(vocabulary, unigrams.size, 1).toDouble()
+        val unigram = ((unigrams[word] ?: 0) + 1) / (total + size)
+        val context = bigrams[previous ?: ""] ?: emptyMap<String, Int>()
+        val seen = context.values.sum().toDouble()
+        return ((context[word] ?: 0) + SMOOTHING * unigram) / (seen + SMOOTHING)
+    }
+
+    fun cost(word: String, previous: String?, vocabulary: Int): Double = -ln(probability(word, previous, vocabulary))
+
+    companion object {
+        const val WEIGHT = 0.5
+        const val SMOOTHING = 2.0
+    }
+}
+
+class SilentModel(takes: List<SilentTake>, val channels: Set<SilentChannel>, val neighbors: Int = 1, val language: SilentLanguage? = null) {
     val normalizer: SilentNormalizer
     val templates: List<Pair<String, List<DoubleArray>>>
 
@@ -284,15 +334,15 @@ class SilentModel(takes: List<SilentTake>, val channels: Set<SilentChannel>, val
 
     val words: Set<String> get() = templates.map { it.first }.toSet()
 
-    fun match(samples: List<SilentSample>, maxDistance: Double?, minMargin: Double): SilentMatch? {
+    fun match(samples: List<SilentSample>, maxDistance: Double?, minMargin: Double, previous: String? = null): SilentMatch? {
         val frames = normalizer.apply(SilentFeatures.frames(samples, channels))
         if (frames.isEmpty() || templates.isEmpty()) return null
-        val scores = SilentScores.perWord(templates.map { it.first to SilentDTW.distance(frames, it.second) }, neighbors)
-        val best = scores.firstOrNull() ?: return null
-        val second = scores.getOrNull(1)
-        val candidate = SilentMatch(best.first, best.second, second?.first, second?.second, true)
-        val accepted = (maxDistance == null || best.second <= maxDistance) && (second == null || candidate.margin >= minMargin)
-        return candidate.copy(accepted = accepted)
+        val ranked = SilentScores.ranked(SilentScores.perWord(templates.map { it.first to SilentDTW.distance(frames, it.second) }, neighbors), language, previous)
+        val best = ranked.firstOrNull() ?: return null
+        val second = ranked.getOrNull(1)
+        val margin = SilentMatch.margin(best.effective, second?.effective)
+        val accepted = (maxDistance == null || best.distance <= maxDistance) && (second == null || margin >= minMargin)
+        return SilentMatch(best.word, best.distance, second?.word, margin, accepted)
     }
 }
 
@@ -342,6 +392,14 @@ data class SilentEvaluation(
             else "$p: not yet better than chance. Record more takes, or mouth the words more clearly."
         }
 
+    fun mixups(limit: Int = 3): List<Triple<String, String, Int>> {
+        val out = ArrayList<Triple<String, String, Int>>()
+        for (row in words.indices) for (column in words.indices) {
+            if (row != column && confusion[row][column] > 0) out.add(Triple(words[row], words[column], confusion[row][column]))
+        }
+        return out.withIndex().sortedWith(compareBy({ -it.value.third }, { it.index })).map { it.value }.take(limit)
+    }
+
     private fun percent(value: Double) = "${(value * 100).roundToInt()}%"
 }
 
@@ -353,6 +411,25 @@ object SilentEvaluator {
     const val MINIMUM_TAKES = 2
     const val MANY_TAKES = 10
     const val MANY_NEIGHBORS = 3
+    const val MAX_PER_WORD = 12
+    const val MAX_TAKES = 600
+    const val MINIMUM_PERMUTATIONS = 100
+    const val BUDGET = 40_000_000
+
+    fun rounds(requested: Int, takes: Int): Int = min(requested, max(MINIMUM_PERMUTATIONS, BUDGET / max(1, takes * takes)))
+
+    fun sample(takes: List<SilentTake>, perWord: Int = MAX_PER_WORD, total: Int = MAX_TAKES): List<SilentTake> {
+        val seen = HashMap<String, Int>()
+        val kept = ArrayList<Int>()
+        for (i in takes.indices.reversed()) {
+            if (kept.size >= total) break
+            val n = seen[takes[i].word] ?: 0
+            if (n >= perWord) continue
+            seen[takes[i].word] = n + 1
+            kept.add(i)
+        }
+        return kept.reversed().map { takes[it] }
+    }
 
     fun neighbors(dataset: SilentDataset): Int {
         val counts = dataset.words.map { dataset.count(it.word) }.filter { it > 0 }
@@ -382,16 +459,28 @@ object SilentEvaluator {
         for (label in labels) counts[label]++
         val k = max(1, neighbors)
         val out = ArrayList<SilentResult>()
-        val near = Array(wordCount) { ArrayList<Double>() }
+        val near = Array(wordCount) { DoubleArray(k) }
+        val sizes = IntArray(wordCount)
         for (i in labels.indices) {
             if (counts[labels[i]] < MINIMUM_TAKES) continue
-            for (list in near) list.clear()
-            for (j in labels.indices) if (j != i) keep(near[labels[j]], d[i][j], k)
+            sizes.fill(0)
+            val row = d[i]
+            for (j in labels.indices) {
+                if (j == i) continue
+                val w = labels[j]
+                sizes[w] = keep(near[w], sizes[w], row[j], k)
+            }
             var guess = -1
             var score = Double.POSITIVE_INFINITY
             for (w in 0 until wordCount) {
-                if (near[w].isEmpty()) continue
-                val value = if (k == 1) near[w][0] else near[w].average()
+                val size = sizes[w]
+                if (size == 0) continue
+                var value = near[w][0]
+                if (k > 1) {
+                    var sum = 0.0
+                    for (n in 0 until size) sum += near[w][n]
+                    value = sum / size
+                }
                 if (value < score) {
                     score = value
                     guess = w
@@ -402,16 +491,19 @@ object SilentEvaluator {
         return out
     }
 
-    fun keep(best: ArrayList<Double>, value: Double, k: Int) {
+    fun keep(best: DoubleArray, size: Int, value: Double, k: Int): Int {
         var i: Int
-        if (best.size < k) {
-            best.add(value)
-            i = best.size - 1
+        val next: Int
+        if (size < k) {
+            best[size] = value
+            i = size
+            next = size + 1
         } else if (value < best[k - 1]) {
             best[k - 1] = value
             i = k - 1
+            next = size
         } else {
-            return
+            return size
         }
         while (i > 0 && best[i - 1] > best[i]) {
             val t = best[i - 1]
@@ -419,6 +511,7 @@ object SilentEvaluator {
             best[i] = t
             i--
         }
+        return next
     }
 
     fun evaluate(
@@ -429,21 +522,27 @@ object SilentEvaluator {
         seed: Long = SEED,
     ): SilentEvaluation? {
         if (requirement(dataset) != null) return null
-        val words = dataset.words.map { it.word }.filter { dataset.count(it) >= MINIMUM_TAKES }
-        val model = SilentModel(dataset.takes.filter { it.word in words }, channels, neighbors)
+        val sampled = sample(dataset.takes)
+        val counts = sampled.groupingBy { it.word }.eachCount()
+        val words = dataset.words.map { it.word }.filter { (counts[it] ?: 0) >= MINIMUM_TAKES }
+        if (words.size < 2) return null
+        val chosen = words.toSet()
+        val model = SilentModel(sampled.filter { it.word in chosen }, channels, neighbors)
         if (model.templates.isEmpty()) return null
-        val labels = IntArray(model.templates.size) { words.indexOf(model.templates[it].first).coerceAtLeast(0) }
+        val index = words.withIndex().associate { it.value to it.index }
+        val labels = IntArray(model.templates.size) { index[model.templates[it].first] ?: 0 }
         val d = matrix(model.templates.map { it.second })
         val results = leaveOneOut(d, labels, words.size, neighbors)
         if (results.isEmpty()) return null
         val correct = results.count { it.truth == it.guess }
         val confusion = List(words.size) { IntArray(words.size) }
         for (r in results) confusion[r.truth][r.guess]++
+        val rounds = rounds(permutations, labels.size)
         val random = SilentRandom(seed)
         val shuffled = labels.copyOf()
         var atLeast = 0
         var nullTotal = 0.0
-        repeat(permutations) {
+        repeat(rounds) {
             random.shuffle(shuffled)
             val null0 = leaveOneOut(d, shuffled, words.size, neighbors)
             val hits = null0.count { it.truth == it.guess }
@@ -454,8 +553,8 @@ object SilentEvaluator {
         val suggested = if (good.size >= 3) good[max(0, ceil(0.9 * good.size).toInt() - 1)] * 1.25 else null
         return SilentEvaluation(
             words, results.size, correct,
-            if (permutations > 0) nullTotal / permutations else 0.0,
-            (1 + atLeast).toDouble() / (1 + permutations), permutations,
+            if (rounds > 0) nullTotal / rounds else 0.0,
+            (1 + atLeast).toDouble() / (1 + rounds), rounds,
             confusion.map { it.toList() }, suggested,
         )
     }
@@ -540,6 +639,52 @@ class SilentSegmenter(
     }
 }
 
+object SilentText {
+    val SENTENCES: List<String> = listOf(
+        "Can you help me please",
+        "I would like some water",
+        "Yes that sounds good to me",
+        "No thank you I am fine",
+        "Please stop for a moment",
+        "Where are we going today",
+        "What time is it now",
+        "I need to go home soon",
+        "Call me when you are ready",
+        "Let us meet again tomorrow",
+        "The weather is nice outside",
+        "I am feeling tired tonight",
+        "Turn the music down a little",
+        "Open the door for me",
+        "How was your day at work",
+        "We should eat something first",
+        "Send a message to my friend",
+        "I do not know the answer",
+        "Bring me a cup of coffee",
+        "Wait here I will be back",
+        "That is a really good idea",
+        "Could you speak more slowly",
+        "Read the next page out loud",
+        "My phone battery is almost empty",
+        "Remind me to buy some bread",
+        "Good morning how did you sleep",
+        "I love you very much",
+        "Is there anything else you need",
+        "Show me the way to the station",
+        "Thank you for your help",
+    )
+
+    fun words(text: String): List<String> {
+        val cleaned = text.lowercase(Locale.ROOT).map { c ->
+            when {
+                c == '\u2019' -> '\''
+                c.isLetterOrDigit() || c == '\'' -> c
+                else -> ' '
+            }
+        }.joinToString("")
+        return cleaned.split(' ').map { it.trim('\'') }.filter { it.isNotEmpty() }
+    }
+}
+
 data class SilentReading(
     val sentences: List<List<String>>,
     val duration: Double = DURATION,
@@ -587,26 +732,47 @@ data class SilentReading(
     companion object {
         const val DURATION = 300.0
         const val SCRIPT_LENGTH = 100
+        const val SESSION_SENTENCES = 8
+        const val CHUNK = 5
 
-        fun start(words: List<String>, seed: Long, duration: Double = DURATION) = SilentReading(script(words, seed), duration)
+        fun start(sentences: List<List<String>>, seed: Long, duration: Double = DURATION) = SilentReading(script(sentences, seed), duration)
 
-        fun length(wordCount: Int): Int = min(6, max(4, wordCount))
-
-        fun script(words: List<String>, seed: Long, count: Int = SCRIPT_LENGTH): List<List<String>> {
-            if (words.isEmpty()) return emptyList()
-            val length = length(words.size)
-            val random = SilentRandom(seed)
-            val pool = ArrayList<Int>()
-            while (pool.size < count * length) {
-                val order = IntArray(words.size) { it }
-                random.shuffle(order)
-                if (pool.isNotEmpty() && order.size > 1 && order[0] == pool.last()) {
-                    order[0] = order[1]
-                    order[1] = pool.last()
-                }
-                order.forEach { pool.add(it) }
+        fun pool(dataset: SilentDataset): List<List<String>> {
+            val out = ArrayList<List<String>>()
+            for (text in dataset.sentences + SilentText.SENTENCES) {
+                val words = SilentText.words(text)
+                if (words.isNotEmpty() && words !in out) out.add(words)
             }
-            return List(count) { s -> pool.subList(s * length, (s + 1) * length).map { words[it] } }
+            val covered = out.flatten().toSet()
+            val orphans = dataset.words.map { it.word }.filter { it !in covered }
+            orphans.chunked(CHUNK).forEach { out.add(it) }
+            return out
+        }
+
+        fun plan(dataset: SilentDataset, size: Int = SESSION_SENTENCES): List<List<String>> {
+            val counts = dataset.counts()
+            return pool(dataset).withIndex()
+                .map { (i, sentence) -> Triple(sentence, sentence.sumOf { min(counts[it] ?: 0, 10) }.toDouble() / sentence.size, i) }
+                .sortedWith(compareBy({ it.second }, { it.third }))
+                .take(max(1, size))
+                .map { it.first }
+        }
+
+        fun script(sentences: List<List<String>>, seed: Long, count: Int = SCRIPT_LENGTH): List<List<String>> {
+            val usable = sentences.filter { it.isNotEmpty() }
+            if (usable.isEmpty()) return emptyList()
+            val random = SilentRandom(seed)
+            val order = ArrayList<Int>()
+            while (order.size < count) {
+                val pass = IntArray(usable.size) { it }
+                random.shuffle(pass)
+                if (order.isNotEmpty() && pass.size > 1 && pass[0] == order.last()) {
+                    pass[0] = pass[1]
+                    pass[1] = order.last()
+                }
+                pass.forEach { order.add(it) }
+            }
+            return order.take(count).map { usable[it] }
         }
 
         private fun minutes(seconds: Double): String {
@@ -616,8 +782,120 @@ data class SilentReading(
     }
 }
 
-data class SilentDataset(val words: List<SilentWord>, val takes: List<SilentTake> = emptyList()) {
+data class SilentScopeFrame(val t: Double, val rotation: SilentVector, val angle: SilentVector, val acceleration: SilentVector?, val energy: Double)
+
+data class SilentMark(val start: Double, val end: Double, val label: String)
+
+data class SilentSpectrum(val power: List<Double>, val binHz: Double, val peakHz: Double?) {
+    companion object {
+        val EMPTY = SilentSpectrum(emptyList(), SilentFeatures.RATE / SilentScope.SPECTRUM_SIZE, null)
+    }
+}
+
+data class SilentScope(
+    val samples: List<SilentSample> = emptyList(),
+    val reference: SilentQuaternion? = null,
+    val marks: List<SilentMark> = emptyList(),
+) {
+    val latest: Double? get() = samples.lastOrNull()?.t
+
+    fun push(sample: SilentSample): SilentScope {
+        val start = sample.t - WINDOW
+        val first = samples.indexOfFirst { it.t >= start }
+        val kept = if (first > 0) samples.subList(first, samples.size) else if (first < 0) emptyList() else samples
+        return SilentScope(kept + sample, reference ?: sample.attitude, marks.filter { it.end >= start })
+    }
+
+    fun recentre(): SilentScope = copy(reference = samples.lastOrNull()?.attitude ?: reference)
+
+    fun mark(segment: List<SilentSample>, label: String): SilentScope {
+        if (segment.isEmpty()) return this
+        return copy(marks = marks + SilentMark(segment.first().t, segment.last().t, label))
+    }
+
+    val frames: List<SilentScopeFrame>
+        get() {
+            val origin = (reference ?: samples.firstOrNull()?.attitude ?: SilentQuaternion.IDENTITY).conjugate
+            return SilentFeatures.resampled(samples).map { s ->
+                val r = s.rotationRate
+                val a = (origin * s.attitude).rotationVector
+                SilentScopeFrame(s.t, SilentVector(r.x * DEGREES, r.y * DEGREES, r.z * DEGREES), SilentVector(a.x * DEGREES, a.y * DEGREES, a.z * DEGREES), s.acceleration, s.energy)
+            }
+        }
+
+    val spectrum: SilentSpectrum get() = spectrum(frames.map { it.rotation })
+
+    companion object {
+        const val WINDOW = 6.0
+        const val SPECTRUM_SIZE = 64
+        const val MINIMUM_SPECTRUM = 16
+        const val LOWEST_PEAK_HZ = 0.5
+        const val DEGREES = 180 / PI
+
+        fun spectrum(values: List<SilentVector>, size: Int = SPECTRUM_SIZE, rate: Double = SilentFeatures.RATE): SilentSpectrum {
+            val binHz = rate / size
+            val tail = values.takeLast(size)
+            if (tail.size < MINIMUM_SPECTRUM) return SilentSpectrum(emptyList(), binHz, null)
+            val n = tail.size
+            val pad = size - n
+            val power = DoubleArray(size / 2 + 1)
+            for (axis in 0 until 3) {
+                val raw = tail.map { if (axis == 0) it.x else if (axis == 1) it.y else it.z }
+                val mean = raw.sum() / n
+                val signal = DoubleArray(size)
+                for (i in 0 until n) {
+                    val hann = if (n > 1) 0.5 - 0.5 * cos(2 * PI * i / (n - 1)) else 1.0
+                    signal[pad + i] = (raw[i] - mean) * hann
+                }
+                for (k in 0..size / 2) {
+                    var re = 0.0
+                    var im = 0.0
+                    for (i in 0 until size) {
+                        val phase = 2 * PI * (k * i).toDouble() / size
+                        re += signal[i] * cos(phase)
+                        im -= signal[i] * sin(phase)
+                    }
+                    power[k] += (re * re + im * im) / size
+                }
+            }
+            var peak: Int? = null
+            for (k in power.indices) {
+                if (k * binHz < LOWEST_PEAK_HZ || power[k] <= 1e-6) continue
+                if (peak == null || power[k] > power[peak]) peak = k
+            }
+            return SilentSpectrum(power.toList(), binHz, peak?.let { it * binHz })
+        }
+    }
+}
+
+data class SilentDataset(val words: List<SilentWord>, val takes: List<SilentTake> = emptyList(), val sentences: List<String> = emptyList()) {
     fun count(word: String): Int = takes.count { it.word == word }
+
+    fun counts(): Map<String, Int> = takes.groupingBy { it.word }.eachCount()
+
+    val language: SilentLanguage get() = SilentLanguage((sentences + SilentText.SENTENCES).map(SilentText::words))
+
+    fun addSentence(text: String): SilentDataset? {
+        val words = SilentText.words(text)
+        if (words.size < 2 || sentences.any { SilentText.words(it) == words }) return null
+        return words.fold(copy(sentences = sentences + text.trim())) { d, word -> d.addWord(word) ?: d }
+    }
+
+    fun addEntry(text: String): Pair<SilentDataset, String>? {
+        val colon = text.indexOf(':')
+        if (colon >= 0) {
+            val word = clean(text.substring(0, colon))
+            return addWord(word, text.substring(colon + 1))?.let { it to word }
+        }
+        val words = SilentText.words(text)
+        if (words.size >= 2) return addSentence(text)?.let { it to words.first() }
+        val word = words.firstOrNull() ?: return null
+        return addWord(word)?.let { it to word }
+    }
+
+    fun removeSentence(text: String): SilentDataset = copy(sentences = sentences.filter { it != text })
+
+    fun learn(take: SilentTake): SilentDataset = (addWord(take.word) ?: this).addTake(take)
 
     fun addWord(word: String, phrase: String = ""): SilentDataset? {
         val name = clean(word)
@@ -643,6 +921,7 @@ data class SilentDataset(val words: List<SilentWord>, val takes: List<SilentTake
     fun phrase(word: String): String = words.firstOrNull { it.word == word }?.spoken ?: word
 
     fun json(): Map<String, Any?> = linkedMapOf(
+        "sentences" to sentences,
         "takes" to takes.map { take -> linkedMapOf("id" to take.id, "samples" to take.samples.map(::encode), "word" to take.word) },
         "version" to VERSION.toLong(),
         "words" to words.map { linkedMapOf("phrase" to it.phrase, "word" to it.word) },
@@ -662,7 +941,7 @@ data class SilentDataset(val words: List<SilentWord>, val takes: List<SilentTake
             val version = (root["version"] as? Number)?.toInt() ?: 0
             if (version > VERSION) return null
             val rawWords = root["words"] as? List<*> ?: return null
-            var dataset = SilentDataset(emptyList())
+            var dataset = SilentDataset(emptyList(), sentences = (root["sentences"] as? List<*>).orEmpty().filterIsInstance<String>())
             for (raw in rawWords) {
                 val map = raw as? Map<*, *> ?: continue
                 val word = map["word"] as? String ?: continue

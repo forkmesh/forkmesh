@@ -236,23 +236,129 @@ class SilentSpeechTest {
         near(0.02, dataset.takes[0].samples[1].acceleration!!.x)
     }
 
-    fun testReadingScriptIsBalancedWithoutRepeatsAndMatchesTheIPhone() {
-        val words = listOf("yes", "no", "help", "stop", "water")
-        val script = SilentReading.script(words, 7, count = 20)
+    fun testTextSplitsSentencesIntoWords() {
+        assertEq(listOf("could", "you", "please", "help", "me", "it's", "late"), SilentText.words("  Could you, PLEASE — help me? It’s late. "))
+        assertEq(listOf("quoted", "42"), SilentText.words("'quoted' 42"))
+        assertEq(emptyList<String>(), SilentText.words("..."))
+        val vocabulary = SilentText.SENTENCES.flatMap(SilentText::words).toSet()
+        expect(vocabulary.size > 100, "over a hundred words")
+        expect(vocabulary.containsAll(listOf("yes", "no", "help", "stop", "water")), "starter words are in the sentences")
+    }
+
+    fun testReadingScriptCyclesSentencesWithoutRepeatsAndMatchesTheIPhone() {
+        val sentences = (0 until 4).map { listOf("s$it", "w") }
+        val script = SilentReading.script(sentences, 7, count = 20)
         assertEq(20, script.size)
-        expect(script.all { it.size == 5 }, "five words a sentence")
-        val flat = script.flatten()
-        assertEq(setOf(20), words.map { w -> flat.count { it == w } }.toSet())
-        expect(flat.zipWithNext().none { it.first == it.second }, "no word twice in a row")
-        assertEq("water no stop yes help", script[0].joinToString(" "))
-        assertEq("yes help stop no water", script[1].joinToString(" "))
-        assertEq(listOf(4, 4, 4), SilentReading.script(listOf("yes", "no"), 1, count = 3).map { it.size })
-        assertEq(6, SilentReading.length(9))
+        assertEq(setOf(5), sentences.map { s -> script.count { it == s } }.toSet())
+        expect(script.zipWithNext().none { it.first == it.second }, "no sentence twice in a row")
+        assertEq(listOf("s1", "s2", "s0", "s3", "s0"), script.take(5).map { it[0] })
         assertEq(emptyList<List<String>>(), SilentReading.script(emptyList(), 1))
     }
 
+    fun testReadingPlanPrefersYourSentencesAndWordsWithFewTakes() {
+        var dataset = SilentDataset.STARTER.addSentence("Pass the salt, please")!!
+        assertEq(null, dataset.addSentence("pass the SALT please"))
+        dataset = dataset.addEntry("zebra")!!.first
+        val pool = SilentReading.pool(dataset)
+        assertEq(listOf("pass", "the", "salt", "please"), pool.first())
+        assertEq(listOf("zebra"), pool.last())
+        assertEq(SilentText.SENTENCES.size + 2, pool.size)
+        val plan = SilentReading.plan(dataset, 3)
+        assertEq(3, plan.size)
+        assertEq(listOf("pass", "the", "salt", "please"), plan[0])
+        val random = SilentRandom(1)
+        for (n in 0 until 10) for (word in listOf("pass", "the", "salt", "please")) {
+            dataset = dataset.learn(SilentTake("$word$n", word, SilentSynth.take("yes", random)))
+        }
+        expect(listOf("pass", "the", "salt", "please") !in SilentReading.plan(dataset, 3), "trained sentence moves back")
+        val reading = SilentReading.start(plan, 5)
+        assertEq(SilentReading.SCRIPT_LENGTH, reading.sentences.size)
+        expect(reading.sentences.all { it in plan }, "script uses the plan")
+    }
+
+    fun testDatasetLearnsNewWordsFromSentencesAndEntries() {
+        val random = SilentRandom(2)
+        var dataset = SilentDataset(emptyList()).learn(SilentTake("a", "coffee", SilentSynth.take("yes", random)))
+        assertEq(listOf("coffee"), dataset.words.map { it.word })
+        assertEq(mapOf("coffee" to 1), dataset.counts())
+        val (withPhrase, word) = dataset.addEntry("thirsty: Could I have some water?")!!
+        assertEq("thirsty", word)
+        dataset = withPhrase
+        assertEq("Could I have some water?", dataset.phrase("thirsty"))
+        val (withSentence, first) = dataset.addEntry("See you later")!!
+        assertEq("see", first)
+        dataset = withSentence
+        assertEq(listOf("See you later"), dataset.sentences)
+        assertEq(null, dataset.addEntry("coffee"))
+        val back = SilentDataset.decode(dataset.encoded())!!
+        assertEq(listOf("See you later"), back.sentences)
+        assertEq(listOf("coffee", "thirsty", "see", "you", "later"), back.words.map { it.word })
+        assertEq(emptyList<String>(), dataset.removeSentence("See you later").sentences)
+    }
+
+    fun testLanguageModelPrefersWordsThatFollow() {
+        val language = SilentLanguage(listOf(listOf("i", "would", "like", "water"), listOf("i", "would", "like", "coffee"), listOf("i", "need", "help")))
+        expect(language.probability("would", "i", 10) > language.probability("help", "i", 10), "would follows i")
+        expect(language.probability("i", null, 10) > language.probability("water", null, 10), "i starts sentences")
+        expect(language.probability("unknown", "i", 10) > 0, "unseen words keep a chance")
+        val close = listOf("help" to 1.0, "would" to 1.02, "water" to 2.0, "coffee" to 2.2)
+        assertEq("would", SilentScores.ranked(close, language, "i").first().word)
+        assertEq("help", SilentScores.ranked(close, null, "i").first().word)
+        val far = listOf("help" to 0.5, "would" to 2.0, "water" to 2.1, "coffee" to 2.2)
+        assertEq("help", SilentScores.ranked(far, language, "i").first().word)
+    }
+
+    fun testEvaluationSamplesTheNewestTakesOfEachWord() {
+        val dataset = SilentSynth.dataset(listOf("yes", "no"), 5, 3)
+        assertEq(listOf("no-2", "yes-3", "no-3", "yes-4", "no-4"), SilentEvaluator.sample(dataset.takes, 3, 5).map { it.id })
+        assertEq(500, SilentEvaluator.rounds(500, 40))
+        assertEq(111, SilentEvaluator.rounds(500, 600))
+        assertEq(100, SilentEvaluator.rounds(500, 2000))
+        assertEq(50, SilentEvaluator.rounds(50, 2000))
+    }
+
+    fun testEvaluationListsTheWorstMixups() {
+        val result = SilentEvaluation(listOf("a", "b", "c"), 9, 4, 0.3, 0.2, 10, listOf(listOf(1, 2, 0), listOf(3, 1, 0), listOf(0, 1, 2)), null)
+        val mixups = result.mixups(2)
+        assertEq(listOf("b", "a"), mixups.map { it.first })
+        assertEq(listOf("a", "b"), mixups.map { it.second })
+        assertEq(listOf(3, 2), mixups.map { it.third })
+    }
+
+    fun testScopeKeepsAWindowAndShowsDegrees() {
+        var scope = SilentScope()
+        var attitude = SilentQuaternion.IDENTITY
+        for (k in 0 until 250) {
+            val spin = SilentVector(1.0, 0.0, if (k < 25) 0.5 else 0.0)
+            attitude = (attitude * SilentQuaternion.fromRotationVector(SilentVector(0.0, 0.0, spin.z / 25))).normalized
+            scope = scope.push(SilentSample(k / 25.0, spin, attitude, SilentVector(0.0, 0.0, 0.1)))
+        }
+        expect(scope.samples.last().t - scope.samples.first().t <= SilentScope.WINDOW, "six seconds kept")
+        val last = scope.frames.last()
+        near(57.29578, last.rotation.x, 1e-4)
+        near(0.48 * 180 / PI, last.angle.z, 1e-6)
+        near(0.1, last.acceleration!!.z)
+        scope = scope.recentre()
+        near(0.0, scope.frames.last().angle.z)
+        scope = scope.mark(scope.samples.takeLast(10), "yes")
+        assertEq(listOf("yes"), scope.marks.map { it.label })
+        for (k in 250 until 500) scope = scope.push(SilentSample(k / 25.0, SilentVector.ZERO, attitude))
+        expect(scope.marks.isEmpty(), "old marks drop out")
+    }
+
+    fun testSpectrumFindsTheNodFrequency() {
+        val values = (0 until 100).map { SilentVector(0.0, sin(2 * PI * 3.125 * it / 25), 0.0) }
+        val spectrum = SilentScope.spectrum(values)
+        assertEq(33, spectrum.power.size)
+        near(25.0 / 64, spectrum.binHz)
+        near(3.125, spectrum.peakHz!!)
+        near(3.875669, spectrum.power[8], 1e-5)
+        assertEq(null, SilentScope.spectrum(values.take(10)).peakHz)
+        assertEq(null, SilentScope.spectrum(List(64) { SilentVector(1.0, 1.0, 1.0) }).peakHz)
+    }
+
     fun testReadingLabelsEachHeardWordInOrder() {
-        var reading = SilentReading.start(listOf("yes", "no", "help", "stop"), 3, duration = 10.0)
+        var reading = SilentReading.start(listOf(listOf("yes", "no", "help", "stop")), 3, duration = 10.0)
         val first = reading.sentence
         val random = SilentRandom(4)
         var labelled = emptyList<Pair<String, List<SilentSample>>>()
@@ -281,7 +387,7 @@ class SilentSpeechTest {
     }
 
     fun testReadingRunsForItsDuration() {
-        var reading = SilentReading.start(listOf("yes", "no"), 1, duration = 300.0)
+        var reading = SilentReading.start(listOf(listOf("yes", "no")), 1, duration = 300.0)
         reading = reading.tick(1000.0).tick(1072.6)
         assertEq("1:12 of 5:00", reading.clock)
         expect(!reading.timeUp, "not yet")
