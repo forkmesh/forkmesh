@@ -100,7 +100,6 @@ One page per topic. Each links back here.
 | [stale-pulls](stale-pulls.md) | Optional ForkBot reminders and closing for pull requests waiting on their author |
 | [remote-forks](remote-forks.md) | Forks on other instances and cross-instance pull requests |
 | [provider-mirrors](provider-mirrors.md) | Mirroring a repository to GitHub or GitLab |
-| [archive-sync](archive-sync.md) | Scheduled backup of a repository to the Internet Archive |
 | [ai-review](ai-review.md) | Automated first-pass AI review of pull requests |
 | [ai-disclosure](ai-disclosure.md) | AI disclosure on pull requests and the issue AI prompt |
 | [security-advisories](security-advisories.md) | Private vulnerability reports and repository security advisories |
