@@ -183,6 +183,31 @@ version). The answer is dropped when another note was opened, the note was
 deleted, or its text or title changed meanwhile (a reload from the relay), and
 the notice says why.
 
+### Rewriting a selection
+
+Selecting text in Write (or Live) narrows the composer to the selection: the
+placeholder becomes "rewrite the selected text with AI…" and the action
+"Rewrite the selection with Claude Code" (`aiSelectionRange()`, refreshed on
+every selection change by `aiSelectionChanged()`). The selection drops the
+whitespace at its ends (`noteTrimmedRange()`). A selection in Preview does not
+count, because its rendered text has no exact place in the source.
+
+The editor's right-click menu adds **Ask AI** with the quick actions from
+`noteAiSelectionActions()` in `NoteTools.h`: Clean up, Check grammar, Make
+clearer, Make shorter, Make longer, Professional tone, Friendly tone, Bullet
+list and Summarize. They are the web's actions with the same wording
+([notes assist](../app/notes-assist.md)); the menu is disabled without a
+selection or while AI is working.
+
+Both go through `startNoteAiEdit()` with the range, which sends
+`noteAiSelectionPrompt()`: the instruction, the title, up to 600 characters on
+each side as context, and the selection, asking for one JSON object
+`{"text"}` with only the replacement. `parseNoteAiSelection()` reads it like
+`parseNoteAiEdit()` and refuses a missing or empty `text`. The same checks and
+read-only state apply as for a whole-note edit (the save label reads "AI is
+rewriting the selection…"). The reply replaces the range in one undo step and
+is left selected; the note then saves the usual way.
+
 ## Sharing
 
 Share (owner only) opens a people panel: User / Organization, name, Can edit /
@@ -426,8 +451,9 @@ dashboard and World open it from their own origin; the desktop does not use it
   link parsing and host check, comment links, built links, linked-issue
   references, export names, share query rules, filters, search, conflict
   detection, and the list row: last-edit stamps and tooltip, badges, share
-  avatars and "+N", unread rules and the local clear, kept fields on save, and
-  the row menu's access header.
+  avatars and "+N", unread rules and the local clear, kept fields on save, the
+  row menu's access header, and the AI selection prompt, its quick actions,
+  trimmed ranges and answer parsing.
 - `desktop/tests/test_note_pages.cpp` (`forkmesh-note-pages-tests`): the emoji
   rule (skin tones, flags, ZWJ, keycaps, letters, whitespace, the code point
   and byte limits, every picker emoji), outline depth, indent, outdent, move,

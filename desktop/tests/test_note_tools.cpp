@@ -497,10 +497,57 @@ void testAiEdit()
           "a long title is cut to 200 characters");
 }
 
+void testAiSelection()
+{
+    const QList<NoteAiSelectionAction> &actions = noteAiSelectionActions();
+    check(actions.size() == 9 && actions.first().id == QStringLiteral("clean-up") &&
+              actions.at(1).label == QStringLiteral("Check grammar"),
+          "the quick actions start with Clean up and Check grammar");
+
+    const QString markdown = QStringLiteral("Intro.\n\n  this are rong \n\nEnd.");
+    const NoteTextRange range = noteTrimmedRange(markdown, 25, 6);
+    check(markdown.mid(range.start, range.end - range.start) ==
+              QStringLiteral("this are rong"),
+          "a selection drops surrounding whitespace, whichever way it was made");
+    check(noteTrimmedRange(markdown, 7, 10).isEmpty(),
+          "a selection of only whitespace is empty");
+    check(noteTrimmedRange(markdown, -4, 999).start == 0 &&
+              noteTrimmedRange(markdown, -4, 999).end == int(markdown.size()),
+          "out-of-range ends are clamped");
+
+    const QString prompt = noteAiSelectionPrompt(
+        QStringLiteral("Draft"), markdown, range, QStringLiteral(" fix %1 grammar "));
+    check(prompt.contains(QStringLiteral("Instruction:\nfix %1 grammar\n")) &&
+              prompt.contains(QStringLiteral(
+                  "-----BEGIN SELECTION-----\nthis are rong\n-----END SELECTION-----")) &&
+              prompt.contains(QStringLiteral("-----BEGIN TEXT BEFORE-----\nIntro.\n\n  \n")) &&
+              prompt.contains(QStringLiteral("-----BEGIN TEXT AFTER-----\n \n\nEnd.\n")),
+          "the prompt carries the instruction, the selection and its context");
+    const QString longNote = QString(2000, QLatin1Char('a')) + QStringLiteral("XY") +
+                             QString(2000, QLatin1Char('b'));
+    const QString cut = noteAiSelectionPrompt(QString(), longNote, {2000, 2002},
+                                              QStringLiteral("x"));
+    check(cut.count(QLatin1Char('a')) <= kNoteAiSelectionContext + 20 &&
+              cut.count(QLatin1Char('b')) <= kNoteAiSelectionContext + 20,
+          "context around the selection is limited");
+
+    NoteAiSelectionEdit edit = parseNoteAiSelection(
+        QStringLiteral("```json\n{\"text\": \" This is right. \"}\n```"));
+    check(edit.ok() && edit.text == QStringLiteral("This is right."),
+          "a fenced JSON answer is read and trimmed");
+    check(!parseNoteAiSelection(QStringLiteral("This is right.")).ok(),
+          "an answer without JSON is refused");
+    check(!parseNoteAiSelection(QStringLiteral("{\"text\": \"  \"}")).ok(),
+          "an empty rewrite is refused");
+    check(!parseNoteAiSelection(QStringLiteral("{\"markdown\": \"a\"}")).ok(),
+          "an answer without text is refused");
+}
+
 int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
     testAiEdit();
+    testAiSelection();
     testAppLinks();
     testWebLinks();
     testCommentLinks();

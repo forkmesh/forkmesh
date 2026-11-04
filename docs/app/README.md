@@ -124,6 +124,7 @@ One page per topic. Each links back here.
 | [notes-documents](notes-documents.md) | Notes as documents: diagrams, page layout and PDF export |
 | [notes-comments](notes-comments.md) | Inline comments on notes, replies, mentions, resolving, and who is here |
 | [notes-pages](notes-pages.md) | Note emoji and pages that gather many notes under one outline |
+| [notes-assist](notes-assist.md) | Writing with AI on a note selection: clean up, check grammar, rewrite, or write from a prompt |
 | [notifications](notifications.md) | Thread notifications, new issue pings, notification email send claims, collaboration author display |
 | [pings-page](pings-page.md) | The `/dashboard/pings` inbox that replaced the bell dropdown and pings modal |
 | [content-first-pings](content-first-pings.md) | Pings that lead with the actor and the content |
