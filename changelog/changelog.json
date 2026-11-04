@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-04", "area": "Desktop", "text": "Diffs with avatars and agent transcripts with very long commands no longer freeze the window."},
   {"date": "2026-11-04", "area": "Highlights", "text": "Notes now has a right column beside the note with its live history (who saved each version, with view and restore), an activity timeline and a chat for everyone working on it; on iPhone and Android the same three tabs open in one sheet."},
   {"date": "2026-11-04", "area": "Market", "text": "A new Reticulum plugin connects the desktop, iPhone and Android to the Reticulum mesh network: chat end to end encrypted with Sideband and MeshChat users, see a live map of every destination by hop count with traffic and announce charts, find paths, and manage TCP, UDP, local rnsd and passphrase-protected interfaces."},
   {"date": "2026-11-04", "area": "Desktop", "text": "Opening the Market again no longer freezes the desktop for seconds when no package has changed."},

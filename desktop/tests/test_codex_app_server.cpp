@@ -2062,6 +2062,27 @@ void runTranscriptStyleTest()
     check(singleLineCommand(QStringLiteral("printf 'first\nsecond'"))
               == QStringLiteral("printf 'first\\nsecond'"),
           "a newline inside a quoted value remains visible on the one-line card");
+    {
+        QString script = QStringLiteral("cat > notes.txt <<'EOF'\n");
+        for (int line = 0; line < 40000; ++line)
+            script += QStringLiteral("line %1 of a long heredoc body\n").arg(line);
+        script += QStringLiteral("EOF");
+        QElapsedTimer timer;
+        timer.start();
+        const QString flat = singleLineCommand(script);
+        const qint64 flattenMs = timer.elapsed();
+        check(flat.startsWith(QStringLiteral("cat > notes.txt <<'EOF'; line 0")),
+              "a heredoc still flattens onto one line");
+        check(flattenMs < 2000,
+              "flattening a long heredoc stays linear in its length");
+        const QString clipped = clippedCommandLine(flat);
+        check(clipped.size() == 481 && clipped.endsWith(QChar(0x2026))
+                  && flat.startsWith(clipped.left(480)),
+              "the one-line card shows the start of a long command, not all of it");
+        check(clippedCommandLine(QStringLiteral("git status"))
+                  == QStringLiteral("git status"),
+              "a short command is shown whole");
+    }
 
     check(toolVerb(QStringLiteral("FileChange")) == QStringLiteral("Edited")
               && toolVerb(QStringLiteral("Bash")).isEmpty(),

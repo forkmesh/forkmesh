@@ -12490,13 +12490,15 @@ void MainWindow::updateBranchDiffActiveOutline()
         m_branchDiffActiveOutline->hide();
         return;
     }
-    const int docHeight =
-        m_branchDiffView->document()->documentLayout()->documentSize().height();
     const int top = m_branchFileTops.at(index);
-    const int bottom = (index + 1 < m_branchFileTops.size() &&
-                        m_branchFileTops.at(index + 1) >= 0)
-                           ? m_branchFileTops.at(index + 1)
-                           : docHeight;
+    const int bottom =
+        (index + 1 < m_branchFileTops.size() &&
+         m_branchFileTops.at(index + 1) >= 0)
+            ? m_branchFileTops.at(index + 1)
+            : int(m_branchDiffView->document()
+                      ->documentLayout()
+                      ->documentSize()
+                      .height());
 
     const int viewTop = vbar->value();
     const int height = m_branchDiffView->viewport()->height();
