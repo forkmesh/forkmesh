@@ -152,7 +152,7 @@ from the window. None of them names a package:
 | `logActivity(text)` | a line in the activity log |
 | `openReference(href)` | open an issue, pull request, discussion or other ForkMesh reference link in the window |
 | `showPage()` | show the plugin's own page |
-| `windowCommand(command, args)` | ask the window to do something it owns (`issue.composeFromText`, `prompt.append`, `agent.show`, `issue.show`, and the Tasks page's `task.*` commands) |
+| `windowCommand(command, args)` | ask the window to do something it owns (`issue.composeFromText`, `prompt.append`, `agent.start` (puts `{text}` in the prompt box in place of any draft and starts an agent on it with the selected repository; false leaves the prompt there, focused), `agent.show`, `issue.show`, and the Tasks page's `task.*` commands) |
 | `windowQuery(command, args)` | read something the window holds, answered at once as JSON (`task.agentSessions`, `task.repositoryLogos`) |
 | `windowRequest(command, args, done)` | ask the window for work that answers later (`task.startAgent`, `task.fileAsIssue`, `task.workPlan`); `done` gets `ok`, a JSON reply and an error |
 | `accountPicture(account)` | an account's profile picture, as the chat shows it; empty when none is loaded |
