@@ -4591,9 +4591,9 @@ window.ForkMeshDashboard.registerPage("crm", ({
     const button = $(`[data-crm-grants-load]`);
     button.disabled = !manages || crmGrantsBusy;
     button.title = manages
-      ? `Add the 100 grants, funds and credit programs that best fit ForkMesh to ${crmFlowName(view.flow)}, ranked, with the award, deadline and application details of each`
+      ? `Add the grants, funds and credit programs that best fit ForkMesh to ${crmFlowName(view.flow)}, ranked, with the award, deadline and application details of each`
       : "Only organization owners and admins can load the grants list";
-    $(`[data-crm-grants-load-label]`).textContent = crmGrantsBusy ? "Loading the ranked grants…" : "Load the 100 ranked grants";
+    $(`[data-crm-grants-load-label]`).textContent = crmGrantsBusy ? "Loading the ranked grants…" : "Load the ranked grants";
   }
 
   async function loadCrmGrants() {
