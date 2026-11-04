@@ -32,6 +32,17 @@
   const HANDLE_RE = /^@?([A-Za-z0-9_.-]{1,64})@([A-Za-z0-9-]{1,63}(?:\.[A-Za-z0-9-]{1,63})+)$/;
   const HANDLE_URL_RE = /^https:\/\/([A-Za-z0-9-]{1,63}(?:\.[A-Za-z0-9-]{1,63})+)\/@([A-Za-z0-9_.-]{1,64})(?:@([A-Za-z0-9-]{1,63}(?:\.[A-Za-z0-9-]{1,63})+))?$/;
 
+  const X_HANDLE_URL_RE = /^(?:https?:\/\/)?(?:www\.|mobile\.)?(?:twitter|x)\.com\/([A-Za-z0-9_]{1,15})(?:[/?#]|$)/i;
+  const X_HANDLE_RE = /^@?([A-Za-z0-9_]{1,15})$/;
+  const X_RESERVED = new Set(["home", "i", "intent", "share", "search", "explore", "settings",
+    "login", "notifications", "messages", "compose", "hashtag"]);
+
+  function xHandleOf(value) {
+    const clean = String(value || "").replace(/\s+/g, "");
+    const user = (clean.match(X_HANDLE_URL_RE) || clean.match(X_HANDLE_RE) || [])[1]?.toLowerCase() || "";
+    return X_RESERVED.has(user) ? "" : user;
+  }
+
   const address = (value) => (String(value || "").match(EMAIL_RE) || [""])[0].toLowerCase();
 
   function handleOf(value) {
@@ -85,10 +96,12 @@
   // details the page offers for them. A participant is an address, a
   // fediverse handle, or both.
   function applyContact(message, person) {
+    const onX = message.provider === "x";
+    const handleIn = onX ? xHandleOf : handleOf;
     const email = address(person?.email);
-    const handle = handleOf(person?.handle);
+    const handle = handleIn(person?.handle);
     const samePerson = (item) => Boolean(item)
-      && ((email && address(item.email) === email) || (handle && handleOf(item.handle) === handle));
+      && ((email && address(item.email) === email) || (handle && handleIn(item.handle) === handle));
     const wroteIt = message.direction === "inbound" && samePerson(message.from);
     const signature = wroteIt ? message.signature || {} : {};
     // An instance host is where someone posts, never where they work: only a
@@ -96,7 +109,7 @@
     const domain = domainDetails(email);
     message.contactEmail = email;
     message.handle = handle;
-    message.contactName = realName(person?.name, email || handle)
+    message.contactName = realName(person?.name, onX && /\s/.test(String(person?.name || "").trim()) ? "" : email || handle)
       || (wroteIt ? signature.name || "" : "")
       || (message.direction === "outbound" && message.greeting ? message.greeting : "");
     // A signature's "Engines Co" beats the domain's "Enginesco" when they agree.
@@ -108,8 +121,8 @@
       phone: signature.phone || "",
       website: signature.website || domain.website || "",
       linkedin: signature.linkedin || "",
-      mastodon: handle ? `@${handle}` : signature.mastodon || "",
-      twitter: signature.twitter || "",
+      mastodon: handle && !onX ? `@${handle}` : signature.mastodon || "",
+      twitter: handle && onX ? `@${handle}` : signature.twitter || "",
       github: signature.github || "",
     };
     return message;
@@ -256,15 +269,15 @@
     let generation = 0;
     let autoLink = false;
 
-    const PROVIDER_NAMES = { gmail: "Gmail", zoho: "Zoho Mail", mastodon: "Mastodon" };
+    const PROVIDER_NAMES = { gmail: "Gmail", zoho: "Zoho Mail", mastodon: "Mastodon", x: "X" };
 
     function providerLabel() {
-      return PROVIDER_NAMES[ui.message?.provider] || "Gmail, Zoho Mail or Mastodon";
+      return PROVIDER_NAMES[ui.message?.provider] || "Gmail, Zoho Mail, Mastodon or X";
     }
 
     // A Mastodon conversation is tracked like an email, but its people are
     // handles: the contact's address may never be known.
-    const isThread = () => ui.message?.provider === "mastodon";
+    const isThread = () => ["mastodon", "x"].includes(ui.message?.provider);
 
     // What the contact is looked up and linked by.
     function identity() {
@@ -408,7 +421,7 @@
               const shown = person.handle ? `@${person.handle}` : person.email;
               return `<option value="${esc(key)}"${key === identity() ? " selected" : ""}>${esc(person.name ? `${person.name} <${shown}>` : shown)}</option>`;
             }).join("")}</select></label>` : ""}
-            ${isThread() || message.handle ? `<label>Mastodon handle<input data-field="handle" value="${esc(message.handle ? `@${message.handle}` : "")}" placeholder="@name@instance" /></label>` : ""}
+            ${isThread() || message.handle ? `<label>${message.provider === "x" ? "X handle" : "Mastodon handle"}<input data-field="handle" value="${esc(message.handle ? `@${message.handle}` : "")}" placeholder="${message.provider === "x" ? "@name" : "@name@instance"}" /></label>` : ""}
             <label>Contact email${isThread() ? " (optional)" : ""}<input data-field="contactEmail" type="email" value="${esc(message.contactEmail)}" placeholder="${isThread() ? "if you know it" : "who the email is with"}" /></label>
             <label>Contact name<input data-field="contactName" value="${esc(message.contactName)}" placeholder="used when the contact is new" /></label>
             <label>Direction<select data-field="direction"><option value="inbound"${message.direction === "inbound" ? " selected" : ""}>${isThread() ? "Posted by the contact" : "Received from the contact"}</option><option value="outbound"${message.direction === "outbound" ? " selected" : ""}>${isThread() ? "Posted by you" : "Sent to the contact"}</option></select></label>
@@ -476,7 +489,7 @@
       render();
       if (!ui.looking) return;
       const found = await timed(request({
-        type: "fm-lookup", email: ui.message.contactEmail, handle: ui.message.handle,
+        type: "fm-lookup", provider: ui.message.provider, email: ui.message.contactEmail, handle: ui.message.handle,
         name: ui.message.contactName, contact: ui.message.contact,
       }));
       if (mine !== generation) return;
@@ -862,7 +875,8 @@
     ];
     const loose = LOOSE_MATCHES[ui.matchedBy];
     if (loose) parts.push(chip("Found by", loose, "", `The CRM matched this record by ${loose}, not by this ${thread ? "handle" : "address"}; link it to add the ${thread ? "handle" : "address"}`));
-    if (thread && contact.mastodon) parts.push(chip("Mastodon", contact.mastodon));
+    if (thread && message.provider === "x" && contact.twitter) parts.push(chip("X", contact.twitter));
+    else if (thread && contact.mastodon) parts.push(chip("Mastodon", contact.mastodon));
     for (const [key, label] of EXTRA_CHIPS) {
       const raw = contact[key];
       const value = key === "value" ? (raw > 0 ? Number(raw).toLocaleString() : "")
@@ -917,7 +931,7 @@
   }
 
   globalThis.ForkMeshCrm = {
-    FREE_MAIL, address, handleOf, domainOf, titleCase, esc, send, realName,
+    FREE_MAIL, address, handleOf, xHandleOf, domainOf, titleCase, esc, send, realName,
     domainDetails, applyContact, lastEmailAt, shortDate, mount, create, header,
   };
 })();

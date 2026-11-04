@@ -225,7 +225,8 @@ SHARED_EDIT_FIELDS = frozenset({
     "name", "email", "company", "title", "phone", "twitter", "mastodon",
     "bluesky", "linkedin", "github", "website", "location", "value",
     "nextStep", "notes", "tags"})
-EMAIL_PROVIDERS = frozenset({"gmail", "zoho", "mastodon", "other"})
+EMAIL_PROVIDERS = frozenset({"gmail", "zoho", "mastodon", "x", "other"})
+X_EPOCH_MS = 1_288_834_974_657
 # A fediverse address, kept as "user@host": "@grace@mastodon.social", the
 # bare "grace@mastodon.social", or the profile URL a Mastodon page links to.
 HANDLE_RE = re.compile(
@@ -868,6 +869,16 @@ def _handle(value, limit=320):
         return ("%s@%s" % (url.group(2), url.group(3) or url.group(1))).lower()
     match = HANDLE_RE.fullmatch(value)
     return ("%s@%s" % (match.group(1), match.group(2))).lower() if match else ""
+
+
+def _x_handle(value):
+    value = _clean(value, 320)
+    if not value:
+        return ""
+    match = (dict(BOX_PROFILE_RES)["twitter"].search(value)
+             or BOX_BARE_PROFILE_RES["twitter"].fullmatch(value))
+    user = match.group(1).lower() if match else ""
+    return "" if user in BOX_PROFILE_PATHS else user
 
 
 def _https(value):
@@ -4699,6 +4710,9 @@ async def _celebrate_tracked_email(runtime, actor, send_id, subject, contact,
     if provider == "mastodon":
         title = ("🎉 New CRM contact from Mastodon" if created
                  else "🎉 Mastodon post tracked in the CRM")
+    elif provider == "x":
+        title = ("🎉 New CRM contact from X" if created
+                 else "🎉 X post tracked in the CRM")
     await notify(actor, "plugin_activity", title,
                  body=body, href="/dashboard/crm",
                  dedupe="crm-email-tracked:" + send_id,
@@ -5323,15 +5337,17 @@ def _email_link_fields(data, existing=None):
     """The provider identity every recorded email may carry. A re-link that
     leaves a field out keeps what the row already knows."""
     existing = existing if isinstance(existing, dict) else {}
+    provider = _email_provider(data.get("provider", existing.get("provider")))
+    handle = _x_handle if provider == "x" else _handle
     return {
-        "provider": _email_provider(data.get("provider", existing.get("provider"))),
+        "provider": provider,
         "direction": _email_direction(
             data.get("direction", existing.get("direction"))),
         "threadId": _clean(data.get("threadId", existing.get("threadId")), 200),
         "mailbox": _email(data.get("mailbox", existing.get("mailbox"))),
         # A Mastodon conversation names its people by handle, not by address.
-        "handle": _handle(data.get("handle", existing.get("handle"))),
-        "account": _handle(data.get("account", existing.get("account"))),
+        "handle": handle(data.get("handle", existing.get("handle"))),
+        "account": handle(data.get("account", existing.get("account"))),
     }
 
 
@@ -6021,16 +6037,20 @@ async def _lookup_contact(runtime, org_bi, data, account_bi="", actor="", role="
     already tied to it. A POST so neither lands in a URL or a log line. The
     name and details on the message find a box that has neither yet."""
     email = _email(data.get("email"))
-    handle = _handle(data.get("handle"))
+    on_x = _email_provider(data.get("provider")) == "x"
+    handle = (_x_handle if on_x else _handle)(data.get("handle"))
     if not email and not handle:
         return _response(runtime, {"error": "invalid_email"}, 400)
+    details = _x_details(_link_details(data), handle if on_x else "")
     # The organization's pipelines ride along so the extension can offer
     # "add to pipeline" without a second round trip.
     flows = (await _settings(runtime, org_bi))["flows"]
     lists = await _link_lists(runtime, org_bi, account_bi, actor, role)
     row, matched_by = await _matching_box(runtime, org_bi, {
-        **_link_details(data), "email": email, "handle": handle,
+        **details, "email": email, "handle": "" if on_x else handle,
         "name": data.get("name")})
+    if on_x and matched_by == "profile":
+        matched_by = "handle"
     if not row:
         return _response(runtime, {"ok": True, "contact": None, "emails": [],
                                    "flows": flows, "lists": lists})
@@ -6040,6 +6060,12 @@ async def _lookup_contact(runtime, org_bi, data, account_bi="", actor="", role="
         "emails": await _contact_emails(runtime, org_bi, contact["id"]),
         "flows": flows, "lists": lists,
     })
+
+
+def _x_details(details, handle):
+    if handle and _x_handle(details.get("twitter")) != handle:
+        details = {**details, "twitter": "@" + handle}
+    return details
 
 
 async def _linked_email_row(runtime, org_bi, provider, message_id):
@@ -6170,7 +6196,10 @@ async def _link_message(runtime, org_bi, org_name, account_bi, actor, data,
     if data.get("handle") and not handle:
         return ({"error": "invalid_handle"}, 400)
     details = _link_details(data)
-    if handle and not details.get("mastodon"):
+    on_x = provider == "x"
+    if on_x:
+        details = _x_details(details, handle)
+    elif handle and not details.get("mastodon"):
         details["mastodon"] = "@" + handle
     contact_id = _clean(data.get("contactId"), 64).lower()
     row, matched_by = None, ""
@@ -6186,11 +6215,13 @@ async def _link_message(runtime, org_bi, org_name, account_bi, actor, data,
         # email with the same person, or a box filed under another address or
         # only a name, all land on the one record.
         row, matched_by = await _matching_box(runtime, org_bi, {
-            **details, "email": counterpart, "handle": handle,
+            **details, "email": counterpart, "handle": "" if on_x else handle,
             "name": data.get("contactName")})
+        if on_x and matched_by == "profile":
+            matched_by = "handle"
     else:
         return ({
-            "error": "contact_handle_required" if provider == "mastodon"
+            "error": "contact_handle_required" if provider in ("mastodon", "x")
                      else "contact_email_required"}, 400)
     flows = (await _settings(runtime, org_bi))["flows"]
     existing_contact = await runtime.open(row.get("data")) if row else {}
@@ -6210,7 +6241,7 @@ async def _link_message(runtime, org_bi, org_name, account_bi, actor, data,
             "name": data.get("contactName") or (("@" + handle) if handle else ""),
             "email": counterpart,
             "source": ("mastodon conversation" if provider == "mastodon"
-                       else provider + " email"),
+                       else "x conversation" if on_x else provider + " email"),
             **({"flow": flow_id, "stage": stage} if flow_id else {}),
             **({"views": [list_id]} if list_id else {}),
         })
@@ -6248,6 +6279,8 @@ async def _link_message(runtime, org_bi, org_name, account_bi, actor, data,
     sent_at = max(0, _integer(data.get("sentAt"), now)) or now
     if provider == "mastodon" and not data.get("sentAt"):
         sent_at = _snowflake_time(message_id, now) or sent_at
+    if on_x and not data.get("sentAt"):
+        sent_at = _x_snowflake_time(message_id, now) or sent_at
     envelope = dict(envelope)
     envelope.update({
         "to": counterpart if link["direction"] == "outbound" else link["mailbox"],
@@ -6406,6 +6439,13 @@ def _snowflake_time(status_id, now=0):
     stamp = int(digits.group(0)) >> 16 if digits else 0
     latest = (now or 0) + DAY_MS if now else stamp
     return stamp if MASTODON_EPOCH_MS <= stamp <= latest else 0
+
+
+def _x_snowflake_time(post_id, now=0):
+    digits = re.match(r"[0-9]{1,25}", str(post_id or ""))
+    stamp = (int(digits.group(0)) >> 22) + X_EPOCH_MS if digits else 0
+    latest = (now or 0) + DAY_MS if now else stamp
+    return stamp if X_EPOCH_MS < stamp <= latest else 0
 
 
 def _toot_ref(value):

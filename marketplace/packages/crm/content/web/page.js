@@ -3411,7 +3411,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
   }
 
   function crmProviderLabel(email) {
-    return { gmail: "Gmail", zoho: "Zoho Mail", mastodon: "Mastodon" }[email?.provider]
+    return { gmail: "Gmail", zoho: "Zoho Mail", mastodon: "Mastodon", x: "X" }[email?.provider]
       || (email?.transport === "mailtrap" ? "Mailtrap" : "Email");
   }
 
@@ -4735,7 +4735,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
   function renderCrmEmails() {
     const list = $(`[data-crm-email-list]`); if (!list) return;
     list.innerHTML = state.crmView.emails.map((email) => {
-      const linked = ["gmail", "zoho", "mastodon"].includes(email.provider);
+      const linked = ["gmail", "zoho", "mastodon", "x"].includes(email.provider);
       const provider = email.providerUrl && String(email.providerUrl).startsWith("https://")
         ? `<a href="${escapeHtml(email.providerUrl)}" target="_blank" rel="noopener noreferrer" class="text-primary hover:underline">${linked ? `Open in ${escapeHtml(crmProviderLabel(email))}` : "Open send"} ↗</a>` : "";
       const contact = crmContactById(email.contactId);

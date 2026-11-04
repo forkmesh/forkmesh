@@ -20,6 +20,8 @@ the [browser extension guide](../browser-extension.md). Back to the
   │   │   ├── content.js         Gmail and Zoho Mail reader, send tracking
   │   │   ├── mastodon.js x.js reddit.js forum.js   page readers
   │   │   ├── mastodon-sent.js   in the Mastodon page: the posts you send
+  │   │   ├── x-crm.js           X post reader for the CRM header
+  │   │   ├── x-sent.js          in the X page: the posts and messages you send
   │   │   └── refresh-*          side panel
   │   └── web/                   /dashboard/extension install and update page
   ├── preview/                   Market screenshot
@@ -118,7 +120,8 @@ zip and loads only when the 3D view opens.
 | `tests/test_extension_vault.py` | The vault background code under a fake browser against the real vault worker module |
 | `tests/test_extension_forum.py` | Discourse detection and the mirror setup link |
 | `tests/mastodon_harness.html` | Mastodon 5's post page and a sent post, read by the real scripts in headless Chrome |
-| `tests/background_*_harness.js` | Node harnesses for capture, Mastodon, Reddit, refresh panel, repositories, vault, X posts, X and Zoho setup |
+| `tests/x_crm_harness.html` | X post pages (yours and someone else's), a sent post and a sent direct message, read by the real scripts in headless Chrome |
+| `tests/background_*_harness.js` | Node harnesses for capture, Mastodon, Reddit, refresh panel, repositories, vault, X posts, X correspondence, X and Zoho setup |
 | `tests/repo_map_harness.js` | The repository map's tree and source reads under a fake `fetch` |
 | `tests/zoho_tidy_harness.js` | Zoho Mail search, sender grouping and toolbar button matching |
 | `tests/zoho_list_harness.html` | Select and Delete on a Zoho-like list in headless Chrome: with a message open, with a select-all box, with real inputs, and with a box that will not tick |

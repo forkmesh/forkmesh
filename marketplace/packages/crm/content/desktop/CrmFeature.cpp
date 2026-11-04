@@ -955,6 +955,8 @@ QString aiProviderLabel(const QJsonObject &email)
         return QStringLiteral("Zoho Mail");
     if (provider == QLatin1String("mastodon"))
         return QStringLiteral("Mastodon");
+    if (provider == QLatin1String("x"))
+        return QStringLiteral("X");
     return text(email, "transport") == QLatin1String("mailtrap") ? QStringLiteral("Mailtrap")
                                                                  : QStringLiteral("Email");
 }

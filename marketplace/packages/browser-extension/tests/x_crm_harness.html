@@ -1,0 +1,100 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>X</title></head>
+<body>
+<nav><a href="/forkmesh" data-testid="AppTabBar_Profile_Link" aria-label="Profile">Profile</a></nav>
+<main><div data-testid="primaryColumn"><section id="column"></section></div></main>
+<pre id="out"></pre>
+<script>
+  const MODE = new URLSearchParams(location.search).get("mode") || "page";
+  const tweet = (handle, name, id, stamp, inner, focal = false) => `
+    <article data-testid="tweet" role="article" tabindex="${focal ? "-1" : "0"}" ${focal ? 'id="main"' : ""}>
+      <div data-testid="User-Name">
+        <div><a href="/${handle}" role="link"><div><span>${name}</span></div></a></div>
+        <div><a href="/${handle}" role="link" tabindex="-1"><span>@${handle}</span></a>
+          <a href="/${handle}/status/${id}" role="link"><time datetime="${stamp}">1h</time></a></div>
+      </div>
+      ${inner}
+    </article>`;
+  const PAGE_OWN = `
+    ${tweet("AdaLovelace", "Ada Lovelace", "1853482000000000001", "2026-11-03T15:00:00.000Z",
+      '<div data-testid="tweetText" lang="en"><span>Who mirrors Snowflake?</span></div>')}
+    ${tweet("forkmesh", "ForkMesh", "1853482133370019840", "2026-11-03T16:09:00.000Z", `
+      <div>Replying to <a href="/AdaLovelace" role="link">@AdaLovelace</a></div>
+      <div data-testid="tweetText" lang="en"><span>We do! </span><a href="/GraceHopper" role="link">@GraceHopper</a><span> try ForkMesh </span><a href="/hashtag/git" role="link">#git</a></div>
+      <div role="link" tabindex="0"><div data-testid="User-Name"><a href="/quoted"><span>Quoted</span></a></div>
+        <div data-testid="tweetText"><a href="/someone">@someone</a> quoted text</div></div>`, true)}
+    ${tweet("bob", "Bob", "1853482200000000003", "2026-11-03T17:00:00.000Z",
+      '<div data-testid="tweetText" lang="en"><span>Nice</span></div>')}`;
+  const PAGE_THEIRS = `
+    ${tweet("forkmesh", "ForkMesh", "1853482000000000005", "2026-11-03T15:00:00.000Z",
+      '<div data-testid="tweetText" lang="en"><span>Ship it</span></div>')}
+    ${tweet("GraceHopper", "Grace Hopper", "1853482133370019841", "2026-11-03T16:10:00.000Z",
+      '<div data-testid="tweetText" lang="en"><span>Mirrored my compiler, thanks </span><a href="/forkmesh">@forkmesh</a></div>', true)}`;
+  if (MODE === "page") {
+    history.replaceState(null, "", "/forkmesh/status/1853482133370019840");
+    document.getElementById("column").innerHTML = PAGE_OWN;
+  } else if (MODE === "theirs") {
+    history.replaceState(null, "", "/GraceHopper/status/1853482133370019841");
+    document.getElementById("column").innerHTML = PAGE_THEIRS;
+  } else {
+    history.replaceState(null, "", "/home");
+  }
+  window.calls = [];
+  window.hotkeys = 0;
+  document.addEventListener("keydown", () => { window.hotkeys += 1; });
+  function respond(msg) {
+    if (msg.type === "fm-track-tweet") return { ok: true, tracked: true };
+    return { ok: true };
+  }
+  window.chrome = { runtime: {
+    lastError: null,
+    sendMessage(msg, cb) { calls.push(JSON.parse(JSON.stringify(msg))); const r = respond(msg); setTimeout(() => cb && cb(r), 0); },
+    onMessage: { addListener(fn) { window.listener = fn; } },
+  } };
+</script>
+<script src="/content/extension/x-sent.js"></script>
+<script src="/content/extension/panel.js"></script>
+<script src="/content/extension/x-crm.js"></script>
+<script>
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const read = () => new Promise((resolve) => window.listener({ type: "fm-read-message" }, null, (r) => resolve(r.message)));
+  const tracked = () => calls.filter((c) => c.type === "fm-track-tweet").map((c) => c.post);
+  async function page(out) {
+    await wait(2500);
+    const message = await read();
+    out.message = {
+      provider: message.provider, messageId: message.messageId, threadId: message.threadId,
+      direction: message.direction, from: message.from.handle, handle: message.handle,
+      contactName: message.contactName, twitter: message.contact.twitter, mastodon: message.contact.mastodon,
+      subject: message.subject, sentAt: message.sentAt, providerUrl: message.providerUrl,
+      participants: message.participants.map((p) => p.handle),
+    };
+    const host = document.getElementById("forkmesh-crm-host");
+    const main = document.getElementById("main");
+    out.placed = Boolean(host) && host.nextElementSibling?.dataset.testid === "tweetText" && main.contains(host);
+    host?.dispatchEvent(new KeyboardEvent("keydown", { key: "j", bubbles: true, composed: true }));
+    out.hotkeys = window.hotkeys;
+    out.tracked = tracked();
+  }
+  async function sent(out) {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/i/api/graphql/aBc-12_x/CreateTweet");
+    xhr.setRequestHeader("Content-Type", "application/json");
+    xhr.send("{}");
+    await new Promise((resolve) => xhr.addEventListener("loadend", resolve));
+    await fetch("/i/api/1.1/dm/new2.json", { method: "POST", body: "{}" });
+    await fetch("/i/api/graphql/aBc-12_x/FavoriteTweet", { method: "POST", body: "{}" });
+    await wait(1500);
+    out.tracked = tracked();
+  }
+  (async () => {
+    const out = {};
+    try {
+      await (MODE === "sent" ? sent(out) : page(out));
+      document.getElementById("out").textContent = "RESULT " + JSON.stringify(out);
+    } catch (error) {
+      document.getElementById("out").textContent = "ERROR " + String(error?.stack || error);
+    }
+  })();
+</script>
+</body></html>
