@@ -832,6 +832,35 @@ returned, so summed frame totals overstate a function's own cost.
   `positionGlobalFooterOverlays` it runs while building showed the parentless
   dock as a top-level window until the move hid it again.
 
+### Rules from the stall run of 2026-11-04 (`p2661941`)
+
+- **Opening the Market rebuilds only what changed.** `showSection` called
+  `refreshMarketPage`, which builds every card twice (All, plus Installed or
+  Not installed), on every open and on Back. That took 2.5 to 5.6 s each time
+  (`…-0005`, `-0040`, `-0041`, `-0044`, `-0047`). `refreshMarketPage` now
+  saves a `MarketPageInputs` fingerprint: each package's version, install
+  state and places, the open native pages, module load state, counts,
+  ratings, sort, theme, settings page and model download. Opening runs
+  `refreshMarketPageIfChanged`, which rebuilds only when the fingerprint
+  differs. Every install, removal and setting change still calls
+  `refreshMarketPage` directly; counts that arrive while the page is hidden
+  change the fingerprint, so the next open shows them.
+- **Memory figures load off the thread.** The card footprint line read and
+  parsed `/proc/self/smaps` (1.5 MB, about 90 ms in a 2.5 GB process) inside
+  every build. The build now uses the last figures and runs
+  `queueMarketResidentRead` on a worker. The result updates the
+  `marketPackageFootprint` labels in place.
+- **The workflow schedule tick reads no files on the GUI thread.**
+  `checkRepoWorkflowSchedules` listed and parsed every repository's workflow
+  files and their run history on each tick (`…-0014`, ~780 ms). A worker now
+  does the listing and the `loadRuns`. `applyRepoWorkflowSchedules` decides
+  what is due on the GUI thread, uses cached runs first, and passes the
+  listings on to `refreshWorkflowPins`.
+- **Action approvals are parsed once per change.** `ActionStore::isApproved`
+  parsed the repository's whole approval JSON on every call, so a workflow
+  scan paid once per workflow (`…-0012`, ~1 s). `parsedApprovals` keeps the
+  parsed object until the stored bytes change.
+
 ### Rules from report #26 (2026-11-04)
 
 - **Register inline images, do not inline them.** Qt keeps a `data:` image as
@@ -854,8 +883,6 @@ returned, so summed frame totals overstate a function's own cost.
   hover card still shows the whole command. `singleLineCommand` no longer
   copies the rest of the command at every newline: 20,000 lines took 2.9 s
   before and take 11 ms now (`forkmesh-codex-tests`).
-- Not fixed: opening the Market rebuilds every card (2.5 s, x34). It is still
-  rebuilt on each open by design; see "Market page build" above.
 
 ### Startup: installed package pages after first paint
 

@@ -658,19 +658,72 @@ QString MainWindow::finishRepoWorkflowRun(const rw::Run &run, const QString &mar
 
 void MainWindow::checkRepoWorkflowSchedules()
 {
-    const QDateTime now = QDateTime::currentDateTime();
+    if (m_repoWorkflowScheduleScanPending)
+        return;
+    struct Target {
+        int index;
+        QString key;
+        QString checkout;
+        QString runsRoot;
+    };
+    QList<Target> targets;
     for (int index = 0; index < m_repositories.size(); ++index) {
         const RepositoryRecord &repo = m_repositories.at(index);
         if (repo.previewOnly || repo.localPath.isEmpty())
             continue;
-        const QString key = shortcutRepoKey(index);
-        for (const rw::Listing &listing : rw::listRepositoryWorkflows(repo.localPath)) {
+        targets.append({index, shortcutRepoKey(index), repo.localPath, repoWorkflowRunsRoot(index)});
+    }
+    if (targets.isEmpty()) {
+        refreshWorkflowPins();
+        return;
+    }
+    m_repoWorkflowScheduleScanPending = true;
+    runOffThread<QList<RepoWorkflowScheduleScan>>(
+        [targets] {
+            QList<RepoWorkflowScheduleScan> scans;
+            for (const Target &target : targets) {
+                RepoWorkflowScheduleScan scan{target.index, target.key, target.checkout,
+                                              rw::listRepositoryWorkflows(target.checkout), {}};
+                for (const rw::Listing &listing : std::as_const(scan.listings)) {
+                    const rw::Workflow &workflow = listing.workflow;
+                    const QString id = forkmesh::teammates::Store::safeId(workflow.id);
+                    if (!listing.error.isEmpty() || workflow.isSpecialAgent() ||
+                        workflow.scheduleNode().isEmpty() || target.runsRoot.isEmpty() || id.isEmpty())
+                        continue;
+                    const QList<rw::Run> runs =
+                        rw::loadRuns(QDir(target.runsRoot).filePath(id + QStringLiteral(".json")));
+                    scan.lastStarted.insert(workflow.id, runs.isEmpty() ? 0 : runs.first().startedAtMs);
+                }
+                scans.append(scan);
+            }
+            return scans;
+        },
+        [this](QList<RepoWorkflowScheduleScan> scans) {
+            m_repoWorkflowScheduleScanPending = false;
+            applyRepoWorkflowSchedules(scans);
+        });
+}
+
+void MainWindow::applyRepoWorkflowSchedules(const QList<RepoWorkflowScheduleScan> &scans)
+{
+    const QDateTime now = QDateTime::currentDateTime();
+    QHash<QString, QList<rw::Listing>> known;
+    for (const RepoWorkflowScheduleScan &scan : scans) {
+        const int index = scan.index;
+        if (index < 0 || index >= m_repositories.size() ||
+            m_repositories.at(index).localPath != scan.checkout || shortcutRepoKey(index) != scan.key)
+            continue;
+        known.insert(scan.key, scan.listings);
+        const QString &key = scan.key;
+        for (const rw::Listing &listing : scan.listings) {
             const rw::Workflow &workflow = listing.workflow;
             if (!listing.error.isEmpty() || workflow.isSpecialAgent() || workflow.scheduleNode().isEmpty() ||
                 repoWorkflowRunner()->isRunning(key, workflow.id))
                 continue;
-            const QList<rw::Run> runs = repoWorkflowRuns(index, workflow.id);
-            const qint64 last = runs.isEmpty() ? 0 : runs.first().startedAtMs;
+            const auto cached = m_repoWorkflowRunsCache.constFind(repoWorkflowRunsFile(index, workflow.id));
+            const qint64 last = cached != m_repoWorkflowRunsCache.cend()
+                                    ? (cached->isEmpty() ? 0 : cached->first().startedAtMs)
+                                    : scan.lastStarted.value(workflow.id);
             const Config schedule = rw::scheduleConfig(workflow, last);
             if (schedule.schedule.mode == forkmesh::teammates::kScheduleContinuous ||
                 !forkmesh::teammates::scheduleIsDue(schedule, now) ||
@@ -682,7 +735,7 @@ void MainWindow::checkRepoWorkflowSchedules()
                               forkmesh::teammates::kTaskTypeScheduled, QString(), &error);
         }
     }
-    refreshWorkflowPins();
+    refreshWorkflowPins(known);
 }
 
 void MainWindow::triggerRepoWorkflowsForEvent(const QString &eventName, int repoIndex)
@@ -1031,7 +1084,7 @@ QWidget *MainWindow::buildWorkflowPinStrip(const QString &rail)
     return strip;
 }
 
-void MainWindow::refreshWorkflowPins()
+void MainWindow::refreshWorkflowPins(const QHash<QString, QList<rw::Listing>> &known)
 {
     if (m_workflowPinDragging)
         return;
@@ -1040,7 +1093,7 @@ void MainWindow::refreshWorkflowPins()
         return;
     }
     const QList<rw::Pin> pins = workflowPins();
-    QHash<QString, QList<rw::Listing>> listings;
+    QHash<QString, QList<rw::Listing>> listings = known;
     for (auto stripIt = m_workflowPinStrips.cbegin(); stripIt != m_workflowPinStrips.cend(); ++stripIt) {
         QWidget *strip = stripIt.value();
         if (!strip)
