@@ -17,6 +17,7 @@ ARCHIVED = (
     "app/tools/site_templates.py",
     "app/tools/build_market_catalog.py",
     "app/tools/docs_markdown.py",
+    "app/tools/docs_figures.py",
     "tools/changelog.py",
     "changelog",
     "www/templates",
