@@ -1,0 +1,124 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Zoho Mail</title>
+<style>
+  body { margin: 0; font: 13px sans-serif; }
+  .zmToolbar { display: flex; gap: 8px; height: 32px; align-items: center; }
+  .zmToolbar span { display: inline-block; width: 24px; height: 24px; }
+  #scroller { height: 600px; overflow-y: auto; width: 900px; }
+  .zmLHead, .zmLItm { display: flex; gap: 16px; height: 30px; align-items: center; }
+  .zmLItm .zmLFrom { width: 180px; }
+  .zmLItm .zmLSub { width: 400px; }
+  .zmCheckbox { display: inline-block; width: 14px; height: 14px; border: 1px solid #888; }
+</style>
+<link rel="stylesheet" href="../content/extension/content.css">
+</head>
+<body>
+<div class="zmToolbar">
+  <span role="button" class="msi-trash" title="Delete" id="delete"></span>
+  <span role="button" class="msi-archive" title="Archive" id="archive"></span>
+  <span role="button" class="msi-read" title="Mark as read" id="read"></span>
+</div>
+<div id="scroller"><div class="zmLHead" id="head"></div><div class="zmLst" id="list"></div></div>
+<div class="zmMenu" style="display:none"><span role="menuitem">Delete</span></div>
+<pre id="out"></pre>
+<script>
+  const MODE = new URLSearchParams(location.search).get("mode") || "aria";
+  const MESSAGES = [
+    ["m1", "Bob Example", "Lunch on Friday", "Nov 3"],
+    ["m2", "Acme News", "Weekly digest", "Nov 3"],
+    ["m3", "Carol Sample", "Invoice 12", "Nov 2"],
+    ["m4", "Acme News", "Sale ends today", "Nov 2"],
+    ["m5", "Dan Placeholder", "Meeting notes", "Nov 1"],
+    ["m6", "Acme News", "Fwd: Weekly digest #2", "Oct 31"],
+  ];
+  const OPENED = MODE === "opened-in-set" ? "m2" : "m1";
+  const input = MODE === "input";
+  const list = document.getElementById("list");
+  const head = document.getElementById("head");
+  const selectAll = document.createElement(input ? "input" : "span");
+  if (input) selectAll.type = "checkbox";
+  else { selectAll.className = "zmCheckbox"; selectAll.setAttribute("role", "checkbox"); selectAll.setAttribute("aria-checked", "false"); }
+  selectAll.title = "Select all";
+  head.append(selectAll, document.createTextNode("Sort by"));
+  const box = (row) => row.querySelector(".zmLChk > *");
+  const isTicked = (row) => (input ? box(row).checked : box(row).getAttribute("aria-checked") === "true");
+  function setTick(row, on) {
+    if (input) box(row).checked = on;
+    else box(row).setAttribute("aria-checked", String(on));
+    row.classList.toggle("zmLChecked", on);
+  }
+  function refreshAll() {
+    const rows = [...list.children];
+    const all = rows.length > 0 && rows.every(isTicked);
+    if (input) selectAll.checked = all;
+    else selectAll.setAttribute("aria-checked", String(all));
+  }
+  for (const [id, sender, subject, date] of MESSAGES) {
+    const row = document.createElement("div");
+    row.className = "zmLItm" + (id === OPENED ? " zmLSel" : "");
+    row.dataset.id = id;
+    row.setAttribute("aria-selected", String(id === OPENED));
+    const holder = document.createElement("span");
+    holder.className = "zmLChk";
+    const tick = document.createElement(input ? "input" : "span");
+    if (input) tick.type = "checkbox";
+    else { tick.className = "zmCheckbox"; tick.setAttribute("role", "checkbox"); tick.setAttribute("aria-checked", "false"); }
+    holder.append(tick);
+    const from = document.createElement("span"); from.className = "zmLFrom"; from.textContent = sender;
+    const sub = document.createElement("span"); sub.className = "zmLSub"; sub.textContent = subject;
+    const when = document.createElement("span"); when.className = "zmLDate"; when.textContent = date;
+    row.append(holder, from, sub, when);
+    list.append(row);
+    if (input) tick.addEventListener("change", () => { row.classList.toggle("zmLChecked", tick.checked); refreshAll(); });
+    else tick.addEventListener("click", () => { if (MODE === "stuck" && id === "m4") return; setTick(row, !isTicked(row)); refreshAll(); });
+  }
+  selectAll.addEventListener(input ? "change" : "click", () => {
+    const on = input ? selectAll.checked : selectAll.getAttribute("aria-checked") !== "true";
+    for (const row of list.children) setTick(row, on);
+    refreshAll();
+  });
+  window.done = [];
+  function chosen() {
+    const ticked = [...list.children].filter(isTicked);
+    return ticked.length ? ticked : [...list.children].filter((row) => row.classList.contains("zmLSel"));
+  }
+  for (const kind of ["delete", "archive", "read"]) {
+    document.getElementById(kind).addEventListener("click", () => {
+      const rows = chosen();
+      window.done.push([kind, rows.map((row) => row.dataset.id)]);
+      if (kind !== "read") rows.forEach((row) => row.remove());
+      refreshAll();
+    });
+  }
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  function report(tag, value) { document.getElementById("out").textContent = tag + " " + JSON.stringify(value); }
+  async function run() {
+    await wait(300);
+    const root = document.getElementById("forkmesh-zoho-sort")?.shadowRoot;
+    if (!root) return report("ERROR", "no toolbar");
+    const find = root.querySelector(".find");
+    const query = MODE === "all" ? "" : "acme";
+    find.value = query;
+    find.dispatchEvent(new Event("input"));
+    await wait(700);
+    const count = root.querySelector(".count").textContent;
+    const label = root.querySelector('[data-act="delete"]').textContent;
+    if (MODE === "select") {
+      root.querySelector('[data-act="select"]').click();
+      await wait(2000);
+      return report("RESULT", { count, label, done: window.done, status: root.querySelector(".status").textContent,
+        ticked: [...list.children].filter(isTicked).map((row) => row.dataset.id) });
+    }
+    root.querySelector('[data-act="delete"]').click();
+    await wait(50);
+    const asked = root.querySelector(".confirm span").textContent;
+    root.querySelector('[data-act="confirm"]').click();
+    await wait(2000);
+    report("RESULT", { count, label, asked, done: window.done, status: root.querySelector(".status").textContent,
+      left: [...list.children].map((row) => row.dataset.id) });
+  }
+  window.addEventListener("load", () => run().catch((error) => report("ERROR", String(error && error.stack || error))));
+</script>
+<script src="../content/extension/zoho-tidy.js"></script>
+<script src="../content/extension/zoho-sort.js"></script>
+</body></html>

@@ -194,6 +194,13 @@ ADMIN_HIDDEN_TABLES = (
     "cluster_quarantine",
     "security_incidents",
     "ids_heartbeats",
+    "autoscale_nodes",
+    "autoscale_commands",
+    "autoscale_settings",
+    "autoscale_state",
+    "autoscale_lease",
+    "autoscale_audit",
+    "autoscale_nonces",
 )
 
 # The admin navigation is a live inventory of every application table. Tables

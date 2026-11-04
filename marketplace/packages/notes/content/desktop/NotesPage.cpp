@@ -790,13 +790,39 @@ forkmesh::market::NativePackagePromptTarget NotesPage::hostPromptTarget() const
     if (!noteAiEditAvailable())
         return {};
     const QString agent = m_host.agentName ? m_host.agentName() : QString();
-    return {m_aiEditNoteId.isEmpty()
-                ? QStringLiteral("edit this note with AI: turn it into a checklist, "
-                                 "fix the spelling, add a summary at the top")
-                : QStringLiteral("AI is editing this note…"),
-            agent.isEmpty() ? QStringLiteral("Edit this note with AI")
-                            : QStringLiteral("Edit this note with %1").arg(agent),
+    const bool selection = !aiSelectionRange().isEmpty();
+    const QString placeholder = !m_aiEditNoteId.isEmpty()
+        ? QStringLiteral("AI is editing this note…")
+        : selection
+        ? QStringLiteral("rewrite the selected text with AI: fix the grammar, make it "
+                         "shorter, translate it to French")
+        : QStringLiteral("edit this note with AI: turn it into a checklist, "
+                         "fix the spelling, add a summary at the top");
+    const QString action = selection ? QStringLiteral("Rewrite the selection with %1")
+                                     : QStringLiteral("Edit this note with %1");
+    return {placeholder, action.arg(agent.isEmpty() ? QStringLiteral("AI") : agent),
             true};
+}
+
+forkmesh::notes::NoteTextRange NotesPage::aiSelectionRange() const
+{
+    if (!m_noteEditor)
+        return {};
+    QPlainTextEdit *source = m_noteEditor->sourceEdit();
+    const QTextCursor cursor = source->textCursor();
+    if (!cursor.hasSelection() || !source->isVisibleTo(m_noteEditor))
+        return {};
+    return forkmesh::notes::noteTrimmedRange(
+        source->toPlainText(), cursor.selectionStart(), cursor.selectionEnd());
+}
+
+void NotesPage::aiSelectionChanged()
+{
+    const bool selected = !aiSelectionRange().isEmpty();
+    if (selected == m_aiPromptSelection)
+        return;
+    m_aiPromptSelection = selected;
+    promptTargetChanged();
 }
 
 bool NotesPage::submitHostPrompt(const QString &text, const QStringList &attachments)
@@ -815,6 +841,20 @@ bool NotesPage::submitHostPrompt(const QString &text, const QStringList &attachm
     const QString instruction = text.trimmed();
     if (instruction.isEmpty())
         return refuse(QStringLiteral("Type what to change in this note."));
+    return startNoteAiEdit(instruction, aiSelectionRange());
+}
+
+bool NotesPage::startNoteAiEdit(const QString &instruction,
+                                forkmesh::notes::NoteTextRange range)
+{
+    const auto refuse = [this](const QString &message) {
+        flashMessage(message, true, QString(), forkmesh::kLocalOperationNoticeKind);
+        return false;
+    };
+    if (!noteAiEditAvailable())
+        return false;
+    if (!m_aiEditNoteId.isEmpty())
+        return refuse(QStringLiteral("AI is still editing this note."));
     if (!m_noteConflict.isEmpty())
         return refuse(QStringLiteral("Resolve the save conflict on this note first."));
     if (m_host.agentName && m_host.agentName().isEmpty())
@@ -823,14 +863,19 @@ bool NotesPage::submitHostPrompt(const QString &text, const QStringList &attachm
     m_aiEditNoteId = m_selectedNote.value(QStringLiteral("id")).toString();
     m_aiEditBase = m_noteEditor->markdown();
     m_aiEditBaseTitle = m_noteTitle->text();
+    m_aiEditRange = range;
     const int sequence = ++m_aiEditSequence;
     m_noteEditor->sourceEdit()->setReadOnly(true);
     m_noteTitle->setReadOnly(true);
-    setNoteSaveState(QStringLiteral("AI is editing…"));
+    setNoteSaveState(range.isEmpty() ? QStringLiteral("AI is editing…")
+                                     : QStringLiteral("AI is rewriting the selection…"));
     promptTargetChanged();
     QPointer<NotesPage> guard(this);
     m_host.askAgent(
-        forkmesh::notes::noteAiEditPrompt(m_aiEditBaseTitle, m_aiEditBase, instruction),
+        range.isEmpty()
+            ? forkmesh::notes::noteAiEditPrompt(m_aiEditBaseTitle, m_aiEditBase, instruction)
+            : forkmesh::notes::noteAiSelectionPrompt(m_aiEditBaseTitle, m_aiEditBase,
+                                                     range, instruction),
         [guard, sequence](const QString &reply, const QString &error) {
             if (guard && guard->m_aiEditSequence == sequence)
                 guard->applyNoteAiEdit(reply, error);
@@ -843,6 +888,7 @@ void NotesPage::applyNoteAiEdit(const QString &reply, const QString &error)
     const QString noteId = m_aiEditNoteId;
     const QString base = m_aiEditBase;
     const QString baseTitle = m_aiEditBaseTitle;
+    const forkmesh::notes::NoteTextRange range = m_aiEditRange;
     stopNoteAiEdit();
     const auto tell = [this](const QString &message, bool failed) {
         flashMessage(message, failed, QString(), forkmesh::kLocalOperationNoticeKind);
@@ -855,6 +901,29 @@ void NotesPage::applyNoteAiEdit(const QString &reply, const QString &error)
         return tell(QStringLiteral("The note changed while AI was working, so its "
                                    "edit was not applied. Try again."),
                     true);
+    if (!range.isEmpty()) {
+        const forkmesh::notes::NoteAiSelectionEdit rewrite =
+            forkmesh::notes::parseNoteAiSelection(reply);
+        if (!rewrite.ok())
+            return tell(rewrite.error, true);
+        if (rewrite.text == base.mid(range.start, range.end - range.start))
+            return tell(QStringLiteral("AI left the selection as it was."), false);
+        QPlainTextEdit *source = m_noteEditor->sourceEdit();
+        QTextCursor cursor(source->document());
+        cursor.setPosition(range.start);
+        cursor.setPosition(range.end, QTextCursor::KeepAnchor);
+        cursor.beginEditBlock();
+        cursor.insertText(rewrite.text);
+        cursor.endEditBlock();
+        cursor.setPosition(range.start);
+        cursor.setPosition(range.start + int(rewrite.text.size()), QTextCursor::KeepAnchor);
+        source->setTextCursor(cursor);
+        if (!noteAutosaveApplies())
+            saveNote();
+        return tell(QStringLiteral("AI rewrote the selection. Ctrl+Z in Write undoes it; "
+                                   "Versions keeps the earlier copy."),
+                    false);
+    }
     const forkmesh::notes::NoteAiEdit edit = forkmesh::notes::parseNoteAiEdit(reply);
     if (!edit.ok())
         return tell(edit.error, true);
@@ -885,6 +954,7 @@ void NotesPage::stopNoteAiEdit()
     m_aiEditNoteId.clear();
     m_aiEditBase.clear();
     m_aiEditBaseTitle.clear();
+    m_aiEditRange = {};
     m_noteEditor->sourceEdit()->setReadOnly(false);
     m_noteTitle->setReadOnly(false);
     setNoteSaveState(!m_noteConflict.isEmpty()
@@ -1369,8 +1439,10 @@ void NotesPage::buildNotesSection()
             m_commentsPanel->markdownChanged();
     });
     connect(m_noteTitle, &QLineEdit::textEdited, this, [this] { noteTyped(); });
-    connect(source, &QPlainTextEdit::selectionChanged, this,
-            [this] { updateCommentControls(); });
+    connect(source, &QPlainTextEdit::selectionChanged, this, [this] {
+        updateCommentControls();
+        aiSelectionChanged();
+    });
     connect(source, &QPlainTextEdit::cursorPositionChanged, this,
             [this] { noteCaretMoved(); });
     source->setContextMenuPolicy(Qt::CustomContextMenu);
@@ -1388,8 +1460,10 @@ void NotesPage::buildNotesSection()
     }
     if (auto *stack = m_noteEditor->findChild<QStackedWidget *>(
             QStringLiteral("markdownStack")))
-        connect(stack, &QStackedWidget::currentChanged, this,
-                [this] { updateCommentControls(); });
+        connect(stack, &QStackedWidget::currentChanged, this, [this] {
+            updateCommentControls();
+            aiSelectionChanged();
+        });
 
     m_noteAutosaveTimer = new QTimer(page);
     m_noteAutosaveTimer->setSingleShot(true);
@@ -3853,6 +3927,31 @@ void NotesPage::showNoteContextMenu(QWidget *view, const QPoint &pos)
         connect(comment, &QAction::triggered, this, &NotesPage::startNoteComment);
         QAction *first = menu->actions().value(0);
         menu->insertAction(first, comment);
+        menu->insertSeparator(first);
+    }
+    if (view == m_noteEditor->sourceEdit() && noteAiEditAvailable()) {
+        const forkmesh::notes::NoteTextRange range = aiSelectionRange();
+        QMenu *ai = new QMenu(QStringLiteral("Ask AI"), menu);
+        ai->setObjectName(QStringLiteral("noteAiSelectionMenu"));
+        ai->setIcon(themedOcticon(QStringLiteral("sparkle"),
+                                  Theme::color(Theme::Role::FgMuted), 14));
+        ai->setEnabled(!range.isEmpty() && m_aiEditNoteId.isEmpty());
+        ai->setToolTipsVisible(true);
+        for (const forkmesh::notes::NoteAiSelectionAction &action :
+             forkmesh::notes::noteAiSelectionActions()) {
+            QAction *item = ai->addAction(action.label);
+            item->setObjectName(QStringLiteral("noteAi-") + action.id);
+            item->setToolTip(action.instruction);
+            connect(item, &QAction::triggered, this,
+                    [this, range, instruction = action.instruction] {
+                startNoteAiEdit(instruction, range);
+            });
+        }
+        ai->addSeparator();
+        ai->addAction(QStringLiteral("Or select text and type what to do in the prompt"))
+            ->setEnabled(false);
+        QAction *first = menu->actions().value(0);
+        menu->insertMenu(first, ai);
         menu->insertSeparator(first);
     }
     menu->exec(viewport->mapToGlobal(pos));

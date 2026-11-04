@@ -641,6 +641,7 @@ class HostASGI:
             except Exception as error:
                 error_log.report("read surface failed on %s" % path, error)
         if (self.serve_assets and method in ("GET", "HEAD")
+                and "%" not in path
                 and not self.rules.worker_first(path)):
             assets = getattr(self.runtime.env, "ASSETS", None)
             if assets is not None and assets.exists(path):

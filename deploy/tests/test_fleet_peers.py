@@ -127,3 +127,8 @@ def test_burst_runner_render_serves_no_owner_and_is_marked_burst():
     assert manifest["burst"] is True
     overrides = files["/etc/forkmesh-next/mirror-node.overrides.json"][0]
     assert '"burst": true' in overrides and '"role": "runner"' in overrides
+
+
+def test_only_joined_replicas_are_queried():
+    assert "token_used_ms IS NOT NULL" in fleet_peers.QUERY
+    assert "ids_pubkey IS NOT NULL" in fleet_peers.QUERY

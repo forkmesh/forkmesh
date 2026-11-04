@@ -1,0 +1,98 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "internet-archive",
+  "name": "Internet Archive",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Developer Tools",
+  "version": "1.0.0",
+  "summary": "Back up public repositories to archive.org with your own keys, then use that independent copy to check which mirrors still serve the real repository when its source is offline.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "The archive.org copy in the middle, linked to the offline source and to three mirrors: two agree with the archive and one has moved on"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "worker": "content/worker/internet_archive.py",
+    "dashboard-view": "content/web/view.html",
+    "dashboard-script": "content/web/page.js",
+    "settings": "builtin:package"
+  },
+  "contributions": [
+    {
+      "socket": "dashboard.page",
+      "entrypoint": "dashboard-view",
+      "config": {
+        "route": "/dashboard/internet-archive",
+        "title": "Internet Archive",
+        "description": "Back up public repositories to archive.org and check every mirror against that copy.",
+        "script": "dashboard-script",
+        "navigation": {
+          "label": "Archive",
+          "icon": "archive",
+          "order": 47
+        }
+      }
+    }
+  ],
+  "settings": [],
+  "permissions": [
+    {
+      "id": "repository.archive.upload",
+      "label": "Upload a Git bundle of your public repositories to the archive.org item you choose, with your keys",
+      "risk": "sensitive"
+    },
+    {
+      "id": "repository.mirrors.read",
+      "label": "Read which mirrors carry a public repository and the refs each one serves",
+      "risk": "low"
+    },
+    {
+      "id": "network.archive.org",
+      "label": "Check your archive.org keys and read the public file list of your archive.org items",
+      "risk": "low"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": true,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": false,
+    "sync": "account",
+    "installedBefore": "2026-11-05",
+    "places": ["web"]
+  },
+  "lifecycle": {
+    "migrations": []
+  },
+  "dataLifecycle": {
+    "scope": "account",
+    "localData": false
+  },
+  "worker": {
+    "module": "internet_archive",
+    "api": "/api/internet-archive",
+    "outboundOrigins": ["https://archive.org", "https://s3.us.archive.org"]
+  }
+}

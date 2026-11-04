@@ -562,6 +562,20 @@ def test_a_zoho_header_with_names_only_finds_the_address_in_attributes_or_the_li
     assert 'xpathNodes(`//*[@*[contains(., "${messageId}")]]`, document)' in CONTENT
 
 
+def test_the_popup_is_wide_compact_and_reopens_the_sections_left_open():
+    assert "body { margin: 0; width: 800px; max-height: 600px; overflow-x: hidden; overflow-y: auto;" in POPUP_HTML
+    assert 'section[data-view="connected"] { grid-template-columns: repeat(2, minmax(0, 1fr));' in POPUP_HTML
+    assert "details[open], .bottom-actions) { grid-column: 1 / -1; }" in POPUP_HTML
+    assert "height: 26px; border-radius: 6px;" in POPUP_HTML
+    assert "height: 28px; border: 1px solid var(--border)" in POPUP_HTML
+    assert 'const SECTIONS = ["note", "x", "marketing", "reddit", "mastodon"];' in POPUP
+    for name in ("note", "x", "marketing", "reddit", "mastodon"):
+        assert f"data-{name}-section" in POPUP_HTML
+    assert "await reopenSections();\n}" in POPUP
+    assert 'await chrome.storage.local.set({ popupOpenSections: open ? [...rest, name] : rest });' in POPUP
+    assert "!section.hidden && !section.open" in POPUP
+
+
 def test_zoho_mail_lists_sort_by_sender_subject_or_date_in_the_page_only():
     sorter = (EXTENSION / "zoho-sort.js").read_text(encoding="utf-8")
     script = next(script for script in MANIFEST["content_scripts"] if "zoho-sort.js" in script["js"])
@@ -608,6 +622,52 @@ def test_zoho_inbox_zero_search_grouping_and_actions_logic():
         capture_output=True, text=True, timeout=60, env={"PATH": "/usr/local/bin:/usr/bin:/bin"})
     assert result.returncode == 0, result.stdout[-3000:] + result.stderr[-2000:]
     assert "checks passed" in result.stdout
+
+
+def _zoho_list_harness(mode, tmp_path):
+    result = subprocess.run(
+        [_headless_chrome(), "--headless", "--no-sandbox", "--allow-file-access-from-files",
+         f"--user-data-dir={tmp_path}", "--virtual-time-budget=30000", "--dump-dom",
+         (PACKAGE / "tests" / "zoho_list_harness.html").as_uri() + f"?mode={mode}"],
+        capture_output=True, text=True, timeout=180)
+    found = re.search(r"(RESULT|ERROR) (.*)</pre>", result.stdout, re.S)
+    assert found and found.group(1) == "RESULT", result.stdout[-3000:] + result.stderr[-2000:]
+    return json.loads(found.group(2))
+
+
+@pytest.mark.skipif(_headless_chrome() is None, reason="no headless Chrome")
+@pytest.mark.parametrize("mode", ["aria", "opened-in-set", "input"])
+def test_zoho_delete_removes_exactly_the_messages_shown_with_a_message_open(mode, tmp_path):
+    out = _zoho_list_harness(mode, tmp_path)
+    assert out["count"] == "3 of 6 loaded"
+    assert out["asked"] == "Delete 3 messages? Zoho Mail moves them to Trash."
+    assert out["done"] == [["delete", ["m2", "m4", "m6"]]]
+    assert out["left"] == ["m1", "m3", "m5"]
+    assert out["status"] == "Deleted 3 messages."
+
+
+@pytest.mark.skipif(_headless_chrome() is None, reason="no headless Chrome")
+def test_zoho_delete_all_skips_the_select_all_box(tmp_path):
+    out = _zoho_list_harness("all", tmp_path)
+    assert out["count"] == "6 loaded"
+    assert out["done"] == [["delete", ["m1", "m2", "m3", "m4", "m5", "m6"]]]
+    assert out["left"] == []
+
+
+@pytest.mark.skipif(_headless_chrome() is None, reason="no headless Chrome")
+def test_zoho_select_ticks_only_the_messages_shown(tmp_path):
+    out = _zoho_list_harness("select", tmp_path)
+    assert out["ticked"] == ["m2", "m4", "m6"]
+    assert out["done"] == []
+    assert out["status"] == "Selected 3 messages in Zoho Mail."
+
+
+@pytest.mark.skipif(_headless_chrome() is None, reason="no headless Chrome")
+def test_zoho_delete_stops_when_zoho_does_not_tick_every_message(tmp_path):
+    out = _zoho_list_harness("stuck", tmp_path)
+    assert out["done"] == []
+    assert len(out["left"]) == 6
+    assert out["status"].startswith("Zoho Mail selected 2 of 3; nothing else was done.")
 
 
 def test_the_reddit_desk_is_filled_from_pages_you_open_without_touching_reddit():

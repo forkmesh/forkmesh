@@ -259,6 +259,11 @@ Threat model for phones: [threat-model.md](../protocol/threat-model.md).
   API 31 and later, and `NotificationActionReceiver` refuses them while the device
   is locked on every version, because a broadcast action otherwise runs from the
   lock screen. Mark read and chat Reply stay available there.
+  Only text-input actions use a mutable `PendingIntent`, so a notification
+  listener cannot rewrite another action's extras.
+- Siri and Shortcuts intents that drive an agent (Tell, Continue, Stop, Stop
+  all, Merge, Delete, Answer request) set `.requiresAuthentication`, so they
+  never run from a locked iPhone. Android has no voice equivalent.
 - A LAN desktop is not trusted for saying it paired the phone:
   [DESKTOP_AGENTS.md](DESKTOP_AGENTS.md#confirming-a-desktop-on-the-phone).
 - The Mastodon sign-in belongs to one ForkMesh session in one project. Clearing the

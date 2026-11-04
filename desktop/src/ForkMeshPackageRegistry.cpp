@@ -1178,6 +1178,10 @@ bool PackageRegistry::loadCatalog(const QString &path, bool append)
             continue;
         }
         manifest.managedExternally = append;
+        if (append) {
+            manifest.signatureVerified = false;
+            manifest.creatorVerified = false;
+        }
         if (manifest.id != expectedId || manifest.version != expectedVersion) {
             rejected.append(
                 QStringLiteral("Catalog identity does not match package %1.")

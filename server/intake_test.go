@@ -729,3 +729,24 @@ func TestDirectIssueIntakeKeepsAttachmentsAndRelayFieldsOutOfTheRecord(t *testin
 		t.Fatalf("attachment names were not filtered: %s", listing)
 	}
 }
+
+func TestSameSignatureMatchesReencodedSignature(t *testing.T) {
+	raw := make([]byte, 64)
+	for i := range raw {
+		raw[i] = byte(i * 7)
+	}
+	sig := base64.RawURLEncoding.EncodeToString(raw)
+	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+	last := strings.IndexByte(alphabet, sig[len(sig)-1])
+	aliased := sig[:len(sig)-1] + string(alphabet[last^1])
+	if aliased == sig || !sameSignature(sig, aliased) || !sameSignature(sig, sig+"==") {
+		t.Fatalf("re-encoded signature must count as the same signature")
+	}
+	other := "B" + sig[1:]
+	if sig[0] == 'B' {
+		other = "A" + sig[1:]
+	}
+	if sameSignature(sig, other) || sameSignature("", "") {
+		t.Fatalf("different signatures must not match")
+	}
+}

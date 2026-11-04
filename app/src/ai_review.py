@@ -129,6 +129,7 @@ def clean_settings(doc):
     return {
         "enabled": doc.get("enabled") is True,
         "defaultOn": doc.get("defaultOn") is True,
+        "notesAssist": doc.get("notesAssist") is not False,
         "accountId": account if ACCOUNT_ID_RE.fullmatch(account) else "",
         "model": model if approved_model(model) else DEFAULT_AI_REVIEW_MODEL,
         "dailyCap": _bounded_int(doc.get("dailyCap"), DEFAULT_DAILY_CAP, 0,
@@ -145,22 +146,30 @@ def clean_settings(doc):
 def public_settings(config):
     config = config if isinstance(config, dict) else {}
     out = {key: config.get(key) for key in (
-        "enabled", "defaultOn", "accountId", "model", "dailyCap", "maxDiffKb",
-        "repoDaily", "authorDaily")}
+        "enabled", "defaultOn", "notesAssist", "accountId", "model",
+        "dailyCap", "maxDiffKb", "repoDaily", "authorDaily")}
     out["configured"] = bool(config.get("token"))
     out["binding"] = bool(config.get("binding"))
     out["ready"] = ready(config)
+    out["notesReady"] = notes_ready(config)
     out["models"] = model_options()
     out["provider"] = PROVIDER
     return out
 
 
-def ready(config):
-    config = config if isinstance(config, dict) else {}
-    if not config.get("enabled"):
-        return False
+def _credentials(config):
     return bool((config.get("token") and config.get("accountId"))
                 or config.get("binding"))
+
+
+def ready(config):
+    config = config if isinstance(config, dict) else {}
+    return bool(config.get("enabled")) and _credentials(config)
+
+
+def notes_ready(config):
+    config = config if isinstance(config, dict) else {}
+    return config.get("notesAssist") is not False and _credentials(config)
 
 
 def repo_opted_in(pulls_settings, instance_default_on):
@@ -713,7 +722,7 @@ async def _settings_handler(env, request):
             return _error("invalid_token")
         doc["token"] = await encrypt_row(  # noqa: F821
             env, {"token": token.strip()})
-    for key in ("enabled", "defaultOn", "useBinding"):
+    for key in ("enabled", "defaultOn", "notesAssist", "useBinding"):
         if key in data:
             doc[key] = data.get(key) is True
     for key in ("model", "dailyCap", "maxDiffKb", "repoDaily", "authorDaily"):
