@@ -404,6 +404,9 @@ struct BookingRow: View {
             if !booking.whereText.isEmpty {
                 Label(booking.whereText, systemImage: placeSymbol).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
             }
+            if let join = booking.joinURL {
+                Link(destination: join) { Label("Join video call", systemImage: "video.fill") }.font(.footnote.weight(.semibold))
+            }
             if !booking.guest.timezone.isEmpty, booking.guest.timezone != ownerZone {
                 Text("Their time zone: " + booking.guest.timezone.replacingOccurrences(of: "_", with: " "))
                     .font(.caption)

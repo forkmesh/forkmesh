@@ -57,6 +57,8 @@ devices until the other person approves them, and show a 60-digit safety
 number. Group calls derive media keys per epoch (a new epoch on every join or
 leave), sign batches of frame digests so one participant cannot forge another's
 video, and use a commit-then-reveal round so a short code is safe to compare.
+Booked meeting rooms seal their signalling and frame keys under a 256-bit key
+carried in the link's `#` part ([meeting rooms](app/meeting-rooms.md)).
 
 What it does not hide: the server still sees who talks to whom, when and how
 much, and public channels are readable by anyone who joins, including the

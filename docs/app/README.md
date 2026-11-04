@@ -152,6 +152,7 @@ One page per topic. Each links back here.
 | [chat-direct-calls](chat-direct-calls.md) | One-to-one encrypted calls: signaling, resilience, rings, quality widget, phones |
 | [chat-group-calls](chat-group-calls.md) | Group audio and video calls in private channels |
 | [call-filters](call-filters.md) | Face, background, outfit and voice filters in calls, native ports, Face Changer |
+| [meeting-rooms](meeting-rooms.md) | `/call` rooms for booked meetings: link keys, sealed relay, effects, offline transcript |
 | [face-stream](face-stream.md) | Low-bandwidth face stream for calls |
 | [fmm-browser](fmm-browser.md) | FM Media call engine in the browser |
 

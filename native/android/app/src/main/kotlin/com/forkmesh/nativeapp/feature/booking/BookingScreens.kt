@@ -43,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -417,6 +418,16 @@ private fun BookingRow(
             }
             listOf(booking.guest.phone, booking.where()).filter { it.isNotEmpty() }.distinct().forEach {
                 Text(it, style = Fm.text.bodySmall, color = Fm.colors.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            val join = booking.joinUrl()
+            if (join.isNotEmpty()) {
+                val uriHandler = LocalUriHandler.current
+                Text(
+                    "Join video call",
+                    Modifier.clickable { runCatching { uriHandler.openUri(join) } },
+                    style = Fm.text.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = Fm.colors.accent,
+                )
             }
             if (booking.guest.timezone.isNotEmpty() && booking.guest.timezone != settings.timezone) {
                 Text("Their time zone: " + booking.guest.timezone.replace('_', ' '), style = Fm.text.labelSmall, color = Fm.colors.textTertiary)

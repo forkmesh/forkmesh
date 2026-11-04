@@ -28,7 +28,7 @@ object Booking {
         "video" to "Video call", "phone" to "Phone call", "place" to "In person", "custom" to "Other", "none" to "No location",
     )
     val LOCATION_HINTS: Map<String, String> = mapOf(
-        "video" to "https://meet.example.com/you", "phone" to "Leave empty to ask the guest for their number",
+        "video" to "Leave empty for a private ForkMesh video room", "phone" to "Leave empty to ask the guest for their number",
         "place" to "Address", "custom" to "Shown after booking", "none" to "",
     )
     private val CLOCK = Regex("^([01]\\d|2[0-3]):([0-5]\\d)$|^24:00$")
@@ -93,7 +93,7 @@ object Booking {
     }
 }
 
-data class BookingLocation(val kind: String = "video", val detail: String = "") {
+data class BookingLocation(val kind: String = "video", val detail: String = "", val room: Boolean = false) {
     val label: String get() = Booking.LOCATION_LABELS[kind] ?: kind
 
     fun body(): Map<String, Any?> = linkedMapOf("kind" to kind, "detail" to detail.trim())
@@ -101,7 +101,7 @@ data class BookingLocation(val kind: String = "video", val detail: String = "") 
     companion object {
         fun fromJson(value: Any?): BookingLocation {
             val json = value.asJsonMap()
-            return BookingLocation(json.str("kind").ifEmpty { "video" }, json.str("detail"))
+            return BookingLocation(json.str("kind").ifEmpty { "video" }, json.str("detail"), json.bool("room"))
         }
     }
 }
@@ -156,7 +156,15 @@ data class BookingItem(
 
     fun finished(nowMs: Long): Boolean = !cancelled && endAt < nowMs
 
-    fun where(): String = when (location.kind) {
+    fun joinUrl(): String =
+        if (location.kind == "video" && location.room && !cancelled && location.detail.startsWith("https://")) location.detail else ""
+
+    fun where(): String = when {
+        joinUrl().isNotEmpty() -> "ForkMesh video call, end-to-end encrypted"
+        else -> place()
+    }
+
+    private fun place(): String = when (location.kind) {
         "phone" -> location.detail.ifEmpty { guest.phone.ifEmpty { "Phone call" } }
         else -> location.detail.ifEmpty { if (location.kind == "none") "" else location.label }
     }

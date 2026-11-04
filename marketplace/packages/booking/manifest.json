@@ -11,7 +11,7 @@
   },
   "type": "extension.native",
   "category": "Productivity",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "summary": "Share one short link to your calendar. People pick a free time and book a meeting, it lands on your ForkMesh calendar, and ForkMesh emails both of you the details.",
   "screenshots": [
     {
@@ -83,6 +83,11 @@
     {
       "id": "calendar.events.write",
       "label": "Add booked meetings to your ForkMesh calendar and move or remove them when they change",
+      "risk": "sensitive"
+    },
+    {
+      "id": "calls.meeting.room",
+      "label": "Give each booked video meeting its own private, end-to-end encrypted ForkMesh video room",
       "risk": "sensitive"
     },
     {
