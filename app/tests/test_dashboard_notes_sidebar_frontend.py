@@ -132,7 +132,7 @@ def test_search_matches_note_bodies_on_the_server():
 def test_activity_column_lists_views_history_and_actions():
     view = (ROOT / "public" / "dashboard" / "partials" / "views" / "notes.html").read_text(
         encoding="utf-8")
-    for marker in ("data-note-activity-toggle", "data-note-activity ", "data-note-activity-summary",
+    for marker in ("data-note-activity-toggle", 'data-note-panel="activity"', "data-note-activity-summary",
                    "data-note-activity-list", "data-note-activity-history"):
         assert marker in view
     assert "@media (max-width: 1279px) { .notes-activity { position: absolute;" in view

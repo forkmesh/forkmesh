@@ -133,6 +133,14 @@ the note text, so it saves like any other edit (autosave or Save).
   WebView is Chromium, so `@page` sizes, margins and numbers apply as on the
   web. Details for both phones: `docs/native/notes.md`.
 
+## Versions beside the document
+
+The editor's right column ([the side column](notes-comments.md#the-side-column))
+has a History tab that opens any saved version read-only (on the web drawn
+like the preview, figures and page breaks included), next to Activity and the
+collaborators' Chat. A restored version brings back its layout line and
+figures with the rest of the Markdown.
+
 ## Shared cases
 
 Every client's tests cover at least these:
@@ -160,7 +168,8 @@ Every client's tests cover at least these:
 
 - `app/tests/test_notes_documents.py`: the web page's layout parsing and
   writing, figure detection and size cap, page break detection, the print
-  document and file name, and the published page's figures.
+  document and file name, the published page's figures, and the right
+  column's four tabs.
 - `app/browser_tests/tests/dashboard-notes-pdf.spec.js`: the preview's figure
   and page break, the Export PDF sheet saving the layout line, the sandboxed
   print frame, and a viewer exporting without saving.
