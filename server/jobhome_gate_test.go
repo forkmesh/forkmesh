@@ -3,6 +3,7 @@ package mirrornode
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -141,9 +142,26 @@ func TestASystemScopeRestoresTheSessionHomeAfterTheUIDSwitch(t *testing.T) {
 		home: "/var/lib/job"}
 	session := filepath.Join(root, jobHomesDir, "w1")
 	name, args := box.sessionCommand(session, "claude", []string{"-p", "x"})
-	if name != "/usr/bin/env" || len(args) != 5 || args[0] != "--" ||
-		args[1] != "HOME="+session || args[2] != "claude" || args[4] != "x" {
+	if name != "/usr/bin/env" || len(args) != 9 || args[0] != "--" ||
+		args[1] != "HOME="+session || args[6] != "claude" || args[8] != "x" {
 		t.Fatalf("session command = %s %q", name, args)
+	}
+	for i, want := range []string{
+		"XDG_CONFIG_HOME=" + filepath.Join(session, ".config"),
+		"XDG_CACHE_HOME=" + filepath.Join(session, ".cache"),
+		"XDG_DATA_HOME=" + filepath.Join(session, ".local", "share"),
+		"XDG_STATE_HOME=" + filepath.Join(session, ".local", "state"),
+	} {
+		if args[2+i] != want {
+			t.Fatalf("session command = %s %q, want %s", name, args, want)
+		}
+	}
+	env := box.environmentWith(session, "")
+	for _, want := range []string{"HOME=" + session, "TMPDIR=" + filepath.Join(session, "tmp"),
+		"XDG_CONFIG_HOME=" + filepath.Join(session, ".config")} {
+		if !slices.Contains(env, want) {
+			t.Fatalf("runner job environment lacks %s: %q", want, env)
+		}
 	}
 	for _, other := range []jobSandbox{
 		{uid: 2001, workRoot: root},

@@ -39,7 +39,7 @@ def _run_with_exports(body):
     directMirrorOriginsForRepo,
     directRepoRequestCandidates,
     hydratePortableMirrorSession,
-    ensurePortableControllerSession,
+    clearMirrorHandoffMarker,
     fetchJson,
     readSession,
   };""",
@@ -91,7 +91,7 @@ const {
   directMirrorOriginsForRepo,
   directRepoRequestCandidates,
   hydratePortableMirrorSession,
-  ensurePortableControllerSession,
+  clearMirrorHandoffMarker,
   fetchJson,
   readSession,
 } = global.__dashboardExports;
@@ -191,15 +191,12 @@ assert.deepEqual(
     "https://mirror36.forkmesh.com/api/repo/forkmesh/forkmesh/tree?path=app&ref=main",
   ],
 );
-// Collaboration uses the same public repo path and direct origin selection.
+// The App holds no mirror cookie, so collaboration posts go through the App.
 assert.deepEqual(
   directRepoRequestCandidates(
     "/api/repo/forkmesh/forkmesh/issues", { mutation: true },
   ),
-  [
-    "https://mirror37.forkmesh.com/api/repo/forkmesh/forkmesh/issues",
-    "https://mirror36.forkmesh.com/api/repo/forkmesh/forkmesh/issues",
-  ],
+  [],
 );
 assert.deepEqual(
   directRepoRequestCandidates("/api/repo/forkmesh/forkmesh/star"), [],
@@ -212,6 +209,13 @@ location.hostname = "mirror36.forkmesh.com";
 assert.equal(
   directRepoRequestCandidates("/api/repo/forkmesh/forkmesh/tree")[0],
   "https://mirror36.forkmesh.com/api/repo/forkmesh/forkmesh/tree",
+);
+// A mirror page posts only to its own origin, where its host cookie lives.
+assert.deepEqual(
+  directRepoRequestCandidates(
+    "/api/repo/forkmesh/forkmesh/pulls", { mutation: true },
+  ),
+  ["https://mirror36.forkmesh.com/api/repo/forkmesh/forkmesh/pulls"],
 );
 """)
 
@@ -271,68 +275,18 @@ global.fetch = async () => { calls += 1; throw new Error("unexpected fetch"); };
 """)
 
 
-def test_official_app_refreshes_a_preexisting_session_for_mirror_handoff_once():
+def test_a_mirror_page_drops_the_handoff_marker_from_its_address():
     _run_with_exports("""
-localStorage.setItem("forkmesh.session", JSON.stringify({
-  nodeName: "jett",
-  sessionToken: "cookie",
-}));
-let calls = 0;
-global.fetch = async (url, options) => {
-  calls += 1;
-  assert.equal(url, "/api/accounts/sessions");
-  assert.equal(options.credentials, "same-origin");
-  assert.equal(options.cache, "no-store");
-  return {
-    ok: true,
-    headers: { get(name) {
-      return name === "x-forkmesh-portable-session" ? "issued" : null;
-    } },
-  };
-};
-(async () => {
-  const refreshed = await ensurePortableControllerSession();
-  assert.equal(calls, 1);
-  assert.equal(refreshed.nodeName, "jett");
-  assert(Number(refreshed.refreshedAt) > 0);
-  assert.equal(await ensurePortableControllerSession(), null);
-  assert.equal(calls, 1, "fresh portable grant must not create a poll");
-})().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
-""")
-
-
-def test_official_app_refreshes_a_legacy_bearer_before_direct_navigation():
-    _run_with_exports("""
-localStorage.setItem("forkmesh.session", JSON.stringify({
-  nodeName: "jett",
-  sessionToken: "v2.legacy-session.legacy-secret",
-}));
-let captured = null;
-global.fetch = async (url, options) => {
-  captured = { url, options };
-  return {
-    ok: true,
-    headers: { get(name) {
-      return name === "x-forkmesh-portable-session" ? "issued" : null;
-    } },
-  };
-};
-(async () => {
-  const refreshed = await ensurePortableControllerSession(true);
-  assert.equal(captured.url, "/api/accounts/sessions");
-  assert.equal(
-    captured.options.headers.authorization,
-    "Bearer v2.legacy-session.legacy-secret",
-  );
-  assert.equal(captured.options.credentials, "same-origin");
-  assert(Number(refreshed.refreshedAt) > 0);
-})().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+location.origin = "https://mirror37.forkmesh.com";
+location.hostname = "mirror37.forkmesh.com";
+location.href = "https://mirror37.forkmesh.com/forkmesh/forkmesh/issues?q=a&fm_handoff=done#top";
+const replaced = [];
+window.history = { state: null, replaceState(_state, _title, url) { replaced.push(url); } };
+clearMirrorHandoffMarker();
+assert.deepEqual(replaced, ["/forkmesh/forkmesh/issues?q=a#top"]);
+location.href = "https://mirror37.forkmesh.com/forkmesh/forkmesh";
+clearMirrorHandoffMarker();
+assert.equal(replaced.length, 1);
 """)
 
 

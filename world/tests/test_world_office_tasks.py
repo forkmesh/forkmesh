@@ -887,6 +887,55 @@ async def test_guests_get_no_tasks_and_auditors_cannot_write():
         assert refused["data"]["error"] == "read_only_role"
 
 
+def test_security_tasks_are_visible_only_to_admins_and_their_people():
+    runtime = FakeRuntime()
+    runtime.memberships["carol"] = ("auditor", "read")
+    runtime.memberships["dana"] = ("admin", "admin")
+    runtime.users["dana"] = {"bi": "bi-dana", "name": "dana", "active": True}
+    created = asyncio.run(tasks_api.handle(
+        runtime.use("POST", "mary", {
+            "title": "Private security report",
+            "assignee": "bob",
+            "department": "security",
+        }),
+        tasks_api.UNIVERSAL_PREFIX,
+    ))
+    assert created["status"] == 201, created
+    task_id = created["data"]["task"]["id"]
+    other = asyncio.run(tasks_api.handle(
+        runtime.use("POST", "mary", {"title": "Ordinary", "assignee": "bob"}),
+        tasks_api.UNIVERSAL_PREFIX))
+    other_id = other["data"]["task"]["id"]
+
+    def listed(name):
+        response = asyncio.run(tasks_api.handle(
+            runtime.use("GET", name), tasks_api.UNIVERSAL_PREFIX))
+        return {task["id"] for task in response["data"]["tasks"]}
+
+    for name in ("alice", "dana", "mary", "bob"):
+        assert task_id in listed(name), name
+    for name in ("wendy", "carol"):
+        assert listed(name) == {other_id}, name
+        for path in (
+            f"{tasks_api.UNIVERSAL_PREFIX}/{task_id}",
+            f"{tasks_api.UNIVERSAL_PREFIX}/{task_id}/history",
+            f"{tasks_api.UNIVERSAL_PREFIX}/{task_id}/replies",
+        ):
+            hidden = asyncio.run(tasks_api.handle(
+                runtime.use("GET", name), path))
+            assert hidden["status"] == 404, (name, path)
+            assert hidden["data"] == {"error": "task_not_found"}
+    refused = asyncio.run(tasks_api.handle(
+        runtime.use("PATCH", "wendy", {"title": "Renamed"}),
+        f"{tasks_api.UNIVERSAL_PREFIX}/{task_id}"))
+    assert refused["status"] == 404
+    deleted = asyncio.run(tasks_api.handle(
+        runtime.use("POST", "wendy", {"ids": [task_id]}),
+        tasks_api.UNIVERSAL_PREFIX + "/delete"))
+    assert deleted["data"]["failures"] == [
+        {"id": task_id, "error": "task_not_found"}]
+
+
 @run_async_test
 async def test_org_authorization_manager_roles_and_filtered_reads():
     runtime = FakeRuntime()

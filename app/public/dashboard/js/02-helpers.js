@@ -380,88 +380,15 @@
     } catch (_) {}
   }
 
-  // Existing browser sessions can predate the portable mirror cookie. Login
-  // responses mint it now, but a person who stayed signed in across that
-  // rollout would otherwise look logged out on their first direct mirror
-  // visit until the next focus revalidation. Refresh the signed, domain-wide
-  // grant in the background at most once every four hours (its lifetime is
-  // twelve), without holding up App paint or introducing a poll.
-  const PORTABLE_SESSION_REFRESH_KEY = "forkmesh.portableSessionRefresh.v2";
-  const PORTABLE_SESSION_REFRESH_MS = 4 * 60 * 60 * 1000;
-  const PORTABLE_SESSION_RETRY_MS = 5 * 60 * 1000;
-
-  async function ensurePortableControllerSession(force = false) {
-    const hostname = String(location.hostname || "").toLowerCase();
-    if (hostname !== "forkmesh.com" && !OFFICIAL_SERVICE_HOSTS.has(hostname)) {
-      return null;
-    }
-    const session = readSession();
-    const nodeName = String(session?.nodeName || "").trim().toLowerCase();
-    if (!nodeName || !session?.sessionToken) return null;
-
-    const now = Date.now();
-    let marker = {};
+  function clearMirrorHandoffMarker() {
     try {
-      marker = JSON.parse(
-        localStorage.getItem(PORTABLE_SESSION_REFRESH_KEY) || "{}",
-      ) || {};
+      const url = new URL(location.href);
+      if (!url.searchParams.has("fm_handoff")) return;
+      url.searchParams.delete("fm_handoff");
+      window.history?.replaceState?.(window.history.state, "", url.pathname + url.search + url.hash);
     } catch (_) {}
-    if (
-      !force
-      && String(marker.nodeName || "").toLowerCase() === nodeName
-      && (
-        now - Number(marker.refreshedAt || 0) < PORTABLE_SESSION_REFRESH_MS
-        || now - Number(marker.attemptedAt || 0) < PORTABLE_SESSION_RETRY_MS
-      )
-    ) {
-      return null;
-    }
-    const pendingMarker = {
-      nodeName,
-      refreshedAt: Number(marker.refreshedAt || 0),
-      attemptedAt: now,
-    };
-    try {
-      localStorage.setItem(
-        PORTABLE_SESSION_REFRESH_KEY, JSON.stringify(pendingMarker),
-      );
-    } catch (_) {}
-    try {
-      const token = String(session.sessionToken || "");
-      const response = await fetch("/api/accounts/sessions", {
-        method: "GET",
-        credentials: "same-origin",
-        cache: "no-store",
-        headers: {
-          accept: "application/json",
-          ...(token && token !== "cookie"
-            ? { authorization: `Bearer ${token}` }
-            : {}),
-        },
-      });
-      if (!response.ok) return null;
-      // "current" is the relay declining to re-sign a grant this browser was
-      // handed within the refresh window; the cookie it holds is still good.
-      const portable = response.headers.get("x-forkmesh-portable-session");
-      if (portable !== "issued" && portable !== "current") return null;
-      const refreshed = { ...pendingMarker, refreshedAt: Date.now() };
-      try {
-        localStorage.setItem(
-          PORTABLE_SESSION_REFRESH_KEY, JSON.stringify(refreshed),
-        );
-      } catch (_) {}
-      return refreshed;
-    } catch (_) {
-      return null;
-    }
   }
 
-  // A portable login is carried between forkmesh.com hosts by the signed,
-  // domain-scoped HttpOnly cookie. localStorage cannot cross origins, though,
-  // so a mirror opened for the first time would otherwise render as signed
-  // out even while its own API already recognizes the user. Hydrate only from
-  // the mirror's local session endpoint; the controller hosts already manage
-  // their richer account session and must not gain another background request.
   async function hydratePortableMirrorSession() {
     const hostname = String(location.hostname || "").toLowerCase();
     if (hostname === "forkmesh.com" || OFFICIAL_SERVICE_HOSTS.has(hostname)) {
@@ -2095,6 +2022,7 @@
       // URL still fans directly to the freshest HTTPS node.
       .sort((left, right) =>
         Number(right === location.origin) - Number(left === location.origin))
+      .filter((origin) => !mutation || origin === location.origin)
       .map((origin) => `${origin}${request.pathname}${request.search}`);
   }
 

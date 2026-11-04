@@ -5,9 +5,9 @@ Part of [Operations](README.md).
 `tools/mirror_gateway.py` is the repository-byte origin of an independently
 operated ForkMesh mirror. It listens on loopback HTTP only; an
 operator-controlled HTTPS reverse proxy terminates public TLS. Git clients use
-the mirror's standard `/<owner>/<repository>.git` Smart-HTTP URL directly. The
-routing service on the core nodes keeps the stable clone URL and redirects there
-only after a fresh signed mirror proof. This page is the detail under the
+the routing service's stable `/<owner>/<repository>.git` URL; the routing
+service on the core nodes proxies every Git request to a mirror with a fresh
+signed proof and checks the advertised refs itself (see *Selection* below). This page is the detail under the
 [mirroring](../mirroring.md) and [self-hosting](../self-hosting.md) pillars; the
 daemon that drives it is the [mirror node](mirror-node.md).
 
@@ -205,9 +205,32 @@ changes it.
 3. **Capability.** `forkmesh-masked-proxy-v1` signature in `X-ForkMesh-Node`,
    `X-ForkMesh-Request-Id`, `X-ForkMesh-Issued-At`, `X-ForkMesh-Body-Sha256`
    and `X-ForkMesh-Signature`; request IDs are single-use for 60 seconds.
-4. **Selection.** Upload-pack is redirected to a `mirrorUrl` only after a fresh
-   proof there; other reads are proxied. Failover happens only before response
-   bytes are sent; cookies, auth headers and client IPs are never forwarded.
+4. **Selection.** Every read is proxied; Git clients are never redirected to
+   a `mirrorUrl`. Failover happens only before response bytes are sent;
+   cookies, auth headers and client IPs are never forwarded.
+5. **Advertisement check.** For `info/refs` the service reads the mirror's
+   whole advertisement, reduces it with `advertised_refs_canonical`
+   (`app/src/git_http.py`) and hashes it. It serves the bytes only when that
+   digest is in the repository's pin set or equals the digest the mirror's
+   signed proof was admitted on; otherwise it logs
+   `mirror_advertisement_mismatch`, drops the mirror's cached proof and tries
+   the next mirror, answering `503 mirror_unavailable` when none matches.
+   The `Git-Protocol: version=2` header is not forwarded, so every mirror
+   answers with the protocol v0/v1 advertisement that lists every ref inline
+   and the check covers the whole ref map; `version=1` is forwarded. Stock
+   Git falls back to v0 on its own. Upload-pack then runs through the same
+   proxy against those refs: objects are named by their hashes, so a mirror
+   can withhold objects (the clone fails) but cannot substitute them. A
+   redirect answer from a mirror is treated as a failure.
+
+   Why: a mirror's proof is only its own signature over the digest it
+   claims, and before this the service sent clients to the mirror with a 307
+   (and streamed proxied advertisements unchecked), so a mirror could sign
+   the pinned digest and serve any branches and tags. Cost: pack data for
+   every clone and fetch now streams through a core instead of straight from
+   the mirror, and each advertisement is buffered (up to the gateway's 16 MB
+   cap) once per request (`test_info_refs_is_proxied_and_a_forged_advertisement_is_refused`,
+   `test_a_real_clone_is_refused_when_the_mirror_serves_a_ref_map_off_the_pin`).
 
 ## Operations
 

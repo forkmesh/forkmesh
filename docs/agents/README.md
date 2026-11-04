@@ -203,8 +203,19 @@ security state `not_required`. Do not reintroduce one.
 
 - Queueing a run or follow-up requires the account to own the target node
   (`_account_owns_node`) or the organization linking the repository
-  (`_org_owner_of_linked_repo`). Reading, stopping and deleting only need the
+  (`_org_owner_agent_allowed`). Reading, stopping and deleting only need the
   row to be in the account's own queue.
+- An organization owner may target a node only when the node is a fleet core
+  or its owning account allowed that organization: a checkbox under "Agents
+  on your desktops" on the organization's settings page, stored as
+  `agentOrgConsent` on the account (`/api/accounts/agent-org-consent`, GET
+  and POST, account session only, at most 64 organizations, audited as
+  `account.agent_org_consent`). A node claim refuses a job an organization
+  owner queued without that consent, so withdrawing it also stops jobs
+  already queued. Before 2026-11-01 linking a repository to an organization
+  let its owners run agents, with shell access, on the member's own desktop
+  (`test_org_owner_needs_the_node_owners_consent_to_target_a_member_desktop`,
+  `test_node_claim_refuses_jobs_queued_without_the_owners_consent`).
 - The account list also carries organization-scope runs where the account
   has `organization.agents.read` and the required team membership. Every
   active run is listed (up to 500); finished runs are capped (40 account-wide,

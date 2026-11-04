@@ -1786,6 +1786,7 @@
     last_owner: "An organization must keep at least one owner.",
     unknown_account: "No account exists with that name.",
     not_a_member: "That account is not a member of this organization.",
+    not_org_member: "You are not a member of this organization.",
     bad_role: "Invalid role.",
     bad_permission: "Invalid permission.",
     member_required: "Enter a member account name.",
@@ -2025,6 +2026,40 @@
       root, name, profile, members, teams, repos, fediverse, botTokens);
     void loadOrgPullRules(root, name);
     void loadOrgModeration(root, name);
+    void loadOrgAgentConsent(root, name);
+  }
+
+  async function loadOrgAgentConsent(root, name) {
+    const box = root.querySelector("[data-org-agent-consent]");
+    const status = root.querySelector("[data-org-agent-consent-status]");
+    if (!box) return;
+    try {
+      const data = await orgApiRequest("GET", "/api/accounts/agent-org-consent");
+      box.checked = (data.organizations || []).includes(name);
+      box.disabled = false;
+    } catch (error) {
+      if (status) status.textContent = error.message;
+      return;
+    }
+    box.addEventListener("change", async () => {
+      box.disabled = true;
+      try {
+        const data = await orgApiRequest(
+          "POST", "/api/accounts/agent-org-consent",
+          { org: name, allow: box.checked });
+        box.checked = (data.organizations || []).includes(name);
+        if (status) {
+          status.textContent = box.checked
+            ? "Owners of this organization can start agents on your desktops."
+            : "Only you can start agents on your desktops.";
+        }
+      } catch (error) {
+        box.checked = !box.checked;
+        if (status) status.textContent = error.message;
+      } finally {
+        box.disabled = false;
+      }
+    });
   }
 
   async function loadOrgPullRules(root, name) {
@@ -2409,6 +2444,13 @@
       memberAndTeamSettings +
       '<section class="mt-6"><h4 class="text-sm font-semibold text-foreground">Linked repos</h4>' +
         '<div class="mt-2 grid gap-2">' + repoRows + "</div>" + repoAdd + "</section>" +
+      '<section class="mt-6" data-org-agent-consent-section>' +
+        '<h4 class="text-sm font-semibold text-foreground">Agents on your desktops</h4>' +
+        '<p class="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">Repositories you link here stay on your own desktop. Owners of this organization can start agents on that desktop only when you allow it. Your own agents are not affected.</p>' +
+        '<label class="mt-2 inline-flex items-center gap-2 text-xs font-semibold text-foreground">' +
+          '<input data-org-agent-consent type="checkbox" class="h-4 w-4" disabled /> Let this organization\'s owners start agents on my desktops</label>' +
+        '<p data-org-agent-consent-status class="mt-1 min-h-4 text-xs text-muted-foreground"></p>' +
+      "</section>" +
       digestControls +
       '<section class="mt-6" data-org-pull-rules-section>' +
         '<h4 class="text-sm font-semibold text-foreground">Pull request rules</h4>' +

@@ -549,6 +549,7 @@ async def world_qa_handler(env, request):
             "SELECT task_id,department,team,qa_status,qa_reviewed_at,data "
             "FROM organization_tasks "
             "WHERE org_bi=? AND qa_requested_at>0 AND deleted_at=0 "
+            "AND department<>'security' "
             "ORDER BY qa_requested_at DESC,task_id DESC LIMIT ?",
             qa_org_bi, WORLD_QA_MAX_CARDS,
         )

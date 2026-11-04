@@ -29,7 +29,8 @@ class _Request:
     headers = _Headers()
 
 
-def _load_context(row, *, actor="", owns=False, shared=False, basic=False):
+def _load_context(row, *, actor="", owns=False, shared=False, basic=False,
+                  admin=False):
     decrypt_calls = []
 
     async def ensure_schema(_env):
@@ -57,6 +58,9 @@ def _load_context(row, *, actor="", owns=False, shared=False, basic=False):
     async def basic_ok(_env, _owner, _repo, _request):
         return basic
 
+    async def is_admin(_env, _actor):
+        return admin
+
     def safe_segment(value):
         value = str(value or "")
         return value if value and "/" not in value else ""
@@ -80,6 +84,7 @@ def _load_context(row, *, actor="", owns=False, shared=False, basic=False):
         "_account_owns_node": account_owns,
         "_repo_shared_with": repo_shared,
         "_basic_auth_view_ok": basic_ok,
+        "_is_admin": is_admin,
         "_catalog_record_matches_identity": identity,
         "safe_segment": safe_segment,
         "clean_string": clean_string,
@@ -172,3 +177,34 @@ def test_room_and_bounty_routes_gate_before_sensitive_storage_access():
     load_at = bounty.index("_load_bounty")
     assert access_at < key_at < load_at
     assert "_private_replica_not_found" in bounty[:key_at]
+
+
+def test_a_quarantined_owners_repository_is_hidden_from_everyone_but_admins():
+    row = {"owner_bi": "bi:alice", "is_private": 2, "data": _record("public")}
+    for kwargs in ({}, {"actor": "bob", "shared": True},
+                   {"actor": "alice", "owns": True}):
+        context, decrypts = _load_context(row, **kwargs)
+        assert asyncio.run(
+            context(None, _Request(), "alice", "secret")) is None, kwargs
+        assert decrypts == []
+    context, _decrypts = _load_context(row, actor="root", admin=True)
+    held = asyncio.run(context(None, _Request(), "alice", "secret"))
+    assert held is not None
+
+
+def test_catalog_republish_cannot_lift_the_quarantine_mark():
+    import sqlite3
+    writer = SOURCE[SOURCE.index("async def _contribution_write_catalog_state"):]
+    upsert = writer[writer.index("INSERT INTO repositories"):]
+    upsert = upsert[:upsert.index('"""')]
+    db = sqlite3.connect(":memory:")
+    db.execute(
+        "CREATE TABLE repositories (key_bi TEXT PRIMARY KEY, owner_bi TEXT,"
+        " data TEXT, is_private INTEGER NOT NULL DEFAULT 0)")
+    db.execute("INSERT INTO repositories VALUES ('k','o','old',2)")
+    db.execute(upsert, ("k", "o", "new", 0))
+    assert db.execute(
+        "SELECT data,is_private FROM repositories").fetchone() == ("new", 2)
+    db.execute(upsert, ("k", "o", "newer", 1))
+    assert db.execute(
+        "SELECT is_private FROM repositories").fetchone()[0] == 1

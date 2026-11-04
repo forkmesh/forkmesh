@@ -14,7 +14,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 import pytest
 from cryptography.hazmat.primitives import serialization
@@ -655,7 +655,7 @@ def test_signed_portable_session_stays_logged_in_on_independent_mirror(
     assert denied.status == 401
 
 
-def test_app_form_handoff_sets_shared_cookie_before_mirror_redirect(
+def test_app_form_handoff_sets_a_host_only_cookie_before_mirror_redirect(
     dashboard_app,
 ):
     private_key = Ed25519PrivateKey.generate()
@@ -698,10 +698,11 @@ def test_app_form_handoff_sets_shared_cookie_before_mirror_redirect(
         body,
     )
     assert response.status == 303
-    assert response.headers["Location"] == next_path
+    assert response.headers["Location"] == (
+        "/forkmesh/forkmesh?theme=dark&fm_handoff=done")
     cookie = response.headers["Set-Cookie"]
-    assert cookie.startswith("forkmesh_portable=" + token + "; Path=/")
-    assert "; Domain=.forkmesh.com" in cookie
+    assert cookie.startswith("forkmesh_portable=" + token + "; Path=/;")
+    assert "domain=" not in cookie.lower()
     assert "; HttpOnly; Secure; SameSite=Strict" in cookie
     assert token not in response.headers["Location"]
     assert response.headers["Cache-Control"].startswith("no-store")
@@ -1545,3 +1546,84 @@ def test_mirror_moderation_needs_the_owners_session(dashboard_app, monkeypatch):
         session={"name": "forkmesh"})
     assert response.status == 201
     assert forwarded["item"]["meta"] == {"ownerApproved": True}
+
+
+def _official_mirror(app, router_public_key=None):
+    config = replace(
+        app.config,
+        public_origin="https://mirror37.forkmesh.com",
+        dashboard_canonical_origin="https://app.forkmesh.com",
+        **({"router_public_key": router_public_key}
+           if router_public_key else {}),
+    )
+    app.config = config
+    app.dashboard.config = config
+
+
+NAVIGATION = {"Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document"}
+
+
+def test_a_signed_out_navigation_to_an_official_mirror_bounces_through_the_app(
+    dashboard_app,
+):
+    _official_mirror(dashboard_app)
+    bounced = _get(
+        dashboard_app, "/forkmesh/forkmesh/issues?q=a", headers=NAVIGATION)
+    assert bounced.status == 303
+    assert bounced.headers["Location"] == (
+        "https://app.forkmesh.com/api/accounts/mirror-handoff?to="
+        + quote("https://mirror37.forkmesh.com/forkmesh/forkmesh/issues?q=a",
+                safe=""))
+    assert bounced.headers["Cache-Control"].startswith("no-store")
+    assert "Set-Cookie" not in bounced.headers
+
+    for path, headers in (
+        ("/forkmesh/forkmesh?fm_handoff=none", NAVIGATION),
+        ("/forkmesh/forkmesh?fm_handoff=done", NAVIGATION),
+        ("/forkmesh/forkmesh", {}),
+        ("/forkmesh/forkmesh", {"Sec-Fetch-Mode": "cors",
+                                "Sec-Fetch-Dest": "empty"}),
+    ):
+        page = _get(dashboard_app, path, headers=headers)
+        assert page.status == 200, path
+
+
+def test_only_official_mirror_hosts_bounce(dashboard_app):
+    config = replace(
+        dashboard_app.config,
+        public_origin="https://mirror.example.net",
+        dashboard_canonical_origin="https://app.forkmesh.com",
+    )
+    dashboard_app.config = config
+    dashboard_app.dashboard.config = config
+    assert _get(dashboard_app, "/forkmesh/forkmesh",
+                headers=NAVIGATION).status == 200
+
+
+def test_a_mirror_with_its_own_grant_serves_the_page_without_a_bounce(
+    dashboard_app,
+):
+    private_key = Ed25519PrivateKey.generate()
+    public_key = base64.urlsafe_b64encode(
+        private_key.public_key().public_bytes(
+            serialization.Encoding.Raw,
+            serialization.PublicFormat.Raw,
+        )
+    ).decode().rstrip("=")
+    _official_mirror(dashboard_app, public_key)
+    claim = portable_sessions.build_claim(
+        account_id="a" * 64,
+        account_name="alice",
+        session_id="s" * 32,
+        grant_id="g" * 24,
+        issued_at=NOW,
+        expires_at=NOW + 60_000,
+    )
+    encoded = portable_sessions.encode_claim(claim)
+    signature = base64.urlsafe_b64encode(
+        private_key.sign(portable_sessions.signing_message(encoded))
+    ).decode().rstrip("=")
+    token = portable_sessions.assemble_token(encoded, signature)
+    page = _get(dashboard_app, "/forkmesh/forkmesh", headers={
+        **NAVIGATION, "Cookie": "forkmesh_portable=" + token})
+    assert page.status == 200

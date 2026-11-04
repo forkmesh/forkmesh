@@ -335,6 +335,21 @@ evidence (address and user agent, encrypted in `users.data`) that referral
 enforcement reads, and `users.ip_bi`; privacy mode for logging and addresses
 is a separate change.
 
+## Quarantined users
+
+Quarantining a user (`_quarantine_user_account` in `app/src/account_users.py`)
+also hides their repositories: in the same batch, every public `repositories`
+row owned by the user or one of their nodes is set to `is_private=2`, a mark
+only the restore step turns back into public (`is_private=0`). Rows that were
+already private stay `1` and stay private after a restore. The public
+catalog, the public-context cache and the hosted replica list
+(`hosted_repos.replicas` reports those repositories as private) are refreshed
+at once, and a later catalog republish keeps the mark. Before 2026-11-01 a
+quarantined user's public repositories stayed listed and cloneable
+(`test_quarantine_hides_public_repositories_and_restore_brings_them_back`,
+`test_catalog_republish_cannot_lift_the_quarantine_mark`,
+`test_a_quarantined_owners_hosted_repository_is_served_as_private`).
+
 ## API
 
 | Route | Who | What |

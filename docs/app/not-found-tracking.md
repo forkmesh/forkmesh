@@ -156,16 +156,37 @@ deep or repository `/api/…` paths, and ordinary asset extensions.
 - **Cross-site requests are never scored.** Any page can make a browser
   request `/.env`, so a 404 is scored only when `Sec-Fetch-Site` is absent or
   `none`. The static-site relay forwards it as `fetchSite`.
-- **Never banned:** non-routable addresses (loopback, private, link-local,
-  carrier NAT, documentation, the mesh range) and Cloudflare's ranges, which
-  the static forkmesh.com Worker relays from (`CLOUDFLARE_RANGES`, a copy of
-  the list in `deploy/core/render.py`, kept equal by a test). `FORKMESH_PROBE_BAN_ALLOW` adds more. `deploy/core/render.py`
-  writes it into each core's `app.env` with every `[[runners]]` address from
-  `deploy/fleet.toml` (the IPv4 address and the IPv6 /64): a job on a shared
-  runner can reach the public App, and one probe from it would otherwise ban
-  the runner's address, cutting off its own claims and every other owner's
-  jobs ([runners](../operations/runners.md)). Autoscaled pool runners and
-  user-run mirrors are not in the fleet file and are not covered.
+- **Never banned.** A job on a shared runner or a workflow on a mirror can
+  reach the public App, and one probe from it would otherwise ban the host's
+  address, cutting off its own claims or syncs and every other owner it
+  serves ([runners](../operations/runners.md)). The full list of exempt
+  sources, for operator review:
+
+  | Source | Where it comes from | Scope |
+  | --- | --- | --- |
+  | Non-routable addresses | loopback, private, link-local, carrier NAT, documentation, the mesh range (`ipaddress` `is_global` false) | the address |
+  | Cloudflare | `CLOUDFLARE_RANGES`, the static forkmesh.com Worker relays from there; a copy of the list in `deploy/core/render.py`, kept equal by a test | the ranges |
+  | Operator allow list | `FORKMESH_PROBE_BAN_ALLOW` in the app environment (IPs or CIDRs, comma separated) | as written |
+  | Fleet runners | `deploy/core/render.py` writes every `[[runners]]` address from `deploy/fleet.toml` into `FORKMESH_PROBE_BAN_ALLOW` in each core's `app.env` | IPv4 /32, IPv6 /64 |
+  | Autoscaled nodes | `autoscale_nodes.public_ipv4` for every node not in state `removing` (both pools) | IPv4 /32 |
+  | Live mirrors | `mirror_https_endpoints.source_ip` where `healthy=1`, `abuse_blocked=0` and the last signed health proof (`checked_at`) is under a day old | IPv4 /32, IPv6 /64 |
+
+  `source_ip` is the edge-verified address (`cf-connecting-ip`) the mirror's
+  last signed endpoint registration came from, written only when it changes
+  so an unchanged renewal stays write-free; it is the host's own egress,
+  unlike the DNS of its URL, which is often a Cloudflare tunnel. The
+  autoscaled and mirror lists are read from the database at most once a
+  minute per core (`HOST_EXEMPT_TTL_MS`), with no DNS lookup. Requiring a
+  healthy, fresh, unblocked mirror means an account cannot exempt an address
+  by registering a mirror that serves nothing; the cost is that a live mirror
+  operator can probe from that address unbanned, as an allow-listed host
+  can. Community pool runners (`runner_nodes`, scope `pool`) and user SSH
+  runner setups store no address and are not exempt.
+- An address that becomes one of these hosts while banned is lifted on the
+  next check: its next probe 404 (once the minute cache refreshes), or the
+  next `probe-bans` sweep, which lifts every active ban whose target is in
+  the list (audited as `probe_ban.lift_fleet_or_mirror_host` by
+  `probe-ban:fleet-or-mirror-host`).
 - Bans block the App, World and proxied site routes, not the static
   forkmesh.com files.
 
@@ -188,7 +209,8 @@ Outside `ban`, the next sweep deletes every `auto-probe-*` rule.
 Cron phase `probe-bans`, every 5 minutes: delete `auto-probe-*` rules without
 an active enforced ban; delete `probe_bans` rows expired over 7 days ago;
 delete `probe_visitors` unseen for 90 days and not banned; prune the memory
-table.
+table; lift active bans on autoscaled nodes and live mirrors (see Safety
+rules).
 
 ### Admin page
 

@@ -200,6 +200,9 @@ LOGIN_FUNCTIONS = {
     "_device_proven_user_bis",
     "_device_retire_unproven_claims",
     "_account_key_revoked",
+    "_login_source_locked_until",
+    "_login_locked_response",
+    "_client_source_bucket",
 }
 
 
@@ -340,7 +343,13 @@ def _login_harness(rec, *, initial_devices=None):
     async def _is_admin_flag(_env, _name):
         return False
 
+    async def _no_lock(_env, _key):
+        return 0
+
     ns = _load(LOGIN_FUNCTIONS, {
+        "ipaddress": __import__("ipaddress"),
+        "_transient_client_address": lambda _request: "",
+        "_login_locked_until": _no_lock,
         "_is_admin_flag": _is_admin_flag,
         "blind_index": blind_index,
         "bounded_json_request": bounded_json_request,

@@ -59,6 +59,7 @@ FUNCS = {
     "_account_ownership_transfer_confirm", "_park_ownership_transfer",
     "_send_signup_verification",
     "_account_key_revoked",
+    "_trusted_primary_pubkey",
 }
 
 # The registration endpoint the installer's Go daemon calls lives in the
@@ -1499,3 +1500,30 @@ def test_password_claim_clients_ask_for_and_send_the_authenticator_code():
     composed = assembled_dashboard()
     assert "data-claim-node-totp-row" in composed
     assert 'data-claim-node-totp type="text"' in composed
+
+
+def test_a_node_key_revoked_before_the_fix_cannot_link_or_take_a_transfer():
+    accounts = {
+        "alice": _user_rec(),
+        "mirror1": dict(_node_rec(), ownership_transfer_pending={
+            "admin": "alice", "requestedAt": 1, "expires": 2_000_000_000}),
+    }
+    ns = _harness(accounts)
+    env = object()
+    ns["_revoked_devices"].add(("bi:mirror1", "PK-mirror1"))
+
+    linked = asyncio.run(ns["_account_link_self"](env, _Request(
+        _auth({"nodeName": "mirror1", "ts": "1", "sig": "s"}))))
+    assert linked["status"] == 401
+    assert "owner" not in accounts["mirror1"]
+
+    confirmed = asyncio.run(ns["_account_ownership_transfer_confirm"](
+        env, _Request({"nodeName": "mirror1", "ts": "1", "sig": "s",
+                      "action": "approve"})))
+    assert confirmed["status"] == 401
+    assert "owner" not in accounts["mirror1"]
+
+    ns["_revoked_devices"].clear()
+    linked = asyncio.run(ns["_account_link_self"](env, _Request(
+        _auth({"nodeName": "mirror1", "ts": "1", "sig": "s"}))))
+    assert linked["status"] == 200

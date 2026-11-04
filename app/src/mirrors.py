@@ -1228,7 +1228,7 @@ STATE_PIN_HISTORY = 100
 PEER_QUORUM_MIN_NODES = 2
 
 
-def peer_quorum_pins(target, rows, minimum=PEER_QUORUM_MIN_NODES):
+def peer_quorum_pins(target, rows, minimum=PEER_QUORUM_MIN_NODES, trusted=None):
     """Repo states that `minimum` distinct group nodes independently advertise.
 
     Agreement is the evidence, not possession: a state one node claims alone
@@ -1256,6 +1256,7 @@ def peer_quorum_pins(target, rows, minimum=PEER_QUORUM_MIN_NODES):
     return {
         state for state, nodes in nodes_by_state.items()
         if len(nodes) >= minimum
+        and (trusted is None or nodes & set(trusted))
     }
 
 
@@ -1284,7 +1285,7 @@ def _group_state_within(pins, target, rows):
     return False
 
 
-def clone_state_pins(target, target_key, rows, history=None):
+def clone_state_pins(target, target_key, rows, history=None, trusted=None):
     # The set of repo-state hashes (sha256 over the canonical heads+tags
     # advertisement) the relay accepts from the node serving a clone of the
     # `target` catalog record, or None when the repo is unpinned (fail-open, e.g.
@@ -1357,7 +1358,7 @@ def clone_state_pins(target, target_key, rows, history=None):
         source_pins |= _pins_for(row.get("key_bi"), rec)
     if source_pins:
         if not _group_state_within(source_pins, target, rows):
-            source_pins |= peer_quorum_pins(target, rows)
+            source_pins |= peer_quorum_pins(target, rows, trusted=trusted)
         return source_pins
     return _pins_for(target_key, target) or None
 

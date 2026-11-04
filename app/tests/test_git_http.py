@@ -102,11 +102,10 @@ def test_public_clone_uses_signed_direct_https_and_sticky_selection():
     assert "headers['Git-Protocol'] = git_protocol" in proxy
     assert "unsupported_git_protocol" in proxy
     assert "HTTPS_MIRROR_GIT_INITIAL_RESPONSE_TIMEOUT_SECONDS" in proxy
-    assert "https_routing.direct_git_target_url" in proxy
-    assert "X-ForkMesh-Transport" in proxy
-    assert "direct-mirror" in proxy
-    assert "status=307" in proxy
-    assert proxy.index("direct_git_target_url") < proxy.index("masked_target_url")
+    assert "direct_git_target_url" not in proxy
+    assert "status=307" not in proxy
+    assert "advertised_refs_canonical(verified_advertisement)" in proxy
+    assert "if git_protocol != 'version=2':" in proxy
     assert "FORKMESH_HOST" not in proxy
 
     initial_fetch = next(

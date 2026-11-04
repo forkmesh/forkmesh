@@ -527,3 +527,100 @@ def test_a_page_cannot_get_its_visitors_banned_by_embedding_probe_paths():
             json.dumps({"path": path, "fetchSite": "none"}),
             headers={"cf-connecting-ip": SCANNER})))
     assert len(h.rules()) == 1
+
+
+MINUTE = 60_000
+
+
+def _host_tables(h):
+    script = (ROOT / "migrations" / "0211_fleet_autoscale.sql").read_text()
+    h.db.executescript(script.split("INSERT INTO schema_meta")[0])
+
+
+def _autoscale_node(h, name, ip, state="serving"):
+    h.db.execute(
+        "INSERT INTO autoscale_nodes (name,pool,label,created_by,state,"
+        "state_since_ms,public_ipv4,created_ms,updated_ms) "
+        "VALUES (?,?,?,?,?,?,?,?,?)",
+        (name, "runner", "fmnext-" + name, "autoscaler", state, NOW, ip,
+         NOW, NOW))
+
+
+def _mirror(h, name, ip, healthy=1, checked_at=None, abuse_blocked=0):
+    h.db.execute(
+        "INSERT INTO mirror_https_endpoints (node_bi,node_name,base_url,"
+        "public_key,registration_sig,issued_at,checked_at,healthy,"
+        "abuse_blocked,updated_at,source_ip) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        ("bi-" + name, name, "https://%s.example" % name, "k", "s", NOW,
+         NOW if checked_at is None else checked_at, healthy, abuse_blocked,
+         NOW, ip))
+
+
+def test_pool_runners_and_live_mirrors_are_never_probe_banned():
+    h = ProbeHarness()
+    _host_tables(h)
+    _autoscale_node(h, "b1", SCANNER)
+    _autoscale_node(h, "b2", "93.184.216.40", state="removing")
+    _mirror(h, "mirror-one", "2a01:4f8:1c1c:abcd::7")
+    _mirror(h, "mirror-sick", "93.184.216.41", healthy=0)
+    _mirror(h, "mirror-stale", "93.184.216.42", checked_at=NOW - 2 * DAY)
+    _mirror(h, "mirror-abuse", "93.184.216.43", abuse_blocked=1)
+    assert h.scan("/.env") == "exempt"
+    assert h.scan("/.env", dict(CLIENT, ip="2a01:4f8:1c1c:abcd::99")) == (
+        "exempt")
+    assert h.bans() == [] and h.rules() == []
+    assert h.denied(SCANNER) is None
+    for ip in ("93.184.216.40", "93.184.216.41", "93.184.216.42",
+               "93.184.216.43"):
+        assert h.scan("/.env", dict(CLIENT, ip=ip)) == "banned", ip
+    assert len(h.rules()) == 4
+
+
+def test_a_banned_address_that_becomes_a_runner_or_mirror_is_lifted():
+    h = ProbeHarness()
+    _host_tables(h)
+    assert h.scan("/.env") == "banned"
+    assert h.scan("/.env", dict(CLIENT, ip=OTHER)) == "banned"
+    _autoscale_node(h, "b1", SCANNER)
+    _mirror(h, "mirror-one", OTHER)
+    _run(h.probe.sweep(h.env, h.now + 30 * 1000))
+    assert len(h.rules()) == 2
+    _run(h.probe.sweep(h.env, h.now + MINUTE))
+    assert h.rules() == []
+    assert all(ban["lifted_at"] for ban in h.bans())
+    assert {a[0] for a in h.audits} == {h.probe.HOST_LIFT_ACCOUNT}
+    assert {a[1] for a in h.audits} == {"probe_ban.lift_fleet_or_mirror_host"}
+    assert h.denied(SCANNER) is None and h.denied(OTHER) is None
+
+
+def test_the_next_probe_from_a_new_host_lifts_its_ban_after_a_minute():
+    h = ProbeHarness()
+    _host_tables(h)
+    assert h.scan("/.env") == "banned"
+    _autoscale_node(h, "b1", SCANNER)
+    assert h.scan("/.git/config") == "banned"
+    h.now += MINUTE
+    assert h.scan("/.git/config") == "exempt"
+    assert h.rules() == [] and h.bans()[0]["lifted_at"] == h.now
+    assert h.denied(SCANNER) is None
+
+
+def test_the_host_list_is_read_once_a_minute():
+    h = ProbeHarness()
+    _host_tables(h)
+    reads = []
+    real = h.probe.d1_all
+
+    async def counting(env, sql, *args):
+        if "autoscale_nodes" in sql:
+            reads.append(sql)
+        return await real(env, sql, *args)
+
+    h.probe.d1_all = counting
+    for index in range(5):
+        h.scan("/x%d.php" % index, dict(CLIENT, ip="93.184.216.%d" % (
+            50 + index)))
+    assert len(reads) == 1
+    h.now += MINUTE
+    h.scan("/.env")
+    assert len(reads) == 2

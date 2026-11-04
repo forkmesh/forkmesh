@@ -221,7 +221,7 @@ def test_feedback_handler_hashes_ip_and_never_stores_raw_ip():
     entry_text = ENTRY.read_text(encoding="utf-8")
 
     assert "async def feedback_handler(env, request):" in entry_text
-    assert "ip = _transient_client_address(request)" in entry_text
+    assert "ip = _client_source_bucket(_transient_client_address(request))" in entry_text
     assert 'headers.get("cf-connecting-ip")' in entry_text
     assert 'headers.get("x-forwarded-for")' in entry_text
     assert "ip_hash = await blind_index(env, ip) if ip else \"\"" in entry_text
@@ -235,19 +235,35 @@ def test_feedback_handler_hashes_ip_and_never_stores_raw_ip():
         "INSERT INTO feedback "
         "(ts, source, vote, path, message, ip_hash, user_agent)"
     ) in entry_text
-    assert "VALUES (?,?,?,?,?,?,?)" in entry_text
-    assert "DELETE FROM feedback WHERE id NOT IN" in entry_text
+    assert "SELECT ?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM feedback) < ?" in entry_text
+    assert "DELETE FROM feedback WHERE id NOT IN" not in entry_text
 
 
 def _load_handler(overrides):
     tree = ast.parse(ENTRY.read_text(encoding="utf-8"), filename=str(ENTRY))
-    wanted = {"_enqueue_world_feedback_pings", "feedback_handler"}
+    wanted = {"_enqueue_world_feedback_pings", "feedback_handler",
+              "_client_source_bucket"}
+    consts = {"FEEDBACK_PER_SOURCE_PER_HOUR", "FEEDBACK_SOURCE_RATE_KEY",
+              "FEEDBACK_KEPT_PER_SOURCE"}
     body = [
         node for node in tree.body
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        and node.name in wanted
+        if (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name in wanted)
+        or (isinstance(node, ast.Assign) and any(
+            isinstance(t, ast.Name) and t.id in consts
+            for t in node.targets))
     ]
+
+    async def _stored(_env, sql, *_args):
+        return {"id": 1} if "INSERT INTO feedback" in sql else {"n": 0}
+
+    async def _no_budget(_env, _key, _limit):
+        return None
+
     namespace = {
+        "ipaddress": __import__("ipaddress"),
+        "d1_first": _stored,
+        "signup_rate_check": _no_budget,
         "Date": type("Date", (), {"now": staticmethod(lambda: 123456789)}),
         "FEEDBACK_MAX_BODY": 16 * 1024,
         "MAX_FEEDBACK": 5000,
@@ -282,11 +298,15 @@ def test_feedback_note_is_recorded_then_pings_admins(source, path, title):
         calls.append(("schema",))
 
     async def blind_index(_env, value):
-        assert value == "203.0.113.4"
+        assert value in ("203.0.113.4", "feedback-source-v1\n203.0.113.4")
         return "private-client-index"
 
     async def d1_run(_env, sql, *args):
         calls.append(("run", sql, args))
+
+    async def d1_first(_env, sql, *args):
+        calls.append(("first", sql, args))
+        return {"id": 7} if "INSERT INTO feedback" in sql else {"n": 0}
 
     async def d1_all(_env, sql, *args):
         calls.append(("all", sql, args))
@@ -308,6 +328,7 @@ def test_feedback_note_is_recorded_then_pings_admins(source, path, title):
         "ensure_schema": ensure_schema,
         "blind_index": blind_index,
         "d1_run": d1_run,
+        "d1_first": d1_first,
         "d1_all": d1_all,
         "decrypt_row": decrypt_row,
         "clean_string": lambda value, limit: str(value or "")[:limit],
@@ -322,7 +343,7 @@ def test_feedback_note_is_recorded_then_pings_admins(source, path, title):
     })))
 
     assert response == {"ok": True, "cache_control": "no-store"}
-    insert = next(call for call in calls if call[0] == "run" and
+    insert = next(call for call in calls if call[0] == "first" and
                   "INSERT INTO feedback" in call[1])
     ping = next(call for call in calls if call[0] == "ping")
     assert calls.index(insert) < calls.index(ping)
@@ -342,6 +363,11 @@ def test_feedback_storage_failure_is_not_reported_as_success():
         if "INSERT INTO feedback" in sql:
             raise RuntimeError("database unavailable")
 
+    async def d1_first(_env, sql, *_args):
+        if "INSERT INTO feedback" in sql:
+            raise RuntimeError("database unavailable")
+        return {"n": 0}
+
     async def noop(*_args, **_kwargs):
         return None
 
@@ -353,6 +379,7 @@ def test_feedback_storage_failure_is_not_reported_as_success():
         "ensure_schema": noop,
         "blind_index": noop,
         "d1_run": d1_run,
+        "d1_first": d1_first,
         "d1_all": noop,
         "decrypt_row": noop,
         "clean_string": lambda value, limit: str(value or "")[:limit],
@@ -371,3 +398,113 @@ def test_feedback_storage_failure_is_not_reported_as_success():
         "status": 503,
         "cache_control": "no-store",
     }
+
+
+
+def _stored_feedback():
+    import sqlite3
+    database = sqlite3.connect(":memory:")
+    database.execute(
+        "CREATE TABLE feedback (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "ts INTEGER NOT NULL, source TEXT NOT NULL, vote TEXT NOT NULL, "
+        "path TEXT NOT NULL, message TEXT, ip_hash TEXT, user_agent TEXT)")
+    database.execute(
+        "CREATE TABLE signup_rate (ip_bi TEXT PRIMARY KEY, count INTEGER, "
+        "window_start_ts INTEGER)")
+    address = {"value": ""}
+
+    def _rows(cursor):
+        names = [col[0] for col in cursor.description or []]
+        return [dict(zip(names, row)) for row in cursor.fetchall()]
+
+    async def d1_first(_env, sql, *args):
+        rows = _rows(database.execute(sql, args))
+        database.commit()
+        return rows[0] if rows else None
+
+    async def d1_run(_env, sql, *args):
+        database.execute(sql, args)
+        database.commit()
+
+    async def noop(*_args, **_kwargs):
+        return None
+
+    async def blind_index(_env, value):
+        return "bi:" + value
+
+    tree = ast.parse(ENTRY.read_text(encoding="utf-8"), filename=str(ENTRY))
+    rate = [node for node in tree.body
+            if isinstance(node, ast.AsyncFunctionDef)
+            and node.name == "signup_rate_check"]
+    rate_ns = {
+        "Date": type("Date", (), {"now": staticmethod(lambda: 123456789)}),
+        "d1_first": d1_first,
+        "SIGNUP_RATE_WINDOW_MS": 60 * 60 * 1000,
+        "SIGNUP_MAX_PER_IP": 3,
+        "json_response": lambda payload, **kwargs: {**payload, **kwargs},
+    }
+    exec(compile(ast.Module(body=rate, type_ignores=[]), str(ENTRY), "exec"),
+         rate_ns)
+    handler = _load_handler({
+        "method_name": lambda _request: "POST",
+        "_feedback_fields": _fields,
+        "_transient_client_address": lambda _request: address["value"],
+        "_generalized_client_category": lambda _request: "desktop",
+        "ensure_schema": noop,
+        "blind_index": blind_index,
+        "signup_rate_check": rate_ns["signup_rate_check"],
+        "d1_run": d1_run,
+        "d1_first": d1_first,
+        "d1_all": noop,
+        "decrypt_row": noop,
+        "clean_string": lambda value, limit: str(value or "")[:limit],
+        "valid_node_name": lambda _value: True,
+        "enqueue_notification": noop,
+        "json_response": lambda payload, **kwargs: {**payload, **kwargs},
+        "MAX_FEEDBACK": 20,
+    })
+
+    def post(source_address, message):
+        address["value"] = source_address
+        return asyncio.run(handler(object(), _FeedbackRequest({
+            "source": "docs", "vote": "dislike", "path": "/docs/",
+            "message": message})))
+
+    return post, database
+
+
+def test_one_address_gets_a_bounded_number_of_feedback_rows_per_hour():
+    post, _database = _stored_feedback()
+    answers = [post("2001:db8:44::%x" % (index + 1), "n%d" % index)
+               for index in range(31)]
+    assert answers[0] == {"ok": True, "cache_control": "no-store"}
+    assert answers[-1]["status"] == 429
+    assert answers[-1]["error"] == "rate_limited"
+
+
+def test_a_feedback_flood_only_evicts_rows_of_heavy_sources():
+    post, database = _stored_feedback()
+    for index in range(5):
+        assert post("198.51.100.%d" % (index + 1), "real %d" % index)["ok"]
+    for index in range(30):
+        post("203.0.113.66", "flood %d" % index)
+    for index in range(10):
+        post("2001:db8:55::%x" % (index + 1), "flood v6 %d" % index)
+    assert post("192.0.2.9", "late real")["ok"]
+    messages = [row[0] for row in database.execute(
+        "SELECT message FROM feedback ORDER BY id")]
+    assert len(messages) == 20
+    for index in range(5):
+        assert "real %d" % index in messages
+    assert "late real" in messages
+
+
+def test_a_table_full_of_light_sources_refuses_rather_than_evicts():
+    post, database = _stored_feedback()
+    for index in range(20):
+        assert post("198.51.100.%d" % (index + 1), "real %d" % index)["ok"]
+    refused = post("192.0.2.9", "one more")
+    assert refused["status"] == 503
+    messages = [row[0] for row in database.execute(
+        "SELECT message FROM feedback ORDER BY id")]
+    assert messages == ["real %d" % index for index in range(20)]

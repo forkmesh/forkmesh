@@ -65,7 +65,6 @@ type jobSandbox struct {
 	homeGate *persistentHomeGate
 
 	noLimits       bool
-	privateXDG     bool
 	extraEnv       map[string]bool
 	credentialDirs map[string]string
 }
@@ -189,7 +188,15 @@ func (b jobSandbox) sessionCommand(home, name string, args []string) (string, []
 	if b.systemdRun == "" || b.user || b.uid == 0 || !b.isSessionHome(home) {
 		return name, args
 	}
-	return "/usr/bin/env", append([]string{"--", "HOME=" + home, name}, args...)
+	prefix := append([]string{"--", "HOME=" + home}, sessionXDGEnvironment(home)...)
+	return "/usr/bin/env", append(append(prefix, name), args...)
+}
+
+func sessionXDGEnvironment(home string) []string {
+	return []string{"XDG_CONFIG_HOME=" + filepath.Join(home, ".config"),
+		"XDG_CACHE_HOME=" + filepath.Join(home, ".cache"),
+		"XDG_DATA_HOME=" + filepath.Join(home, ".local", "share"),
+		"XDG_STATE_HOME=" + filepath.Join(home, ".local", "state")}
 }
 
 // loopbackResolvers returns the loopback nameservers of a resolv.conf.
@@ -287,11 +294,8 @@ func (b jobSandbox) environmentWith(home, tmp string) []string {
 	if tmp != "" {
 		env = append(env, "TMPDIR="+tmp, "CLAUDE_CODE_TMPDIR="+tmp)
 	}
-	if b.privateXDG && b.isSessionHome(home) {
-		env = append(env, "XDG_CONFIG_HOME="+filepath.Join(home, ".config"),
-			"XDG_CACHE_HOME="+filepath.Join(home, ".cache"),
-			"XDG_DATA_HOME="+filepath.Join(home, ".local", "share"),
-			"XDG_STATE_HOME="+filepath.Join(home, ".local", "state"))
+	if b.isSessionHome(home) {
+		env = append(env, sessionXDGEnvironment(home)...)
 	}
 	name := b.userName
 	if name == "" && b.uid == 0 {
@@ -490,7 +494,7 @@ var mirrorJobEnvironmentAllowed = map[string]bool{
 func detectMirrorJobSandbox(workRoot, home string, lookPath func(string) (string, error),
 	getenv func(string) string, euid int, exists func(string) bool) jobSandbox {
 	box := jobSandbox{workRoot: workRoot, home: home, active: &jobActivity{}, noLimits: true,
-		privateXDG: true, extraEnv: mirrorJobEnvironmentAllowed, credentialDirs: map[string]string{}}
+		extraEnv: mirrorJobEnvironmentAllowed, credentialDirs: map[string]string{}}
 	for variable, rel := range map[string]string{
 		"CLAUDE_CONFIG_DIR": jobCredentialFiles[0], "CODEX_HOME": jobCredentialFiles[1],
 	} {

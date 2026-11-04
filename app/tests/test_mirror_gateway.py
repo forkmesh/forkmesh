@@ -4248,15 +4248,89 @@ def test_reads_refuse_commit_reachable_only_from_hidden_refs(application):
     kept = _hidden_commit(
         git_dir, tip, "refs/forkmesh/history/main/0000000001", b"kept\n")
     repository.invalidate_memory_generation()
-    assert repository.resolve_commit(kept[:12]) == kept
+    with pytest.raises(gateway.GatewayError):
+        repository.resolve_commit(kept[:12])
     response = app.dispatch(
         "GET",
         "/v1/public/repositories/alice/project/raw?"
         + urlencode({"ref": kept, "path": "secret.txt"}), {}, b"")
+    assert response.status == 404
+
+
+def _ledger_commit(git_dir, parent, files):
+    entries = []
+    for path, content in files.items():
+        blob = subprocess.run(
+            ["git", "--git-dir", git_dir, "hash-object", "-w", "--stdin"],
+            input=content.encode(), check=True, capture_output=True,
+        ).stdout.decode().strip()
+        entries.append((path, blob))
+    index = str(Path(git_dir) / "ledger-index")
+    env = {**os.environ, "GIT_INDEX_FILE": index}
+    for path, blob in entries:
+        subprocess.run(
+            ["git", "--git-dir", git_dir, "update-index", "--add",
+             "--cacheinfo", "100644,%s,%s" % (blob, path)],
+            check=True, env=env)
+    tree = subprocess.run(
+        ["git", "--git-dir", git_dir, "write-tree"], check=True,
+        capture_output=True, env=env).stdout.decode().strip()
+    os.unlink(index)
+    commit = subprocess.run(
+        ["git", "--git-dir", git_dir, "-c", "user.name=t",
+         "-c", "user.email=t@example.invalid", "commit-tree", tree,
+         "-p", parent, "-m", "ledger"],
+        check=True, capture_output=True).stdout.decode().strip()
+    subprocess.run(["git", "--git-dir", git_dir, "update-ref",
+                    "refs/heads/forkmesh/pulls", commit], check=True)
+
+
+def test_force_push_backups_are_served_only_as_pull_anchors(application):
+    app, _commit, _release_hash, _logs = application
+    repository = app.repositories[("alice", "project")]
+    git_dir = str(repository.git_dir)
+    tip = repository.resolve_commit("main")
+    commits = {
+        name: _hidden_commit(
+            git_dir, tip, "refs/forkmesh/history/main/%010d" % index,
+            name.encode() + b"\n")
+        for index, name in enumerate(
+            ("revision", "synced", "body", "comment", "secret"), 1)
+    }
+    old_parent = _hidden_commit(
+        git_dir, commits["revision"], "refs/forkmesh/history/main/0000000009",
+        b"child\n")
+    _ledger_commit(git_dir, tip, {
+        ".forkmesh/pulls/1/pull.md":
+            "---\nschema: forkmesh-pull-v1\nnumber: 1\nstatus: open\n---\n\n"
+            "headOid: %s\n" % commits["body"],
+        ".forkmesh/pulls/1/revisions/1/pull.md":
+            "---\nschema: forkmesh-pull-v1\nnumber: 1\nheadOid: %s\n---\n"
+            % old_parent,
+        ".forkmesh/pulls/1/0002-synchronize.md":
+            "---\ntype: synchronize\nafter: %s\n---\n" % commits["synced"],
+        ".forkmesh/pulls/1/0003-comment.md":
+            "---\ntype: comment\nafter: %s\n---\n" % commits["comment"],
+    })
+    repository.invalidate_memory_generation()
+    assert repository.resolve_commit(commits["revision"]) == commits["revision"]
+    assert repository.resolve_commit(commits["synced"][:12]) == commits["synced"]
+    for name in ("body", "comment", "secret"):
+        with pytest.raises(gateway.GatewayError):
+            repository.resolve_commit(commits[name])
+        response = app.dispatch(
+            "GET",
+            "/v1/public/repositories/alice/project/raw?"
+            + urlencode({"ref": commits[name], "path": "secret.txt"}), {}, b"")
+        assert response.status == 404, name
+    response = app.dispatch(
+        "GET",
+        "/v1/public/repositories/alice/project/raw?"
+        + urlencode({"ref": commits["revision"], "path": "secret.txt"}), {}, b"")
     assert response.status == 200
     assert subprocess.run(
         response.stream.command, check=True, capture_output=True,
-        env=gateway._git_environment()).stdout == b"kept\n"
+        env=gateway._git_environment()).stdout == b"revision\n"
 
 
 def test_commit_id_visibility_is_cached_per_refs_state_and_bounded(
@@ -4273,6 +4347,8 @@ def test_commit_id_visibility_is_cached_per_refs_state_and_bounded(
         git_dir, tip, "refs/forkmesh/trash/branch/secret", b"secret\n")
     repository.invalidate_memory_generation()
     assert repository.resolve_commit(tip) == tip
+    with pytest.raises(gateway.GatewayError):
+        repository.resolve_commit(secret)
     spawns = []
     real_run_git, real_run_git_status = gateway._run_git, gateway._run_git_status
 

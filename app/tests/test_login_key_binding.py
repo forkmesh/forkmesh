@@ -60,6 +60,9 @@ def _load_account_login(extra_globals):
             "_device_retire_unproven_claims",
             "_account_key_revoked",
             "_verify_password_miss",
+            "_login_source_locked_until",
+            "_login_locked_response",
+            "_client_source_bucket",
         }
     ] + [
         node
@@ -71,7 +74,14 @@ def _load_account_login(extra_globals):
     ]
     assert selected, "missing _account_login"
     module = ast.fix_missing_locations(ast.Module(body=selected, type_ignores=[]))
-    namespace = {"json": json, "_is_admin_flag": _never_admin, **extra_globals}
+
+    async def _no_lock(_env, _key):
+        return 0
+
+    namespace = {"json": json, "_is_admin_flag": _never_admin,
+                 "ipaddress": __import__("ipaddress"),
+                 "_transient_client_address": lambda _request: "",
+                 "_login_locked_until": _no_lock, **extra_globals}
     exec(compile(module, str(ENTRY), "exec"), namespace)
     return namespace["_account_login"]
 
@@ -548,15 +558,58 @@ def test_login_failure_counter_is_atomic_and_progressive():
     ).fetchone() == (3,)
 
 
-def test_valid_login_never_prechecks_an_attacker_created_lock():
+def test_a_locked_source_refuses_even_the_right_password_but_never_the_victims():
+    handler, _saved, _devices, _clears, _fails = _login_harness(
+        _active_account())
+    space = handler.__globals__
+    locks = {}
+    where = {"address": ""}
+
+    async def attempt_keys(_env, _request, identifier):
+        if where["address"]:
+            return ["source:" + where["address"],
+                    "pair:" + where["address"] + ":" + identifier]
+        return ["local:" + identifier]
+
+    async def locked_until(_env, key):
+        return locks.get(key, 0)
+
+    space["_transient_client_address"] = lambda _request: where["address"]
+    space["_login_attempt_keys"] = attempt_keys
+    space["_login_locked_until"] = locked_until
+    future = 1783000000000 + 10 * 60 * 1000
+    locks["source:198.51.100.66"] = future
+    locks["pair:198.51.100.66:alice@example.com"] = future
+    locks["local:alice@example.com"] = future
+    body = {"email": "alice@example.com",
+            "password": "correct horse battery staple"}
+
+    where["address"] = "198.51.100.66"
+    attacker = asyncio.run(handler(object(), _Request(dict(body))))
+    assert attacker["status"] == 429
+    assert attacker["data"]["error"] == "too_many_attempts"
+
+    where["address"] = "203.0.113.5"
+    victim = asyncio.run(handler(object(), _Request(dict(body))))
+    assert victim["status"] == 200
+
+    where["address"] = ""
+    local = asyncio.run(handler(object(), _Request(dict(body))))
+    assert local["status"] == 200
+
+
+def test_only_source_keys_are_prechecked_before_the_password():
     source = ENTRY.read_text(encoding="utf-8")
     login_source = source[
         source.index("async def _account_login"):
         source.index("async def _account_rotate")
     ]
-    assert "_login_locked_until" not in login_source
-    assert login_source.index("verify_password(") < login_source.index(
-        "_login_clear(")
+    assert "_login_locked_until(" not in login_source
+    assert login_source.index("_login_source_locked_until(") < (
+        login_source.index("verify_password("))
+    helper = source[source.index("async def _login_source_locked_until"):
+                    source.index("def _login_locked_response")]
+    assert "if not _client_source_bucket(_transient_client_address(request)):" in helper
 
 
 def test_local_demo_credentials_bootstrap_a_real_admin_account():
@@ -1441,6 +1494,8 @@ def test_every_per_address_budget_folds_ipv6_into_its_64():
         ("entry.py", "_account_reserve"),
         ("entry.py", "_login_source_key"),
         ("entry.py", "_login_attempt_keys"),
+        ("entry.py", "_login_source_locked_until"),
+        ("entry.py", "feedback_handler"),
         ("entry.py", "client_error_handler"),
         ("entry.py", "_security_report_source_budget"),
         ("bug_reports.py", "_reporter_key"),
@@ -1450,7 +1505,6 @@ def test_every_per_address_budget_folds_ipv6_into_its_64():
     stored_not_budgets = {
         ("entry.py", "_account_signup"),
         ("entry.py", "_signup_metadata"),
-        ("entry.py", "feedback_handler"),
         ("account_users.py", "_record_referral_signup"),
         ("attribution.py", "_observation_from_request"),
         ("attribution.py", "relay_capture_handler"),

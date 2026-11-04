@@ -57,7 +57,11 @@ and ignored. Gemma models come from `marketplace/packages/gemma-4`
   variables (`mirrorJobEnvironmentAllowed`). No `FORKMESH_*` or daemon config
   directories reach the agent.
 - **HOME.** `agent-jobs/work/.homes/<hash>`, one per session (so `--resume`
-  works), with a fresh `tmp` per job and XDG folders under it. Only
+  works), with a fresh `tmp` per job and XDG folders under it.
+  `XDG_CONFIG_HOME`, `XDG_CACHE_HOME`, `XDG_DATA_HOME` and `XDG_STATE_HOME`
+  point there for every session home, website and mirror jobs alike, and
+  for Actions workflows (`runWorkflow`); before 2026-11-01 only mirror jobs
+  set them, so a website job inherited the daemon's own XDG folders. Only
   `.claude/.credentials.json` and `.codex/auth.json` are copied in, and a
   refreshed login is copied back afterwards (`openSession`/`closeSession`).
   Operator CLI settings do not apply to website jobs.

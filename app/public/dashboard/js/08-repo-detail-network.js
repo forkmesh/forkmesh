@@ -2273,17 +2273,10 @@
         && target.origin !== location.origin
         && /^mirror[0-9]+\.forkmesh\.com$/i.test(target.hostname)
       ) {
-        // Keep the visible and final URL direct. The refresh only asks the
-        // current App origin to mint the domain-wide, signed HttpOnly grant;
-        // the mirror validates it locally and never receives the App bearer.
         event.preventDefault();
-        directMirrorLink.setAttribute("aria-busy", "true");
-        try {
-          await ensurePortableControllerSession(true);
-        } finally {
-          directMirrorLink.removeAttribute("aria-busy");
-        }
-        location.assign(destination);
+        location.assign(
+          `/api/accounts/mirror-handoff?to=${encodeURIComponent(destination)}`,
+        );
         return;
       }
     }

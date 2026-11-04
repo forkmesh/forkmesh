@@ -3057,7 +3057,7 @@ async def _agent_handoff_signer(env, request, owner, repo):
         return "", ""
     if not (
         await _account_owns_node(env, signer, node)
-        or await _org_owner_of_linked_repo(env, node, repo, signer)
+        or await _org_owner_agent_allowed(env, node, repo, signer)
     ):
         return "", ""
     key = await _authorized_owner_signing_key(env, request, signer)
@@ -4384,7 +4384,7 @@ async def _pull_mutation_node(env, context, candidates, operation):
         # that cron would pin; the job still names exact commits.
         if https_routing.mismatch_is_servable(
                 operation, candidate.get("node"), proof_details,
-                lagging_refs_quorum):
+                lagging_refs_quorum, trusted=context.get("trustedNodes")):
             return candidate, ""
         rejected.add(proof_details.get("reason"))
     return None, https_routing.merge_unavailable_reason(

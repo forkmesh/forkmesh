@@ -50,8 +50,11 @@ the flagship. The flagship is `forkmesh/forkmesh` and the node it is linked
 to, found by `_flagship_core_nodes` in `app/src/entry.py`.
 
 - `_https_mirror_public_context` sets the routing set (`nodes`) to the
-  cores, so read candidates, the direct-mirror 307 target, release blobs and
-  owner-merge executors are always cores.
+  cores, so read candidates, release blobs and owner-merge executors are
+  always cores. Git reads are proxied and their advertisement checked for
+  every repository ([direct-https-mirror-gateway.md](direct-https-mirror-gateway.md)).
+- Flagship intake is signed only by the cores
+  ([../server/intake-and-attestation.md](../server/intake-and-attestation.md)).
 - The flagship quorum (`_https_mirror_flagship_quorum`, also in
   `_https_mirror_accepted_forkmesh_refs`) counts only core endpoints.
 - The catalog peer-quorum recovery is skipped for the flagship.

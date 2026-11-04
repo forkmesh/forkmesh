@@ -56,6 +56,7 @@ DEFAULT_MAX_PER_ACCOUNT = 10
 DEFAULT_MAX_BYTES = 200 * 1024 * 1024
 DEFAULT_IMPORT_HOSTS = ("github.com", "gitlab.com", "codeberg.org", "gitea.com")
 REMOVED_KEEP_MS = 30 * 24 * 60 * 60 * 1000
+QUARANTINED_PRIVATE = 2
 # Replica read grants: long enough for a slow fetch of a full-size repository.
 GRANT_TTL_MS = 60 * 60 * 1000
 MAX_REPORTED = 5000
@@ -686,9 +687,24 @@ async def replicas(runtime, raw):
                 "WHERE id=? AND deleted_at=0", now, row["id"])
 
     rows = await runtime.d1_all(
-        "SELECT id,visibility,created_at,pushed_at,pushed_by,deleted_at,data "
+        "SELECT id,key_bi,visibility,created_at,pushed_at,pushed_by,"
+        "deleted_at,data "
         "FROM hosted_repos WHERE deleted_at=0 OR deleted_at>? ORDER BY id",
         now - REMOVED_KEEP_MS)
+    try:
+        held = {
+            str(item.get("key_bi") or "")
+            for item in await runtime.d1_all(
+                "SELECT key_bi FROM repositories WHERE is_private=?",
+                QUARANTINED_PRIVATE) or []
+        }
+    except Exception:
+        held = set()
+    rows = [
+        dict(row, visibility="private")
+        if str(row.get("key_bi") or "") in held else row
+        for row in rows or []
+    ]
     copies = {}
     for row in await runtime.d1_all(
             "SELECT repo_id,node,empty,pushed_at,routing_digest,size_bytes,"

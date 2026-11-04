@@ -28,6 +28,13 @@ All checks are on the server.
 
 - **Feedback** is anonymous. The server stores the fixed path
   `/dashboard#feedback`, never the visitor's page, and pings admins.
+- `/api/feedback` accepts `FEEDBACK_PER_SOURCE_PER_HOUR` (30) notes an hour
+  from one address (an IPv6 /64 counts as one), then answers 429. The table
+  holds `MAX_FEEDBACK` rows; when full, a new note evicts the oldest row of a
+  source that holds more than `FEEDBACK_KEPT_PER_SOURCE` (3) rows, and with
+  no such source it is refused with 503 instead of pushing out another
+  visitor's note. The old prune dropped the oldest rows, so one flood could
+  erase every real note.
 - **Plugin feedback** is the same dialog opened from a plugin page's ⋯ menu.
   It retitles itself "Feedback on <plugin>" and posts to `/api/bug-reports`
   with the plugin id, the page id and source `web` instead of to

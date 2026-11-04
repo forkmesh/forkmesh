@@ -73,7 +73,11 @@ Denied writes are recorded in the sensitive-action audit log with a reason
   account that stores the repository keeps it too
   (`docs/app/repo-settings.md` in the source tree).
 - World building access, office chat channels, task boards and succession
-  votes, which enumerate the insider roles in SQL.
+  votes, which enumerate the insider roles in SQL. Posting in an office chat
+  channel also needs `organization.chat.channels`: the room answers
+  `readOnly` to a member without it (an auditor reads but cannot post), and
+  the composer says so
+  (`test_office_room_access_is_read_only_for_auditors`).
 - Notes shared with the organization, organization package state
   (`/api/plugins/<org>` and the package list), installing or requesting an
   app for the organization, and slash commands from its app installs. These

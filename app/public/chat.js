@@ -2229,7 +2229,11 @@ function updateAdminChannelControls() {
   const readOnly = Boolean(channel?.readOnly);
   if (input) {
     input.disabled = readOnly;
-    if (readOnly) input.placeholder = "Server notices are read-only";
+    if (readOnly) {
+      input.placeholder = channel?.kind === "office"
+        ? "You can read this office chat but not post in it"
+        : "Server notices are read-only";
+    }
   }
   if (sendBtn) sendBtn.disabled = readOnly;
   renderSealControl();

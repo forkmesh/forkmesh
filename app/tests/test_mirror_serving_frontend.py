@@ -282,8 +282,12 @@ def test_live_mirror_rows_link_to_safe_direct_repository_dashboards():
         DASHBOARD_JS.index('const directMirrorLink = event.target.closest(')
         : DASHBOARD_JS.index('const mobileMenuToggle = event.target.closest(')
     ]
-    assert "await ensurePortableControllerSession(true);" in click_handler
-    assert "location.assign(destination);" in click_handler
+    assert "ensurePortableControllerSession" not in DASHBOARD_JS
+    assert (
+        "`/api/accounts/mirror-handoff?to=${encodeURIComponent(destination)}`"
+        in click_handler
+    )
+    assert "location.assign(destination);" not in click_handler
     assert 'new URL(destination)' in click_handler
     assert '/^mirror[0-9]+\\.forkmesh\\.com$/i' in click_handler
 

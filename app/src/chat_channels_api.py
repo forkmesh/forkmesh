@@ -4,6 +4,8 @@ import hashlib
 import json
 import re
 
+from organization_rbac import org_role_allows
+
 
 CHANNEL_BODY_MAX_BYTES = 64 * 1024
 MAX_CHAT_CHANNELS_PER_CREATOR = 20
@@ -1194,6 +1196,13 @@ async def _room_access(runtime, account_bi, actor, channel_id, is_admin):
     await _mark_read(runtime, channel_id, account_bi)
     payload = dict(access or {})
     payload["channel"] = _channel_payload(row, record, can_manage)
+    if _is_office(record):
+        member = await runtime.d1_first(
+            "SELECT role FROM org_members WHERE org_bi=? AND member_bi=?",
+            str(row.get("created_by_bi") or ""), account_bi)
+        if not org_role_allows(
+                (member or {}).get("role"), "organization.chat.channels"):
+            payload["channel"]["readOnly"] = True
     return _response(runtime, payload)
 
 

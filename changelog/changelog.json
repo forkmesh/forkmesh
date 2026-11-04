@@ -11,6 +11,10 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-04", "area": "Other improvements", "text": "Opening a mirror while signed in now signs you in on that mirror alone, through a short stop at app.forkmesh.com."},
+  {"date": "2026-11-04", "area": "Chat", "text": "Organization members whose role cannot post in office chat channels, such as auditors, can now only read them."},
+  {"date": "2026-11-04", "area": "Projects", "text": "Tasks in an organization's Security department are visible only to its owners and admins and the people working on them."},
+  {"date": "2026-11-01", "area": "Agents", "text": "Organization owners can start agents on a member's desktop only after that member allows it on the organization's settings page."},
   {"date": "2026-11-01", "area": "Desktop", "text": "Emoji in the sessions list, buttons, labels and menus draw in full colour on Linux instead of black outlines, and those widgets now use the interface font."},
   {"date": "2026-11-01", "area": "Agents", "text": "The agent composer's slash menu now picks up new Claude Code commands and skills during a session."},
   {"date": "2026-10-31", "area": "Other improvements", "text": "The docs have new core pages on architecture, encryption, mirroring, self-hosting and censorship resilience, and every page is shorter and links to them."},

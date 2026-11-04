@@ -1473,6 +1473,31 @@ async def _observe_email_view(runtime, org_bi, task_id, actor, now):
         pass
 
 
+RESTRICTED_DEPARTMENTS = frozenset({"security"})
+RESTRICTED_DEPARTMENT_ROLES = frozenset({"owner", "admin"})
+
+
+async def _department_visible(runtime, row, role, account_bi, actor):
+    if str((row or {}).get("department") or "") not in RESTRICTED_DEPARTMENTS:
+        return True
+    if str(role or "") in RESTRICTED_DEPARTMENT_ROLES:
+        return True
+    if account_bi and account_bi in (
+            str(row.get("created_by_bi") or ""),
+            str(row.get("assignee_bi") or ""),
+            str(row.get("active_assignee_bi") or "")):
+        return True
+    if not actor:
+        return False
+    try:
+        data = await runtime.open(row.get("data"))
+    except Exception:
+        return False
+    data = data if isinstance(data, dict) else {}
+    agent = data.get("agent") if isinstance(data.get("agent"), dict) else {}
+    return actor == _text(agent.get("runBy"), 64).lower()
+
+
 async def _task(runtime, org_bi, task_id, trashed=False):
     return await runtime.d1_first(
         "SELECT * FROM organization_tasks "
@@ -1513,7 +1538,8 @@ async def _task_response(runtime, row, now, status=200, extra=None):
 
 async def _list(
         runtime, org_bi, account_bi, actor, can_manage, now,
-        marketing_only=False, department="", team="", trash=False):
+        marketing_only=False, department="", team="", trash=False,
+        role=""):
     where = ["org_bi=?", "deleted_at>0" if trash else "deleted_at=0"]
     arguments = [org_bi]
     if marketing_only:
@@ -1554,6 +1580,11 @@ async def _list(
     has_more = len(rows) > page_size and offset + page_size < \
         TASK_LIST_RESPONSE_LIMIT
     rows = rows[:page_size]
+    page_rows = len(rows)
+    rows = [
+        row for row in rows
+        if await _department_visible(runtime, row, role, account_bi, actor)
+    ]
     latest = await _latest_checkins(
         runtime, [str(row.get("task_id") or "") for row in rows or []])
     reply_stats = await _task_reply_stats_for_tasks(
@@ -1604,7 +1635,7 @@ async def _list(
         "trashRetentionMs": TRASH_RETENTION_MS,
         "offset": offset,
         "hasMore": has_more,
-        "nextOffset": offset + len(rows) if has_more else None,
+        "nextOffset": offset + page_rows if has_more else None,
         "taskLimit": TASK_LIST_RESPONSE_LIMIT,
         "marketingMembers": marketing_names if marketing_actor else [],
         "attendanceDays": (
@@ -2911,7 +2942,7 @@ async def _update_agent_status(
 
 async def _update_agent_status_batch(
         runtime, org_bi, account_bi, actor, data, can_manage, now,
-        marketing_only=False):
+        marketing_only=False, role=""):
     """Report the live state of every desktop run in one signed write.
 
     A desktop mirrors each local session's state onto its task, and the first
@@ -2965,6 +2996,9 @@ async def _update_agent_status_batch(
         row = await _task(runtime, org_bi, task_id)
         if row and marketing_only and str(
                 row.get("department") or "") != "marketing":
+            row = None
+        if row and not await _department_visible(
+                runtime, row, role, account_bi, actor):
             row = None
         error = await _apply_agent_status(
             runtime, org_bi, account_bi, actor, task_id, row, status,
@@ -3868,7 +3902,7 @@ async def _delete(
 
 
 async def _delete_batch(
-        runtime, org_bi, account_bi, actor, data, principal, now):
+        runtime, org_bi, account_bi, actor, data, principal, now, role=""):
     raw_ids = data.get("ids", data.get("taskIds"))
     if not isinstance(raw_ids, list) or not raw_ids:
         return _response(runtime, {"error": "invalid_task_ids"}, status=400)
@@ -3891,6 +3925,9 @@ async def _delete_batch(
     statuses = set()
     for task_id in ids:
         row = await _task(runtime, org_bi, task_id)
+        if row and not await _department_visible(
+                runtime, row, role, account_bi, actor):
+            row = None
         if not row:
             failures.append({"id": task_id, "error": "task_not_found"})
             statuses.add(404)
@@ -4536,7 +4573,7 @@ async def handle(runtime, path):
     if kind == "agent-status-batch":
         return await _update_agent_status_batch(
             runtime, org_bi, account_bi, actor, data, can_manage, now,
-            marketing_only=marketing_only,
+            marketing_only=marketing_only, role=role,
         )
     if kind == "delete-batch":
         if marketing_only:
@@ -4544,10 +4581,15 @@ async def handle(runtime, path):
         return await _delete_batch(
             runtime, org_bi, account_bi, actor, data,
             await _principal(runtime, org_bi, account_bi, role, permission),
-            now)
+            now, role=role)
     if kind == "action" and action == "restore":
         if marketing_only:
             return _response(runtime, {"error": "not_found"}, status=404)
+        hidden = await _task(runtime, org_bi, task_id, trashed=True) or \
+            await _task(runtime, org_bi, task_id)
+        if hidden and not await _department_visible(
+                runtime, hidden, role, account_bi, actor):
+            return _response(runtime, {"error": "task_not_found"}, status=404)
         return await _restore(
             runtime, org_bi, account_bi, actor, task_id,
             await _principal(runtime, org_bi, account_bi, role, permission),
@@ -4580,6 +4622,7 @@ async def handle(runtime, path):
                 department=department,
                 team=team,
                 trash=trash,
+                role=role,
             )
         return await _create(
             runtime, org_bi, account_bi, actor, data, can_manage, now,
@@ -4593,6 +4636,8 @@ async def handle(runtime, path):
             marketing_only
             and str(row.get("department") or "") != "marketing"
         )
+        or not await _department_visible(
+            runtime, row, role, account_bi, actor)
     ):
         return _response(runtime, {"error": "task_not_found"}, status=404)
     if kind != "attachment":

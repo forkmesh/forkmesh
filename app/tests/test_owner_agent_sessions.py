@@ -102,7 +102,7 @@ def test_owner_context_requires_the_session_account_to_own_repo_node():
             "safe_segment": lambda value: bool(value) and "/" not in value,
             "_account_session_record": account_session,
             "_account_owns_node": owns,
-            "_org_owner_of_linked_repo": lambda _env, _node, _repo, _actor: (
+            "_org_owner_agent_allowed": lambda _env, _node, _repo, _actor: (
                 asyncio.sleep(0, result=False)),
             "_profile_catalog_owner_names": lambda _env, _actor: asyncio.sleep(
                 0, result=["alice", "desktop1", "laptop"]),
@@ -142,7 +142,7 @@ def test_a_session_on_a_node_no_longer_owned_stays_readable_and_deletable():
             "_account_session_record": account_session,
             "_account_owns_node": lambda _env, _actor, _node: asyncio.sleep(
                 0, result=False),
-            "_org_owner_of_linked_repo": lambda _env, _node, _repo, _actor: (
+            "_org_owner_agent_allowed": lambda _env, _node, _repo, _actor: (
                 asyncio.sleep(0, result=False)),
             "_profile_catalog_owner_names": lambda _env, _actor: asyncio.sleep(
                 0, result=["jett", "laptop"]),
@@ -378,7 +378,7 @@ def test_org_owner_of_the_alias_may_start_owner_agents_on_its_backing_node():
             "safe_segment": lambda value: bool(value) and "/" not in value,
             "_account_session_record": account_session,
             "_account_owns_node": owns,
-            "_org_owner_of_linked_repo": org_owner,
+            "_org_owner_agent_allowed": org_owner,
             "_profile_catalog_owner_names": lambda _env, _actor: asyncio.sleep(
                 0, result=["alice"]),
             "_org_agent_error": error,
@@ -416,6 +416,130 @@ def test_org_owner_of_linked_repo_requires_the_owner_role_on_a_linking_org():
     assert asyncio.run(check(object(), "core1", "project", "bob")) is False
     assert asyncio.run(check(object(), "core1", "other", "alice")) is False
     assert asyncio.run(check(object(), "", "project", "alice")) is False
+
+
+def _consent_ns(consent, *, kind="node", owner="mary", core_nodes=()):
+    roles = {("org-a", "alice"): "owner", ("org-a", "bob"): "admin"}
+    accounts = {
+        "desk1": {"kind": kind, "owner": owner, "name": "desk1"},
+        "mary": {"kind": "user", "name": "mary", "agentOrgConsent": consent},
+    }
+
+    async def d1_all(_env, sql, node, repo):
+        assert "org_repos" in sql and "JOIN orgs" in sql
+        return [{"org_bi": "org-a", "name": "acme"}] if (
+            node, repo) == ("desk1", "project") else []
+
+    async def org_role(_env, org_bi, actor):
+        return roles.get((org_bi, actor), "")
+
+    async def account_row(_env, name):
+        rec = accounts.get(name)
+        return ("bi:" + name, dict(rec)) if rec else ("", None)
+
+    def account_kind(rec):
+        return rec.get("kind", "user")
+
+    return _load_functions(
+        "_org_owner_agent_allowed", "_agent_infrastructure_node",
+        "_node_owner_account", "_agent_org_consent_list",
+        extra={
+            "d1_all": d1_all, "_org_role": org_role,
+            "_account_row": account_row, "_account_kind": account_kind,
+            "_core_push_nodes": lambda _env: set(core_nodes),
+            "clean_string": lambda value, maximum: str(value or "")[:maximum],
+            "valid_node_name": lambda value: bool(value) and "/" not in value,
+            "MAX_NODE_NAME": 63,
+            "MAX_AGENT_ORG_CONSENT": 64,
+            "AGENT_ORG_CONSENT_FIELD": "agentOrgConsent",
+        },
+    )
+
+
+class _NoPoolEnv:
+    RUNNER_POOL_TARGET_NODES = ""
+
+
+def test_org_owner_needs_the_node_owners_consent_to_target_a_member_desktop():
+    for consent, expected in (([], False), (["other"], False),
+                              (["acme"], True)):
+        check = _consent_ns(consent)["_org_owner_agent_allowed"]
+        assert asyncio.run(check(
+            _NoPoolEnv(), "desk1", "project", "alice")) is expected, consent
+    check = _consent_ns(["acme"])["_org_owner_agent_allowed"]
+    assert asyncio.run(check(_NoPoolEnv(), "desk1", "project", "bob")) is False
+    assert asyncio.run(check(
+        _NoPoolEnv(), "desk1", "other", "alice")) is False
+    unowned = _consent_ns(["acme"], owner="")["_org_owner_agent_allowed"]
+    assert asyncio.run(unowned(
+        _NoPoolEnv(), "desk1", "project", "alice")) is False
+
+
+def test_org_owner_keeps_owner_agents_on_fleet_core_nodes():
+    check = _consent_ns([], core_nodes=("desk1",))["_org_owner_agent_allowed"]
+    assert asyncio.run(check(
+        _NoPoolEnv(), "desk1", "project", "alice")) is True
+    assert asyncio.run(check(
+        _NoPoolEnv(), "desk1", "project", "bob")) is False
+
+
+def test_node_claim_refuses_jobs_queued_without_the_owners_consent():
+    import json as _json
+    sessions = {
+        ("s-own", "bi:mary"): {"createdBy": "mary"},
+        ("s-org", "bi:alice"): {"createdBy": "alice"},
+        ("s-pool", "bi:alice"): {"createdBy": "alice", "route": "runner_pool"},
+    }
+    allowed = {"value": False}
+
+    async def d1_first(_env, sql, *args):
+        if "FROM orgs" in sql:
+            return {"org": 1} if args[0] == "org:acme" else None
+        record = sessions.get(args)
+        return {"data": _json.dumps(record)} if record else None
+
+    async def decrypt_row(_env, value):
+        return _json.loads(value)
+
+    async def owns(_env, actor, node):
+        return (actor, node) == ("mary", "desk1")
+
+    async def org_owner(_env, node, repo, actor):
+        return allowed["value"] and actor == "alice"
+
+    ns = _load_functions("_org_agent_job_consented", extra={
+        "d1_first": d1_first, "decrypt_row": decrypt_row,
+        "_account_owns_node": owns, "_org_owner_agent_allowed": org_owner,
+        "clean_string": lambda value, maximum: str(value or "")[:maximum],
+        "valid_node_name": lambda value: bool(value) and "/" not in value,
+        "MAX_NODE_NAME": 63,
+    })
+    check = ns["_org_agent_job_consented"]
+
+    def run(org_bi, session):
+        return asyncio.run(check(object(), org_bi, session, "desk1", "project"))
+
+    assert run("org:acme", "any") is True
+    assert run("bi:mary", "s-own") is True
+    assert run("bi:alice", "s-pool") is True
+    assert run("bi:alice", "s-org") is False
+    allowed["value"] = True
+    assert run("bi:alice", "s-org") is True
+    claim = ENTRY[ENTRY.index("async def repo_org_agent_jobs_handler"):]
+    claim = claim[:claim.index("\nasync def ", 10)]
+    assert claim.index("_org_agent_job_consented") < claim.index(
+        "SET status='leased'")
+
+
+def test_agent_call_sites_use_the_consent_aware_org_owner_check():
+    for source, name in ((ENTRY, "_org_agent_member_context"),
+                         (ENTRY, "_authorized_agent_claimant_key"),
+                         (ENTRY, "_agent_job_queued_by_signer"),
+                         (ROUTES, "_agent_handoff_signer")):
+        body = source[source.index("async def " + name + "("):]
+        body = body[:body.index("\nasync def ", 10)]
+        assert "_org_owner_agent_allowed(" in body, name
+        assert "_org_owner_of_linked_repo(" not in body, name
 
 
 def _pool_ns(rows, personal=None):
@@ -716,3 +840,91 @@ def test_new_agents_never_request_a_pull_request_by_default():
     assert "createPr: Boolean = true" not in android
     mcp = (repo / "tools" / "forkmesh_mcp_server.py").read_text(encoding="utf-8")
     assert "only when the user explicitly" in mcp
+
+
+def test_members_grant_and_withdraw_agent_consent_per_organization():
+    import json as _json
+    saved = {}
+    accounts = {"mary": {"name": "mary", "kind": "user"}}
+    roles = {("org:acme", "mary"): "member"}
+    audits = []
+
+    class _Headers:
+        def __init__(self, values):
+            self.values = {k.lower(): v for k, v in values.items()}
+
+        def get(self, name, default=None):
+            return self.values.get(name.lower(), default)
+
+    class _Request:
+        def __init__(self, method, body=None, headers=None):
+            self.method = method
+            self.body = body
+            self.headers = _Headers(headers or {})
+
+    async def session(_env, _request, _data):
+        return "bi:mary", dict(accounts["mary"])
+
+    async def account_row(_env, name):
+        rec = accounts.get(name)
+        return ("bi:" + name, dict(rec)) if rec else ("", None)
+
+    async def save_account(_env, name_bi, rec):
+        saved[name_bi] = rec
+        accounts[rec["name"]] = dict(rec)
+
+    async def org_row(_env, org):
+        return ("org:" + org, {"name": org}) if org in ("acme", "other") else (
+            "org:" + org, None)
+
+    async def org_role(_env, org_bi, actor):
+        return roles.get((org_bi, actor), "")
+
+    async def audit(*args):
+        audits.append(args)
+
+    async def body(request):
+        return request.body
+
+    ns = _load_functions(
+        "agent_org_consent_handler", "_agent_org_consent_list",
+        extra={
+            "ensure_schema": lambda _env: asyncio.sleep(0),
+            "method_name": lambda request: request.method,
+            "json_response": lambda data, status=200, **_k: {
+                "status": status, "data": data},
+            "bounded_json_request": body,
+            "_account_session_record": session,
+            "_account_kind": lambda rec: rec.get("kind", "user"),
+            "_account_row": account_row,
+            "_save_account": save_account,
+            "_org_row": org_row,
+            "_org_role": org_role,
+            "_audit_sensitive_action": audit,
+            "clean_string": lambda value, maximum: str(value or "")[:maximum],
+            "valid_node_name": lambda value: bool(value) and "/" not in value,
+            "MAX_NODE_NAME": 63,
+            "MAX_AGENT_ORG_CONSENT": 64,
+            "AGENT_ORG_CONSENT_FIELD": "agentOrgConsent",
+        },
+    )
+    handler = ns["agent_org_consent_handler"]
+
+    def call(method, data=None, headers=None):
+        return asyncio.run(handler(object(), _Request(method, data, headers)))
+
+    assert call("GET")["data"]["organizations"] == []
+    assert call("POST", {"org": "acme", "allow": True})["data"][
+        "organizations"] == ["acme"]
+    assert accounts["mary"]["agentOrgConsent"] == ["acme"]
+    assert call("POST", {"org": "other", "allow": True})["status"] == 403
+    assert call("POST", {"org": "acme", "allow": True},
+                {"authorization": "Bearer fmat_app"})["status"] == 403
+    assert call("POST", {"org": "acme", "allow": False})["data"][
+        "organizations"] == []
+    assert accounts["mary"]["agentOrgConsent"] == []
+    assert "agent_org_consent_handler(self.env, request)" in RUNTIME
+    dashboard = (ROOT / "public" / "dashboard" / "js" / "04-account.js"
+                 ).read_text(encoding="utf-8")
+    assert '"/api/accounts/agent-org-consent"' in dashboard
+    assert "data-org-agent-consent" in dashboard

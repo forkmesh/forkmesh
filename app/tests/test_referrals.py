@@ -402,6 +402,8 @@ def _namespace(db):
                  "_referral_burst_cohort", "_quarantine_referral_burst",
                  "_quarantine_invalid_referral",
                  "_account_users_admin_actor",
+                 "_quarantine_owner_bis", "_quarantine_repository_statement",
+                 "_quarantine_catalog_changed",
                  "_quarantine_user_account",
                  "_account_admin_quarantine_user",
                  "_account_admin_quarantine_pending",
@@ -418,6 +420,7 @@ def _namespace(db):
                  "referral_leaderboard"):
         _load_function(name, namespace)
     namespace["_cache_puts"] = cache_puts
+    namespace["QUARANTINE_HELD_PRIVATE"] = 2
     namespace["_accounts"] = accounts
     namespace["_audit_events"] = audit_events
     namespace["_verified_admin_proofs"] = verified_admin_proofs
@@ -467,6 +470,9 @@ def _stats_db(current_referral_schema=True):
         "account_bi TEXT NOT NULL,revoked_at INTEGER NOT NULL DEFAULT 0)")
     db.execute(
         "CREATE TABLE account_presence (name_bi TEXT PRIMARY KEY)")
+    db.execute(
+        "CREATE TABLE repositories (key_bi TEXT PRIMARY KEY,owner_bi TEXT,"
+        "data TEXT,is_private INTEGER NOT NULL DEFAULT 0)")
     db.execute(
         "CREATE TABLE pending_verifications "
         "(name_bi TEXT PRIMARY KEY,data TEXT NOT NULL)")
@@ -2191,3 +2197,51 @@ if __name__ == "__main__":
     test_referrals_page_is_one_composed_document_on_its_public_url()
     test_retired_plural_referrals_url_redirects_to_the_singular_page()
     test_referrals_page_shows_the_board_and_share_link()
+
+
+def test_quarantine_hides_public_repositories_and_restore_brings_them_back():
+    db = _stats_db()
+    ns = _namespace(db)
+    db.execute(
+        "UPDATE users SET data=? WHERE user_bi='bi-bob'",
+        (json.dumps({"name": "bob", "kind": "user", "status": "active"}),))
+    db.execute(
+        "INSERT INTO nodes (node_bi,user_bi,pubkey,data,name,last_seen) "
+        "VALUES (?,?,?,?,?,?)",
+        ("bi-bob-laptop", "bi-bob", "pubkey-bob-laptop", "{}",
+         "bob-laptop", 7))
+    laptop_bi = asyncio.run(ns["blind_index"](object(), "bob-laptop"))
+    db.executemany(
+        "INSERT INTO repositories (key_bi,owner_bi,data,is_private) "
+        "VALUES (?,?,?,?)",
+        [("bob/site", "bi-bob", "{}", 0),
+         ("bob/secret", "bi-bob", "{}", 1),
+         ("bob-laptop/tool", laptop_bi, "{}", 0),
+         ("alice/site", "bi-alice", "{}", 0)])
+    db.commit()
+
+    def visibility():
+        return dict(db.execute(
+            "SELECT key_bi,is_private FROM repositories").fetchall())
+
+    request = SimpleNamespace(
+        url="https://forkmesh.test/api/accounts/admin-quarantine",
+        headers={"authorization": "Bearer admin-session"},
+        payload={"target": "bob"},
+    )
+    assert asyncio.run(ns["_account_admin_quarantine_user"](
+        object(), request)).data["ok"] is True
+    assert visibility() == {
+        "bob/site": 2, "bob/secret": 1, "bob-laptop/tool": 2,
+        "alice/site": 0}
+
+    restored = SimpleNamespace(
+        url="https://forkmesh.test/api/accounts/admin-unquarantine",
+        headers={"authorization": "Bearer admin-session"},
+        payload={"target": "bob"},
+    )
+    assert asyncio.run(ns["_account_admin_unquarantine_user"](
+        object(), restored)).status == 200
+    assert visibility() == {
+        "bob/site": 0, "bob/secret": 1, "bob-laptop/tool": 0,
+        "alice/site": 0}

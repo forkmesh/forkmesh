@@ -815,6 +815,10 @@ func (a *runnerActions) runWorkflow(ctx context.Context, job runnerActionsJob, c
 	base := &runnerActionsEnv{}
 	for _, pair := range [][2]string{
 		{"HOME", filepath.Join(work, "home")},
+		{"XDG_CONFIG_HOME", filepath.Join(work, "home", ".config")},
+		{"XDG_CACHE_HOME", filepath.Join(work, "home", ".cache")},
+		{"XDG_DATA_HOME", filepath.Join(work, "home", ".local", "share")},
+		{"XDG_STATE_HOME", filepath.Join(work, "home", ".local", "state")},
 		{"TMPDIR", filepath.Join(work, "tmp")},
 		{"PATH", "/usr/local/bin:/usr/bin:/bin"},
 		{"LANG", "C.UTF-8"},

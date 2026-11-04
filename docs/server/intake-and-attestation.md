@@ -266,6 +266,29 @@ repository's pin set: the source's current state hash plus attested history
 through intake acknowledgements and merge-executor results. A repository with
 no pin at all is not publicly routable.
 
+Agreement between nodes admits a state only when a trusted node is among
+them: a core (`HOSTED_GIT_CORE_NODES`), the repository owner's node, or
+another node linked to the same owner account (`_repo_quorum_trusted_nodes`
+in `app/src/entry.py`, `trustedNodes` in the routing context). This applies
+to the catalog peer quorum (`peer_quorum_pins` and `clone_state_pins` in
+`app/src/mirrors.py`), the endpoint quorum (`_https_mirror_flagship_quorum`,
+whose lease rows carry each mirror's self-reported `integrity='ok'` and
+digest), and the per-request lagging quorum
+(`edge_routing.mismatch_is_servable`). Before this, two accounts that
+registered endpoints or catalog records in a repository's group could agree
+on a forged digest and have it pinned. A repository whose owner's node is
+gone now needs that node, a core, or an operator admission override to move
+its pins (`test_catalog_and_endpoint_quorums_need_a_trusted_voter`,
+`test_lagging_quorum_needs_a_trusted_voter`,
+`test_repo_quorum_trust_is_the_cores_and_the_owners_own_nodes`).
+
+Flagship intake (issues and pulls a mirror drains for `forkmesh/forkmesh`)
+is signed only by the cores when `HOSTED_GIT_CORE_NODES` is set, the same set
+that serves it (`_authorized_mirror_issue_signing_key`,
+`test_flagship_intake_is_signed_only_by_the_fleet_cores`). Before this the
+flagship skipped the group check entirely, so any healthy endpoint could
+drain flagship intake.
+
 ## Traps
 
 - Intake worktrees check out only `.forkmesh/`: `collaborationWorktree` adds

@@ -35,6 +35,9 @@ RULE_PRIORITY = 0
 VISITOR_PREFIX = "probe-visitor:"
 EXEMPT_PATHS = frozenset({"/health", "/readyz"})
 EXEMPT_PREFIXES = ("/api/fleet/",)
+HOST_EXEMPT_TTL_MS = 60 * 1000
+MIRROR_FRESH_MS = DAY_MS
+HOST_LIFT_ACCOUNT = "probe-ban:fleet-or-mirror-host"
 WEIGHTS = {"secret": 3, "script": 3, "cms": 2, "backup": 2, "config": 1,
            "recon": 1}
 LABELS = {
@@ -214,6 +217,7 @@ _RECON_FILE_RE = re.compile(
     r"^(?:readme|changelog|changes|history|license|install|upgrade|"
     r"release[-_]?notes|todo|version|build[-_]?info|contributing|authors)\."
     r"(?:md|txt|json|html?|rst)$|^manifest\.in$|^reconx-")
+_HOST_CACHE = {"at": None, "targets": frozenset()}
 _ALLOW_CACHE = {"key": None, "networks": ()}
 
 
@@ -330,6 +334,32 @@ def ban_target(env, value):
     return _target_key(address)
 
 
+async def host_targets(env, now):
+    now = int(now)
+    cached = _HOST_CACHE.get("at")
+    if cached is not None and 0 <= now - cached < HOST_EXEMPT_TTL_MS:
+        return _HOST_CACHE["targets"]
+    targets = set()
+    queries = (
+        ("SELECT public_ipv4 AS ip FROM autoscale_nodes "
+         "WHERE state<>'removing' AND public_ipv4<>''", ()),
+        ("SELECT source_ip AS ip FROM mirror_https_endpoints "
+         "WHERE abuse_blocked=0 AND healthy=1 AND checked_at>=? "
+         "AND source_ip<>''", (now - MIRROR_FRESH_MS,)),
+    )
+    for sql, args in queries:
+        try:
+            rows = await d1_all(env, sql, *args) or []
+        except Exception:
+            rows = []
+        for row in rows:
+            address = parse_address(dict(row).get("ip"))
+            if address is not None and address.is_global:
+                targets.add(_target_key(address))
+    _HOST_CACHE.update(at=now, targets=frozenset(targets))
+    return _HOST_CACHE["targets"]
+
+
 def _target_key(value):
     address = parse_address(value)
     if address is None:
@@ -438,6 +468,9 @@ async def observe(env, path, client, now=None, fetch_site=""):
         now = int(now or _now())
         await ensure_schema(env)
         visitor = await blind_index(env, VISITOR_PREFIX + target)
+        if target in await host_targets(env, now):
+            await _lift_host(env, visitor, target, now)
+            return "exempt"
         row = dict(await d1_first(
             env,
             "SELECT window_start,paths,bans,last_ban_at,banned_until "
@@ -552,10 +585,43 @@ async def sweep(env, now=None):
         for key, until in list(table.items()):
             if until <= now or not enforcing:
                 del table[key]
+    await _lift_hosts(env, now)
     return True
 
 
-async def lift(env, rule_id, account, now=None):
+async def _lift_host(env, visitor, target, now):
+    rule_id = rule_id_for(visitor)
+    active = await d1_first(
+        env,
+        "SELECT rule_id FROM probe_bans WHERE rule_id=? AND lifted_at=0 "
+        "AND expires_at>?", rule_id, now)
+    _forget(target)
+    if active:
+        await lift(env, rule_id, HOST_LIFT_ACCOUNT, now,
+                   action="probe_ban.lift_fleet_or_mirror_host")
+
+
+async def _lift_hosts(env, now):
+    hosts = await host_targets(env, now)
+    if not hosts:
+        return 0
+    rows = await d1_all(
+        env,
+        "SELECT rule_id,client FROM probe_bans WHERE lifted_at=0 "
+        "AND expires_at>? LIMIT ?", now, MAX_ACTIVE_BANS * 2)
+    lifted = 0
+    for row in rows or []:
+        row = dict(row)
+        client = await _open(env, row.get("client"))
+        if str(client.get("target") or "") in hosts:
+            await lift(env, row.get("rule_id"), HOST_LIFT_ACCOUNT, now,
+                       action="probe_ban.lift_fleet_or_mirror_host")
+            lifted += 1
+    return lifted
+
+
+async def lift(env, rule_id, account, now=None,
+               action="admin.console_lift_probe_ban"):
     rule_id = str(rule_id or "")
     if not rule_id.startswith(RULE_PREFIX) or len(rule_id) > 64:
         return "ban_invalid"
@@ -583,7 +649,7 @@ async def lift(env, rule_id, account, now=None):
     if client.get("target"):
         _forget(str(client["target"]))
     await _audit_sensitive_action(
-        env, account, "admin.console_lift_probe_ban", "probe_bans", rule_id,
+        env, account, action, "probe_bans", rule_id,
         "success", {"kinds": str(row.get("kinds") or ""),
                     "score": int(row.get("score") or 0)})
     return "ban_lifted"

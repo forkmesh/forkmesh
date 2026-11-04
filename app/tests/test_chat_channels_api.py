@@ -1761,3 +1761,34 @@ def test_the_creation_budget_counts_the_audit_log_not_live_rows():
     assert '"chat.channel.create"' in body
     assert "outcome='success'" in body
     assert "chat_channels" not in body
+
+
+@run_async_test
+async def test_office_room_access_is_read_only_for_auditors():
+    runtime = FakeRuntime()
+    runtime.db.execute(
+        "CREATE TABLE org_members (org_bi TEXT, member_bi TEXT, role TEXT)")
+    channel_id = "e" * 32
+    runtime.db.execute(
+        "INSERT INTO chat_channels (channel_id,name_bi,data,created_by_bi,"
+        "created_at,updated_at,key_version) VALUES (?,?,?,?,0,0,1)",
+        (channel_id, "office-name", json.dumps({
+            "name": "office/acme/general", "kind": "office",
+            "visibility": "private", "org": "acme", "room": "general"}),
+         "org-acme"))
+    for name, role in (("alice", "member"), ("bob", "auditor")):
+        runtime.db.execute(
+            "INSERT INTO chat_channel_members (channel_id,member_bi,data,"
+            "invited_by_bi,joined_at) VALUES (?,?,?,?,0)",
+            (channel_id, "bi:" + name, json.dumps({"username": name}),
+             "org-acme"))
+        runtime.db.execute(
+            "INSERT INTO org_members VALUES (?,?,?)",
+            ("org-acme", "bi:" + name, role))
+    runtime.db.commit()
+    path = f"/api/chat/channels/{channel_id}/room-access"
+    member = await api.handle(runtime.use("GET", "alice"), path)
+    auditor = await api.handle(runtime.use("GET", "bob"), path)
+    assert member["status"] == 200 and auditor["status"] == 200
+    assert "readOnly" not in member["data"]["channel"]
+    assert auditor["data"]["channel"]["readOnly"] is True

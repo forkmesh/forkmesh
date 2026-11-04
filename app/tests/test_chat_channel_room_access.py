@@ -85,7 +85,7 @@ def _helpers():
 
 def _socket_harness(channel_version=1, member=True, admin=False,
                     visibility="private", account_status="active",
-                    account_kind="user"):
+                    account_kind="user", kind="", created_by=""):
     tree = ast.parse(ENTRY_TEXT, filename=str(ENTRY))
     names = FUNCTIONS | {"_chat_channel_socket_handler", "_chat_socket_address"}
     selected = [
@@ -108,6 +108,7 @@ def _socket_harness(channel_version=1, member=True, admin=False,
             return {
                 "data": "sealed-channel",
                 "key_version": channel_version,
+                "created_by_bi": created_by,
             }
         if "FROM users" in sql:
             return {"data": "sealed-user", "is_admin": 1 if admin else 0}
@@ -117,7 +118,7 @@ def _socket_harness(channel_version=1, member=True, admin=False,
 
     async def decrypt_row(_env, data):
         if data == "sealed-channel":
-            return {"visibility": visibility}
+            return {"visibility": visibility, **({"kind": kind} if kind else {})}
         return {"status": account_status, "kind": account_kind}
 
     namespace = {
@@ -551,3 +552,46 @@ def test_runtime_adapter_and_routes_use_private_channel_gates():
     generic_room_at = route.index("room_key_from_path")
     assert api_at < generic_room_at
     assert socket_at < generic_room_at
+
+
+def test_office_channel_sockets_carry_the_organization_for_post_checks():
+    namespace, env, request_type, calls = _socket_harness(
+        kind="office", created_by="c" * 64)
+    token = namespace["_chat_channel_ticket"](env, "a" * 32, 1, "b" * 64)
+    response = asyncio.run(namespace["_chat_channel_socket_handler"](
+        env, request_type(token), "a" * 32))
+    assert response["status"] == 101
+    assert calls[-1][1]["target"].endswith(
+        "/v1/ws?account=" + "b" * 64 + "&office=" + "c" * 64)
+
+
+def test_office_chat_posts_follow_the_chat_channels_capability():
+    import organization_rbac
+    roles = {"member": "member", "auditor": "auditor", "guest": "guest",
+             "gone": None}
+
+    async def d1_first(_env, sql, *args):
+        assert "FROM org_members" in sql and args[0] == "c" * 64
+        role = roles[args[1]]
+        return {"role": role} if role else None
+
+    room_type = _room_class({
+        "_ws_attr": lambda ws, name, default=None: ws.get(name, default),
+        "_org_rbac": organization_rbac,
+        "d1_first": d1_first,
+    })
+    room = type("Room", (), {"env": object()})()
+    allowed = {
+        account: asyncio.run(room_type._office_post_allowed(
+            room, {"office_org": "c" * 64, "account_bi": account}))
+        for account in roles
+    }
+    assert allowed == {"member": True, "auditor": False, "guest": False,
+                       "gone": False}
+    assert asyncio.run(room_type._office_post_allowed(
+        room, {"account_bi": "auditor"})) is True
+    room = ENTRY_TEXT[ENTRY_TEXT.index("class ForkMeshRoom("):]
+    handler = room[room.index("async def webSocketMessage"):]
+    handler = handler[:handler.index("\n    async def ", 10)]
+    assert handler.index("_office_post_allowed") < handler.index(
+        "peer.send(message)")

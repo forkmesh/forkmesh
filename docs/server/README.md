@@ -206,9 +206,16 @@ Diagnosis: `journalctl -u forkmesh-mirror-node`,
   and commit ids, so hidden namespaces such as `refs/forkmesh/trash/`, merge
   staging and objects a hosted fork borrows from its pool are never served
   (`test_reads_resolve_only_visible_refs`). A commit id needs at least 7 hex
-  digits and is served only when a visible ref, or a force-push backup under
-  `refs/forkmesh/history/` (kept for reviews, [core push](../operations/core-push.md)),
-  contains it (`test_reads_refuse_commit_reachable_only_from_hidden_refs`).
+  digits and is served only when a visible ref contains it
+  (`test_reads_refuse_commit_reachable_only_from_hidden_refs`). A commit that
+  only a force-push backup under `refs/forkmesh/history/` holds
+  ([core push](../operations/core-push.md)) is served only when a pull
+  record on the pulls ledger names it (`headOid`, `headBaseOid`,
+  `syncedHeadOid` in `pull.md` or a `synchronize` event), so a review can
+  still show the pushed-over head. Before 2026-11-01 every backup was
+  readable by id, so a force-push that removed a leaked secret left it
+  servable to anyone who knew the old id
+  (`test_force_push_backups_are_served_only_as_pull_anchors`).
 - **That check costs one walk per refs state.** On the first commit-id read of
   a cache generation the gateway lists the visible refs and, when they reach
   at most `VISIBLE_COMMIT_SET_LIMIT` (50,000) commits, keeps the commit set

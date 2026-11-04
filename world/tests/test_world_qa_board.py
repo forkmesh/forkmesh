@@ -481,3 +481,10 @@ def test_share_and_saved_views_live_in_the_fixed_square_right_rail():
     # The ordinary right-click menu is untouched.
     assert 'renderer.domElement.addEventListener("contextmenu"' not in SCENE
     assert ".world-share-view-button" in CSS
+
+
+def test_security_department_tasks_never_reach_the_public_qa_deck():
+    source = WORLD_QA_PATH.read_text(encoding="utf-8")
+    query = source[source.index('"SELECT task_id,department,team,qa_status'):]
+    query = query[:query.index("WORLD_QA_MAX_CARDS")]
+    assert "department<>'security'" in query

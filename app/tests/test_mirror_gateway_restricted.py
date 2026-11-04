@@ -132,14 +132,34 @@ def test_runner_grant_reads_a_restricted_repository(served):
 
 def test_health_proof_covers_a_restricted_repository(served):
     app, _commit = served
-    response = app.dispatch(
-        "GET",
+    target = (
         "/health?nonce=nonce_0123456789abcdef&issuedAt=%d&owner=alice"
-        "&repo=secret" % NOW,
-        {}, b"")
+        "&repo=secret" % NOW)
+    response = app.dispatch("GET", target, capability_headers(target), b"")
     assert response.status == 200
     proof = json.loads(response.body)["repositoryProof"]
     assert proof["available"] is True
     assert "git-receive-pack" in proof["operations"]
+    assert ("forkmesh-masked-proxy-v1\nmirror-a\nGET\n" + target) in (
+        app.verifier.messages[-1][0])
     # The node-wide public count is unchanged by the restricted entry.
     assert json.loads(response.body)["publicRepositoryCount"] == 1
+
+
+def test_health_hides_a_restricted_repository_without_a_capability(served):
+    app, _commit = served
+    target = (
+        "/health?nonce=nonce_0123456789abcdef&issuedAt=%d&owner=alice"
+        "&repo=secret" % NOW)
+    forged = capability_headers(target)
+    forged["X-ForkMesh-Signature"] = "not-the-router"
+    stale = capability_headers(target)
+    stale["X-ForkMesh-Issued-At"] = str(NOW - 10 * 60_000)
+    for headers in ({}, forged, stale):
+        response = app.dispatch("GET", target, headers, b"")
+        assert response.status == 200
+        proof = json.loads(response.body)["repositoryProof"]
+        assert proof["available"] is False
+        assert proof["integrity"] == "unavailable"
+        assert proof["operations"] == []
+        assert proof["refsSha256"] == gateway.hashlib.sha256(b"").hexdigest()

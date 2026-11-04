@@ -1055,3 +1055,24 @@ def test_core_owners_add_retired_cores_only_while_hosting_is_on():
     assert hosted_git.hosted_core_owners(env) == hosted_repos.core_owners(env)
     env.HOSTED_GIT_CORE_NODES = ""
     assert hosted_repos.core_owners(env) == []
+
+
+def test_a_quarantined_owners_hosted_repository_is_served_as_private():
+    world = World()
+    module = install(world)
+    repo_id = _created(world, module)
+    primary = hosted_repos.rendezvous(list(CORES), repo_id)[0]
+    item = signed_replicas(module, primary, {}).data["repositories"][0]
+    assert item["visibility"] == "public"
+    world.db.execute("UPDATE repositories SET is_private=2")
+    world.db.commit()
+    held = signed_replicas(
+        module, primary, {}, request_id="request_0123456789ac"
+    ).data["repositories"][0]
+    assert held["id"] == repo_id and held["visibility"] == "private"
+    world.db.execute("UPDATE repositories SET is_private=0")
+    world.db.commit()
+    back = signed_replicas(
+        module, primary, {}, request_id="request_0123456789ad"
+    ).data["repositories"][0]
+    assert back["visibility"] == "public"

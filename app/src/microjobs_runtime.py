@@ -221,6 +221,8 @@ class _MicrojobsRuntime:
         account_bi = str(account_bi or "")
         if not account_bi or not valid_node_pubkey(str(public_key or "")):
             return False
+        if await _account_key_revoked(self.env, account_bi, public_key):
+            return False
         node = await d1_first(
             self.env,
             "SELECT node_bi,user_bi FROM nodes WHERE pubkey=?", public_key)

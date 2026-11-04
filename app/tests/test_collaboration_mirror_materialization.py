@@ -535,7 +535,8 @@ def test_mirror_intake_uses_group_membership_plus_fresh_endpoint_integrity():
     assert "abuse_blocked=0" in source
     assert "forkmesh_active=1" not in source
     assert 'await _org_repo_node(env, "forkmesh", "forkmesh")' in source
-    assert "(not flagship_intake and node not in allowed_nodes)" in source
+    assert "((not flagship_intake or intake_cores is not None)" in source
+    assert "and node not in allowed_nodes)" in source
     assert "_claimed_node_signing_pubkeys" in source
     context = _function_source("_https_mirror_public_context")
     assert '"sourceNode": clean_string(' in context
@@ -629,3 +630,27 @@ def test_mirror_intake_ignores_an_alias_not_linked_to_the_routed_repository():
 
     assert (key, node) == ("", "")
     assert calls == [("acme", "widgets")]
+
+
+class _FlagshipRequest:
+    url = ("https://code.example.org/api/repo/forkmesh/forkmesh/issues"
+           "?mirror=1&owner=node1&ts=1000000&sig=s")
+
+
+def _flagship_intake(cores):
+    calls = []
+    ns = _mirror_intake_namespace(
+        calls, {("forkmesh", "forkmesh"): "fmnext-n1"})
+
+    async def flagship_cores(_env, owner, repo):
+        assert (owner, repo) == ("forkmesh", "forkmesh")
+        return cores
+    ns["_flagship_core_nodes"] = flagship_cores
+    return asyncio.run(ns["_authorized_mirror_issue_signing_key"](
+        object(), _FlagshipRequest(), "fmnext-n1", "forkmesh"))
+
+
+def test_flagship_intake_is_signed_only_by_the_fleet_cores():
+    assert _flagship_intake(frozenset({"fmnext-n3", "fmnext-n4"})) == ("", "")
+    assert _flagship_intake(frozenset({"node1"})) == ("pk-node1", "node1")
+    assert _flagship_intake(None) == ("pk-node1", "node1")

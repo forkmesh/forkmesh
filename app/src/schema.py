@@ -351,7 +351,8 @@ SCHEMA_STATEMENTS = [
         forkmesh_operations_json TEXT NOT NULL DEFAULT '[]',
         forkmesh_active INTEGER NOT NULL DEFAULT 0,
         health_message TEXT NOT NULL DEFAULT '',
-        updated_at INTEGER NOT NULL)""",
+        updated_at INTEGER NOT NULL,
+        source_ip TEXT NOT NULL DEFAULT '')""",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_mirror_https_endpoint_name "
     "ON mirror_https_endpoints(node_name)",
     "CREATE INDEX IF NOT EXISTS idx_mirror_https_endpoint_health "

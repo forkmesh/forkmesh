@@ -866,6 +866,19 @@ def test_registration_is_signed_account_bound_and_manifest_verified():
     assert durable_write < activation
 
 
+def test_registration_records_the_mirrors_edge_address_only_when_it_moves():
+    handler = _function_source("https_mirror_endpoint_handler")
+    response = _function_source("https_mirror_endpoint_handler").split(
+        "async def registration_response(health_active):", 1)[1]
+    assert "source_ip = _account_session_client_ip(request)" in response
+    assert 'source_ip != str(\n                (existing or {}).get("source_ip") or "")' in response
+    assert "UPDATE mirror_https_endpoints SET source_ip=?" in response
+    assert "abuse_blocked,forkmesh_active,forkmesh_refs_sha256,\n                  source_ip" in handler
+    client_ip = _function_source("_account_session_client_ip")
+    assert 'request.headers.get("cf-connecting-ip")' in client_ip
+    assert "x-forwarded-for" not in client_ip.lower().split('"""')[-1]
+
+
 def test_unchanged_fresh_endpoint_renewal_is_a_zero_write_fast_path():
     namespace = {"HTTPS_MIRROR_ENDPOINT_FAST_RENEW_MS": 5 * 60_000}
     exec(_function_source("_https_mirror_endpoint_renewal_state"), namespace)
@@ -1174,7 +1187,7 @@ def _source_dark_group_namespace(
         *, source_state, mirror_state, endpoints, address="mirror11",
         linked=False, override=False, source_kind="local-node",
         include_local_source=False, owner_merge=None, mirror_states=None,
-        cores=()):
+        cores=(), trusted=("mirror11", "mirror9", "mirror14")):
     """Run the real routing-context builder over one simulated mirror group.
 
     `address` is the /<owner>/forkmesh the visitor actually requested, so a
@@ -1250,6 +1263,9 @@ def _source_dark_group_namespace(
     async def linked_node(_env, _org, _repo):
         return "mirror11" if linked else ""
 
+    async def trusted_nodes(_env, _owner):
+        return frozenset(trusted)
+
     namespace = _public_context_cache_namespace()
     namespace.update({
         "hosted_core_nodes": lambda _env: list(cores),
@@ -1280,6 +1296,7 @@ def _source_dark_group_namespace(
         "repo_mirror_same_group": mirror_policy.repo_mirror_same_group,
         "decrypt_row": _identity_async,
         "blind_index": _blind_index_async,
+        "_repo_quorum_trusted_nodes": trusted_nodes,
     })
     namespace["hmac"] = hmac
     exec(_function_source("_instance_solo_flagship_node"), namespace)
@@ -1371,6 +1388,15 @@ def test_agreeing_mirrors_serve_a_group_whose_source_of_truth_went_dark():
         mirror_state=live,
         mirror_states={"mirror9": live, "mirror14": "8" * 64},
         endpoints=(("mirror9", live), ("mirror14", "8" * 64)),
+    )
+    assert context["pins"] == {dead}
+    assert context["nodes"] == {"mirror11"}
+
+    context, _ = _source_dark_group_namespace(
+        source_state=dead,
+        mirror_state=live,
+        endpoints=(("mirror9", live), ("mirror14", live)),
+        trusted=("mirror11",),
     )
     assert context["pins"] == {dead}
     assert context["nodes"] == {"mirror11"}
@@ -2012,8 +2038,9 @@ def test_flagship_override_renews_fresh_divergent_endpoint_generations():
             },
         }]
 
-    async def quorum(_env, allowed_nodes):
+    async def quorum(_env, allowed_nodes, trusted=None):
         assert allowed_nodes == {"source-node", "mirror9"}
+        assert trusted == {"source-node", "mirror9"}
         return {
             "pins": frozenset(),
             "nodes": frozenset(),
@@ -2027,6 +2054,10 @@ def test_flagship_override_renews_fresh_divergent_endpoint_generations():
     async def no_cores(_env, owner, repo):
         assert (owner, repo) == ("source-node", "forkmesh")
         return None
+
+    async def trusted_nodes(_env, owner):
+        assert owner == "source-node"
+        return frozenset({"source-node", "mirror9"})
 
     namespace = {
         "re": re,
@@ -2044,6 +2075,7 @@ def test_flagship_override_renews_fresh_divergent_endpoint_generations():
         "valid_node_name": lambda value: bool(
             re.fullmatch(r"[a-z0-9][a-z0-9-]{0,79}", str(value or ""))),
         "_https_mirror_flagship_quorum": quorum,
+        "_repo_quorum_trusted_nodes": trusted_nodes,
         "_admission_override_active": override_active,
         "_flagship_core_nodes": no_cores,
         "Date": type("Clock", (), {"now": staticmethod(lambda: 1_000)}),
@@ -2070,8 +2102,9 @@ def test_flagship_override_renews_fresh_divergent_endpoint_generations():
     async def fleet_cores(_env, owner, repo):
         return frozenset({"fmnext-n3", "fmnext-n4"})
 
-    async def core_quorum(_env, allowed_nodes):
+    async def core_quorum(_env, allowed_nodes, trusted=None):
         assert allowed_nodes == frozenset({"fmnext-n3", "fmnext-n4"})
+        assert trusted is None
         return {"pins": frozenset(), "nodes": frozenset(),
                 "nodeDigests": {"fmnext-n3": first}}
     namespace["_flagship_core_nodes"] = fleet_cores
@@ -2623,10 +2656,12 @@ def _signed_repository_proof_namespace(operations, *, pin, node="mirror40"):
     """Namespace whose endpoint answers one authentic signed proof."""
     now = 1_787_270_534_000
     fetches = []
+    signed_health = []
     digest = routing.operations_sha256(sorted(operations))
 
-    async def fetch_text(target, _max_bytes, _timeout):
+    async def fetch_text(target, _max_bytes, _timeout, extra_headers=None):
         fetches.append(target)
+        signed_health.append(dict(extra_headers or {}))
         query = parse_qs(target.split("?", 1)[1])
         message = routing.repository_health_challenge(
             node, query["nonce"][0], int(query["issuedAt"][0]),
@@ -2688,9 +2723,43 @@ def _signed_repository_proof_namespace(operations, *, pin, node="mirror40"):
         "HTTPS_MIRROR_REPO_PROOF_EDGE_PREFIX": "proof:",
         "HTTPS_MIRROR_MANIFEST_MAX_BYTES": 16_384,
         "HTTPS_MIRROR_CONTROL_FETCH_TIMEOUT_SECONDS": 5,
+        "urlparse": urlparse,
+        "_https_mirror_router_public_key": lambda _env: "router-public",
+        "_https_mirror_router_seed": lambda _env: "router-seed",
+        "ed25519_sign": _signed_health_capability,
+        "signed_health": signed_health,
     }
+    exec(_function_source("_https_mirror_health_capability_headers"), namespace)
     exec(_function_source("_https_mirror_repository_proof"), namespace)
     return namespace, fetches
+
+
+async def _signed_health_capability(_public_key, _seed, message):
+    return "router-signature:" + hashlib.sha256(message).hexdigest()
+
+
+def test_repository_health_probe_carries_a_router_capability_for_its_target():
+    pin = "c" * 64
+    namespace, fetches = _signed_repository_proof_namespace(["blob"], pin=pin)
+    endpoint = {
+        "node": "mirror40",
+        "baseUrl": "https://mirror40.example.test",
+        "publicKey": "public-key",
+    }
+    context = {"owner": "alice", "repo": "secret", "pins": {pin}}
+    assert asyncio.run(namespace["_https_mirror_repository_proof"](
+        {}, dict(endpoint), context, "blob"))
+    headers = namespace["signed_health"][-1]
+    parsed = urlparse(fetches[-1])
+    message = routing.request_message(
+        "mirror40", "GET", parsed.path + "?" + parsed.query,
+        routing.empty_body_sha256(), headers["X-ForkMesh-Request-Id"],
+        int(headers["X-ForkMesh-Issued-At"]))
+    assert parsed.path == "/health"
+    assert headers["X-ForkMesh-Node"] == "mirror40"
+    assert headers["X-ForkMesh-Body-Sha256"] == routing.empty_body_sha256()
+    assert headers["X-ForkMesh-Signature"] == (
+        "router-signature:" + hashlib.sha256(message.encode()).hexdigest())
 
 
 def test_an_unadvertised_operation_is_not_an_endpoint_failure():
@@ -3217,6 +3286,9 @@ def _proxy_namespace(responses, cached_response=None, *, direct=False):
             })
             self.body = "body:%d" % status
 
+        async def arrayBuffer(self):
+            return _Bytes(_LAGGING_ADVERTISEMENT)
+
     async def fetch_with_timeout(target, init, timeout):
         attempts.append(target)
         reply = responses[len(attempts) - 1]
@@ -3289,6 +3361,9 @@ def _proxy_namespace(responses, cached_response=None, *, direct=False):
             response_headers=lambda headers: dict(headers),
         ),
         "hashlib": hashlib,
+        "hmac": hmac,
+        "advertised_refs_canonical": __import__(
+            "git_http").advertised_refs_canonical,
         "_b64url_encode": lambda raw: "request-id",
         "_random_bytes": lambda count: b"\0" * count,
         "Date": SimpleNamespace(now=lambda: 0),
@@ -3358,6 +3433,9 @@ def test_a_path_every_mirror_agrees_is_absent_answers_not_found_not_outage():
     assert answer.payload == {"error": "not_found"}
 
 
+_LAGGING_REFS = [("refs/heads/main", "b" * 40)]
+
+
 def _run_lagging_clone(responses, operation, digests, sticky=""):
     """Drive the proxy while every mirror's signed refs are ahead of the pins."""
     proxy, attempts = _proxy_namespace(responses)
@@ -3404,7 +3482,8 @@ def test_clone_is_served_while_the_pins_lag_two_agreeing_mirrors():
     # adhoc #243: `git clone` answered 503 mirror_unavailable for the minute or
     # two after every ref move, because both mirrors already signed the new
     # refs digest while the pin set still named the old one.
-    ahead = {"mirror9": "b" * 64, "mirror14": "b" * 64}
+    ahead = {"mirror9": _refs_digest(_LAGGING_REFS),
+             "mirror14": _refs_digest(_LAGGING_REFS)}
     answer, attempts = _run_lagging_clone([200], "git-info-refs", ahead)
     assert answer.init["status"] == 200
     assert answer.init["headers"]["X-ForkMesh-Served-By"] == "mirror14"
@@ -3448,7 +3527,7 @@ def _run_single_core_clone(monkeypatch, pushing, node="forkmesh",
     import runner_leases
     proxy, attempts = _proxy_namespace([200, 200])
     namespace = proxy.__globals__
-    ahead = "b" * 64
+    ahead = _refs_digest(_LAGGING_REFS)
     calls = {"pushing": [], "admit": []}
 
     async def lagging_proof(_env, endpoint, _context, _operation, **kwargs):
@@ -3710,8 +3789,8 @@ def test_git_transport_never_downgrades_an_outage_to_repository_not_found():
     assert answer.payload == {"error": "mirror_unavailable"}
 
 
-def test_git_transport_redirects_to_a_proven_direct_mirror_before_proxying():
-    proxy, attempts = _proxy_namespace([], direct=True)
+def test_git_transport_proxies_even_when_a_mirror_offers_a_direct_url():
+    proxy, attempts = _proxy_namespace([403, 403], direct=True)
     request = SimpleNamespace(
         url=("https://forkmesh.com/forkmesh/forkmesh.git/info/refs"
              "?service=git-upload-pack"),
@@ -3719,17 +3798,11 @@ def test_git_transport_redirects_to_a_proven_direct_mirror_before_proxying():
     )
     answer = asyncio.run(proxy(
         object(), request, "forkmesh", "forkmesh", "git-info-refs"))
-    assert answer.status == 307
-    assert answer.headers["Location"] == (
-        "https://git-a.invalid/forkmesh/forkmesh.git/info/refs")
-    assert answer.headers["X-ForkMesh-Transport"] == "direct-mirror"
-    assert attempts == []
-    # Git rebases the remote onto the redirect, so upload-pack never returns
-    # to the relay and no clone pin is written for it.
-    source = _function_source("_https_mirror_proxy")
-    direct = source[source.index("if direct_target:"):
-                    source.index("status=307")]
-    assert "_https_mirror_route_advance" not in direct
+    assert answer.status == 503
+    assert attempts == [
+        "https://a.invalid/v1/repositories/forkmesh/forkmesh/git-info-refs",
+        "https://b.invalid/v1/repositories/forkmesh/forkmesh/git-info-refs",
+    ]
 
 
 def test_a_signed_push_reaches_the_one_node_that_accepts_receive_pack():
@@ -3790,14 +3863,14 @@ def test_flagship_context_and_quorum_never_count_outside_mirrors():
     assert "flagship_cores = await _flagship_core_nodes(env, owner_l, repo_l)" in context
     assert "catalog_group_nodes = set(flagship_cores)" in context
     assert context.index("catalog_group_nodes = set(flagship_cores)") < context.index(
-        "_https_mirror_flagship_quorum(\n                env, catalog_group_nodes)")
+        "_https_mirror_flagship_quorum(\n                env, catalog_group_nodes, trusted=trusted_voters)")
     assert "not linked_target and group_mirrors and flagship_cores is None" in context
     override = context.index("allowed, current_nodes = _flagship_core_routing(")
     assert context.index("_owner_merge_pin_state(") < override
     assert override < context.index('"nodes": allowed,')
     accepted = _function_source("_https_mirror_accepted_forkmesh_refs")
     assert 'cores = await _flagship_core_nodes(env, owner, "forkmesh")' in accepted
-    assert "env, group_nodes if cores is None else cores)" in accepted
+    assert "env, group_nodes if cores is None else cores," in accepted
 
 
 def test_two_outside_mirrors_cannot_serve_or_pin_the_flagship():
@@ -3825,3 +3898,382 @@ def test_two_outside_mirrors_cannot_serve_or_pin_the_flagship():
     )
     assert forged in before["pins"]
     assert {"mirror9", "mirror14"}.issubset(before["nodes"])
+
+
+class _Bytes:
+    def __init__(self, data):
+        self.data = bytes(data)
+
+    def to_py(self):
+        return self.data
+
+
+def _pkt(payload):
+    return ("%04x" % (len(payload) + 4)).encode() + payload
+
+
+def _advertisement(refs):
+    service = b"# service=git-upload-pack\n"
+    lines = [_pkt(b"%s %s\n" % (sha.encode(), name.encode()))
+             for name, sha in refs]
+    return _pkt(service) + b"0000" + b"".join(lines) + b"0000"
+
+
+_LAGGING_ADVERTISEMENT = _advertisement(_LAGGING_REFS)
+
+
+def _refs_digest(refs):
+    import git_http
+    return hashlib.sha256(git_http.advertised_refs_canonical(
+        _advertisement(refs)).encode("utf-8")).hexdigest()
+
+
+def _verified_proxy(adverts, claims, pins=(), git_protocol=""):
+    import git_http
+    proxy, attempts = _proxy_namespace([])
+    namespace = proxy.__globals__
+    sent = []
+    mismatches = []
+
+    class Upstream:
+        def __init__(self, body):
+            self.status = 200
+            self.headers = _WorkersHeaders({
+                "content-type": "application/x-git-upload-pack-advertisement"})
+            self.body = None
+            self._raw = body
+
+        async def arrayBuffer(self):
+            return self._raw
+
+    async def fetch_with_timeout(target, init, _timeout):
+        attempts.append(target)
+        sent.append(dict(init["headers"]))
+        return Upstream(adverts[target.split("/")[2]])
+
+    async def candidates(_env, _context, _country, sticky="", **_kwargs):
+        return [{"node": node, "baseUrl": "https://%s" % node,
+                 "refsSha256": claim} for node, claim in claims]
+
+    async def context(_env, owner, repo):
+        return {"owner": owner, "repo": repo, "repoBi": "repo-bi",
+                "currentPins": set(pins), "pins": set(pins)}
+
+    async def mismatch(_env, endpoint, served, claimed):
+        mismatches.append((endpoint["node"], served, claimed))
+
+    namespace.update({
+        "js_fetch_with_timeout": fetch_with_timeout,
+        "_https_mirror_request_candidates": candidates,
+        "_https_mirror_public_context": context,
+        "_https_mirror_record_advertisement_mismatch": mismatch,
+        "advertised_refs_canonical": git_http.advertised_refs_canonical,
+        "hmac": hmac,
+        "Uint8Array": SimpleNamespace(new=_Bytes),
+        "_to_js": lambda value: value,
+    })
+    request = SimpleNamespace(
+        url=("https://forkmesh.com/alice/widgets.git/info/refs"
+             "?service=git-upload-pack"),
+        headers={"git-protocol": git_protocol} if git_protocol else {},
+    )
+    answer = asyncio.run(proxy(
+        object(), request, "alice", "widgets", "git-info-refs"))
+    return answer, attempts, sent, mismatches
+
+
+def test_info_refs_is_proxied_and_a_forged_advertisement_is_refused():
+    honest = [("refs/heads/main", "1" * 40), ("refs/tags/v1", "2" * 40)]
+    forged = honest + [("refs/heads/evil", "9" * 40)]
+    pin = _refs_digest(honest)
+    answer, attempts, sent, mismatches = _verified_proxy(
+        {"liar.invalid": _advertisement(forged),
+         "honest.invalid": _advertisement(honest)},
+        [("liar.invalid", pin), ("honest.invalid", pin)],
+        pins=[pin], git_protocol="version=2")
+    assert attempts == [
+        "https://liar.invalid/v1/repositories/alice/widgets/git-info-refs",
+        "https://honest.invalid/v1/repositories/alice/widgets/git-info-refs",
+    ]
+    assert mismatches == [("liar.invalid", _refs_digest(forged), pin)]
+    assert answer.body.to_py() == _advertisement(honest)
+    assert answer.init["status"] == 200
+    assert all("Git-Protocol" not in headers for headers in sent)
+
+
+def test_info_refs_from_only_tampered_mirrors_answers_unavailable():
+    honest = [("refs/heads/main", "1" * 40)]
+    forged = [("refs/heads/main", "8" * 40)]
+    pin = _refs_digest(honest)
+    answer, attempts, _sent, mismatches = _verified_proxy(
+        {"liar.invalid": _advertisement(forged)},
+        [("liar.invalid", pin)], pins=[pin])
+    assert len(attempts) == 1 and len(mismatches) == 1
+    assert answer.status == 503
+    assert answer.payload == {"error": "mirror_unavailable"}
+
+
+def test_info_refs_accepts_the_proven_lagging_digest_it_was_admitted_on():
+    moved = [("refs/heads/main", "3" * 40)]
+    answer, _attempts, sent, mismatches = _verified_proxy(
+        {"node.invalid": _advertisement(moved)},
+        [("node.invalid", _refs_digest(moved))], pins=["0" * 64],
+        git_protocol="version=1")
+    assert mismatches == []
+    assert answer.body.to_py() == _advertisement(moved)
+    assert sent[0]["Git-Protocol"] == "version=1"
+
+
+def test_git_transport_never_redirects_clients_to_a_mirror():
+    source = _function_source("_https_mirror_proxy")
+    assert "direct_git_target_url" not in source
+    assert "status=307" not in source
+    assert 'if git_protocol != "version=2":' in source
+    assert "advertised_refs_canonical(" in source
+
+
+def test_lagging_quorum_needs_a_trusted_voter():
+    details = {"reason": "refs_mismatch", "signed": True,
+               "refsSha256": "c" * 64, "operations": ["git-info-refs"]}
+    agreeing = {}
+    trusted = {"owner-node"}
+    assert not routing.mismatch_is_servable(
+        "git-info-refs", "sybil-a", dict(details), agreeing, trusted=trusted)
+    assert not routing.mismatch_is_servable(
+        "git-info-refs", "sybil-b", dict(details), agreeing, trusted=trusted)
+    assert routing.mismatch_is_servable(
+        "git-info-refs", "owner-node", dict(details), agreeing,
+        trusted=trusted)
+
+
+def test_catalog_and_endpoint_quorums_need_a_trusted_voter():
+    forged = "f" * 64
+    target = {"owner": "alice", "name": "widgets", "rootCommit": "root",
+              "source": "remote-clone", "stateHash": "1" * 64}
+    rows = [{"key_bi": node, "data": {
+        "owner": node, "machineName": node, "name": "widgets",
+        "rootCommit": "root", "source": "remote-clone", "stateHash": forged}}
+        for node in ("sybil-a", "sybil-b")]
+    assert mirror_policy.peer_quorum_pins(target, rows) == {forged}
+    assert mirror_policy.peer_quorum_pins(
+        target, rows, trusted={"alice", "fmnext-n3"}) == set()
+    rows.append({"key_bi": "alice-laptop", "data": dict(
+        rows[0]["data"], owner="alice-laptop", machineName="alice-laptop")})
+    assert mirror_policy.peer_quorum_pins(
+        target, rows, trusted={"alice", "alice-laptop"}) == {forged}
+
+    now = 1_700_000_000_000
+    required = {"git-info-refs", "git-upload-pack", "tree", "blob", "raw"}
+
+    async def d1_all(_env, _sql, *_params):
+        return [{"node_name": node, "checked_at": now,
+                 "forkmesh_refs_sha256": forged,
+                 "forkmesh_operations_json": json.dumps(sorted(required))}
+                for node in ("sybil-a", "sybil-b")]
+
+    namespace = {
+        "Date": type("D", (), {"now": staticmethod(lambda: now)}),
+        "MAX_NODE_NAME": 80,
+        "clean_string": lambda value, limit: str(value or "")[:limit],
+        "valid_node_name": lambda value: bool(
+            re.fullmatch(r"[a-z0-9][a-z0-9-]{0,79}", value)),
+        "d1_all": d1_all,
+        "https_routing": SimpleNamespace(ENDPOINT_STALE_MS=600_000),
+        "HTTPS_MIRROR_REQUIRED_FORKMESH_OPERATIONS": required,
+        "json": json,
+        "re": re,
+    }
+    exec(_function_source("_instance_solo_flagship_node"), namespace)
+    exec(_function_source("_https_mirror_flagship_quorum"), namespace)
+    quorum = namespace["_https_mirror_flagship_quorum"]
+    assert asyncio.run(quorum(object(), None, now=now))["pins"] == {forged}
+    assert asyncio.run(quorum(
+        object(), None, now=now, trusted={"alice"}))["pins"] == frozenset()
+
+
+def test_repo_quorum_trust_is_the_cores_and_the_owners_own_nodes():
+    records = {
+        "alice-laptop": {"owner": "alice"},
+        "alice": {"nodes": ["alice-laptop", "alice-phone"]},
+    }
+
+    async def account_row(_env, name):
+        return name, records.get(name)
+
+    namespace = {
+        "hosted_core_nodes": lambda _env: ["fmnext-n3"],
+        "_account_row": account_row,
+        "valid_node_name": lambda value: bool(
+            re.fullmatch(r"[a-z0-9][a-z0-9-]{0,79}", str(value or ""))),
+    }
+    exec(_function_source("_owned_nodes"), namespace)
+    exec(_function_source("_repo_quorum_trusted_nodes"), namespace)
+    trusted = asyncio.run(namespace["_repo_quorum_trusted_nodes"](
+        object(), "alice-laptop"))
+    assert trusted == frozenset(
+        {"fmnext-n3", "alice-laptop", "alice", "alice-phone"})
+    context = _function_source("_https_mirror_public_context")
+    assert "trusted=trusted_voters" in context
+    assert '"trustedNodes": trusted_voters,' in context
+    assert context.count("trusted=trusted_voters") == 4
+
+
+def _git(*args, cwd=None, env=None, data=None):
+    import subprocess
+    return subprocess.run(
+        ["git", *args], cwd=cwd, env=env, input=data,
+        capture_output=True, check=False)
+
+
+def _clone_through_relay(tmp_path, served, pin):
+    import gzip
+    import os
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    proxy, _attempts = _proxy_namespace([])
+    namespace = proxy.__globals__
+    import git_http
+
+    class Upstream:
+        def __init__(self, body, content_type):
+            self.status = 200
+            self.headers = _WorkersHeaders({"content-type": content_type})
+            self.body = body
+
+        async def arrayBuffer(self):
+            return self.body
+
+    async def fetch(target, init, _timeout):
+        headers = init["headers"]
+        git_env = dict(os.environ)
+        if headers.get("Git-Protocol"):
+            git_env["GIT_PROTOCOL"] = headers["Git-Protocol"]
+        if target.endswith("git-info-refs"):
+            out = _git("upload-pack", "--stateless-rpc", "--advertise-refs",
+                       str(served), env=git_env).stdout
+            return Upstream(
+                _pkt(b"# service=git-upload-pack\n") + b"0000" + out,
+                "application/x-git-upload-pack-advertisement")
+        body = init["body"].to_py()
+        if headers.get("Content-Encoding") == "gzip":
+            body = gzip.decompress(body)
+        out = _git("upload-pack", "--stateless-rpc", str(served),
+                   env=git_env, data=body).stdout
+        return Upstream(out, "application/x-git-upload-pack-result")
+
+    async def candidates(_env, _context, _country, sticky="", **_kwargs):
+        return [{"node": "mirror9", "baseUrl": "https://mirror9.invalid",
+                 "refsSha256": pin}]
+
+    async def context(_env, owner, repo):
+        return {"owner": owner, "repo": repo, "repoBi": "repo-bi",
+                "currentPins": {pin}, "pins": {pin}}
+
+    async def mismatch(*_args):
+        return False
+
+    namespace.update({
+        "js_fetch_with_timeout": fetch,
+        "js_fetch_until_response": fetch,
+        "_https_mirror_request_candidates": candidates,
+        "_https_mirror_public_context": context,
+        "_https_mirror_record_advertisement_mismatch": mismatch,
+        "advertised_refs_canonical": git_http.advertised_refs_canonical,
+        "hmac": hmac,
+        "Uint8Array": SimpleNamespace(new=_Bytes),
+        "_to_js": lambda value: value,
+        "method_name": lambda request: request.method,
+        "HTTPS_MIRROR_GIT_INITIAL_RESPONSE_TIMEOUT_SECONDS": 5,
+    })
+
+    class RelayRequest:
+        def __init__(self, method, url, headers, body):
+            self.method = method
+            self.url = url
+            self.headers = {k.lower(): v for k, v in headers.items()}
+            self._body = body
+
+        async def bytes(self):
+            return self._body
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *_args):
+            pass
+
+        def relay(self, method):
+            length = int(self.headers.get("content-length") or 0)
+            body = self.rfile.read(length) if length else b""
+            operation = (
+                "git-info-refs" if "/info/refs" in self.path
+                else "git-upload-pack")
+            answer = asyncio.run(proxy(
+                object(), RelayRequest(
+                    method, "http://relay.test" + self.path,
+                    dict(self.headers), body),
+                "alice", "widgets", operation))
+            init = getattr(answer, "init", None)
+            if init is None:
+                self.send_response(answer.status)
+                self.end_headers()
+                return
+            payload = answer.body
+            payload = payload.to_py() if hasattr(payload, "to_py") else payload
+            self.send_response(init["status"])
+            self.send_header(
+                "Content-Type", init["headers"].get("content-type", ""))
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def do_GET(self):
+            self.relay("GET")
+
+        def do_POST(self):
+            self.relay("POST")
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        home = tmp_path / "home"
+        home.mkdir(exist_ok=True)
+        env = {"PATH": os.environ.get("PATH", ""), "HOME": str(home),
+               "GIT_TERMINAL_PROMPT": "0", "GIT_CONFIG_NOSYSTEM": "1"}
+        destination = tmp_path / ("clone-%d" % len(list(tmp_path.iterdir())))
+        result = _git("-c", "protocol.version=2", "clone", "--quiet",
+                      "http://127.0.0.1:%d/alice/widgets.git" %
+                      server.server_address[1], str(destination), env=env)
+        return result, destination
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_a_real_clone_is_refused_when_the_mirror_serves_a_ref_map_off_the_pin(
+        tmp_path):
+    work = tmp_path / "work"
+    _git("init", "-q", "-b", "main", str(work))
+    for key, value in (("user.email", "a@example.test"), ("user.name", "A")):
+        _git("config", key, value, cwd=work)
+    (work / "README").write_text("honest\n")
+    _git("add", "README", cwd=work)
+    _git("commit", "-q", "-m", "honest", cwd=work)
+    honest = tmp_path / "honest.git"
+    _git("clone", "-q", "--bare", str(work), str(honest))
+    listed = _git("for-each-ref", "--sort=refname",
+                  "--format=%(objectname) %(refname)",
+                  "refs/heads", "refs/tags", cwd=honest).stdout.decode()
+    pin = hashlib.sha256(listed.strip("\n").encode()).hexdigest()
+
+    ok, cloned = _clone_through_relay(tmp_path, honest, pin)
+    assert ok.returncode == 0, ok.stderr
+    assert (cloned / "README").read_text() == "honest\n"
+
+    (work / "README").write_text("tampered\n")
+    _git("commit", "-q", "-am", "tampered", cwd=work)
+    tampered = tmp_path / "tampered.git"
+    _git("clone", "-q", "--bare", str(work), str(tampered))
+    refused, dest = _clone_through_relay(tmp_path, tampered, pin)
+    assert refused.returncode != 0
+    assert not (dest / "README").exists()

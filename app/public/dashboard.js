@@ -766,88 +766,15 @@
     } catch (_) {}
   }
 
-  // Existing browser sessions can predate the portable mirror cookie. Login
-  // responses mint it now, but a person who stayed signed in across that
-  // rollout would otherwise look logged out on their first direct mirror
-  // visit until the next focus revalidation. Refresh the signed, domain-wide
-  // grant in the background at most once every four hours (its lifetime is
-  // twelve), without holding up App paint or introducing a poll.
-  const PORTABLE_SESSION_REFRESH_KEY = "forkmesh.portableSessionRefresh.v2";
-  const PORTABLE_SESSION_REFRESH_MS = 4 * 60 * 60 * 1000;
-  const PORTABLE_SESSION_RETRY_MS = 5 * 60 * 1000;
-
-  async function ensurePortableControllerSession(force = false) {
-    const hostname = String(location.hostname || "").toLowerCase();
-    if (hostname !== "forkmesh.com" && !OFFICIAL_SERVICE_HOSTS.has(hostname)) {
-      return null;
-    }
-    const session = readSession();
-    const nodeName = String(session?.nodeName || "").trim().toLowerCase();
-    if (!nodeName || !session?.sessionToken) return null;
-
-    const now = Date.now();
-    let marker = {};
+  function clearMirrorHandoffMarker() {
     try {
-      marker = JSON.parse(
-        localStorage.getItem(PORTABLE_SESSION_REFRESH_KEY) || "{}",
-      ) || {};
+      const url = new URL(location.href);
+      if (!url.searchParams.has("fm_handoff")) return;
+      url.searchParams.delete("fm_handoff");
+      window.history?.replaceState?.(window.history.state, "", url.pathname + url.search + url.hash);
     } catch (_) {}
-    if (
-      !force
-      && String(marker.nodeName || "").toLowerCase() === nodeName
-      && (
-        now - Number(marker.refreshedAt || 0) < PORTABLE_SESSION_REFRESH_MS
-        || now - Number(marker.attemptedAt || 0) < PORTABLE_SESSION_RETRY_MS
-      )
-    ) {
-      return null;
-    }
-    const pendingMarker = {
-      nodeName,
-      refreshedAt: Number(marker.refreshedAt || 0),
-      attemptedAt: now,
-    };
-    try {
-      localStorage.setItem(
-        PORTABLE_SESSION_REFRESH_KEY, JSON.stringify(pendingMarker),
-      );
-    } catch (_) {}
-    try {
-      const token = String(session.sessionToken || "");
-      const response = await fetch("/api/accounts/sessions", {
-        method: "GET",
-        credentials: "same-origin",
-        cache: "no-store",
-        headers: {
-          accept: "application/json",
-          ...(token && token !== "cookie"
-            ? { authorization: `Bearer ${token}` }
-            : {}),
-        },
-      });
-      if (!response.ok) return null;
-      // "current" is the relay declining to re-sign a grant this browser was
-      // handed within the refresh window; the cookie it holds is still good.
-      const portable = response.headers.get("x-forkmesh-portable-session");
-      if (portable !== "issued" && portable !== "current") return null;
-      const refreshed = { ...pendingMarker, refreshedAt: Date.now() };
-      try {
-        localStorage.setItem(
-          PORTABLE_SESSION_REFRESH_KEY, JSON.stringify(refreshed),
-        );
-      } catch (_) {}
-      return refreshed;
-    } catch (_) {
-      return null;
-    }
   }
 
-  // A portable login is carried between forkmesh.com hosts by the signed,
-  // domain-scoped HttpOnly cookie. localStorage cannot cross origins, though,
-  // so a mirror opened for the first time would otherwise render as signed
-  // out even while its own API already recognizes the user. Hydrate only from
-  // the mirror's local session endpoint; the controller hosts already manage
-  // their richer account session and must not gain another background request.
   async function hydratePortableMirrorSession() {
     const hostname = String(location.hostname || "").toLowerCase();
     if (hostname === "forkmesh.com" || OFFICIAL_SERVICE_HOSTS.has(hostname)) {
@@ -2481,6 +2408,7 @@
       // URL still fans directly to the freshest HTTPS node.
       .sort((left, right) =>
         Number(right === location.origin) - Number(left === location.origin))
+      .filter((origin) => !mutation || origin === location.origin)
       .map((origin) => `${origin}${request.pathname}${request.search}`);
   }
 
@@ -8242,6 +8170,7 @@
     last_owner: "An organization must keep at least one owner.",
     unknown_account: "No account exists with that name.",
     not_a_member: "That account is not a member of this organization.",
+    not_org_member: "You are not a member of this organization.",
     bad_role: "Invalid role.",
     bad_permission: "Invalid permission.",
     member_required: "Enter a member account name.",
@@ -8481,6 +8410,40 @@
       root, name, profile, members, teams, repos, fediverse, botTokens);
     void loadOrgPullRules(root, name);
     void loadOrgModeration(root, name);
+    void loadOrgAgentConsent(root, name);
+  }
+
+  async function loadOrgAgentConsent(root, name) {
+    const box = root.querySelector("[data-org-agent-consent]");
+    const status = root.querySelector("[data-org-agent-consent-status]");
+    if (!box) return;
+    try {
+      const data = await orgApiRequest("GET", "/api/accounts/agent-org-consent");
+      box.checked = (data.organizations || []).includes(name);
+      box.disabled = false;
+    } catch (error) {
+      if (status) status.textContent = error.message;
+      return;
+    }
+    box.addEventListener("change", async () => {
+      box.disabled = true;
+      try {
+        const data = await orgApiRequest(
+          "POST", "/api/accounts/agent-org-consent",
+          { org: name, allow: box.checked });
+        box.checked = (data.organizations || []).includes(name);
+        if (status) {
+          status.textContent = box.checked
+            ? "Owners of this organization can start agents on your desktops."
+            : "Only you can start agents on your desktops.";
+        }
+      } catch (error) {
+        box.checked = !box.checked;
+        if (status) status.textContent = error.message;
+      } finally {
+        box.disabled = false;
+      }
+    });
   }
 
   async function loadOrgPullRules(root, name) {
@@ -8865,6 +8828,13 @@
       memberAndTeamSettings +
       '<section class="mt-6"><h4 class="text-sm font-semibold text-foreground">Linked repos</h4>' +
         '<div class="mt-2 grid gap-2">' + repoRows + "</div>" + repoAdd + "</section>" +
+      '<section class="mt-6" data-org-agent-consent-section>' +
+        '<h4 class="text-sm font-semibold text-foreground">Agents on your desktops</h4>' +
+        '<p class="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">Repositories you link here stay on your own desktop. Owners of this organization can start agents on that desktop only when you allow it. Your own agents are not affected.</p>' +
+        '<label class="mt-2 inline-flex items-center gap-2 text-xs font-semibold text-foreground">' +
+          '<input data-org-agent-consent type="checkbox" class="h-4 w-4" disabled /> Let this organization\'s owners start agents on my desktops</label>' +
+        '<p data-org-agent-consent-status class="mt-1 min-h-4 text-xs text-muted-foreground"></p>' +
+      "</section>" +
       digestControls +
       '<section class="mt-6" data-org-pull-rules-section>' +
         '<h4 class="text-sm font-semibold text-foreground">Pull request rules</h4>' +
@@ -49721,17 +49691,10 @@ Your reply
         && target.origin !== location.origin
         && /^mirror[0-9]+\.forkmesh\.com$/i.test(target.hostname)
       ) {
-        // Keep the visible and final URL direct. The refresh only asks the
-        // current App origin to mint the domain-wide, signed HttpOnly grant;
-        // the mirror validates it locally and never receives the App bearer.
         event.preventDefault();
-        directMirrorLink.setAttribute("aria-busy", "true");
-        try {
-          await ensurePortableControllerSession(true);
-        } finally {
-          directMirrorLink.removeAttribute("aria-busy");
-        }
-        location.assign(destination);
+        location.assign(
+          `/api/accounts/mirror-handoff?to=${encodeURIComponent(destination)}`,
+        );
         return;
       }
     }
@@ -60946,7 +60909,7 @@ Your reply
     watchHomeRedirectSetting();
     installErrorActions();
     preconnectRememberedDirectMirrors();
-    void ensurePortableControllerSession();
+    clearMirrorHandoffMarker();
     await hydratePortableMirrorSession();
     await restoreControllerSession();
     if (!repoAddressesKnown()) {

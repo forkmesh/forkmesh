@@ -98,7 +98,16 @@ SCHEMA_VERSION = 1
 CAPABILITY_WINDOW_MS = 60_000
 MAX_REQUEST_BODY = 8 * 1024 * 1024
 VISIBLE_REF_PREFIXES = ("refs/heads/", "refs/tags/", "refs/pr/", "refs/remotes/origin/")
-COMMIT_ID_VISIBLE_REF_PREFIXES = VISIBLE_REF_PREFIXES + ("refs/forkmesh/history/",)
+COMMIT_ID_VISIBLE_REF_PREFIXES = VISIBLE_REF_PREFIXES
+PULL_ANCHOR_LEDGER_REFS = ("refs/heads/forkmesh/pulls", "refs/heads/forkmesh/pull")
+PULL_ANCHOR_RECORD_KEYS = ("headOid", "headBaseOid", "syncedHeadOid")
+PULL_ANCHOR_RECORD_RE = re.compile(
+    r"^\.forkmesh/pulls/[1-9][0-9]{0,8}/(?:revisions/[1-9][0-9]{0,8}/)?pull\.md$")
+PULL_ANCHOR_SYNC_RE = re.compile(
+    r"^\.forkmesh/pulls/[1-9][0-9]{0,8}/[0-9]{4,}-synchronize\.md$")
+MAX_PULL_ANCHOR_LEDGERS = 5000
+MAX_PULL_ANCHOR_FILES = 20_000
+MAX_PULL_ANCHOR_BYTES = 32 * 1024 * 1024
 COMMIT_ID_MIN_HEX = 7
 MAX_VISIBLE_COMMIT_MEMO = 1024
 VISIBLE_COMMIT_SET_LIMIT = 50_000
@@ -5137,6 +5146,9 @@ class GitRepository:
         self._visible_refs: frozenset[str] = frozenset()
         self._visible_tips: frozenset[str] = frozenset()
         self._visible_commits: frozenset[bytes] | None = None
+        self._pull_anchor_lock = threading.Lock()
+        self._pull_anchor_key = 0
+        self._pull_anchor_commits: frozenset[bytes] = frozenset()
         # Process-unique and advanced after an in-process receive-pack. A
         # daemon generation reload creates fresh repository objects, so a
         # response can never cross a validated refs/config boundary.
@@ -5279,7 +5291,8 @@ class GitRepository:
         if FULL_COMMIT_ID_RE.fullmatch(commit_id):
             names, _tips, commits = self._visible_index()
             if commits is not None and not names.intersection(candidates):
-                if bytes.fromhex(commit_id) in commits:
+                if (bytes.fromhex(commit_id) in commits
+                        or self._commit_is_pull_anchored(commit_id)):
                     return commit_id
                 raise GatewayError("repository ref was not found")
         for candidate in candidates:
@@ -5391,6 +5404,112 @@ class GitRepository:
         return frozenset(names), frozenset(tips), commits
 
     def _commit_is_visible(self, commit: str) -> bool:
+        return (self._commit_on_visible_ref(commit)
+                or self._commit_is_pull_anchored(commit))
+
+    def _commit_is_pull_anchored(self, commit: str) -> bool:
+        generation = self.cache_generation
+        if not self._pull_anchor_lock.acquire(
+                timeout=VISIBLE_COMMIT_WALK_WAIT_SECONDS):
+            raise GitError("repository visibility check is busy")
+        try:
+            if self._pull_anchor_key != generation:
+                self._pull_anchor_commits = self._build_pull_anchor_reach()
+                self._pull_anchor_key = generation
+            anchored = self._pull_anchor_commits
+        finally:
+            self._pull_anchor_lock.release()
+        return bytes.fromhex(commit) in anchored
+
+    def _build_pull_anchor_reach(self) -> frozenset[bytes]:
+        ledgers = sorted({
+            oid for oid in _run_git(
+                self.git_dir,
+                ["for-each-ref", "--count=%d" % MAX_PULL_ANCHOR_LEDGERS,
+                 "--format=%(objectname)", *PULL_ANCHOR_LEDGER_REFS],
+                max_output=MAX_PULL_ANCHOR_LEDGERS * 66,
+            ).decode("ascii", "replace").split()
+            if FULL_COMMIT_ID_RE.fullmatch(oid)
+        })
+        if not ledgers:
+            return frozenset()
+        _names, tips, _commits = self._visible_index()
+        _acquire_visible_commit_walk()
+        try:
+            listing = _run_git(
+                self.git_dir,
+                ["grep", "-l", "-z", "-I", "--no-color",
+                 "-e", "^headOid: ", "-e", "^headBaseOid: ",
+                 "-e", "^syncedHeadOid: ", "-e", "^type: synchronize$",
+                 *ledgers, "--", ".forkmesh/pulls"],
+                max_output=16 * 1024 * 1024,
+                allow_exit_one=True,
+            )
+            names = []
+            for item in listing.decode("utf-8", "replace").split("\x00"):
+                tree, _, path = item.partition(":")
+                if (FULL_COMMIT_ID_RE.fullmatch(tree) and "\n" not in path
+                        and (PULL_ANCHOR_RECORD_RE.fullmatch(path)
+                             or PULL_ANCHOR_SYNC_RE.fullmatch(path))):
+                    names.append(item)
+                if len(names) >= MAX_PULL_ANCHOR_FILES:
+                    break
+            anchors: set[str] = set()
+            if names:
+                output = _run_git(
+                    self.git_dir,
+                    ["cat-file", "--batch"],
+                    input_bytes="".join(name + "\n" for name in names).encode("utf-8"),
+                    max_output=MAX_PULL_ANCHOR_BYTES + len(names) * 160,
+                )
+                cursor = 0
+                for name in names:
+                    line_end = output.find(b"\n", cursor)
+                    if line_end < 0:
+                        break
+                    header = output[cursor:line_end].split()
+                    cursor = line_end + 1
+                    if len(header) != 3 or header[1] != b"blob":
+                        continue
+                    try:
+                        size = int(header[2])
+                    except ValueError:
+                        break
+                    end = cursor + size
+                    if size < 0 or end > len(output):
+                        break
+                    values = _front_matter_values(
+                        output[cursor:end].decode("utf-8", "replace"))
+                    cursor = end + 1
+                    if name.endswith("/pull.md"):
+                        found = [values.get(key, "") for key in PULL_ANCHOR_RECORD_KEYS]
+                    elif values.get("type") == "synchronize":
+                        found = [values.get("after", "")]
+                    else:
+                        found = []
+                    anchors.update(
+                        value.lower() for value in found
+                        if FULL_COMMIT_ID_RE.fullmatch(value.lower()))
+            if not anchors:
+                return frozenset()
+            reach = _run_git(
+                self.git_dir,
+                ["-c", "core.commitGraph=true", "rev-list", "--ignore-missing",
+                 "--max-count=%d" % VISIBLE_COMMIT_SET_LIMIT, "--stdin"],
+                input_bytes=("\n".join(
+                    sorted(anchors) + ["^" + tip for tip in sorted(tips)]
+                ) + "\n").encode("ascii"),
+                max_output=(VISIBLE_COMMIT_SET_LIMIT + 1) * 66,
+            ).split()
+        except GitError:
+            return frozenset()
+        finally:
+            _visible_commit_walks.release()
+        return frozenset(
+            bytes.fromhex(item.decode("ascii")) for item in reach
+            if FULL_COMMIT_ID_RE.fullmatch(item.decode("ascii", "ignore")))
+
+    def _commit_on_visible_ref(self, commit: str) -> bool:
         _names, tips, commits = self._visible_index()
         if commit in tips:
             return True
@@ -10278,8 +10397,50 @@ class DashboardService:
             # read-only API routes below.
             and repository_key in self.application.repositories
         ):
+            bounce = self._handoff_bounce(parsed, headers)
+            if bounce is not None:
+                return bounce
             return self._serve_page(DASHBOARD_REPO_ASSET)
         return self._not_found_page()
+
+    def _handoff_bounce(
+        self, parsed: Any, headers: Mapping[str, str]
+    ) -> GatewayResponse | None:
+        canonical = self.config.dashboard_canonical_origin
+        if not canonical:
+            return None
+        try:
+            public = urlsplit(self.config.public_origin)
+        except ValueError:
+            return None
+        host = str(public.hostname or "").lower()
+        if public.scheme != "https" or not MIRROR_HANDOFF_HOST_RE.fullmatch(host):
+            return None
+        normalized = {
+            str(key).lower(): str(value) for key, value in headers.items()
+        }
+        if (
+            normalized.get("sec-fetch-mode", "") != "navigate"
+            or normalized.get("sec-fetch-dest", "") != "document"
+            or MIRROR_HANDOFF_MARKER in parse_qs(
+                parsed.query, keep_blank_values=True)
+            or self._portable_session(headers) is not None
+        ):
+            return None
+        destination = "https://" + host + parsed.path + (
+            "?" + parsed.query if parsed.query else "")
+        return GatewayResponse(
+            303,
+            "text/plain; charset=utf-8",
+            b"",
+            {
+                "Location": canonical.rstrip("/")
+                + "/api/accounts/mirror-handoff?"
+                + urlencode({"to": destination}),
+                "Cache-Control": "no-store, max-age=0, must-revalidate",
+                "Referrer-Policy": "no-referrer",
+            },
+        )
 
     # -- static assets ------------------------------------------------------
 
@@ -10696,26 +10857,14 @@ class DashboardService:
             0,
             int((int(session["exp"]) - self.application.clock_ms()) / 1000),
         )
-        try:
-            public_host = str(
-                urlsplit(self.config.public_origin).hostname or ""
-            ).lower()
-        except ValueError:
-            public_host = ""
-        domain = (
-            "; Domain=.forkmesh.com"
-            if public_host == "forkmesh.com"
-            or public_host.endswith(".forkmesh.com")
-            else ""
-        )
         return GatewayResponse(
             303,
             "text/plain; charset=utf-8",
             b"",
             {
-                "Location": next_path,
+                "Location": _with_handoff_marker(next_path, "done"),
                 "Set-Cookie": (
-                    "forkmesh_portable=" + grant + "; Path=/" + domain
+                    "forkmesh_portable=" + grant + "; Path=/"
                     + "; Max-Age=%d; HttpOnly; Secure; SameSite=Strict"
                     % max_age
                 ),
@@ -13331,10 +13480,8 @@ class GatewayApplication:
                 repository = self.repositories.get(
                     (owner, repository_name.lower())
                 )
-                if repository is None:
-                    # The proof names only availability and a refs digest; the
-                    # routing Worker needs it to admit a node for a restricted
-                    # repository it is about to reach with a capability.
+                if repository is None and self._health_capability_valid(
+                        query_text, headers):
                     repository = self.restricted_repositories.get(
                         (owner, repository_name.lower()))
                 if repository is None:
@@ -13409,6 +13556,16 @@ class GatewayApplication:
             # signed challenges and capability routes retain no CORS access.
             result.headers["Access-Control-Allow-Origin"] = "*"
         return result
+
+    def _health_capability_valid(
+        self, query_text: str, headers: Mapping[str, str]
+    ) -> bool:
+        try:
+            _request_id, body_hash, _issued, _now = self._capability_from_headers(
+                "GET", "/health?" + query_text, headers)
+        except GatewayError:
+            return False
+        return hmac.compare_digest(body_hash, hashlib.sha256(b"").hexdigest())
 
     def _node_logs(
         self, method: str, raw_query: str, headers: Mapping[str, str]
@@ -13924,6 +14081,22 @@ def _decode_org_pull_rules(value: str) -> str:
 def _safe_download_filename(value: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9._ -]+", "_", value).strip(" .")
     return (cleaned or "file")[:180]
+
+
+MIRROR_HANDOFF_MARKER = "fm_handoff"
+MIRROR_HANDOFF_HOST_RE = re.compile(r"mirror[0-9]+\.forkmesh\.com")
+
+
+def _with_handoff_marker(path: str, value: str) -> str:
+    target = urlsplit(path)
+    pairs = [
+        (key, item)
+        for key, items in parse_qs(target.query, keep_blank_values=True).items()
+        if key != MIRROR_HANDOFF_MARKER
+        for item in items
+    ]
+    pairs.append((MIRROR_HANDOFF_MARKER, value))
+    return target.path + "?" + urlencode(pairs)
 
 
 def _active_media_type(value: str) -> bool:

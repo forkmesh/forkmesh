@@ -844,7 +844,7 @@ def signed_refs_lag(operation, details):
     return digest
 
 
-def mismatch_is_servable(operation, node, details, agreeing):
+def mismatch_is_servable(operation, node, details, agreeing, trusted=None):
     """Whether a signed proof that differs only in its refs digest may serve.
 
     Pins lag the fleet. After main moves, every mirror serves the new refs
@@ -886,7 +886,7 @@ def mismatch_is_servable(operation, node, details, agreeing):
         return False
     nodes = agreeing.setdefault(digest, set())
     nodes.add(node_name)
-    return len(nodes) >= 2
+    return len(nodes) >= 2 and (trusted is None or bool(nodes & set(trusted)))
 
 
 def merge_unavailable_reason(candidate_count, reasons):

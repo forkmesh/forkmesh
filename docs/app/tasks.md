@@ -80,6 +80,19 @@ light theme.
 - **Trash** has no count until the trash is loaded (no extra request per view).
 - Avatar counts are open tasks only and ignore search and tab.
 
+### Security department
+
+A task in department `security` (`RESTRICTED_DEPARTMENTS` in
+`world/src/world_office_tasks.py`) is visible only to organization owners and
+admins, its creator, its assignee or active assignee, and the account named as
+its agent's `runBy`. Everyone else gets `task_not_found` for reads, edits,
+restore, batch delete and agent-status reports, and the list leaves it out
+(`nextOffset` still counts it, so paging does not repeat rows). Such tasks
+never reach the public World QA deck. Security tasks hold unfixed
+vulnerability details, which every member could read before 2026-11-01
+(`test_security_tasks_are_visible_only_to_admins_and_their_people`,
+`test_security_department_tasks_never_reach_the_public_qa_deck`).
+
 ### Where it lives
 
 The toolbar markup exists in two files that must change together:

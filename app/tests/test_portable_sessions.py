@@ -143,65 +143,53 @@ def _entry_functions(*names):
     ]
 
 
-def test_session_reads_do_not_resign_a_young_portable_grant():
-    """Load/focus reads reuse the browser's grant instead of signing again."""
-    import json
+def _cookie_value(request, name):
+    for part in str(request.headers.get("cookie") or "").split(";"):
+        key, sep, value = part.strip().partition("=")
+        if sep and key == name:
+            return value
+    return ""
 
-    _public, token = _encoded_token(expires_at=NOW + 6 * 60 * 60 * 1000)
-    session_token = "v2." + "s" * 32 + "." + "x" * 43
-    signed = []
 
-    async def portable(_env, _token, _rec):
-        signed.append(True)
-        return "v1.fresh", NOW + 1000
-
-    clock = {"now": NOW + 60_000}
+def _portable_cookie_namespace():
     namespace = {
-        "ACCOUNT_SESSION_TOKEN_RE": re.compile(
-            r"^v2\.([A-Za-z0-9_-]{24,64})\.([A-Za-z0-9_-]{32,96})$"),
-        "Date": SimpleNamespace(now=lambda: clock["now"]),
-        "MAX_NODE_NAME": 63,
         "PORTABLE_SESSION_COOKIE": "forkmesh_portable",
-        "PORTABLE_SESSION_REISSUE_MS": 4 * 60 * 60 * 1000,
         "_append_set_cookie": lambda response, value: response.cookies.append(
             value),
-        "_portable_session_cookie": lambda *args: "forkmesh_portable=fresh",
+        "_cookie_value": _cookie_value,
         "_portable_session_cookie_domain": lambda _env, _request: (
             ".forkmesh.com"),
-        "_portable_session_token": portable,
-        "clean_string": lambda value, maximum: str(value or "")[:maximum],
-        "json": json,
-        "portable_sessions": portable_sessions,
     }
     for source in _entry_functions(
-            "_portable_session_cookie_current",
+            "_clear_portable_session_cookie",
             "_append_portable_session_cookie"):
         exec(source, namespace)
-    append = namespace["_append_portable_session_cookie"]
+    return namespace
 
-    def run(cookie, rec=None, session=session_token, **kwargs):
+
+def test_the_app_never_issues_a_domain_wide_grant_and_expires_the_old_one():
+    namespace = _portable_cookie_namespace()
+    append = namespace["_append_portable_session_cookie"]
+    session_token = "v2." + "s" * 32 + "." + "x" * 43
+
+    def run(cookie, **kwargs):
         response = SimpleNamespace(headers={}, cookies=[])
         request = SimpleNamespace(headers={"cookie": cookie})
         asyncio.run(append(
-            object(), request, response, session,
-            rec or {"name": "alice"}, **kwargs))
+            object(), request, response, session_token, {"name": "alice"},
+            **kwargs))
         return response
 
-    held = "forkmesh_account=x; forkmesh_portable=" + token
-    reused = run(held, reuse_current=True)
-    assert reused.headers["X-ForkMesh-Portable-Session"] == "current"
-    assert reused.cookies == [] and signed == []
-
-    # Login (no reuse flag), a missing cookie, another account's or another
-    # session's grant, and a grant past the refresh window are all re-signed.
-    assert run(held).headers["X-ForkMesh-Portable-Session"] == "issued"
-    assert run("", reuse_current=True).cookies == ["forkmesh_portable=fresh"]
-    assert run(held, rec={"name": "mallory"}, reuse_current=True).cookies
-    other = "v2." + "t" * 32 + "." + "x" * 43
-    assert run(held, session=other, reuse_current=True).cookies
-    clock["now"] = NOW + 4 * 60 * 60 * 1000
-    assert run(held, reuse_current=True).cookies
-    assert len(signed) == 5
+    fresh = run("forkmesh_account=x")
+    assert fresh.cookies == [] and fresh.headers == {}
+    assert run("", reuse_current=True).cookies == []
+    held = run("forkmesh_account=x; forkmesh_portable=v1.old")
+    assert held.cookies == [
+        "forkmesh_portable=; Path=/; Domain=.forkmesh.com; Max-Age=0; "
+        "HttpOnly; Secure; SameSite=Strict"
+    ]
+    entry = (ROOT / "app" / "src" / "entry.py").read_text(encoding="utf-8")
+    assert not re.search(r"(?<!\w)_portable_session_cookie\(", entry)
 
 
 def test_controller_handoff_posts_grant_only_to_official_mirror_body():
@@ -249,7 +237,21 @@ def test_controller_handoff_posts_grant_only_to_official_mirror_body():
         "urlparse": urlparse,
         "valid_node_name": lambda value: bool(re.fullmatch(
             r"[a-z0-9][a-z0-9-]{0,62}", value)),
+        "quote": quote,
+        "MIRROR_HANDOFF_MARKER": "fm_handoff",
     }
+    namespace.update({
+        "PORTABLE_SESSION_COOKIE": "forkmesh_portable",
+        "_cookie_value": _cookie_value,
+        "_portable_session_cookie_domain": lambda _env, _request: (
+            ".forkmesh.com"),
+        "_append_set_cookie": lambda response, value: (
+            response.headers.setdefault("set-cookie", value)),
+    })
+    for source in _entry_functions(
+            "_clear_portable_session_cookie",
+            "_append_portable_session_cookie"):
+        exec(source, namespace)
     exec(__import__("ast").get_source_segment(entry, function), namespace)
     destination = (
         "https://mirror37.forkmesh.com/forkmesh/forkmesh?theme=dark"
@@ -258,6 +260,7 @@ def test_controller_handoff_posts_grant_only_to_official_mirror_body():
         object(),
         SimpleNamespace(
             method="GET",
+            headers={},
             url="https://app.forkmesh.com/api/accounts/mirror-handoff?to="
             + quote(destination, safe=""),
         ),
@@ -280,6 +283,7 @@ def test_controller_handoff_posts_grant_only_to_official_mirror_body():
         object(),
         SimpleNamespace(
             method="GET",
+            headers={},
             url=(
                 "https://app.forkmesh.com/api/accounts/mirror-handoff?to="
                 "https%3A%2F%2Fattacker.example%2Fforkmesh%2Fforkmesh"
@@ -287,3 +291,30 @@ def test_controller_handoff_posts_grant_only_to_official_mirror_body():
         ),
     ))
     assert rejected.status == 400
+
+    def signed_out_lookup(_env, _token, touch=True):
+        async def none():
+            return "", None, ""
+        return none()
+
+    namespace["_account_session_lookup"] = signed_out_lookup
+    namespace["_request_account_session_token"] = (
+        lambda request, _body: ("", True))
+    back = asyncio.run(namespace["_account_mirror_handoff"](
+        object(),
+        SimpleNamespace(
+            method="GET",
+            headers={"cookie": "forkmesh_portable=v1.old"},
+            url="https://app.forkmesh.com/api/accounts/mirror-handoff?to="
+            + quote(
+                "https://mirror37.forkmesh.com/forkmesh/forkmesh"
+                "?tab=issues&fm_handoff=x", safe=""),
+        ),
+    ))
+    assert back.status == 303
+    assert back.headers["location"] == (
+        "https://mirror37.forkmesh.com/forkmesh/forkmesh"
+        "?tab=issues&fm_handoff=none")
+    assert back.headers["cache-control"].startswith("no-store")
+    assert "Max-Age=0" in back.headers["set-cookie"]
+    assert "Domain=.forkmesh.com" in back.headers["set-cookie"]

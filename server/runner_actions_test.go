@@ -125,6 +125,11 @@ func TestRunnerActionsRunsStepsInAFreshWorkspaceAndStopsAtAFailure(t *testing.T)
 	if !strings.Contains(joined, "HOME="+filepath.Join(a.b.cfg.WorkRoot, runnerActionsDir)) {
 		t.Fatalf("HOME must be the run's own scratch home: %v", seen)
 	}
+	for _, name := range []string{"XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME"} {
+		if !strings.Contains(joined, name+"="+filepath.Join(a.b.cfg.WorkRoot, runnerActionsDir)) {
+			t.Fatalf("%s must be inside the run's own scratch home: %v", name, seen)
+		}
+	}
 	entries, _ := os.ReadDir(filepath.Join(a.b.cfg.WorkRoot, runnerActionsDir))
 	if len(entries) != 0 {
 		t.Fatalf("the run workspace was left behind: %v", entries)

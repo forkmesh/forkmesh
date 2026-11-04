@@ -3389,6 +3389,10 @@ class Default:
                         "/api/accounts/push-test/"):
             return await push_test_handler(self.env, request)
 
+        if url.path in ("/api/accounts/agent-org-consent",
+                        "/api/accounts/agent-org-consent/"):
+            return await agent_org_consent_handler(self.env, request)
+
         # What the phone reads back after one of those alerts lands: the
         # newest unread notifications rendered for a lock screen, so the
         # notification service extension can add the actor's portrait and the

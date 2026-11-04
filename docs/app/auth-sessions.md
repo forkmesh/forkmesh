@@ -25,6 +25,23 @@ and the World. Part of [the App docs](README.md).
   heartbeat, finalize, rotate as the old or the new key), and a later desktop
   login replaces it. So revoking a stolen first desktop untrusts its key, and
   it cannot rotate to a successor the owner cannot see.
+- Every other check that trusts the primary key reads it through
+  `_trusted_primary_pubkey`, which answers "" when the key's device row is
+  revoked or disabled: `_owner_pubkey` (private-repo view tokens and every
+  owner-key check built on it), link-code, link-self and link-grant
+  signatures, ownership-transfer confirm, contribution snapshots, repository
+  subscriptions, the public profile's `pubkey` (clients verify admin
+  moderation signatures with it) and the microjobs node-key ownership check.
+  This also covers keys revoked before revoke-time clearing existed, which
+  stay on `rec["pubkey"]` until the next desktop login.
+  `test_revoked_primary_key_paths.py` fails a function in `entry.py`,
+  `route_handlers.py` or `microjobs_runtime.py` that verifies a signature
+  with a record's `pubkey` without going through the helper or
+  `_account_key_revoked`.
+- `_account_owns_node` (every owner-gated web action on a node's repository)
+  takes the node record's `owner` as the answer when it names one; the
+  user's `nodes` list counts only for a node record with no owner. A stale
+  list left on another account by a relink never grants ownership.
 - `POST /api/accounts/rotate` also needs `newSig`: the successor key signs
   `forkmesh-rotate-accept-v1\n<account>\n<oldPubkey>\n<newPubkey>\n<ts>`
   (`ForkMeshIdentity::acceptRotation` on the desktop). A request without it
@@ -137,6 +154,15 @@ digits, 30 seconds); other accounts may enroll optionally.
     answer is `bad_totp` and send it as `totp`; the dashboard also sends its
     bearer token when it is not in cookie mode, so the own-session waiver
     applies there too.
+- Login refuses with 429 while the caller's source key or source+name key is
+  locked, even for the correct password, until the lock expires
+  (`_login_source_locked_until`, checked before the password). An attacker
+  can only lock the budgets of its own address, so the real user, signing in
+  from anywhere else, is never locked out. A request with no client address
+  falls back to the account-wide `login-local:` key, and that key, like
+  `login-totp:<name>`, still never refuses a correct password. Before
+  2026-11-01 no lock refused a correct password, so a locked attacker only saw
+  a different error code and kept guessing.
 - Address budgets charge an IPv6 address by its /64 (`_client_source_bucket`),
   the smallest block one customer is routed, so rotating addresses inside it
   buys no new guesses: login, signup, the signup backup check, node
@@ -214,6 +240,20 @@ Independent mirror dashboards accept a signed, narrow grant
 (`app/src/portable_sessions.py`): type `forkmesh.portable-session`, audience
 `forkmesh-mirror-dashboard`, at most 12 hours, verified with the published
 router key. A mirror never receives the session row or password material.
+
+- The grant reaches a mirror only through `GET /api/accounts/mirror-handoff`,
+  which POSTs it to the mirror in a no-store page; the mirror sets its own
+  host-only HttpOnly cookie. Mirror links on the dashboard go through it, and
+  an official mirror (`mirrorN.forkmesh.com`, `MIRROR_HANDOFF_HOST_RE` in
+  `tools/mirror_gateway.py`) answers a signed-out top-level navigation with
+  a 303 to it. A visitor with no session is sent back with `fm_handoff=none`,
+  which stops a loop; the dashboard removes the marker from the address bar.
+- The App no longer sets the parent-domain `forkmesh_portable` cookie and
+  clears one it sees. Before 2026-11-01 that cookie was scoped to
+  `.forkmesh.com`, so every mirror host, including one a different operator
+  runs, received every signed-in visitor's grant on every request
+  (`test_the_app_never_issues_a_domain_wide_grant_and_expires_the_old_one`,
+  `test_a_signed_out_navigation_to_an_official_mirror_bounces_through_the_app`).
 
 ## Related
 

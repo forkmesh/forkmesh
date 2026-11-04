@@ -1156,6 +1156,54 @@ async def _account_users_admin_actor(
     return actor if actor and await _is_admin(env, actor) else ""
 
 
+QUARANTINE_HELD_PRIVATE = 2
+
+
+async def _quarantine_owner_bis(env, user_bi, node_names):
+    owner_bis = [user_bi]
+    for name in node_names or []:
+        clean = clean_string(name, MAX_NODE_NAME).strip().lower()
+        if valid_node_name(clean):
+            owner_bi = await blind_index(env, clean)
+            if owner_bi not in owner_bis:
+                owner_bis.append(owner_bi)
+    return owner_bis
+
+
+def _quarantine_repository_statement(owner_bis, before, after):
+    return (
+        "UPDATE repositories SET is_private=? WHERE is_private=? "
+        "AND owner_bi IN (%s)" % ",".join("?" * len(owner_bis)),
+        (after, before, *owner_bis),
+    )
+
+
+async def _quarantine_catalog_changed(env):
+    for name in ("_REPO_CLOSED_MEMO", "_REPO_OPEN_MEMO"):
+        memo = globals().get(name)
+        if isinstance(memo, dict):
+            memo.clear()
+    for name, args in (
+            ("invalidate_public_catalog_snapshots", (env,)),
+            ("_bump_catalog_rev", (env,)),
+            ("schedule_public_catalog_republish", (env,))):
+        step = globals().get(name)
+        if callable(step):
+            try:
+                await step(*args)
+            except Exception:
+                pass
+    clear = globals().get("_https_mirror_public_context_cache_clear")
+    if callable(clear):
+        clear()
+    catalog_key = globals().get("CATALOG_CACHE_KEY")
+    if catalog_key:
+        try:
+            await edge_cache_delete(catalog_key)
+        except Exception:
+            pass
+
+
 async def _quarantine_user_account(env, actor, target, action):
     """Atomically remove one non-admin user from every active account surface.
 
@@ -1187,8 +1235,12 @@ async def _quarantine_user_account(env, actor, target, action):
         "SELECT name FROM nodes WHERE user_bi=? OR node_bi=?",
         target_bi, target_bi,
     )
+    owner_bis = await _quarantine_owner_bis(
+        env, target_bi, [node.get("name", "") for node in linked_nodes or []])
     try:
         await _contribution_run_batch(env, [
+            _quarantine_repository_statement(
+                owner_bis, 0, QUARANTINE_HELD_PRIVATE),
             (
                 "INSERT INTO quarantined_users "
                 "(user_bi,data,email_bi,username,is_admin,ip_bi,"
@@ -1270,6 +1322,7 @@ async def _quarantine_user_account(env, actor, target, action):
     if callable(memos_clear):
         memos_clear()
     await _users_directory_cache_forget()
+    await _quarantine_catalog_changed(env)
     await edge_cache_delete(REFERRAL_LEADERBOARD_CACHE_KEY)
     await edge_cache_delete(ACCOUNT_LOOKUP_CACHE_PREFIX + quote(target))
     for node in linked_nodes or []:
@@ -1516,8 +1569,12 @@ async def _account_admin_unquarantine_user(env, request):
             {"error": "restore_conflict", "node": conflict_name}, status=409)
 
     now = int(Date.now())
+    owner_bis = await _quarantine_owner_bis(
+        env, target_bi, [node.get("name", "") for node in linked_nodes or []])
     try:
         await _contribution_run_batch(env, [
+            _quarantine_repository_statement(
+                owner_bis, QUARANTINE_HELD_PRIVATE, 0),
             (
                 "INSERT INTO users "
                 "(user_bi,data,email_bi,username,is_admin,ip_bi,"
@@ -1557,6 +1614,7 @@ async def _account_admin_unquarantine_user(env, request):
     if callable(memos_clear):
         memos_clear()
     await _users_directory_cache_forget()
+    await _quarantine_catalog_changed(env)
     await edge_cache_delete(REFERRAL_LEADERBOARD_CACHE_KEY)
     await edge_cache_delete(ACCOUNT_LOOKUP_CACHE_PREFIX + quote(target))
     restored_nodes = []

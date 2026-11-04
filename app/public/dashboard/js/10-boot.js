@@ -197,7 +197,7 @@
     watchHomeRedirectSetting();
     installErrorActions();
     preconnectRememberedDirectMirrors();
-    void ensurePortableControllerSession();
+    clearMirrorHandoffMarker();
     await hydratePortableMirrorSession();
     await restoreControllerSession();
     if (!repoAddressesKnown()) {
