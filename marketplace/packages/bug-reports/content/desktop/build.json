@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    "BugReportsModel.h",
+    "BugReportsModel.cpp",
+    "BugReportsFeature.h",
+    "BugReportsFeature.cpp"
+  ],
+  "mocHeaders": [],
+  "testSources": [
+    "tests/test_bug_reports.cpp",
+    "BugReportsModel.h",
+    "BugReportsModel.cpp",
+    "BugReportsFeature.h",
+    "BugReportsFeature.cpp"
+  ],
+  "testLibraries": [
+    "Qt6::Core",
+    "Qt6::Widgets"
+  ],
+  "testHostSources": [
+    "NativePackageExtension.h",
+    "NativePackageExtension.cpp"
+  ]
+}

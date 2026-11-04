@@ -51,7 +51,12 @@ state on the ForkMesh account and follow every device.
   ([repo-forum](../app/repo-forum.md)).
 
 Each package gates its feature's surfaces in every app (tabs, tiles, rail
-buttons, repository tabs). `crm` stays organization-installed; `market`,
+buttons, repository tabs). A package that a person opens as a page has one on
+every surface it lists: `bug-reports`, for example, is the Bugs page in the
+desktop's left rail and on Home, `/dashboard/bugs` on the web, and the Bug
+sheet on the phones ([its README](../../marketplace/packages/bug-reports/README.md)).
+`marketplace/tests/test_desktop_surfaces.py` fails when a package lists a
+desktop entrypoint that nothing on the desktop shows or gates. `crm` stays organization-installed; `market`,
 `repos`, `search` and `settings` stay core.
 
 Settings always keeps a way to sign in and out, so removing `sign-in` never
