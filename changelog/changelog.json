@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-04", "area": "Market", "text": "Bugs is now a plugin on the desktop and the web too: a Bugs page in the desktop's left rail and Home, and in the web dashboard sidebar, to report a bug, follow your reports and, for administrators, triage them; the desktop's Files button now hides when the Files plugin is removed."},
   {"date": "2026-11-04", "area": "Market", "text": "Browser extension 2.35.0 puts the CRM header on X posts and logs the people you reply to, mention or send a direct message on X as CRM contacts, the way it does for Mastodon."},
   {"date": "2026-11-04", "area": "Desktop", "text": "Tracked email and Mastodon alerts are now a small card in the middle of the window that never blocks a click; several in a row update one card."},
   {"date": "2026-11-04", "area": "Desktop", "text": "Prepare more on the CRM's Mastodon page starts an agent session that finds people on Mastodon and drafts toots for you."},

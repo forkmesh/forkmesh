@@ -23187,6 +23187,45 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
               .arg(branchesBack)
               .arg(window.testPackageInstalled(QStringLiteral("special-agents"))));
 
+    check(window.testRailButtonShown(QStringLiteral("files")) &&
+              window.testSetPackageInstalled(QStringLiteral("files"), false) &&
+              !window.testRailButtonShown(QStringLiteral("files")) &&
+              window.testSetPackageInstalled(QStringLiteral("files"), true) &&
+              window.testRailButtonShown(QStringLiteral("files")),
+          QStringLiteral("the Files rail button follows the Files package"));
+
+    const QString bugsPackage = QStringLiteral("bug-reports");
+    if (window.testNativePackageIds().contains(bugsPackage)) {
+        for (int i = 0; i < 50 && !window.findChild<QPushButton *>(
+                                       QStringLiteral("nativePackageNav-bug-reports"));
+             ++i)
+            QApplication::processEvents();
+        window.testShowNativePackage(bugsPackage);
+        QApplication::processEvents();
+        auto *bugsNav = window.findChild<QPushButton *>(
+            QStringLiteral("nativePackageNav-bug-reports"));
+        auto *bugsPage =
+            window.findChild<QWidget *>(QStringLiteral("bugReportsSection"));
+        check(window.testPackageInstalled(bugsPackage) &&
+                  window.testNativePackageActionVisible(bugsPackage) && bugsNav &&
+                  bugsNav->toolTip() == QStringLiteral("Open Bugs") &&
+                  window.testRailButtonShown(QStringLiteral("package:bug-reports")) &&
+                  bugsPage &&
+                  bugsPage->findChild<QPlainTextEdit *>(
+                      QStringLiteral("bugReportsMessage")),
+              QStringLiteral("Bugs is a package page in the left rail with its "
+                             "report form (installed=%1 nav=%2 page=%3)")
+                  .arg(window.testPackageInstalled(bugsPackage))
+                  .arg(bugsNav != nullptr)
+                  .arg(bugsPage != nullptr));
+        check(window.testSetPackageInstalled(bugsPackage, false) &&
+                  !window.testNativePackageActionVisible(bugsPackage) &&
+                  window.testSetPackageInstalled(bugsPackage, true),
+              QStringLiteral("removing Bugs takes its rail button away"));
+    } else {
+        check(false, QStringLiteral("this build has the Bugs package page"));
+    }
+
     // Discord is a package too: its only chrome is the connector card in
     // Settings, and removal must scrub the bot token the package owned.
     const QString discordTokenKey =
