@@ -7,6 +7,13 @@
   const NOTE_COMMENTS_REFRESH_MS = 300;
   const NOTE_COMMENT_CONTEXT = 32;
   const NOTE_QUOTE_MAX = 1000;
+  const NOTE_ASSIST_MAX = 6000;
+  const NOTE_ASSIST_CONTEXT = 600;
+  const NOTE_ASSIST_ACTIONS = [
+    ["clean-up", "Clean up"], ["grammar", "Check grammar"], ["clearer", "Make clearer"],
+    ["shorter", "Make shorter"], ["longer", "Make longer"], ["professional", "Professional tone"],
+    ["friendly", "Friendly tone"], ["bullets", "Bullet list"], ["summarize", "Summarize"],
+  ];
   const NOTE_MODE_KEY = "forkmesh.notes.mode";
   const NOTE_MODES = ["write", "split", "preview", "live"];
   const NOTE_CHAT_SEEN_KEY = "forkmesh.notes.chat-seen";
@@ -45,6 +52,11 @@
     too_many_entries: "A page can hold up to 300 entries.",
     invalid_emoji: "That isn't an emoji. Type or paste a single emoji.",
     version_conflict: "Someone saved a newer version. Load the latest and try again.",
+    assist_unavailable: "Writing with AI isn't set up on this site yet. An administrator turns it on in Settings, AI review.",
+    assist_daily_limit: "You've used today's AI writing requests. Try again tomorrow.",
+    assist_failed: "The AI didn't send back any text. Try again.",
+    text_too_long: "Select up to 6,000 characters to write with AI.",
+    prompt_required: "Type what you want the AI to do.",
     get upstream_unavailable() { return `${platformName()} is restarting. Try again in a few seconds.`; },
     get sealed() { return `${platformName()} is restarting. Try again in a few seconds.`; },
   };
@@ -737,6 +749,8 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
     title.readOnly = !canEdit;
     markdown.readOnly = !canEdit;
     $("[data-note-toolbar]").hidden = !canEdit;
+    if (view.assist && (view.assist.noteId !== note.id || !canEdit)) closeNoteAssist();
+    void loadNoteAssistStatus();
     const pill = $("[data-note-visibility]");
     pill.dataset.visibility = note.visibility === "public" ? "public" : "private";
     pill.innerHTML = noteIcon(noteVisibilityIcon(note)) + escapeHtml(note.visibility === "public" ? "Published" : noteStatusLabel(note));
@@ -2286,7 +2300,7 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
     return null;
   }
 
-  function noteSelectionAnchor() {
+  function noteSelectionRange() {
     const view = state.notesView;
     const area = $("[data-note-markdown]"), markdown = area?.value || "";
     let range = null;
@@ -2305,8 +2319,14 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
     let { start, end } = range;
     while (start < end && /\s/.test(markdown[start])) start += 1;
     while (end > start && /\s/.test(markdown[end - 1])) end -= 1;
-    if (end <= start) return null;
-    end = Math.min(end, start + NOTE_QUOTE_MAX);
+    return end > start ? { start, end } : null;
+  }
+
+  function noteSelectionAnchor() {
+    const range = noteSelectionRange();
+    if (!range) return null;
+    const markdown = $("[data-note-markdown]")?.value || "";
+    const { start } = range, end = Math.min(range.end, start + NOTE_QUOTE_MAX);
     return {
       quote: markdown.slice(start, end),
       prefix: markdown.slice(Math.max(0, start - NOTE_COMMENT_CONTEXT), start),
@@ -2336,14 +2356,206 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
     const button = $("[data-note-comment-float]");
     if (!button || !view.selected) return;
     setTimeout(() => {
-      const anchor = noteSelectionAnchor();
-      if (!anchor) { button.hidden = true; return; }
+      const anchor = noteSelectionAnchor(), assist = $("[data-note-assist-float]");
+      if (!anchor) { button.hidden = true; if (assist) assist.hidden = true; return; }
       const body = $(".notes-body").getBoundingClientRect();
-      button.style.left = `${Math.max(8, Math.min(body.width - 120, event.clientX - body.left + 8))}px`;
-      button.style.top = `${Math.max(8, event.clientY - body.top + 12)}px`;
+      const left = Math.max(8, Math.min(body.width - 220, event.clientX - body.left + 8));
+      const top = Math.max(8, event.clientY - body.top + 12);
+      button.style.left = `${left}px`;
+      button.style.top = `${top}px`;
       button.hidden = false;
+      if (assist) {
+        assist.hidden = !noteCanEdit(view.selected) || view.assistReady === false || Boolean(view.assist && !$("[data-note-assist-panel]").hidden);
+        assist.style.left = `${left + button.offsetWidth + 6}px`;
+        assist.style.top = `${top}px`;
+      }
       refreshNoteIcons();
     }, 0);
+  }
+
+  async function loadNoteAssistStatus() {
+    const view = state.notesView;
+    if (view.assistStatus || !state.session) return;
+    view.assistStatus = true;
+    try {
+      const payload = await noteRequest("/api/notes/assist");
+      setNoteAssistReady(payload.ready !== false);
+    } catch (_) { view.assistStatus = false; }
+  }
+
+  function setNoteAssistReady(ready) {
+    state.notesView.assistReady = ready;
+    const button = $("[data-note-assist-open]"); if (button) button.hidden = !ready;
+    if (!ready) { const float = $("[data-note-assist-float]"); if (float) float.hidden = true; }
+  }
+
+  function noteAssistTarget() {
+    const view = state.notesView, area = $("[data-note-markdown]");
+    if (!area) return null;
+    const range = noteSelectionRange();
+    if (range) return { ...range, selected: true };
+    let at = area.value.length;
+    if (view.live && view.selectionSource === "live") {
+      at = noteLineOffset(area.value.split("\n"), view.live.start) + view.live.area.selectionEnd;
+    } else if (view.selectionSource === "write" || document.activeElement === area) {
+      at = area.selectionEnd;
+    }
+    return { start: at, end: at, selected: false };
+  }
+
+  function openNoteAssist(reference) {
+    const view = state.notesView, panel = $("[data-note-assist-panel]"), area = $("[data-note-markdown]");
+    if (!panel || !area || !view.selected) return;
+    if (!noteCanEdit(view.selected)) { noteNotice("main", NOTE_ERRORS.editor_required, "bad"); return; }
+    const target = noteAssistTarget(); if (!target) return;
+    const markdown = area.value, text = markdown.slice(target.start, target.end);
+    if (text.length > NOTE_ASSIST_MAX) { noteNotice("main", NOTE_ERRORS.text_too_long, "bad"); return; }
+    closeNotePopovers();
+    view.assist = { noteId: view.selected.id, ...target, text, markdown, action: "", result: null, busy: false };
+    $("[data-note-comment-float]").hidden = true;
+    $("[data-note-assist-float]").hidden = true;
+    $("[data-note-assist-prompt]").value = "";
+    noteNotice("assist", "");
+    panel.hidden = false;
+    $("[data-note-assist-open]")?.setAttribute("aria-expanded", "true");
+    renderNoteAssist();
+    const body = $(".notes-body").getBoundingClientRect();
+    const rect = (reference || $("[data-note-assist-open]") || area).getBoundingClientRect();
+    const width = panel.offsetWidth;
+    panel.style.left = `${Math.max(8, Math.min(body.width - width - 8, rect.left - body.left))}px`;
+    panel.style.top = `${Math.max(8, rect.bottom - body.top + 6)}px`;
+    $("[data-note-assist-prompt]").focus();
+    void loadNoteAssistStatus();
+  }
+
+  function closeNoteAssist() {
+    const view = state.notesView, panel = $("[data-note-assist-panel]");
+    view.assist = null;
+    if (panel) panel.hidden = true;
+    $("[data-note-assist-open]")?.setAttribute("aria-expanded", "false");
+  }
+
+  function renderNoteAssist() {
+    const assist = state.notesView.assist; if (!assist) return;
+    const selected = assist.selected;
+    $("[data-note-assist-heading]").textContent = selected ? "Rewrite with AI" : "Write with AI";
+    const source = $("[data-note-assist-source]");
+    source.hidden = !selected;
+    source.textContent = selected ? assist.text.slice(0, 400) : "";
+    const prompt = $("[data-note-assist-prompt]");
+    prompt.placeholder = selected ? "Tell AI how to change the selection…" : "Tell AI what to write here…";
+    prompt.disabled = assist.busy;
+    const ask = $("[data-note-assist-ask]");
+    ask.disabled = assist.busy;
+    ask.textContent = assist.busy && assist.action === "custom" ? "Writing…" : "Ask";
+    const actions = $("[data-note-assist-actions]");
+    actions.hidden = !selected;
+    actions.innerHTML = selected ? NOTE_ASSIST_ACTIONS.map(([id, label]) =>
+      `<button type="button" class="notes-btn" data-note-assist-action="${id}" aria-pressed="${assist.action === id}"${assist.busy ? " disabled" : ""}>${escapeHtml(assist.busy && assist.action === id ? "Writing…" : label)}</button>`).join("") : "";
+    const result = assist.result !== null;
+    $("[data-note-assist-result-sec]").hidden = !result;
+    if (result && $("[data-note-assist-result]").dataset.for !== String(assist.resultId)) {
+      $("[data-note-assist-result]").value = assist.result;
+      $("[data-note-assist-result]").dataset.for = String(assist.resultId);
+    }
+    const replace = $("[data-note-assist-apply=\"replace\"]");
+    replace.lastChild.textContent = selected ? "Replace selection" : "Insert";
+    $("[data-note-assist-apply=\"below\"]").hidden = !selected;
+    $("[data-note-assist-panel]").querySelectorAll("[data-note-assist-apply], [data-note-assist-retry]").forEach((button) => { button.disabled = assist.busy; });
+    refreshNoteIcons();
+  }
+
+  async function runNoteAssist(action) {
+    const view = state.notesView, assist = view.assist;
+    if (!assist || assist.busy) return;
+    const prompt = action === "custom" ? $("[data-note-assist-prompt]").value.trim() : "";
+    if (action === "custom" && !prompt) {
+      noteNotice("assist", assist.selected ? "Type how to change the selection, or pick a quick action." : "Type what you want the AI to write.", "bad");
+      $("[data-note-assist-prompt]").focus();
+      return;
+    }
+    Object.assign(assist, { action, prompt, busy: true });
+    noteNotice("assist", "");
+    renderNoteAssist();
+    try {
+      const payload = await noteRequest("/api/notes/assist", "POST", {
+        action, prompt, text: assist.text,
+        before: assist.markdown.slice(Math.max(0, assist.start - NOTE_ASSIST_CONTEXT), assist.start),
+        after: assist.markdown.slice(assist.end, assist.end + NOTE_ASSIST_CONTEXT),
+      });
+      if (view.assist !== assist) return;
+      assist.result = String(payload.text || "");
+      assist.resultId = (assist.resultId || 0) + 1;
+    } catch (error) {
+      if (view.assist !== assist) return;
+      if (error.payload?.error === "assist_unavailable") setNoteAssistReady(false);
+      noteNotice("assist", error.message, "bad");
+    } finally {
+      assist.busy = false;
+      if (view.assist === assist) renderNoteAssist();
+    }
+    if (view.assist === assist && assist.result !== null) $("[data-note-assist-result]").focus();
+  }
+
+  function applyNoteAssist(mode) {
+    const view = state.notesView, assist = view.assist, area = $("[data-note-markdown]");
+    if (!assist || !area || view.selected?.id !== assist.noteId || !noteCanEdit(view.selected)) return;
+    const text = $("[data-note-assist-result]").value.trim();
+    if (!text) return;
+    if (view.live) endNoteLiveEdit(false);
+    const value = area.value;
+    let { start, end } = assist;
+    if (value.slice(start, end) !== assist.text) {
+      const found = assist.text ? value.indexOf(assist.text) : Math.min(start, value.length);
+      if (found === -1) { noteNotice("assist", "The note changed and the selected text is gone. Copy the suggestion, or close this and try again.", "bad"); return; }
+      start = found; end = found + assist.text.length;
+    }
+    let at = start, cut = end, insert = text;
+    if (mode === "below") {
+      const lineEnd = value.indexOf("\n", end);
+      at = cut = lineEnd === -1 ? value.length : lineEnd;
+      insert = `\n\n${text}`;
+    }
+    if (!assist.selected) {
+      const lineStart = at === 0 || value[at - 1] === "\n";
+      if (!lineStart && !/\s/.test(value[at - 1])) insert = ` ${insert}`;
+      if (at < value.length && !/\s/.test(value[at])) insert += lineStart ? "\n\n" : " ";
+    }
+    area.value = value.slice(0, at) + insert + value.slice(cut);
+    closeNoteAssist();
+    if (area.offsetParent) {
+      area.focus();
+      const from = at + insert.indexOf(text);
+      area.setSelectionRange(from, from + text.length);
+    }
+    area.dispatchEvent(new Event("input", { bubbles: true }));
+    noteNotice("main", mode === "below" ? "Added the AI text below the selection." : assist.selected ? "Replaced the selection with the AI text." : "Added the AI text.");
+  }
+
+  function wireNoteAssist() {
+    const view = state.notesView, panel = $("[data-note-assist-panel]");
+    if (!panel) return;
+    for (const trigger of ["[data-note-assist-open]", "[data-note-assist-float]"]) {
+      $(trigger)?.addEventListener("mousedown", (event) => event.preventDefault());
+      $(trigger)?.addEventListener("click", (event) => {
+        event.stopPropagation();
+        if (!panel.hidden && trigger === "[data-note-assist-open]") { closeNoteAssist(); return; }
+        openNoteAssist(event.currentTarget);
+      });
+    }
+    $("[data-note-assist-form]")?.addEventListener("submit", (event) => { event.preventDefault(); void runNoteAssist("custom"); });
+    panel.addEventListener("click", (event) => {
+      const action = event.target.closest("[data-note-assist-action]");
+      if (action) { void runNoteAssist(action.dataset.noteAssistAction); return; }
+      const apply = event.target.closest("[data-note-assist-apply]");
+      if (apply) { applyNoteAssist(apply.dataset.noteAssistApply); return; }
+      if (event.target.closest("[data-note-assist-retry]") && view.assist?.action) { void runNoteAssist(view.assist.action); return; }
+      if (event.target.closest("[data-note-assist-discard]")) closeNoteAssist();
+    });
+    document.addEventListener("click", (event) => {
+      if (panel.hidden || event.composedPath().some((node) => node === panel || node?.matches?.("[data-note-assist-open], [data-note-assist-float]"))) return;
+      closeNoteAssist();
+    });
   }
 
   function jumpToNoteThread(id) {
@@ -2473,8 +2685,8 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
       $(`[data-note-thread="${mark.dataset.noteThreadMark}"]`)?.scrollIntoView({ block: "nearest" });
     });
     document.addEventListener("selectionchange", () => {
-      const button = $("[data-note-comment-float]");
-      if (button && !button.hidden && !noteSelectionAnchor()) button.hidden = true;
+      const button = $("[data-note-comment-float]"), assist = $("[data-note-assist-float]");
+      if (button && !button.hidden && !noteSelectionAnchor()) { button.hidden = true; if (assist) assist.hidden = true; }
     });
     const panel = $("[data-note-comments]");
     panel?.addEventListener("submit", (event) => {
@@ -3416,6 +3628,7 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
       pageDraft: null, pageDraftVersion: 0, pageSaving: false, pageDrag: "",
       live: null, follow: "", followTagTimer: 0, cursorTimer: 0, sentCursor: "", panelTab: "comments",
       chat: null, chatTimer: 0, chatGeneration: 0, chatSending: false, chatScroll: false,
+      assist: null, assistReady: null, assistStatus: false,
     });
     try { view.mode = NOTE_MODES.includes(localStorage.getItem(NOTE_MODE_KEY)) ? localStorage.getItem(NOTE_MODE_KEY) : "split"; } catch (_) { view.mode = "split"; }
 
@@ -3427,6 +3640,7 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
       setNoteActivityOpen(!view.activityOpen);
     });
     wireNoteComments();
+    wireNoteAssist();
     wireNoteLiveAndChat();
     $("[data-note-activity-close]")?.addEventListener("click", () => setNoteActivityOpen(false));
     $("[data-note-activity]")?.addEventListener("click", (event) => {
@@ -3466,6 +3680,11 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
       const mod = event.metaKey || event.ctrlKey;
       if (mod && event.key.toLowerCase() === "s") { event.preventDefault(); void flushNoteSave(); return; }
       if (mod && event.altKey && event.code === "KeyM") { event.preventDefault(); commentOnNoteSelection(); return; }
+      if (mod && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "j" && view.selected) {
+        event.preventDefault();
+        if ($("[data-note-assist-panel]")?.hidden === false) closeNoteAssist(); else if (view.assistReady !== false) openNoteAssist(null);
+        return;
+      }
       if (mod && event.target.matches("[data-note-markdown]") && ["b", "i"].includes(event.key.toLowerCase())) {
         event.preventDefault(); formatNoteSelection(event.key.toLowerCase() === "b" ? "bold" : "italic"); return;
       }
@@ -3475,6 +3694,8 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
         if (window.matchMedia(NOTE_ACTIVITY_OVERLAY).matches && view.activityOpen) setNoteActivityOpen(false, false);
         if (window.matchMedia(NOTE_ACTIVITY_OVERLAY).matches && view.commentsOpen && !view.commentDraft) setNoteCommentsOpen(false);
         $("[data-note-comment-float]").hidden = true;
+        $("[data-note-assist-float]").hidden = true;
+        closeNoteAssist();
       }
     });
     window.addEventListener("beforeunload", (event) => {

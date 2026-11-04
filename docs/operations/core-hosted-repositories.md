@@ -437,12 +437,15 @@ refs).
 ## Internet Archive backups
 
 The owner can upload a public hosted repository to an archive.org item on a
-schedule ([archive sync](../app/archive-sync.md)). The exchange carries an
+schedule with the [Internet Archive plugin](../marketplace/internet-archive.md),
+which supplies the settings through `plugin_data` hooks. The exchange carries an
 optional `archiveSync` (`revision`, `url`, `accessKey`, `secret`,
 `intervalSeconds`, `collection`, `title`, `source`, and `uploaded`: the
 `revision`, `digest` and `at` of the last upload the app recorded) to the
 primary, only for public repositories, and the daemon reports `archiveSyncs`
-results (`revision`, `digest`, `ok`, `at`, `error`, `bytes`).
+results (`revision`, `digest`, `ok`, `at`, `error`, `bytes`, and after a
+successful upload the bundle's `sha1`, `routingDigest`, `head`, `refCount` and
+up to 100 `refs`, read back with `git bundle list-heads`).
 `server/hosted_archive_sync.go` does the work:
 
 - Valid only for `https://s3.us.archive.org/<item>/<file>.bundle`, keys of 8

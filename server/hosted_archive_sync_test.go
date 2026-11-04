@@ -2,6 +2,8 @@ package mirrornode
 
 import (
 	"context"
+	"crypto/sha1"
+	"encoding/hex"
 	"errors"
 	"io"
 	"net/http"
@@ -125,6 +127,7 @@ type fakeArchiveUploader struct {
 	mu    sync.Mutex
 	calls int
 	heads []string
+	sums  []string
 	fail  error
 }
 
@@ -137,10 +140,13 @@ func (f *fakeArchiveUploader) upload(_ context.Context, sync hostedArchiveSync, 
 	if err != nil {
 		f.t.Errorf("not a git bundle: %v: %s", err, output)
 	}
+	content, _ := os.ReadFile(path)
+	sum := sha1.Sum(content)
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls++
 	f.heads = append(f.heads, string(output))
+	f.sums = append(f.sums, hex.EncodeToString(sum[:]))
 	return f.fail
 }
 
@@ -197,6 +203,13 @@ func TestHostedArchiveSyncUploadsOnItsInterval(t *testing.T) {
 	if !ok || !report.OK || report.Revision != "archive:1" || report.Digest != digest ||
 		report.Bytes == 0 || report.At != now.UnixMilli() {
 		t.Fatalf("report = %+v (found %v)", report, ok)
+	}
+	routing, _ := routingRefsSHA256(ctx, gitDir)
+	mainCommit := gitValue(ctx, gitDir, "rev-parse", "refs/heads/main")
+	if report.SHA1 != uploader.sums[0] || report.RoutingDigest != routing || report.Head == nil ||
+		report.Head.Name != "refs/heads/main" || report.Head.Commit != mainCommit ||
+		report.RefCount != len(report.Refs) || len(report.Refs) == 0 || report.Refs[0] != *report.Head {
+		t.Fatalf("bundle facts = %+v (sha1 %s, routing %s, main %s)", report, uploader.sums[0], routing, mainCommit)
 	}
 	if uploader.count() != 1 {
 		t.Fatal("an unchanged repository was uploaded again")
