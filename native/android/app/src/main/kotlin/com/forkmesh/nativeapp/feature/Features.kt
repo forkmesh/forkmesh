@@ -68,6 +68,7 @@ object Features {
         com.forkmesh.nativeapp.feature.silentspeech.SilentSpeechFeature.install(app)
         com.forkmesh.nativeapp.feature.codeinsight.CodeInsightFeature.install(app)
         com.forkmesh.nativeapp.feature.openwrt.OpenWrtFeature.install()
+        com.forkmesh.nativeapp.feature.reticulum.ReticulumFeature.install()
         com.forkmesh.nativeapp.feature.appstorestatus.AppStoreStatusFeature.install()
         com.forkmesh.nativeapp.feature.booking.BookingFeature.install()
         com.forkmesh.nativeapp.feature.runners.RunnersFeature.install()

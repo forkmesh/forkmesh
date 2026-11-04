@@ -42,7 +42,11 @@ struct InterfaceConfig {
     int listenPort = 4242;
     QString forwardAddress = QStringLiteral("255.255.255.255");
     int forwardPort = 4242;
+    QString networkName;
+    QString passphrase;
+    int accessCodeSize = 16;
 
+    bool usesAccessCode() const { return !networkName.isEmpty() || !passphrase.isEmpty(); }
     QJsonObject toJson() const;
     static std::optional<InterfaceConfig> fromJson(const QJsonObject &object);
     QString endpoint() const;
@@ -90,6 +94,8 @@ struct DestinationRecord {
     int hops = 0;
     int announces = 0;
     bool ratchet = false;
+    QByteArray ratchetKey;
+    bool viaSharedInstance = false;
     qint64 emittedAt = 0;
     QDateTime firstHeard;
     QDateTime lastHeard;
@@ -145,6 +151,16 @@ public:
     void setAuthorizer(Authorizer authorizer);
     void setChangedHandler(std::function<void()> handler);
     void setAnnounceHandler(std::function<void(const QByteArray &)> handler) { m_announced = std::move(handler); }
+    using PacketHandler = std::function<void(const QString &, const Packet &, const QByteArray &, int)>;
+    void setPacketHandler(PacketHandler handler) { m_packetHandler = std::move(handler); }
+    void addLocalDestination(const QString &aspect, std::function<QByteArray()> appData);
+    QByteArray localDestinationHash(const QString &aspect) const;
+    bool isLocalDestination(const QByteArray &hash) const { return !localAspect(hash).isEmpty(); }
+    QString localAspect(const QByteArray &hash) const;
+    QByteArray sendPacket(Packet packet, const QString &onlyInterface = {});
+    QByteArray sendRaw(const QByteArray &raw, const QString &onlyInterface = {});
+    std::optional<Identity> identityFor(const QByteArray &destination) const;
+    bool interfaceOnline(const QString &id) const;
 
     QList<InterfaceConfig> interfaces() const;
     void setInterfaces(const QList<InterfaceConfig> &configs);
@@ -167,6 +183,7 @@ public:
     QString announceName() const { return m_announceName; }
     void setAnswerPathRequests(bool answer) { m_answerPathRequests = answer; }
     bool announce(bool pathResponse = false, const QString &onlyInterface = {});
+    bool announceDestination(const QByteArray &destination, bool pathResponse = false, const QString &onlyInterface = {});
     QDateTime lastAnnounce() const { return m_lastAnnounce; }
 
     QByteArray requestPath(const QByteArray &destination);
@@ -181,6 +198,7 @@ public:
     QDateTime startedAt() const { return m_startedAt; }
 
     void ingest(const QString &interfaceId, const QByteArray &raw, bool fromSharedInstance = false);
+    void addEvent(const QString &kind, const QString &text, const QByteArray &destination = {});
     void tickForTest() { tick(); }
 
 private:
@@ -189,7 +207,6 @@ private:
     InterfaceRuntime *runtime(const QString &id) const;
     void transmit(const QByteArray &raw, const QString &onlyInterface = {});
     void notifyChanged();
-    void addEvent(const QString &kind, const QString &text, const QByteArray &destination = {});
     bool rememberPacket(const QByteArray &hash);
     void handleAnnounce(const QString &interfaceId, const Packet &packet, const QByteArray &raw, int hops);
     void handlePathRequest(const QString &interfaceId, const Packet &packet);
@@ -202,6 +219,13 @@ private:
     Authorizer m_authorizer;
     std::function<void()> m_changed;
     std::function<void(const QByteArray &)> m_announced;
+    PacketHandler m_packetHandler;
+    struct LocalDestination {
+        QString aspect;
+        std::function<QByteArray()> appData;
+    };
+    QHash<QString, LocalDestination> m_local;
+    QHash<QByteArray, QDateTime> m_lastPathAnswers;
     QTimer *m_changeTimer = nullptr;
     QTimer *m_tickTimer = nullptr;
     bool m_running = false;
@@ -211,7 +235,6 @@ private:
     QString m_announceName;
     bool m_answerPathRequests = true;
     QDateTime m_lastAnnounce;
-    QDateTime m_lastPathAnswer;
     QHash<QByteArray, DestinationRecord> m_destinations;
     QHash<QByteArray, PathLookup> m_lookups;
     QList<NetworkEvent> m_events;
@@ -257,6 +280,7 @@ private:
     InterfaceConfig m_config;
     InterfaceStatus m_status;
     FrameDecoder m_decoder;
+    InterfaceAccessCode m_accessCode;
     QPointer<QTcpSocket> m_tcp;
     QPointer<QLocalSocket> m_local;
     QPointer<QUdpSocket> m_udp;

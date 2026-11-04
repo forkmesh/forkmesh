@@ -3991,6 +3991,69 @@ void checkUsersDetailRail(MainWindow &window)
 // to a browser, and that page is where a pending contributor reward is paid.
 // The rules that matter are which rows get a "Send payment" button: a record
 // the relay published an exact, ready payout plan for, and nothing else.
+void checkReticulumPage(MainWindow &window)
+{
+    window.resize(1400, 900);
+    const auto settle = [] {
+        QElapsedTimer timer;
+        timer.start();
+        while (timer.elapsed() < 400)
+            QApplication::processEvents(QEventLoop::AllEvents, 20);
+    };
+    const QString shotPrefix = qEnvironmentVariable("FORKMESH_RETICULUM_SHOT");
+    QSettings settings;
+    const QVariant designWas = settings.value(QStringLiteral("app/design"));
+    settings.setValue(QStringLiteral("app/design"), QStringLiteral("next"));
+    check(window.testSetPackageInstalled(QStringLiteral("reticulum"), true),
+          QStringLiteral("the Reticulum plugin installs"));
+    const QList<forkmesh::ui::LayoutMode> modes = {forkmesh::ui::LayoutMode::ControlTower,
+                                                   forkmesh::ui::LayoutMode::Focus,
+                                                   forkmesh::ui::LayoutMode::ControlTower};
+    int round = 0;
+    for (const forkmesh::ui::LayoutMode mode : modes) {
+        const QString name = mode == forkmesh::ui::LayoutMode::Focus ? QStringLiteral("Focus")
+                                                                      : QStringLiteral("Control Tower");
+        forkmesh::ui::setLayoutMode(mode);
+        MainWindow::applyTheme();
+        settle();
+        window.testShowNativePackage(QStringLiteral("reticulum"));
+        settle();
+        forkmesh::market::NativePackageWidget *page = window.testNativePackagePage(QStringLiteral("reticulum"));
+        check(page && page->isVisibleTo(&window) && page->width() > 600 && page->height() > 400,
+              QStringLiteral("the Reticulum page opens in %1 (%2x%3)")
+                  .arg(name)
+                  .arg(page ? page->width() : 0)
+                  .arg(page ? page->height() : 0));
+        auto *tabs = page ? page->findChild<QTabWidget *>(QStringLiteral("reticulumTabs")) : nullptr;
+        check(tabs && tabs->count() == 6, QStringLiteral("the Reticulum page has its six tabs in %1").arg(name));
+        if (!tabs)
+            continue;
+        for (int i = 0; i < tabs->count(); ++i) {
+            tabs->setCurrentIndex(i);
+            settle();
+            QWidget *current = tabs->currentWidget();
+            check(current && current->isVisibleTo(&window) && current->height() > 200,
+                  QStringLiteral("the %1 tab shows in %2").arg(tabs->tabText(i), name));
+            if (!shotPrefix.isEmpty())
+                window.grab().save(QStringLiteral("%1-%2-%3-%4.png")
+                                       .arg(shotPrefix)
+                                       .arg(round)
+                                       .arg(name.simplified().remove(QLatin1Char(' ')))
+                                       .arg(tabs->tabText(i)));
+        }
+        tabs->setCurrentIndex(0);
+        ++round;
+    }
+    if (designWas.isValid())
+        settings.setValue(QStringLiteral("app/design"), designWas);
+    else
+        settings.remove(QStringLiteral("app/design"));
+    settings.remove(QLatin1String(forkmesh::ui::kLayoutModeSetting));
+    forkmesh::ui::layoutModeState() = -1;
+    MainWindow::applyTheme();
+    settle();
+}
+
 void checkLedgerSection(MainWindow &window)
 {
     window.testShowLedgerSection();
@@ -18594,6 +18657,11 @@ else:
 
     if (rewardHistoryOnly) {
         checkContributorRewardHistory(window);
+        stopChildProcesses(window);
+        return failures == 0 ? 0 : 1;
+    }
+    if (app.arguments().contains(QStringLiteral("--reticulum-only"))) {
+        checkReticulumPage(window);
         stopChildProcesses(window);
         return failures == 0 ? 0 : 1;
     }

@@ -267,6 +267,7 @@ object RouteParser {
             "strata" -> if (first == null) listOf(Route.Strata(RepoRef.parse(query["repo"]))) else null
             "synapse" -> if (first == null) listOf(Route.Synapse(RepoRef.parse(query["repo"]))) else null
             "openwrt" -> listOf(Route.OpenWrtRouter)
+            "reticulum" -> listOf(Route.Reticulum)
             "app-store-status" -> listOf(Route.AppStoreStatus)
             "booking" -> if (first == null) listOf(Route.Booking(query["booking"]?.trim()?.lowercase()?.takeIf(PackagesText::isHexId))) else null
             "runners" -> if (first == null) listOf(Route.Runners) else null
@@ -346,6 +347,7 @@ object RouteParser {
         "strata" -> listOf(Route.Strata(null))
         "synapse" -> listOf(Route.Synapse(null))
         "openwrt" -> listOf(Route.OpenWrtRouter)
+        "reticulum" -> listOf(Route.Reticulum)
         "face-changer" -> listOf(Route.FaceChanger)
         "app-store-status" -> listOf(Route.AppStoreStatus)
         "booking" -> listOf(Route.Booking(first?.lowercase()?.takeIf(PackagesText::isHexId)))

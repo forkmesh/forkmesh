@@ -66,6 +66,11 @@ QJsonObject InterfaceConfig::toJson() const
                        {QStringLiteral("name"), name},
                        {QStringLiteral("kind"), kindKey(kind)},
                        {QStringLiteral("enabled"), enabled}};
+    if (usesAccessCode()) {
+        object.insert(QStringLiteral("networkName"), networkName);
+        object.insert(QStringLiteral("passphrase"), passphrase);
+        object.insert(QStringLiteral("accessCodeSize"), accessCodeSize);
+    }
     switch (kind) {
     case InterfaceKind::TcpClient:
         object.insert(QStringLiteral("host"), host);
@@ -112,6 +117,9 @@ std::optional<InterfaceConfig> InterfaceConfig::fromJson(const QJsonObject &obje
     config.forwardAddress =
         object.value(QStringLiteral("forwardAddress")).toString(QStringLiteral("255.255.255.255")).trimmed();
     config.forwardPort = object.value(QStringLiteral("forwardPort")).toInt(4242);
+    config.networkName = object.value(QStringLiteral("networkName")).toString();
+    config.passphrase = object.value(QStringLiteral("passphrase")).toString();
+    config.accessCodeSize = object.value(QStringLiteral("accessCodeSize")).toInt(16);
     if (config.id.isEmpty())
         config.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     if (!config.validationError().isEmpty())
@@ -152,6 +160,10 @@ QString InterfaceConfig::validationError() const
     if (name.isEmpty() || name.size() > 80)
         return QStringLiteral("Give the interface a name of up to 80 characters.");
     const auto badPort = [](int value) { return value < 1 || value > 65535; };
+    if (usesAccessCode() && (accessCodeSize < 1 || accessCodeSize > 64))
+        return QStringLiteral("The access code size must be between 1 and 64 bytes.");
+    if (networkName.size() > 256 || passphrase.size() > 256)
+        return QStringLiteral("The network name and passphrase may be up to 256 characters.");
     switch (kind) {
     case InterfaceKind::TcpClient:
         if (!validHost(host))
@@ -262,10 +274,7 @@ QList<InterfaceConfig> parseReticulumConfig(const QString &text, QStringList *sk
             config.host = values.value(QStringLiteral("target_host"));
             config.port = values.value(QStringLiteral("target_port")).toInt();
             config.kiss = truthy(values.value(QStringLiteral("kiss_framing")));
-            accepted = !values.contains(QStringLiteral("networkname")) &&
-                       !values.contains(QStringLiteral("network_name")) &&
-                       !values.contains(QStringLiteral("passphrase")) &&
-                       !values.contains(QStringLiteral("pass_phrase"));
+            accepted = true;
         } else if (type == QStringLiteral("BackboneInterface") && values.contains(QStringLiteral("remote"))) {
             config.kind = InterfaceKind::TcpClient;
             config.host = values.value(QStringLiteral("remote"));
@@ -284,6 +293,10 @@ QList<InterfaceConfig> parseReticulumConfig(const QString &text, QStringList *sk
             }
             accepted = true;
         }
+        config.networkName = values.value(QStringLiteral("networkname"), values.value(QStringLiteral("network_name")));
+        config.passphrase = values.value(QStringLiteral("passphrase"), values.value(QStringLiteral("pass_phrase")));
+        if (values.contains(QStringLiteral("ifac_size")))
+            config.accessCodeSize = qMax(1, values.value(QStringLiteral("ifac_size")).toInt() / 8);
         if (accepted && config.validationError().isEmpty())
             out.append(config);
         else if (skipped)
@@ -346,6 +359,7 @@ InterfaceRuntime::InterfaceRuntime(Node *node, const InterfaceConfig &config)
     , m_node(node)
     , m_config(config)
     , m_decoder(config.kiss ? FrameDecoder::Kiss : FrameDecoder::Hdlc)
+    , m_accessCode(config.networkName, config.passphrase, config.accessCodeSize)
     , m_retryTimer(new QTimer(this))
     , m_keepaliveTimer(new QTimer(this))
 {
@@ -369,12 +383,15 @@ InterfaceRuntime::~InterfaceRuntime()
 
 void InterfaceRuntime::setConfig(const InterfaceConfig &config)
 {
-    const bool changed = !m_config.sameTarget(config) || m_config.kiss != config.kiss;
+    const bool changed = !m_config.sameTarget(config) || m_config.kiss != config.kiss ||
+                         m_config.networkName != config.networkName || m_config.passphrase != config.passphrase ||
+                         m_config.accessCodeSize != config.accessCodeSize;
     const bool wasActive = m_active;
     m_config = config;
     if (changed) {
         m_authorized = false;
         m_decoder.setFraming(config.kiss ? FrameDecoder::Kiss : FrameDecoder::Hdlc);
+        m_accessCode = InterfaceAccessCode(config.networkName, config.passphrase, config.accessCodeSize);
     }
     if (!config.enabled) {
         stop();
@@ -645,13 +662,27 @@ void InterfaceRuntime::receive(const QByteArray &bytes)
 void InterfaceRuntime::receiveFrame(const QByteArray &frame)
 {
     ++m_status.rxPackets;
+    if (m_accessCode.enabled()) {
+        const std::optional<QByteArray> inner = m_accessCode.remove(frame);
+        if (!inner) {
+            ++m_status.invalidFrames;
+            return;
+        }
+        m_node->ingest(m_config.id, *inner, m_config.kind == InterfaceKind::SharedInstance);
+        return;
+    }
+    if (!frame.isEmpty() && (quint8(frame.at(0)) & 0x80)) {
+        ++m_status.invalidFrames;
+        return;
+    }
     m_node->ingest(m_config.id, frame, m_config.kind == InterfaceKind::SharedInstance);
 }
 
-bool InterfaceRuntime::send(const QByteArray &raw)
+bool InterfaceRuntime::send(const QByteArray &packet)
 {
-    if (!online() || raw.isEmpty())
+    if (!online() || packet.isEmpty())
         return false;
+    const QByteArray raw = m_accessCode.enabled() ? m_accessCode.apply(packet) : packet;
     qint64 written = -1;
     if (m_udp) {
         if (raw.size() > kUdpMtu)
@@ -695,12 +726,14 @@ Node::Node(QObject *parent)
     m_tickTimer->setInterval(1000);
     connect(m_tickTimer, &QTimer::timeout, this, [this] { tick(); });
     m_history.reserve(kHistorySeconds);
+    addLocalDestination(m_aspect, [this] { return m_announceName.toUtf8(); });
 }
 
 Node::~Node()
 {
     m_changed = nullptr;
     m_announced = nullptr;
+    m_packetHandler = nullptr;
     for (InterfaceRuntime *runtime : std::as_const(m_runtimes))
         runtime->stop();
 }
@@ -834,9 +867,7 @@ void Node::setIdentity(const Identity &identity)
 
 QByteArray Node::destinationHash() const
 {
-    if (!m_identity.isValid())
-        return {};
-    return destinationHashForName(m_aspect, m_identity.hash());
+    return localDestinationHash(m_aspect);
 }
 
 void Node::setAnnounceName(const QString &name)
@@ -844,11 +875,36 @@ void Node::setAnnounceName(const QString &name)
     m_announceName = name.trimmed().left(64);
 }
 
-bool Node::announce(bool pathResponse, const QString &onlyInterface)
+void Node::addLocalDestination(const QString &aspect, std::function<QByteArray()> appData)
 {
-    if (!m_identity.hasPrivateKey() || onlineCount() == 0)
+    m_local.insert(aspect, {aspect, std::move(appData)});
+}
+
+QByteArray Node::localDestinationHash(const QString &aspect) const
+{
+    if (!m_identity.isValid() || !m_local.contains(aspect))
+        return {};
+    return destinationHashForName(aspect, m_identity.hash());
+}
+
+QString Node::localAspect(const QByteArray &hash) const
+{
+    if (!m_identity.isValid() || hash.size() != kHashLength)
+        return {};
+    for (auto it = m_local.cbegin(); it != m_local.cend(); ++it) {
+        if (destinationHashForName(it.key(), m_identity.hash()) == hash)
+            return it.key();
+    }
+    return {};
+}
+
+bool Node::announceDestination(const QByteArray &destination, bool pathResponse, const QString &onlyInterface)
+{
+    const QString aspect = localAspect(destination);
+    if (aspect.isEmpty() || !m_identity.hasPrivateKey() || onlineCount() == 0)
         return false;
-    const QByteArray raw = buildAnnounce(m_identity, m_aspect, m_announceName.toUtf8(), pathResponse,
+    const LocalDestination local = m_local.value(aspect);
+    const QByteArray raw = buildAnnounce(m_identity, aspect, local.appData ? local.appData() : QByteArray(), pathResponse,
                                          QDateTime::currentSecsSinceEpoch());
     if (raw.isEmpty())
         return false;
@@ -858,10 +914,72 @@ bool Node::announce(bool pathResponse, const QString &onlyInterface)
     if (!pathResponse) {
         m_lastAnnounce = QDateTime::currentDateTimeUtc();
         addEvent(QStringLiteral("announce-sent"),
-                 QStringLiteral("Announced this desktop as %1").arg(prettyHash(destinationHash())), destinationHash());
+                 QStringLiteral("Announced %1 as %2").arg(aspect, prettyHash(destination)), destination);
     }
     notifyChanged();
     return true;
+}
+
+bool Node::announce(bool pathResponse, const QString &onlyInterface)
+{
+    bool sent = false;
+    QStringList aspects = m_local.keys();
+    std::sort(aspects.begin(), aspects.end());
+    for (const QString &aspect : aspects)
+        sent = announceDestination(localDestinationHash(aspect), pathResponse, onlyInterface) || sent;
+    return sent;
+}
+
+std::optional<Identity> Node::identityFor(const QByteArray &destination) const
+{
+    const auto found = m_destinations.constFind(destination);
+    if (found == m_destinations.cend())
+        return std::nullopt;
+    return Identity::fromPublicKey(found->publicKey);
+}
+
+bool Node::interfaceOnline(const QString &id) const
+{
+    const InterfaceRuntime *found = runtime(id);
+    return found && found->online();
+}
+
+QByteArray Node::sendRaw(const QByteArray &raw, const QString &onlyInterface)
+{
+    if (raw.isEmpty())
+        return {};
+    rememberPacket(packetHash(raw));
+    transmit(raw, onlyInterface);
+    notifyChanged();
+    return raw;
+}
+
+QByteArray Node::sendPacket(Packet packet, const QString &onlyInterface)
+{
+    packet.headerType = Header1;
+    packet.transportType = TransportBroadcast;
+    packet.transportId.clear();
+    const QByteArray raw = packPacket(packet);
+    rememberPacket(packetHash(raw));
+    const auto found = m_destinations.constFind(packet.destinationHash);
+    const bool routable = packet.packetType != PacketAnnounce && packet.destinationType != DestinationPlain &&
+                          packet.destinationType != DestinationGroup && found != m_destinations.cend() &&
+                          onlyInterface.isEmpty() && interfaceOnline(found->interfaceId);
+    if (routable) {
+        if (found->hops > 1 || (found->hops == 1 && found->viaSharedInstance)) {
+            Packet routed = packet;
+            routed.headerType = Header2;
+            routed.transportType = TransportForward;
+            routed.transportId = found->transportId.size() == kHashLength ? found->transportId : found->hash;
+            transmit(packPacket(routed), found->interfaceId);
+        } else {
+            transmit(raw, found->interfaceId);
+        }
+    } else {
+        transmit(raw, onlyInterface);
+    }
+    notifyChanged();
+    return raw;
 }
 
 QByteArray Node::requestPath(const QByteArray &destination)
@@ -966,7 +1084,14 @@ void Node::ingest(const QString &interfaceId, const QByteArray &raw, bool fromSh
     }
     const int hops = fromSharedInstance ? packet->hops : packet->hops + 1;
     const QByteArray hash = packetHash(raw);
-    const bool fresh = rememberPacket(hash);
+    const bool repeatable = packet->context == ContextKeepalive || packet->context == ContextResourceRequest ||
+                            packet->context == ContextResourceProof || packet->context == ContextResource ||
+                            packet->context == ContextCacheRequest || packet->context == ContextChannel;
+    const bool fresh = rememberPacket(hash) || (repeatable && packet->packetType != PacketAnnounce);
+    if (packet->packetType != PacketAnnounce && packet->headerType == Header2 && !fromSharedInstance) {
+        ++m_counters.duplicates;
+        return;
+    }
     switch (packet->packetType) {
     case PacketAnnounce:
         ++m_counters.announces;
@@ -996,12 +1121,18 @@ void Node::ingest(const QString &interfaceId, const QByteArray &raw, bool fromSh
         }
         if (packet->destinationType == DestinationPlain && packet->destinationHash == pathRequestDestination())
             handlePathRequest(interfaceId, *packet);
+        else if (m_packetHandler)
+            m_packetHandler(interfaceId, *packet, raw, hops);
         break;
     case PacketLinkRequest:
         ++m_counters.linkRequests;
+        if (fresh && m_packetHandler)
+            m_packetHandler(interfaceId, *packet, raw, hops);
         break;
     case PacketProof:
         ++m_counters.proofs;
+        if (fresh && m_packetHandler)
+            m_packetHandler(interfaceId, *packet, raw, hops);
         break;
     default:
         break;
@@ -1024,7 +1155,7 @@ void Node::handleAnnounce(const QString &interfaceId, const Packet &packet, cons
                      packet.destinationHash);
         return;
     }
-    if (announce->destinationHash == destinationHash())
+    if (isLocalDestination(announce->destinationHash))
         return;
     const QDateTime now = QDateTime::currentDateTimeUtc();
     auto found = m_destinations.find(announce->destinationHash);
@@ -1049,6 +1180,10 @@ void Node::handleAnnounce(const QString &interfaceId, const Packet &packet, cons
     record.transportId = packet.transportId;
     record.appData = announce->appData.left(1024);
     record.ratchet = !announce->ratchet.isEmpty();
+    if (record.ratchet)
+        record.ratchetKey = announce->ratchet;
+    if (const InterfaceRuntime *source = runtime(interfaceId))
+        record.viaSharedInstance = source->config().kind == InterfaceKind::SharedInstance;
     record.emittedAt = qMax(record.emittedAt, announce->emittedAt);
     record.hops = hops;
     record.interfaceId = interfaceId;
@@ -1109,16 +1244,17 @@ void Node::handlePathRequest(const QString &interfaceId, const Packet &packet)
     if (!parsePathRequest(packet, &destination, &tag))
         return;
     ++m_counters.pathRequestsSeen;
-    if (!m_answerPathRequests || tag.isEmpty() || destination != destinationHash() || !m_identity.hasPrivateKey())
+    if (!m_answerPathRequests || tag.isEmpty() || !isLocalDestination(destination) || !m_identity.hasPrivateKey())
         return;
     const QDateTime now = QDateTime::currentDateTimeUtc();
-    if (m_lastPathAnswer.isValid() && m_lastPathAnswer.secsTo(now) < 10)
+    const QDateTime last = m_lastPathAnswers.value(destination);
+    if (last.isValid() && last.secsTo(now) < 10)
         return;
-    m_lastPathAnswer = now;
-    if (announce(true, interfaceId)) {
+    m_lastPathAnswers.insert(destination, now);
+    if (announceDestination(destination, true, interfaceId)) {
         ++m_counters.pathRequestsAnswered;
         addEvent(QStringLiteral("path-answered"),
-                 QStringLiteral("Answered a path request for this desktop on %1").arg(interfaceName(interfaceId)),
+                 QStringLiteral("Answered a path request for %1 on %2").arg(localAspect(destination), interfaceName(interfaceId)),
                  destination);
     }
 }

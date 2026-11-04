@@ -15,6 +15,10 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QLabel>
+#include <QFrame>
+#include <QScrollBar>
+#include <QPlainTextEdit>
+#include <QKeyEvent>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMenu>
@@ -43,8 +47,9 @@ const QString kAnnounceNameSetting = QStringLiteral("announceName");
 const QString kAnnounceIntervalSetting = QStringLiteral("announceMinutes");
 const QString kAnswerPathsSetting = QStringLiteral("answerPathRequests");
 const QString kRunningSetting = QStringLiteral("networkOn");
+const QString kMessagesSetting = QStringLiteral("messages");
 
-enum TileIndex { StatusTile, DestinationsTile, AnnouncesTile, TrafficTile, PathsTile };
+enum TileIndex { StatusTile, DestinationsTile, AnnouncesTile, TrafficTile, MessagesTile, PathsTile };
 constexpr int kHashRole = Qt::UserRole + 1;
 constexpr int kSortRole = Qt::UserRole + 2;
 
@@ -137,6 +142,7 @@ ReticulumFeature::ReticulumFeature(const forkmesh::market::NativePackageHost &ho
     : forkmesh::market::NativePackageWidget(parent)
     , m_host(host)
     , m_node(new Node(this))
+    , m_messenger(new Messenger(m_node, this))
     , m_viewTimer(new QTimer(this))
     , m_announceTimer(new QTimer(this))
 {
@@ -196,7 +202,8 @@ ReticulumFeature::ReticulumFeature(const forkmesh::market::NativePackageHost &ho
     auto *tiles = new QHBoxLayout;
     tiles->setSpacing(10);
     for (const QString &label : {QStringLiteral("Connection"), QStringLiteral("Destinations"),
-                                 QStringLiteral("Announces"), QStringLiteral("Traffic"), QStringLiteral("Path lookups")}) {
+                                 QStringLiteral("Announces"), QStringLiteral("Traffic"), QStringLiteral("Messages"),
+                                 QStringLiteral("Path lookups")}) {
         auto *tile = new StatTile(label);
         m_tiles.append(tile);
         tiles->addWidget(tile);
@@ -207,12 +214,21 @@ ReticulumFeature::ReticulumFeature(const forkmesh::market::NativePackageHost &ho
     m_tabs->setObjectName(QStringLiteral("reticulumTabs"));
     m_tabs->setDocumentMode(true);
     m_tabs->addTab(buildNetworkTab(), QStringLiteral("Network"));
+    m_tabs->addTab(buildMessagesTab(), QStringLiteral("Messages"));
     m_tabs->addTab(buildInterfacesTab(), QStringLiteral("Interfaces"));
     m_tabs->addTab(buildDestinationsTab(), QStringLiteral("Destinations"));
     m_tabs->addTab(buildActivityTab(), QStringLiteral("Activity"));
     m_tabs->addTab(buildIdentityTab(), QStringLiteral("Identity"));
     outer->addWidget(m_tabs, 1);
-    connect(m_tabs, &QTabWidget::currentChanged, this, [this] { updateViewsNow(); });
+    connect(m_tabs, &QTabWidget::currentChanged, this, [this] {
+        updateViewsNow();
+        if (m_host.promptTargetChanged)
+            m_host.promptTargetChanged();
+    });
+    if (m_host.promptTargetChanged) {
+        m_composer->hide();
+        m_sendButton->hide();
+    }
 
     m_viewTimer->setSingleShot(true);
     m_viewTimer->setInterval(400);
@@ -250,6 +266,30 @@ ReticulumFeature::ReticulumFeature(const forkmesh::market::NativePackageHost &ho
     m_node->setAnnounceHandler([this](const QByteArray &hash) {
         if (m_map)
             m_map->pulse(hash);
+        m_messenger->destinationAnnounced(hash);
+    });
+    m_node->setPacketHandler([this](const QString &id, const Packet &packet, const QByteArray &raw, int hops) {
+        m_messenger->handlePacket(id, packet, raw, hops);
+    });
+    m_messenger->setChangedHandler([this] {
+        m_chatDirty = true;
+        if (m_host.navigationBadgeChanged)
+            m_host.navigationBadgeChanged();
+        scheduleViews();
+    });
+    m_messenger->setSaveHandler([this](const QString &json) {
+        if (m_host.setSetting)
+            m_host.setSetting(kMessagesSetting, json);
+    });
+    m_messenger->setIncomingHandler([this](const ChatMessage &message) {
+        const bool watching = isVisible() && m_tabs->currentIndex() == MessagesTab && m_currentPeer == message.peer;
+        if (watching) {
+            m_messenger->markRead(message.peer);
+            return;
+        }
+        if (m_host.notify)
+            m_host.notify(QStringLiteral("Reticulum message from %1").arg(m_messenger->peerName(message.peer)),
+                          message.content.left(200), true);
     });
     loadSettings();
 }
@@ -258,6 +298,9 @@ ReticulumFeature::~ReticulumFeature()
 {
     m_node->setChangedHandler(nullptr);
     m_node->setAnnounceHandler(nullptr);
+    m_node->setPacketHandler(nullptr);
+    m_messenger->setChangedHandler(nullptr);
+    m_messenger->setIncomingHandler(nullptr);
     m_node->stop();
 }
 
@@ -307,6 +350,9 @@ QWidget *ReticulumFeature::buildNetworkTab()
     m_detailPath = makeButton(QStringLiteral("Find path"));
     m_detailCopy = makeButton(QStringLiteral("Copy hash"));
     m_detailForget = makeButton(QStringLiteral("Forget"));
+    m_detailMessage = makeButton(QStringLiteral("Message"), QStringLiteral("primaryButton"));
+    detailButtons->addWidget(m_detailMessage);
+    connect(m_detailMessage, &QPushButton::clicked, this, [this] { openConversation(m_selected); });
     detailButtons->addWidget(m_detailPath);
     detailButtons->addWidget(m_detailCopy);
     detailButtons->addWidget(m_detailForget);
@@ -327,6 +373,443 @@ QWidget *ReticulumFeature::buildNetworkTab()
         updateViewsNow();
     });
     return page;
+}
+
+QWidget *ReticulumFeature::buildMessagesTab()
+{
+    auto *page = new QWidget;
+    auto *layout = new QHBoxLayout(page);
+    layout->setContentsMargins(0, 10, 0, 0);
+    auto *splitter = new QSplitter(Qt::Horizontal);
+    splitter->setChildrenCollapsible(false);
+
+    auto *left = new QWidget;
+    auto *leftLayout = new QVBoxLayout(left);
+    leftLayout->setContentsMargins(0, 0, 8, 0);
+    auto *newButton = makeButton(QStringLiteral("New message"), QStringLiteral("primaryButton"));
+    leftLayout->addWidget(newButton);
+    m_conversationList = new QListWidget;
+    m_conversationList->setObjectName(QStringLiteral("reticulumConversations"));
+    m_conversationList->setAccessibleName(QStringLiteral("Reticulum conversations"));
+    m_conversationList->setTextElideMode(Qt::ElideRight);
+    m_conversationList->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_conversationList->setWordWrap(false);
+    leftLayout->addWidget(m_conversationList, 1);
+    leftLayout->addWidget(mutedLabel(QStringLiteral("Messages use LXMF, so Sideband, MeshChat and Nomad Network "
+                                                    "users can write to you. Announce so they can find you.")));
+    splitter->addWidget(left);
+
+    m_chatPane = new QWidget;
+    auto *chatLayout = new QVBoxLayout(m_chatPane);
+    chatLayout->setContentsMargins(8, 0, 0, 0);
+    auto *chatHeader = new QHBoxLayout;
+    auto *titles = new QVBoxLayout;
+    m_chatTitle = new QLabel;
+    m_chatTitle->setObjectName(QStringLiteral("sectionTitle"));
+    m_chatTitle->setTextFormat(Qt::PlainText);
+    m_chatSubtitle = mutedLabel();
+    m_chatSubtitle->setTextFormat(Qt::PlainText);
+    m_chatSubtitle->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    titles->addWidget(m_chatTitle);
+    titles->addWidget(m_chatSubtitle);
+    chatHeader->addLayout(titles, 1);
+    m_chatPathButton = makeButton(QStringLiteral("Find path"));
+    auto *clearButton = makeButton(QStringLiteral("Delete conversation"));
+    chatHeader->addWidget(m_chatPathButton);
+    chatHeader->addWidget(clearButton);
+    chatLayout->addLayout(chatHeader);
+    m_chatList = new QListWidget;
+    m_chatList->setObjectName(QStringLiteral("reticulumChat"));
+    m_chatList->setAccessibleName(QStringLiteral("Messages"));
+    m_chatList->setSelectionMode(QAbstractItemView::NoSelection);
+    m_chatList->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+    m_chatList->setFrameShape(QFrame::NoFrame);
+    m_chatList->viewport()->installEventFilter(this);
+    chatLayout->addWidget(m_chatList, 1);
+    m_chatEmpty = mutedLabel(QStringLiteral("Pick a conversation, or start one with New message."));
+    m_chatEmpty->setAlignment(Qt::AlignCenter);
+    chatLayout->addWidget(m_chatEmpty, 1);
+    m_composer = new QPlainTextEdit;
+    m_composer->setPlaceholderText(QStringLiteral("Write a message. Ctrl+Enter sends."));
+    m_composer->setMaximumHeight(96);
+    m_composer->installEventFilter(this);
+    chatLayout->addWidget(m_composer);
+    auto *composerRow = new QHBoxLayout;
+    m_composerHint = mutedLabel();
+    m_composerHint->setWordWrap(false);
+    composerRow->addWidget(m_composerHint, 1);
+    m_sendButton = makeButton(QStringLiteral("Send"), QStringLiteral("primaryButton"));
+    composerRow->addWidget(m_sendButton);
+    chatLayout->addLayout(composerRow);
+    splitter->addWidget(m_chatPane);
+    splitter->setStretchFactor(0, 1);
+    splitter->setStretchFactor(1, 3);
+    layout->addWidget(splitter);
+
+    connect(newButton, &QPushButton::clicked, this, [this] { startConversation(); });
+    connect(m_conversationList, &QListWidget::currentItemChanged, this, [this](QListWidgetItem *item) {
+        if (!item)
+            return;
+        const QByteArray peer = item->data(kHashRole).toByteArray();
+        if (peer != m_currentPeer)
+            openConversation(peer);
+    });
+    connect(m_sendButton, &QPushButton::clicked, this, [this] { sendMessage(m_composer->toPlainText()); });
+    connect(m_composer, &QPlainTextEdit::textChanged, this, [this] { updateComposerHint(); });
+    connect(m_chatPathButton, &QPushButton::clicked, this, [this] { requestPathFor(m_currentPeer); });
+    connect(clearButton, &QPushButton::clicked, this, [this] {
+        if (m_currentPeer.isEmpty())
+            return;
+        if (QMessageBox::question(this, QStringLiteral("Delete conversation"),
+                                  QStringLiteral("Delete every message with %1 from this desktop?")
+                                      .arg(m_messenger->peerName(m_currentPeer)),
+                                  QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes)
+            return;
+        m_messenger->clearConversation(m_currentPeer);
+        m_currentPeer.clear();
+        m_chatDirty = true;
+        updateMessages();
+    });
+    return page;
+}
+
+void ReticulumFeature::openConversation(const QByteArray &peer)
+{
+    if (peer.size() != kHashLength)
+        return;
+    m_currentPeer = peer;
+    m_chatDirty = true;
+    if (m_tabs->currentIndex() != MessagesTab)
+        m_tabs->setCurrentIndex(MessagesTab);
+    m_messenger->markRead(peer);
+    if (m_host.promptTargetChanged)
+        m_host.promptTargetChanged();
+    if (!m_node->identityFor(peer) && m_node->onlineCount() > 0 && !m_node->lookups().contains(peer))
+        m_node->requestPath(peer);
+    updateMessages();
+    m_composer->setFocus();
+}
+
+QString ReticulumFeature::sendMessage(const QString &text)
+{
+    if (m_currentPeer.isEmpty() || text.trimmed().isEmpty())
+        return {};
+    if (text.toUtf8().size() > Messenger::kMaxContentBytes) {
+        showStatus(QStringLiteral("Messages can be up to %1 KB.").arg(Messenger::kMaxContentBytes / 1024), true);
+        return {};
+    }
+    const QString id = m_messenger->send(m_currentPeer, text);
+    if (id.isEmpty()) {
+        showStatus(QStringLiteral("That message could not be queued."), true);
+        return {};
+    }
+    m_composer->clear();
+    m_chatDirty = true;
+    updateMessages();
+    return id;
+}
+
+void ReticulumFeature::startConversation()
+{
+    QDialog dialog(this);
+    dialog.setWindowTitle(QStringLiteral("New message"));
+    dialog.resize(460, 420);
+    auto *layout = new QVBoxLayout(&dialog);
+    layout->addWidget(mutedLabel(QStringLiteral("Pick someone who has announced on the network, or paste an LXMF address.")));
+    auto *filter = new QLineEdit;
+    filter->setPlaceholderText(QStringLiteral("Filter by name"));
+    filter->setClearButtonEnabled(true);
+    layout->addWidget(filter);
+    auto *list = new QListWidget;
+    QList<DestinationRecord> peers;
+    for (const DestinationRecord &record : m_node->destinations()) {
+        if (record.aspect == QStringLiteral("lxmf.delivery"))
+            peers.append(record);
+    }
+    std::sort(peers.begin(), peers.end(),
+              [](const DestinationRecord &a, const DestinationRecord &b) { return a.lastHeard > b.lastHeard; });
+    for (const DestinationRecord &record : std::as_const(peers)) {
+        auto *item = new QListWidgetItem(QStringLiteral("%1 · %2 · heard %3")
+                                             .arg(record.displayName.isEmpty() ? shortHash(record.hash) : record.displayName,
+                                                  hopsText(record.hops), formatAge(record.lastHeard)));
+        item->setData(kHashRole, record.hash);
+        list->addItem(item);
+    }
+    layout->addWidget(list, 1);
+    auto *address = new QLineEdit;
+    address->setPlaceholderText(QStringLiteral("LXMF address, 32 hex characters"));
+    layout->addWidget(address);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    buttons->button(QDialogButtonBox::Ok)->setText(QStringLiteral("Open conversation"));
+    layout->addWidget(buttons);
+    connect(filter, &QLineEdit::textChanged, &dialog, [list](const QString &text) {
+        for (int i = 0; i < list->count(); ++i)
+            list->item(i)->setHidden(!list->item(i)->text().contains(text, Qt::CaseInsensitive));
+    });
+    connect(list, &QListWidget::currentItemChanged, &dialog, [address](QListWidgetItem *item) {
+        if (item)
+            address->setText(hexHash(item->data(kHashRole).toByteArray()));
+    });
+    connect(list, &QListWidget::itemDoubleClicked, &dialog, [&dialog] { dialog.accept(); });
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, [&dialog, address] {
+        if (!parseHash(address->text()).isEmpty())
+            dialog.accept();
+    });
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+    openConversation(parseHash(address->text()));
+}
+
+QWidget *ReticulumFeature::messageBubble(const ChatMessage &message, int width)
+{
+    const ChartPalette colors = ChartPalette::forWidget(this);
+    auto *row = new QWidget;
+    auto *rowLayout = new QHBoxLayout(row);
+    rowLayout->setContentsMargins(4, 4, 4, 4);
+    auto *bubble = new QFrame;
+    bubble->setObjectName(QStringLiteral("reticulumBubble"));
+    QColor fill = message.outgoing ? colors.accent : colors.raised;
+    if (message.outgoing)
+        fill.setAlphaF(colors.dark ? 0.22 : 0.12);
+    bubble->setStyleSheet(QStringLiteral("QFrame#reticulumBubble { background: %1; border: 1px solid %2; border-radius: 10px; }"
+                                         "QFrame#reticulumBubble QLabel { background: transparent; border: none; }")
+                              .arg(fill.name(QColor::HexArgb), colors.border.name()));
+    auto *bubbleLayout = new QVBoxLayout(bubble);
+    bubbleLayout->setContentsMargins(12, 8, 12, 8);
+    bubbleLayout->setSpacing(4);
+    const int textWidth = qMax(120, width - 40);
+    if (!message.title.isEmpty()) {
+        auto *title = new QLabel(message.title);
+        title->setTextFormat(Qt::PlainText);
+        title->setWordWrap(true);
+        QFont bold = title->font();
+        bold.setBold(true);
+        title->setFont(bold);
+        title->setMaximumWidth(textWidth);
+        bubbleLayout->addWidget(title);
+    }
+    auto *text = new QLabel(message.content.left(20000));
+    text->setTextFormat(Qt::PlainText);
+    text->setWordWrap(true);
+    text->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    const QRect bounds = text->fontMetrics().boundingRect(QRect(0, 0, textWidth, 100000), Qt::TextWordWrap,
+                                                          message.content.left(20000));
+    text->setFixedWidth(qMin(textWidth, bounds.width() + 4));
+    text->setMinimumHeight(bounds.height());
+    bubbleLayout->addWidget(text);
+    for (const LxmfAttachment &attachment : message.attachments) {
+        auto *save = makeButton(QStringLiteral("Save %1 (%2)").arg(attachment.name, formatBytes(double(attachment.data.size()))));
+        save->setEnabled(!attachment.data.isEmpty());
+        connect(save, &QPushButton::clicked, this, [this, attachment] {
+            const QString path = QFileDialog::getSaveFileName(this, QStringLiteral("Save attachment"), attachment.name);
+            if (path.isEmpty())
+                return;
+            QFile file(path);
+            if (file.open(QIODevice::WriteOnly) && file.write(attachment.data) == attachment.data.size())
+                showStatus(QStringLiteral("Saved %1.").arg(path));
+            else
+                showStatus(QStringLiteral("Could not save %1.").arg(path), true);
+        });
+        bubbleLayout->addWidget(save);
+    }
+    QStringList meta;
+    meta << QDateTime::fromMSecsSinceEpoch(qint64(message.timestamp * 1000)).toLocalTime().toString(QStringLiteral("d MMM HH:mm"));
+    if (message.outgoing) {
+        QString state = messageStateLabel(message.state);
+        if (message.state == MessageState::Delivered)
+            state = QStringLiteral("✓✓ Delivered");
+        else if (message.state == MessageState::Sent)
+            state = QStringLiteral("✓ Sent");
+        else if (message.state == MessageState::Sending && message.progress > 0)
+            state = QStringLiteral("Sending %1%").arg(message.progress);
+        meta << state;
+    } else {
+        meta << (message.verified ? QStringLiteral("Signature checked") : QStringLiteral("Signature not checked"));
+    }
+    if (!message.method.isEmpty())
+        meta << (message.method == QStringLiteral("opportunistic") ? QStringLiteral("single packet")
+                 : message.method == QStringLiteral("link")        ? QStringLiteral("over a link")
+                                                                   : QStringLiteral("as a resource"));
+    auto *metaLabel = new QLabel(meta.join(QStringLiteral(" · ")));
+    metaLabel->setObjectName(QStringLiteral("mutedLabel"));
+    metaLabel->setTextFormat(Qt::PlainText);
+    bubbleLayout->addWidget(metaLabel);
+    if (!message.note.isEmpty() && message.state != MessageState::Delivered) {
+        auto *note = new QLabel(message.note);
+        note->setObjectName(message.state == MessageState::Failed ? QStringLiteral("errorLabel") : QStringLiteral("mutedLabel"));
+        note->setTextFormat(Qt::PlainText);
+        note->setWordWrap(true);
+        note->setMaximumWidth(textWidth);
+        bubbleLayout->addWidget(note);
+    }
+    if (message.outgoing && (message.state == MessageState::Failed || message.state == MessageState::Sent)) {
+        auto *actions = new QHBoxLayout;
+        auto *retry = makeButton(message.state == MessageState::Failed ? QStringLiteral("Retry") : QStringLiteral("Send again"));
+        auto *remove = makeButton(QStringLiteral("Delete"));
+        const QString id = message.id;
+        connect(retry, &QPushButton::clicked, this, [this, id] { m_messenger->retry(id); });
+        connect(remove, &QPushButton::clicked, this, [this, id] { m_messenger->forget(id); });
+        actions->addWidget(retry);
+        actions->addWidget(remove);
+        actions->addStretch();
+        bubbleLayout->addLayout(actions);
+    }
+    if (message.outgoing) {
+        rowLayout->addStretch();
+        rowLayout->addWidget(bubble);
+    } else {
+        rowLayout->addWidget(bubble);
+        rowLayout->addStretch();
+    }
+    return row;
+}
+
+void ReticulumFeature::updateMessages()
+{
+    const QList<Conversation> conversations = m_messenger->conversations();
+    m_conversationList->blockSignals(true);
+    m_conversationList->clear();
+    bool currentListed = false;
+    for (const Conversation &conversation : conversations) {
+        QString preview = conversation.last.content.simplified().left(80);
+        if (conversation.last.outgoing)
+            preview = QStringLiteral("You: ") + preview;
+        auto *item = new QListWidgetItem(QStringLiteral("%1%2\n%3")
+                                             .arg(conversation.name,
+                                                  conversation.unread > 0 ? QStringLiteral("  (%1 new)").arg(conversation.unread)
+                                                                          : QString(),
+                                                  preview));
+        item->setData(kHashRole, conversation.peer);
+        if (conversation.unread > 0) {
+            QFont bold = item->font();
+            bold.setBold(true);
+            item->setFont(bold);
+        }
+        m_conversationList->addItem(item);
+        if (conversation.peer == m_currentPeer) {
+            m_conversationList->setCurrentItem(item);
+            currentListed = true;
+        }
+    }
+    if (!m_currentPeer.isEmpty() && !currentListed) {
+        auto *item = new QListWidgetItem(QStringLiteral("%1\nNew conversation").arg(m_messenger->peerName(m_currentPeer)));
+        item->setData(kHashRole, m_currentPeer);
+        m_conversationList->insertItem(0, item);
+        m_conversationList->setCurrentItem(item);
+    }
+    m_conversationList->blockSignals(false);
+    if (m_chatDirty)
+        updateChat();
+    updateComposerHint();
+}
+
+void ReticulumFeature::updateChat()
+{
+    m_chatDirty = false;
+    const bool has = !m_currentPeer.isEmpty();
+    m_chatList->setVisible(has);
+    m_chatEmpty->setVisible(!has);
+    m_composer->setEnabled(has);
+    m_sendButton->setEnabled(has);
+    m_chatPathButton->setEnabled(has && m_node->onlineCount() > 0);
+    if (!has) {
+        m_chatTitle->setText(QStringLiteral("Messages"));
+        m_chatSubtitle->setText(QStringLiteral("Your address: %1").arg(hexHash(m_messenger->address())));
+        m_chatList->clear();
+        return;
+    }
+    if (isVisible() && m_tabs->currentIndex() == MessagesTab)
+        m_messenger->markRead(m_currentPeer);
+    m_chatTitle->setText(m_messenger->peerName(m_currentPeer));
+    const auto record = m_node->destinations().constFind(m_currentPeer);
+    QString subtitle = hexHash(m_currentPeer);
+    if (record != m_node->destinations().cend())
+        subtitle += QStringLiteral(" · %1 via %2 · heard %3")
+                        .arg(hopsText(record->hops), interfaceName(record->interfaceId), formatAge(record->lastHeard));
+    else
+        subtitle += QStringLiteral(" · not heard yet");
+    const int cost = m_messenger->peerStampCost(m_currentPeer);
+    if (cost > 0)
+        subtitle += QStringLiteral(" · asks for %1 bits of proof of work").arg(cost);
+    m_chatSubtitle->setText(subtitle);
+    const QList<ChatMessage> messages = m_messenger->messages(m_currentPeer);
+    const bool atBottom = m_chatList->verticalScrollBar()->value() >= m_chatList->verticalScrollBar()->maximum() - 4;
+    m_chatList->setUpdatesEnabled(false);
+    m_chatList->clear();
+    const int width = qMin(560, int(m_chatList->viewport()->width() * 0.72));
+    const int start = qMax(0, int(messages.size()) - 300);
+    for (int i = start; i < messages.size(); ++i) {
+        QWidget *bubble = messageBubble(messages.at(i), width);
+        auto *item = new QListWidgetItem;
+        item->setFlags(Qt::ItemIsEnabled);
+        bubble->adjustSize();
+        item->setSizeHint(bubble->sizeHint());
+        m_chatList->addItem(item);
+        m_chatList->setItemWidget(item, bubble);
+    }
+    m_chatList->setUpdatesEnabled(true);
+    if (atBottom || m_chatList->count() <= 1)
+        m_chatList->scrollToBottom();
+}
+
+void ReticulumFeature::updateComposerHint()
+{
+    const QByteArray text = m_composer->toPlainText().toUtf8();
+    if (m_currentPeer.isEmpty()) {
+        m_composerHint->clear();
+        return;
+    }
+    if (text.isEmpty()) {
+        m_composerHint->setText(m_node->onlineCount() > 0 ? QStringLiteral("End-to-end encrypted with the recipient's key")
+                                                          : QStringLiteral("Connect an interface to send"));
+        return;
+    }
+    const int size = int(text.size()) + 16;
+    QString route = size <= kLxmfOpportunisticMaxContent ? QStringLiteral("fits in a single packet")
+                    : size <= kLxmfLinkPacketMaxContent  ? QStringLiteral("goes over an encrypted link")
+                                                         : QStringLiteral("goes over a link as a resource");
+    m_composerHint->setText(QStringLiteral("%1 bytes · %2").arg(text.size()).arg(route));
+}
+
+bool ReticulumFeature::eventFilter(QObject *watched, QEvent *event)
+{
+    if (watched == m_composer && event->type() == QEvent::KeyPress) {
+        auto *key = static_cast<QKeyEvent *>(event);
+        if ((key->key() == Qt::Key_Return || key->key() == Qt::Key_Enter) && (key->modifiers() & Qt::ControlModifier)) {
+            sendMessage(m_composer->toPlainText());
+            return true;
+        }
+    }
+    if (m_chatList && watched == m_chatList->viewport() && event->type() == QEvent::Resize) {
+        m_chatDirty = true;
+        QTimer::singleShot(0, this, [this] {
+            if (m_chatDirty && m_tabs->currentIndex() == MessagesTab)
+                updateChat();
+        });
+    }
+    return forkmesh::market::NativePackageWidget::eventFilter(watched, event);
+}
+
+forkmesh::market::NativePackagePromptTarget ReticulumFeature::hostPromptTarget() const
+{
+    if (m_tabs->currentIndex() != MessagesTab || m_currentPeer.isEmpty())
+        return {};
+    const QString name = m_messenger->peerName(m_currentPeer);
+    return {QStringLiteral("Message %1, end-to-end encrypted over Reticulum").arg(name),
+            QStringLiteral("Send to %1").arg(name)};
+}
+
+bool ReticulumFeature::submitHostPrompt(const QString &text, const QStringList &attachments)
+{
+    if (!attachments.isEmpty() || m_tabs->currentIndex() != MessagesTab || m_currentPeer.isEmpty())
+        return false;
+    return !sendMessage(text).isEmpty();
+}
+
+int ReticulumFeature::navigationBadge() const
+{
+    return m_messenger ? m_messenger->unreadCount() : 0;
 }
 
 QWidget *ReticulumFeature::buildInterfacesTab()
@@ -668,6 +1151,7 @@ QWidget *ReticulumFeature::buildIdentityTab()
     };
     hashRow(QStringLiteral("Destination"), &m_destinationHash, QStringLiteral("Destination hash"));
     hashRow(QStringLiteral("Identity"), &m_identityHash, QStringLiteral("Identity hash"));
+    hashRow(QStringLiteral("Messaging address"), &m_messagingAddress, QStringLiteral("Messaging address"));
     m_announceName = new QLineEdit;
     m_announceName->setMaxLength(64);
     m_announceName->setPlaceholderText(QStringLiteral("Name shown to others, for example your handle"));
@@ -696,6 +1180,7 @@ QWidget *ReticulumFeature::buildIdentityTab()
     connect(announce, &QPushButton::clicked, this, [this] { announceNow(); });
     connect(m_announceName, &QLineEdit::editingFinished, this, [this] {
         m_node->setAnnounceName(m_announceName->text());
+        m_messenger->setDisplayName(m_announceName->text());
         if (m_host.setSetting)
             m_host.setSetting(kAnnounceNameSetting, m_node->announceName());
     });
@@ -742,6 +1227,8 @@ void ReticulumFeature::loadSettings()
     const QString name = m_host.setting ? m_host.setting(kAnnounceNameSetting, QString()).toString() : QString();
     m_node->setAnnounceName(name.isEmpty() && m_host.accountName ? m_host.accountName() : name);
     m_announceName->setText(m_node->announceName());
+    m_messenger->setDisplayName(m_node->announceName());
+    m_messenger->load(m_host.setting ? m_host.setting(kMessagesSetting, QString()).toString() : QString());
     const int minutes = m_host.setting ? m_host.setting(kAnnounceIntervalSetting, 0).toInt() : 0;
     const int index = m_announceInterval->findData(minutes);
     m_announceInterval->blockSignals(true);
@@ -826,6 +1313,9 @@ void ReticulumFeature::updateViewsNow()
     case NetworkTab:
         updateMap();
         updateDetail();
+        break;
+    case MessagesTab:
+        updateMessages();
         break;
     case InterfacesTab:
         updateInterfaces();
@@ -936,6 +1426,16 @@ void ReticulumFeature::updateTiles()
             ++pending;
         }
     }
+    const int unread = m_messenger->unreadCount();
+    const QList<Conversation> conversations = m_messenger->conversations();
+    m_tiles.at(MessagesTile)->setValue(unread > 0 ? QStringLiteral("%1 unread").arg(unread)
+                                                  : QStringLiteral("%1").arg(conversations.size()),
+                                       QStringLiteral("%1 conversation%2 · %3 link%4 open")
+                                           .arg(conversations.size())
+                                           .arg(conversations.size() == 1 ? QString() : QStringLiteral("s"))
+                                           .arg(m_messenger->activeLinks())
+                                           .arg(m_messenger->activeLinks() == 1 ? QString() : QStringLiteral("s")));
+    m_tiles.at(MessagesTile)->setTone(unread > 0 ? 2 : 0);
     m_tiles.at(PathsTile)->setValue(QStringLiteral("%1 found").arg(answered),
                                     pending > 0     ? QStringLiteral("%1 waiting for an answer").arg(pending)
                                     : fastest >= 0 ? QStringLiteral("Fastest answer %1 ms").arg(fastest)
@@ -962,6 +1462,7 @@ void ReticulumFeature::updateDetail()
     m_detailPath->setEnabled(has && m_node->onlineCount() > 0);
     m_detailCopy->setEnabled(has);
     m_detailForget->setEnabled(has);
+    m_detailMessage->setVisible(has && found->aspect == QStringLiteral("lxmf.delivery"));
     if (!has) {
         m_detailTitle->setText(QStringLiteral("Nothing selected"));
         m_detailBody->setText(QStringLiteral("Click a point on the map or a row in Destinations."));
@@ -1227,6 +1728,7 @@ void ReticulumFeature::updateIdentity()
 {
     m_destinationHash->setText(prettyHash(m_node->destinationHash()));
     m_identityHash->setText(prettyHash(m_node->identity().hash()));
+    m_messagingAddress->setText(prettyHash(m_messenger->address()));
     m_lastAnnounce->setText(m_node->lastAnnounce().isValid() ? formatAge(m_node->lastAnnounce())
                                                              : QStringLiteral("Not announced since ForkMesh started"));
 }
@@ -1316,6 +1818,23 @@ bool ReticulumFeature::editInterface(InterfaceConfig *config, bool creating)
     pages->addWidget(udpPage);
     layout->addWidget(pages);
 
+    auto *accessForm = new QFormLayout;
+    auto *networkName = new QLineEdit(config->networkName);
+    networkName->setPlaceholderText(QStringLiteral("Leave empty for an open network"));
+    auto *passphrase = new QLineEdit(config->passphrase);
+    passphrase->setEchoMode(QLineEdit::Password);
+    passphrase->setPlaceholderText(QStringLiteral("Leave empty for an open network"));
+    auto *accessSize = new QSpinBox;
+    accessSize->setRange(1, 64);
+    accessSize->setSuffix(QStringLiteral(" bytes"));
+    accessSize->setValue(config->accessCodeSize);
+    accessForm->addRow(QStringLiteral("Network name"), networkName);
+    accessForm->addRow(QStringLiteral("Passphrase"), passphrase);
+    accessForm->addRow(QStringLiteral("Access code size"), accessSize);
+    accessForm->addRow(QString(), mutedLabel(QStringLiteral("A virtual network on a shared medium (IFAC): only nodes with "
+                                                            "the same name and passphrase see each other's packets.")));
+    layout->addLayout(accessForm);
+
     auto *error = new QLabel;
     error->setObjectName(QStringLiteral("errorLabel"));
     error->setWordWrap(true);
@@ -1344,6 +1863,9 @@ bool ReticulumFeature::editInterface(InterfaceConfig *config, bool creating)
         result.listenPort = listenPort->value();
         result.forwardAddress = forwardAddress->text().trimmed();
         result.forwardPort = forwardPort->value();
+        result.networkName = networkName->text().trimmed();
+        result.passphrase = passphrase->text();
+        result.accessCodeSize = accessSize->value();
         const QString problem = result.validationError();
         if (!problem.isEmpty()) {
             error->setText(problem);
@@ -1433,6 +1955,7 @@ QString ReticulumFeature::importReticulumConfig(const QString &path)
 void ReticulumFeature::announceNow()
 {
     m_node->setAnnounceName(m_announceName->text());
+    m_messenger->setDisplayName(m_announceName->text());
     if (m_host.setSetting)
         m_host.setSetting(kAnnounceNameSetting, m_node->announceName());
     if (m_node->announce())

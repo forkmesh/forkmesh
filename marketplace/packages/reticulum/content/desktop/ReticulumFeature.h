@@ -2,6 +2,7 @@
 
 #include "NativePackageExtension.h"
 #include "ReticulumGraphics.h"
+#include "ReticulumMessenger.h"
 #include "ReticulumNode.h"
 
 #include <QHash>
@@ -12,6 +13,8 @@ class QComboBox;
 class QLabel;
 class QLineEdit;
 class QListWidget;
+class QPlainTextEdit;
+class QSpinBox;
 class QPushButton;
 class QTabWidget;
 class QTimer;
@@ -24,7 +27,7 @@ namespace forkmesh::reticulum {
 class ReticulumFeature final : public forkmesh::market::NativePackageWidget
 {
 public:
-    enum Tab { NetworkTab, InterfacesTab, DestinationsTab, ActivityTab, IdentityTab };
+    enum Tab { NetworkTab, MessagesTab, InterfacesTab, DestinationsTab, ActivityTab, IdentityTab };
 
     explicit ReticulumFeature(const forkmesh::market::NativePackageHost &host, QWidget *parent = nullptr);
     ~ReticulumFeature() override;
@@ -35,8 +38,17 @@ public:
     QList<forkmesh::market::NativePackageSearchHit> searchHits(const QString &query, int limit) const override;
     void activateSearchHit(const QString &id) override;
     void themeChanged() override;
+    int navigationBadge() const override;
+    forkmesh::market::NativePackagePromptTarget hostPromptTarget() const override;
+    bool submitHostPrompt(const QString &text, const QStringList &attachments) override;
+    void prepareNavigationBadge() override {}
 
     Node *node() const { return m_node; }
+    Messenger *messenger() const { return m_messenger; }
+    QListWidget *conversationList() const { return m_conversationList; }
+    QListWidget *chatList() const { return m_chatList; }
+    void openConversation(const QByteArray &peer);
+    QString sendMessage(const QString &text);
     QTabWidget *tabs() const { return m_tabs; }
     QTreeWidget *interfaceTree() const { return m_interfaceTree; }
     QTreeWidget *destinationTree() const { return m_destinationTree; }
@@ -51,9 +63,16 @@ public:
 
 protected:
     void showEvent(QShowEvent *event) override;
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
     QWidget *buildNetworkTab();
+    QWidget *buildMessagesTab();
+    void updateMessages();
+    void updateChat();
+    void updateComposerHint();
+    void startConversation();
+    QWidget *messageBubble(const ChatMessage &message, int width);
     QWidget *buildInterfacesTab();
     QWidget *buildDestinationsTab();
     QWidget *buildActivityTab();
@@ -84,6 +103,21 @@ private:
 
     forkmesh::market::NativePackageHost m_host;
     Node *m_node = nullptr;
+    Messenger *m_messenger = nullptr;
+    QByteArray m_currentPeer;
+    QListWidget *m_conversationList = nullptr;
+    QLabel *m_chatTitle = nullptr;
+    QLabel *m_chatSubtitle = nullptr;
+    QListWidget *m_chatList = nullptr;
+    QPlainTextEdit *m_composer = nullptr;
+    QPushButton *m_sendButton = nullptr;
+    QLabel *m_composerHint = nullptr;
+    QPushButton *m_chatPathButton = nullptr;
+    QWidget *m_chatPane = nullptr;
+    QLabel *m_chatEmpty = nullptr;
+    QPushButton *m_detailMessage = nullptr;
+    QLabel *m_messagingAddress = nullptr;
+    bool m_chatDirty = true;
     bool m_started = false;
     QByteArray m_selected;
     QString m_query;

@@ -18,6 +18,14 @@ The page opens on a live view of the network:
   for its details and click it to select it. Beside the map is a three-minute
   traffic chart and the selected destination's identity, distance, next hop,
   announce time and forward secrecy.
+- **Messages**: chat with anyone on the network who uses LXMF, such as
+  Sideband, MeshChat or Nomad Network. Messages are end-to-end encrypted with
+  the recipient's key and signed with yours; each shows when it was sent and
+  delivered, whether it went as a single packet, over a link or as a larger
+  transfer, and whether the sender's signature checked out. Retry a message
+  that could not be sent, save received attachments, and start a conversation
+  with anyone who has announced or by pasting their LXMF address. Unread
+  messages show on the rail button and as a notification.
 - **Interfaces**: add, edit, switch off, reconnect and remove interfaces. Each
   row shows its status, uptime, bytes and packets in and out, and announces.
   The panel below has the selected interface's details and its own traffic
@@ -29,8 +37,9 @@ The page opens on a live view of the network:
   sorting and **Find path** for any destination hash.
 - **Activity**: a timeline of announces, path answers, interfaces coming and
   going and rejected packets, plus packet counters.
-- **Identity**: this desktop's Reticulum destination and identity hashes, the
-  name in its announces, automatic announcing and answering path requests.
+- **Identity**: this desktop's Reticulum destination, identity and messaging
+  addresses, the name in its announces, automatic announcing and answering
+  path requests.
 
 Three kinds of interface are supported:
 
@@ -40,8 +49,13 @@ Three kinds of interface are supported:
 | Reticulum on this computer | The shared instance of `rnsd`, which brings its radios and paths with it |
 | UDP | Other Reticulum nodes on the local network (`UDPInterface`) |
 
-Nothing is announced until you choose to. Every connection asks the ForkMesh
-firewall first, and **Disconnect** closes them all. Interfaces protected by a
-network name and passphrase (IFAC) are not supported yet and are skipped on
-import. Details are in
+Each interface can also carry a network name and passphrase (IFAC), so
+ForkMesh can join private virtual networks on shared links; imported configs
+keep them.
+
+Nothing is announced until you choose to, except that sending a message first
+announces your messaging address so the recipient can check your signature and
+reply. Every connection asks the ForkMesh firewall first, and **Disconnect**
+closes them all. Conversations stay on this computer and are offered as a file
+when you remove the plugin. Details are in
 [docs/marketplace/reticulum.md](../../../docs/marketplace/reticulum.md).

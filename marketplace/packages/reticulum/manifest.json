@@ -12,11 +12,11 @@
   "type": "extension.native",
   "category": "Utilities",
   "version": "1.0.0",
-  "summary": "Connect the desktop to the Reticulum mesh network: a live map of every destination heard, traffic and announce charts, path lookups, and TCP, UDP and local daemon interfaces you add, edit and switch off.",
+  "summary": "Connect to the Reticulum mesh network: chat end to end encrypted with Sideband and MeshChat users over LXMF, watch a live map and traffic charts, find paths, and manage TCP, UDP, rnsd and passphrase interfaces.",
   "screenshots": [
     {
       "path": "preview/market.svg",
-      "alt": "The Reticulum page with connection, destination, announce and traffic tiles above a radial network map of destinations by hop count and a traffic chart"
+      "alt": "The Reticulum page with connection, destination, announce, traffic and message tiles above a radial network map of destinations by hop count and a traffic chart"
     }
   ],
   "license": {
@@ -31,12 +31,19 @@
   },
   "entrypoints": {
     "desktop": "builtin:reticulum",
+    "ios": "builtin:reticulum",
+    "android": "builtin:reticulum",
     "settings": "builtin:package"
   },
   "permissions": [
     {
       "id": "network.socket.connect",
       "label": "Open TCP and UDP connections to the Reticulum nodes you add, after the ForkMesh firewall allows each one",
+      "risk": "sensitive"
+    },
+    {
+      "id": "messages.lxmf",
+      "label": "Send and receive end-to-end encrypted LXMF messages as this desktop's Reticulum identity",
       "risk": "sensitive"
     },
     {
@@ -58,13 +65,18 @@
   },
   "install": {
     "bundled": true,
-    "default": false
+    "default": false,
+    "sync": "account",
+    "places": [
+      "mobile",
+      "desktop"
+    ]
   },
   "lifecycle": {
     "migrations": []
   },
   "dataLifecycle": {
     "scope": "none",
-    "localData": false
+    "localData": true
   }
 }

@@ -7,6 +7,7 @@
 #include <QVariantMap>
 
 #include <openssl/evp.h>
+#include <openssl/crypto.h>
 #include <openssl/rand.h>
 
 #include <cmath>
@@ -171,6 +172,7 @@ public:
     }
 
     bool atEnd() const { return m_offset == m_bytes.size(); }
+    int offset() const { return m_offset; }
 
 private:
     quint64 readUnsigned(int width, bool *ok)
@@ -598,17 +600,7 @@ QByteArray Identity::sign(const QByteArray &data) const
 {
     if (!hasPrivateKey())
         return {};
-    PkeyPointer key = makePrivateKey(EVP_PKEY_ED25519, m_privateKey.mid(32));
-    std::unique_ptr<EVP_MD_CTX, DigestContextDeleter> context(EVP_MD_CTX_new());
-    if (!key || !context || EVP_DigestSignInit(context.get(), nullptr, nullptr, nullptr, key.get()) <= 0)
-        return {};
-    QByteArray signature(kSignatureLength, '\0');
-    size_t length = size_t(signature.size());
-    if (EVP_DigestSign(context.get(), reinterpret_cast<unsigned char *>(signature.data()), &length,
-                       reinterpret_cast<const unsigned char *>(data.constData()), size_t(data.size())) <= 0 ||
-        length != size_t(kSignatureLength))
-        return {};
-    return signature;
+    return ed25519Sign(m_privateKey.mid(32), data);
 }
 
 bool Identity::verify(const QByteArray &signature, const QByteArray &data) const
@@ -772,7 +764,7 @@ const QList<KnownAspect> &knownAspects()
             {QStringLiteral("call.audio"), QStringLiteral("Voice calls"), QStringLiteral("peer")},
             {QStringLiteral("rncp.receive"), QStringLiteral("File transfer (rncp)"), QStringLiteral("service")},
             {QStringLiteral("rnx.execute"), QStringLiteral("Remote command (rnx)"), QStringLiteral("service")},
-            {QStringLiteral("forkmesh.node"), QStringLiteral("ForkMesh desktop"), QStringLiteral("forkmesh")},
+            {QStringLiteral("forkmesh.node"), QStringLiteral("ForkMesh device"), QStringLiteral("forkmesh")},
         };
         QList<KnownAspect> out;
         for (const QStringList &row : rows)
@@ -889,6 +881,388 @@ std::optional<DiscoveredInterface> parseDiscoveryAppData(const QByteArray &appDa
     found.stampValue = stampValue(fullHash(packed), stamp, kDiscoveryExpandRounds);
     found.stampValid = found.stampValue >= kDiscoveryStampValue;
     return found;
+}
+
+QByteArray x25519PublicFromPrivate(const QByteArray &privateKey)
+{
+    if (privateKey.size() != 32)
+        return {};
+    PkeyPointer key = makePrivateKey(EVP_PKEY_X25519, privateKey);
+    return rawPublic(key.get());
+}
+
+QByteArray x25519Exchange(const QByteArray &privateKey, const QByteArray &peerPublicKey)
+{
+    if (privateKey.size() != 32 || peerPublicKey.size() != 32)
+        return {};
+    PkeyPointer own = makePrivateKey(EVP_PKEY_X25519, privateKey);
+    PkeyPointer peer = makePublicKey(EVP_PKEY_X25519, peerPublicKey);
+    if (!own || !peer)
+        return {};
+    std::unique_ptr<EVP_PKEY_CTX, PkeyContextDeleter> context(EVP_PKEY_CTX_new(own.get(), nullptr));
+    if (!context || EVP_PKEY_derive_init(context.get()) <= 0 || EVP_PKEY_derive_set_peer(context.get(), peer.get()) <= 0)
+        return {};
+    size_t length = 32;
+    QByteArray shared(32, '\0');
+    if (EVP_PKEY_derive(context.get(), reinterpret_cast<unsigned char *>(shared.data()), &length) <= 0 || length != 32)
+        return {};
+    return shared;
+}
+
+QByteArray ed25519PublicFromPrivate(const QByteArray &privateKey)
+{
+    if (privateKey.size() != 32)
+        return {};
+    PkeyPointer key = makePrivateKey(EVP_PKEY_ED25519, privateKey);
+    return rawPublic(key.get());
+}
+
+QByteArray ed25519Sign(const QByteArray &privateKey, const QByteArray &data)
+{
+    if (privateKey.size() != 32)
+        return {};
+    PkeyPointer key = makePrivateKey(EVP_PKEY_ED25519, privateKey);
+    std::unique_ptr<EVP_MD_CTX, DigestContextDeleter> context(EVP_MD_CTX_new());
+    if (!key || !context || EVP_DigestSignInit(context.get(), nullptr, nullptr, nullptr, key.get()) <= 0)
+        return {};
+    QByteArray signature(kSignatureLength, '\0');
+    size_t length = size_t(signature.size());
+    if (EVP_DigestSign(context.get(), reinterpret_cast<unsigned char *>(signature.data()), &length,
+                       reinterpret_cast<const unsigned char *>(data.constData()), size_t(data.size())) <= 0 ||
+        length != size_t(kSignatureLength))
+        return {};
+    return signature;
+}
+
+bool ed25519Verify(const QByteArray &publicKey, const QByteArray &signature, const QByteArray &data)
+{
+    if (publicKey.size() != 32 || signature.size() != kSignatureLength)
+        return false;
+    PkeyPointer key = makePublicKey(EVP_PKEY_ED25519, publicKey);
+    std::unique_ptr<EVP_MD_CTX, DigestContextDeleter> context(EVP_MD_CTX_new());
+    if (!key || !context || EVP_DigestVerifyInit(context.get(), nullptr, nullptr, nullptr, key.get()) <= 0)
+        return false;
+    return EVP_DigestVerify(context.get(), reinterpret_cast<const unsigned char *>(signature.constData()),
+                            size_t(signature.size()), reinterpret_cast<const unsigned char *>(data.constData()),
+                            size_t(data.size())) == 1;
+}
+
+namespace {
+
+QByteArray aes256Cbc(bool encrypt, const QByteArray &key, const QByteArray &iv, const QByteArray &input)
+{
+    struct CipherDeleter {
+        void operator()(EVP_CIPHER_CTX *context) const { EVP_CIPHER_CTX_free(context); }
+    };
+    std::unique_ptr<EVP_CIPHER_CTX, CipherDeleter> context(EVP_CIPHER_CTX_new());
+    if (!context || key.size() != 32 || iv.size() != 16 ||
+        EVP_CipherInit_ex(context.get(), EVP_aes_256_cbc(), nullptr,
+                          reinterpret_cast<const unsigned char *>(key.constData()),
+                          reinterpret_cast<const unsigned char *>(iv.constData()), encrypt ? 1 : 0) != 1)
+        return {};
+    QByteArray out(input.size() + 32, '\0');
+    int written = 0;
+    int finalWritten = 0;
+    if (EVP_CipherUpdate(context.get(), reinterpret_cast<unsigned char *>(out.data()), &written,
+                         reinterpret_cast<const unsigned char *>(input.constData()), int(input.size())) != 1 ||
+        EVP_CipherFinal_ex(context.get(), reinterpret_cast<unsigned char *>(out.data()) + written, &finalWritten) != 1)
+        return {};
+    out.truncate(written + finalWritten);
+    return out;
+}
+
+}
+
+QByteArray tokenEncrypt(const QByteArray &key, const QByteArray &plaintext, const QByteArray &iv)
+{
+    if (key.size() != 64)
+        return {};
+    const QByteArray vector = iv.size() == 16 ? iv : randomBytes(16);
+    const QByteArray ciphertext = aes256Cbc(true, key.mid(32), vector, plaintext);
+    if (ciphertext.isEmpty())
+        return {};
+    const QByteArray signedParts = vector + ciphertext;
+    return signedParts + hmacSha256(key.left(32), signedParts);
+}
+
+std::optional<QByteArray> tokenDecrypt(const QByteArray &key, const QByteArray &token)
+{
+    if (key.size() != 64 || token.size() < 16 + 16 + 32 || (token.size() - 48) % 16 != 0)
+        return std::nullopt;
+    const QByteArray mac = hmacSha256(key.left(32), token.left(token.size() - 32));
+    if (CRYPTO_memcmp(mac.constData(), token.constData() + token.size() - 32, 32) != 0)
+        return std::nullopt;
+    const QByteArray ciphertext = token.mid(16, token.size() - 48);
+    struct CipherDeleter {
+        void operator()(EVP_CIPHER_CTX *context) const { EVP_CIPHER_CTX_free(context); }
+    };
+    std::unique_ptr<EVP_CIPHER_CTX, CipherDeleter> context(EVP_CIPHER_CTX_new());
+    const QByteArray encryptionKey = key.mid(32);
+    const QByteArray iv = token.left(16);
+    if (!context || EVP_DecryptInit_ex(context.get(), EVP_aes_256_cbc(), nullptr,
+                                       reinterpret_cast<const unsigned char *>(encryptionKey.constData()),
+                                       reinterpret_cast<const unsigned char *>(iv.constData())) != 1)
+        return std::nullopt;
+    QByteArray out(ciphertext.size() + 16, '\0');
+    int written = 0;
+    int finalWritten = 0;
+    if (EVP_DecryptUpdate(context.get(), reinterpret_cast<unsigned char *>(out.data()), &written,
+                          reinterpret_cast<const unsigned char *>(ciphertext.constData()), int(ciphertext.size())) != 1 ||
+        EVP_DecryptFinal_ex(context.get(), reinterpret_cast<unsigned char *>(out.data()) + written, &finalWritten) != 1)
+        return std::nullopt;
+    out.truncate(written + finalWritten);
+    return out;
+}
+
+QByteArray Identity::encrypt(const QByteArray &plaintext, const QByteArray &ratchetPublicKey) const
+{
+    if (!isValid())
+        return {};
+    const Identity ephemeral = generate();
+    const QByteArray ephemeralPrivate = ephemeral.privateKey().left(32);
+    const QByteArray target = ratchetPublicKey.size() == 32 ? ratchetPublicKey : encryptionPublicKey();
+    const QByteArray shared = x25519Exchange(ephemeralPrivate, target);
+    if (shared.isEmpty())
+        return {};
+    const QByteArray token = tokenEncrypt(hkdf(64, shared, hash()), plaintext);
+    if (token.isEmpty())
+        return {};
+    return ephemeral.encryptionPublicKey() + token;
+}
+
+std::optional<QByteArray> Identity::decrypt(const QByteArray &token) const
+{
+    if (!hasPrivateKey() || token.size() <= 32)
+        return std::nullopt;
+    const QByteArray shared = x25519Exchange(m_privateKey.left(32), token.left(32));
+    if (shared.isEmpty())
+        return std::nullopt;
+    return tokenDecrypt(hkdf(64, shared, hash()), token.mid(32));
+}
+
+void MsgPackWriter::header(quint8 small, int smallLimit, quint8 base8, quint8 base16, quint8 base32, quint32 size)
+{
+    if (int(size) < smallLimit && small) {
+        m_bytes.append(char(small | size));
+    } else if (size <= 0xff && base8) {
+        m_bytes.append(char(base8));
+        m_bytes.append(char(size));
+    } else if (size <= 0xffff) {
+        m_bytes.append(char(base16));
+        m_bytes.append(char(size >> 8));
+        m_bytes.append(char(size & 0xff));
+    } else {
+        m_bytes.append(char(base32));
+        for (int shift = 24; shift >= 0; shift -= 8)
+            m_bytes.append(char((size >> shift) & 0xff));
+    }
+}
+
+MsgPackWriter &MsgPackWriter::nil()
+{
+    m_bytes.append(char(0xc0));
+    return *this;
+}
+
+MsgPackWriter &MsgPackWriter::boolean(bool value)
+{
+    m_bytes.append(char(value ? 0xc3 : 0xc2));
+    return *this;
+}
+
+MsgPackWriter &MsgPackWriter::integer(qint64 value)
+{
+    const auto big = [this](quint8 type, quint64 bits, int width) {
+        m_bytes.append(char(type));
+        for (int shift = (width - 1) * 8; shift >= 0; shift -= 8)
+            m_bytes.append(char((bits >> shift) & 0xff));
+    };
+    if (value >= 0) {
+        if (value <= 0x7f)
+            m_bytes.append(char(value));
+        else if (value <= 0xff)
+            big(0xcc, quint64(value), 1);
+        else if (value <= 0xffff)
+            big(0xcd, quint64(value), 2);
+        else if (value <= 0xffffffffLL)
+            big(0xce, quint64(value), 4);
+        else
+            big(0xcf, quint64(value), 8);
+    } else {
+        if (value >= -32)
+            m_bytes.append(char(value));
+        else if (value >= -128)
+            big(0xd0, quint64(value), 1);
+        else if (value >= -32768)
+            big(0xd1, quint64(value), 2);
+        else if (value >= -2147483648LL)
+            big(0xd2, quint64(value), 4);
+        else
+            big(0xd3, quint64(value), 8);
+    }
+    return *this;
+}
+
+MsgPackWriter &MsgPackWriter::real(double value)
+{
+    quint64 bits = 0;
+    std::memcpy(&bits, &value, sizeof bits);
+    m_bytes.append(char(0xcb));
+    for (int shift = 56; shift >= 0; shift -= 8)
+        m_bytes.append(char((bits >> shift) & 0xff));
+    return *this;
+}
+
+MsgPackWriter &MsgPackWriter::bin(const QByteArray &value)
+{
+    header(0, 0, 0xc4, 0xc5, 0xc6, quint32(value.size()));
+    m_bytes.append(value);
+    return *this;
+}
+
+MsgPackWriter &MsgPackWriter::str(const QString &value)
+{
+    const QByteArray utf8 = value.toUtf8();
+    header(0xa0, 32, 0xd9, 0xda, 0xdb, quint32(utf8.size()));
+    m_bytes.append(utf8);
+    return *this;
+}
+
+MsgPackWriter &MsgPackWriter::array(int count)
+{
+    header(0x90, 16, 0, 0xdc, 0xdd, quint32(count));
+    return *this;
+}
+
+MsgPackWriter &MsgPackWriter::map(int count)
+{
+    header(0x80, 16, 0, 0xde, 0xdf, quint32(count));
+    return *this;
+}
+
+MsgPackWriter &MsgPackWriter::raw(const QByteArray &bytes)
+{
+    m_bytes.append(bytes);
+    return *this;
+}
+
+bool msgPackArrayItems(const QByteArray &bytes, QList<QPair<int, int>> *items)
+{
+    if (bytes.isEmpty() || !items)
+        return false;
+    items->clear();
+    const quint8 type = quint8(bytes.at(0));
+    int count = 0;
+    int offset = 1;
+    if ((type & 0xf0) == 0x90) {
+        count = type & 0x0f;
+    } else if (type == 0xdc && bytes.size() >= 3) {
+        count = (quint8(bytes.at(1)) << 8) | quint8(bytes.at(2));
+        offset = 3;
+    } else {
+        return false;
+    }
+    if (count > 64)
+        return false;
+    MsgPackReader reader(bytes);
+    bool ok = true;
+    reader.read(0, &ok);
+    if (!ok || !reader.atEnd())
+        return false;
+    const QByteArray rest = bytes.mid(offset);
+    MsgPackReader itemReader(rest);
+    for (int i = 0; i < count; ++i) {
+        const int start = itemReader.offset();
+        itemReader.read(1, &ok);
+        if (!ok)
+            return false;
+        items->append({offset + start, offset + itemReader.offset()});
+    }
+    return true;
+}
+
+InterfaceAccessCode::InterfaceAccessCode(const QString &networkName, const QString &passphrase, int size)
+{
+    if ((networkName.isEmpty() && passphrase.isEmpty()) || size < 1 || size > 64)
+        return;
+    QByteArray origin;
+    if (!networkName.isEmpty())
+        origin += fullHash(networkName.toUtf8());
+    if (!passphrase.isEmpty())
+        origin += fullHash(passphrase.toUtf8());
+    static const QByteArray salt =
+        QByteArray::fromHex("adf54d882c9a9b80771eb4995d702d4a3e733391b2a0f53f416d9f907e55cff8");
+    m_key = hkdf(64, fullHash(origin), salt);
+    m_signingKey = m_key.mid(32);
+    m_size = size;
+}
+
+QByteArray InterfaceAccessCode::apply(const QByteArray &raw) const
+{
+    if (!enabled() || raw.size() < 2)
+        return raw;
+    const QByteArray code = ed25519Sign(m_signingKey, raw).right(m_size);
+    QByteArray framed;
+    framed.reserve(raw.size() + m_size);
+    framed.append(char(quint8(raw.at(0)) | 0x80));
+    framed.append(raw.at(1));
+    framed.append(code);
+    framed.append(raw.mid(2));
+    const QByteArray mask = hkdf(int(framed.size()), code, m_key);
+    for (int i = 0; i < framed.size(); ++i) {
+        if (i >= 2 && i < 2 + m_size)
+            continue;
+        framed[i] = char(quint8(framed.at(i)) ^ quint8(mask.at(i)));
+    }
+    framed[0] = char(quint8(framed.at(0)) | 0x80);
+    return framed;
+}
+
+std::optional<QByteArray> InterfaceAccessCode::remove(const QByteArray &raw) const
+{
+    if (!enabled() || raw.size() <= 2 + m_size || !(quint8(raw.at(0)) & 0x80))
+        return std::nullopt;
+    const QByteArray code = raw.mid(2, m_size);
+    const QByteArray mask = hkdf(int(raw.size()), code, m_key);
+    QByteArray unmasked = raw;
+    for (int i = 0; i < unmasked.size(); ++i) {
+        if (i >= 2 && i < 2 + m_size)
+            continue;
+        unmasked[i] = char(quint8(unmasked.at(i)) ^ quint8(mask.at(i)));
+    }
+    QByteArray packet;
+    packet.reserve(raw.size() - m_size);
+    packet.append(char(quint8(unmasked.at(0)) & 0x7f));
+    packet.append(unmasked.at(1));
+    packet.append(unmasked.mid(2 + m_size));
+    const QByteArray expected = ed25519Sign(m_signingKey, packet).right(m_size);
+    if (expected.size() != code.size() || CRYPTO_memcmp(expected.constData(), code.constData(), size_t(m_size)) != 0)
+        return std::nullopt;
+    return packet;
+}
+
+QByteArray buildProof(const QByteArray &signingPrivateKey, const QByteArray &hash, bool explicitProof,
+                      const QByteArray &destination, int destinationType)
+{
+    const QByteArray signature = ed25519Sign(signingPrivateKey, hash);
+    if (signature.isEmpty())
+        return {};
+    Packet packet;
+    packet.packetType = PacketProof;
+    packet.destinationType = destinationType;
+    packet.destinationHash = destination;
+    packet.data = explicitProof ? hash + signature : signature;
+    return packPacket(packet);
+}
+
+bool validateProof(const QByteArray &signingPublicKey, const QByteArray &hash, const QByteArray &proofData)
+{
+    if (proofData.size() == kFullHashLength + kSignatureLength)
+        return proofData.left(kFullHashLength) == hash &&
+               ed25519Verify(signingPublicKey, proofData.mid(kFullHashLength), hash);
+    if (proofData.size() == kSignatureLength)
+        return ed25519Verify(signingPublicKey, proofData, hash);
+    return false;
 }
 
 QString hexHash(const QByteArray &hash)

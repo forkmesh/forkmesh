@@ -144,6 +144,7 @@ enum NavigationRoutes {
             return AnyView(CodeInsightScreen(plugin: .synapse, repo: repo) { SynapsePage(context: $0) })
         }
         fallback(routes, .openWrtRouter) { _ in AnyView(OpenWrtScreen()) }
+        fallback(routes, .reticulum) { _ in AnyView(ReticulumScreen()) }
         fallback(routes, .fileExplorer) { _ in AnyView(FilesScreen()) }
         fallback(routes, .nexus) { _ in
             AnyView(NexusRootView(onClose: { Services.get(AppRouter.self)?.dismissPresented() }))

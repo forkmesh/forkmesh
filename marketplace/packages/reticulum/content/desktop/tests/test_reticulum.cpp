@@ -1,5 +1,7 @@
 #include "ReticulumFeature.h"
 #include "ReticulumGraphics.h"
+#include "ReticulumLxmf.h"
+#include "ReticulumMessenger.h"
 #include "ReticulumNode.h"
 #include "ReticulumProtocol.h"
 
@@ -11,6 +13,8 @@
 #include <QHash>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QLabel>
+#include <QListWidget>
 #include <QTabWidget>
 #include <QTcpServer>
 #include <QTcpSocket>
@@ -174,17 +178,19 @@ void testConfigImport()
         "  [[LAN UDP]]\n    type = UDPInterface\n    interface_enabled = no\n    port = 4243 # both\n");
     QStringList skipped;
     const QList<InterfaceConfig> configs = parseReticulumConfig(text, &skipped);
-    check(configs.size() == 3, QStringLiteral("Config import finds shared instance, TCP and UDP (%1)").arg(configs.size()));
-    if (configs.size() == 3) {
+    check(configs.size() == 4, QStringLiteral("Config import finds shared instance, two TCP and UDP (%1)").arg(configs.size()));
+    if (configs.size() == 4) {
         check(configs.at(0).kind == InterfaceKind::SharedInstance && configs.at(0).instanceName == QStringLiteral("lab"),
               QStringLiteral("Shared instance name comes from [reticulum]"));
         check(configs.at(1).host == QStringLiteral("dublin.connect.reticulum.network") && configs.at(1).port == 4965 &&
                   configs.at(1).enabled,
               QStringLiteral("TCP client entry is imported"));
-        check(configs.at(2).kind == InterfaceKind::Udp && configs.at(2).listenPort == 4243 && !configs.at(2).enabled,
+        check(configs.at(2).networkName == QStringLiteral("secret") && configs.at(2).usesAccessCode(),
+              QStringLiteral("An entry with a network name keeps it for IFAC"));
+        check(configs.at(3).kind == InterfaceKind::Udp && configs.at(3).listenPort == 4243 && !configs.at(3).enabled,
               QStringLiteral("UDP entry keeps its port and disabled state"));
     }
-    check(skipped.size() == 2, QStringLiteral("AutoInterface and the IFAC-protected entry are reported as skipped"));
+    check(skipped.size() == 1, QStringLiteral("AutoInterface is reported as skipped"));
     InterfaceConfig bad;
     bad.name = QStringLiteral("x");
     bad.host = QStringLiteral("bad host!");
@@ -317,7 +323,7 @@ void testFirewallDenied()
 
 void settle()
 {
-    waitFor([] { return false; }, 200);
+    waitFor([] { return false; }, 800);
 }
 
 QByteArray syntheticAnnounce(int index, QString *aspectOut = nullptr)
@@ -343,6 +349,49 @@ QByteArray syntheticAnnounce(int index, QString *aspectOut = nullptr)
     return raw;
 }
 
+struct Hub {
+    QTcpServer server;
+    QList<QPointer<QTcpSocket>> clients;
+    Hub()
+    {
+        server.listen(QHostAddress::LocalHost);
+        QObject::connect(&server, &QTcpServer::newConnection, &server, [this] {
+            QTcpSocket *socket = server.nextPendingConnection();
+            clients.append(socket);
+            QObject::connect(socket, &QTcpSocket::readyRead, socket, [this, socket] {
+                const QByteArray bytes = socket->readAll();
+                for (const QPointer<QTcpSocket> &other : std::as_const(clients)) {
+                    if (other && other != socket)
+                        other->write(bytes);
+                }
+            });
+        });
+    }
+};
+
+struct Peer {
+    Node node;
+    Messenger messenger{&node};
+    Peer(const QString &name, quint16 port, const QString &networkName = {}, const QString &passphrase = {})
+    {
+        node.setIdentity(Identity::generate());
+        messenger.setDisplayName(name);
+        node.setAnnounceHandler([this](const QByteArray &hash) { messenger.destinationAnnounced(hash); });
+        node.setPacketHandler([this](const QString &id, const Packet &packet, const QByteArray &raw, int hops) {
+            messenger.handlePacket(id, packet, raw, hops);
+        });
+        InterfaceConfig config;
+        config.id = QStringLiteral("hub");
+        config.name = QStringLiteral("Hub");
+        config.host = QStringLiteral("127.0.0.1");
+        config.port = port;
+        config.networkName = networkName;
+        config.passphrase = passphrase;
+        node.setInterfaces({config});
+        node.start();
+    }
+};
+
 void testFeature(const QString &screenshotDir)
 {
     QHash<QString, QVariant> settings;
@@ -353,7 +402,7 @@ void testFeature(const QString &screenshotDir)
     host.setSetting = [&settings](const QString &key, const QVariant &value) { settings.insert(key, value); };
     host.authorizeConnection = [](const QString &, const QUrl &) { return true; };
 
-    FakeNode fake;
+    Hub hub;
     auto page = std::make_unique<ReticulumFeature>(host, nullptr);
     page->resize(1280, 820);
     page->show();
@@ -365,7 +414,7 @@ void testFeature(const QString &screenshotDir)
     a.id = QStringLiteral("a");
     a.name = QStringLiteral("RMAP Backbone 1");
     a.host = QStringLiteral("127.0.0.1");
-    a.port = fake.server.serverPort();
+    a.port = hub.server.serverPort();
     InterfaceConfig b = defaultInterfaces().first();
     b.id = QStringLiteral("b");
     b.enabled = false;
@@ -389,9 +438,44 @@ void testFeature(const QString &screenshotDir)
     if (!screenshotDir.isEmpty())
         page->grab().save(QDir(screenshotDir).filePath(QStringLiteral("reticulum-network.png")));
 
+    Peer bob(QStringLiteral("Bob on Sideband"), hub.server.serverPort());
+    check(waitFor([&] { return bob.node.onlineCount() == 1 && hub.clients.size() >= 2; }), QStringLiteral("Page: a peer joins the hub"));
+    page->node()->announce();
+    bob.node.announce();
+    check(waitFor([&] { return bob.node.destinations().contains(page->messenger()->address()) &&
+                               page->node()->destinations().contains(bob.messenger.address()); }),
+          QStringLiteral("Page: page and peer hear each other"));
+    bob.messenger.send(page->messenger()->address(), QStringLiteral("Hello from the mesh! Are you there?"));
+    check(waitFor([&] { return page->navigationBadge() == 1; }, 15000), QStringLiteral("Page: an incoming message shows an unread badge"));
+    page->openConversation(bob.messenger.address());
+    check(page->navigationBadge() == 0, QStringLiteral("Page: opening the conversation marks it read"));
+    const QString reply = page->sendMessage(QStringLiteral("Loud and clear. Writing from the ForkMesh desktop over Reticulum."));
+    check(waitFor([&] { return page->messenger()->message(reply) && page->messenger()->message(reply)->state == MessageState::Delivered; }, 15000),
+          QStringLiteral("Page: a reply typed on the page is delivered"));
+    check(page->hostPromptTarget().action == QStringLiteral("Send to Bob on Sideband"),
+          QStringLiteral("Page: the window's prompt box becomes the message composer"));
+    check(page->submitHostPrompt(QStringLiteral("Sent from the footer prompt"), {}),
+          QStringLiteral("Page: the footer prompt sends a message"));
+    check(waitFor([&] { return bob.messenger.messages(page->messenger()->address()).size() == 3; }),
+          QStringLiteral("Page: the peer receives the reply"));
+    page->updateViewsNow();
+    check(page->conversationList()->count() == 1 && page->chatList()->count() == 3,
+          QStringLiteral("Page: the Messages tab lists the conversation and both messages"));
+    settle();
+    const auto bubbleShows = [&page](const QString &text) {
+        for (const QLabel *label : page->chatList()->findChildren<QLabel *>()) {
+            if (label->text().contains(text))
+                return true;
+        }
+        return false;
+    };
+    check(bubbleShows(QStringLiteral("Delivered")), QStringLiteral("Page: the reply bubble shows it was delivered"));
+    if (!screenshotDir.isEmpty())
+        page->grab().save(QDir(screenshotDir).filePath(QStringLiteral("reticulum-messages.png")));
+
     page->tabs()->setCurrentIndex(ReticulumFeature::DestinationsTab);
     page->updateViewsNow();
-    check(page->destinationTree()->topLevelItemCount() == 161, QStringLiteral("Destinations table lists every destination"));
+    check(page->destinationTree()->topLevelItemCount() == page->node()->destinations().size(), QStringLiteral("Destinations table lists every destination"));
     const QList<forkmesh::market::NativePackageSearchHit> hits = page->searchHits(QStringLiteral("Field radio"), 5);
     check(hits.size() == 1, QStringLiteral("Top search finds a destination by name"));
     settle();
@@ -452,6 +536,173 @@ void testListenLive()
           node.status(config.id).txBytes);
     check(node.status(config.id).txBytes == 0, QStringLiteral("Live: listening sent nothing"));
     node.stop();
+}
+
+void testLxmfInterop()
+{
+    const QString tcp = qEnvironmentVariable("RETICULUM_LXMF_TCP");
+    const QByteArray peer = parseHash(qEnvironmentVariable("RETICULUM_LXMF_PEER"));
+    const QString out = qEnvironmentVariable("RETICULUM_LXMF_OUT");
+    if (tcp.isEmpty() || peer.isEmpty())
+        return;
+    Node node;
+    node.setIdentity(Identity::generate());
+    Messenger messenger(&node);
+    messenger.setDisplayName(QStringLiteral("ForkMesh desktop"));
+    node.setAnnounceHandler([&messenger](const QByteArray &hash) { messenger.destinationAnnounced(hash); });
+    node.setPacketHandler([&messenger](const QString &id, const Packet &packet, const QByteArray &raw, int hops) {
+        messenger.handlePacket(id, packet, raw, hops);
+    });
+    InterfaceConfig config;
+    config.id = QStringLiteral("lxmf");
+    config.name = QStringLiteral("Python LXMF");
+    config.host = tcp.section(QLatin1Char(':'), 0, 0);
+    config.port = tcp.section(QLatin1Char(':'), 1, 1).toInt();
+    config.networkName = qEnvironmentVariable("RETICULUM_LXMF_NETNAME");
+    config.passphrase = qEnvironmentVariable("RETICULUM_LXMF_PASSPHRASE");
+    node.setInterfaces({config});
+    node.start();
+    check(waitFor([&] { return node.onlineCount() == 1; }, 10000), QStringLiteral("LXMF: connected"));
+    check(waitFor([&] { return node.destinations().contains(peer); }, 20000), QStringLiteral("LXMF: Python peer announce heard"));
+    node.announce();
+    QFile file(out);
+    if (file.open(QIODevice::WriteOnly))
+        file.write(hexHash(messenger.address()).toLatin1());
+    file.close();
+    const QString shortText = QStringLiteral("Hello from ForkMesh");
+    const QString mediumText = QString(300, QLatin1Char('m'));
+    QString longText;
+    for (int i = 0; i < 400; ++i)
+        longText += QStringLiteral("line %1 of a long message from ForkMesh\n").arg(i);
+    const QString a = messenger.send(peer, shortText, QStringLiteral("short"));
+    const QString b = messenger.send(peer, mediumText, QStringLiteral("medium"));
+    const QString c = messenger.send(peer, longText, QStringLiteral("long"));
+    const auto delivered = [&](const QString &id) {
+        const std::optional<ChatMessage> message = messenger.message(id);
+        return message && message->state == MessageState::Delivered;
+    };
+    waitFor([&] { return delivered(a) && delivered(b) && delivered(c); }, 90000);
+    for (const QString &id : {a, b, c}) {
+        const std::optional<ChatMessage> message = messenger.message(id);
+        check(message && message->state == MessageState::Delivered,
+              QStringLiteral("LXMF: %1 message delivered by %2 (%3 %4)")
+                  .arg(message ? message->title : QString(), message ? message->method : QString(),
+                       message ? messageStateLabel(message->state) : QString(), message ? message->note : QString()));
+    }
+    const auto received = [&](const QString &title) -> std::optional<ChatMessage> {
+        for (const ChatMessage &message : messenger.messages(peer)) {
+            if (!message.outgoing && message.title == title)
+                return message;
+        }
+        return std::nullopt;
+    };
+    waitFor([&] { return received(QStringLiteral("py-short")) && received(QStringLiteral("py-medium")) &&
+                         received(QStringLiteral("py-long")); }, 90000);
+    for (const QString &title : {QStringLiteral("py-short"), QStringLiteral("py-medium"), QStringLiteral("py-long")}) {
+        const std::optional<ChatMessage> message = received(title);
+        check(message && message->verified && message->content.size() > 0,
+              QStringLiteral("LXMF: received %1 by %2, %3 characters, signature %4")
+                  .arg(title, message ? message->method : QStringLiteral("-"))
+                  .arg(message ? message->content.size() : 0)
+                  .arg(message && message->verified ? QStringLiteral("verified") : QStringLiteral("NOT verified")));
+    }
+    waitFor([] { return false; }, 3000);
+    node.stop();
+}
+
+void testMessaging()
+{
+    {
+        const QByteArray payload = lxmfPayload(1767225600.5, QStringLiteral("t"), QStringLiteral("hello"));
+        const Identity sender = Identity::generate();
+        const QByteArray source = destinationHashForName(QStringLiteral("lxmf.delivery"), sender.hash());
+        const QByteArray destination = QByteArray(16, 'd');
+        LxmfMessage packedMessage;
+        const QByteArray stamped = lxmfPack(sender, source, destination, 1767225600.5, QStringLiteral("t"),
+                                            QStringLiteral("hello"), QByteArray(32, 's'), &packedMessage);
+        const std::optional<LxmfMessage> unpacked = lxmfUnpack(stamped);
+        check(unpacked && unpacked->content == QStringLiteral("hello") && unpacked->stamp == QByteArray(32, 's') &&
+                  unpacked->hash == packedMessage.hash && lxmfVerify(*unpacked, sender.publicKey()),
+              QStringLiteral("LXMF messages with a stamp round trip and verify"));
+        check(payload.at(0) == char(0x94) && payload.at(1) == char(0xcb), QStringLiteral("LXMF payload is a four-item array starting with a float"));
+        const QByteArray key = randomBytes(64);
+        const std::optional<QByteArray> plain = tokenDecrypt(key, tokenEncrypt(key, "secret"));
+        check(plain && *plain == "secret", QStringLiteral("Token encryption round trips"));
+        QByteArray forged = tokenEncrypt(key, "secret");
+        forged[20] = char(forged.at(20) ^ 1);
+        check(!tokenDecrypt(key, forged), QStringLiteral("A tampered token is refused"));
+        const Identity recipient = Identity::generate();
+        const std::optional<QByteArray> opened = recipient.decrypt(recipient.encrypt("to you"));
+        check(opened && *opened == "to you" && !Identity::generate().decrypt(recipient.encrypt("to you")),
+              QStringLiteral("Identity encryption opens only for the recipient"));
+        const InterfaceAccessCode code(QStringLiteral("net"), QStringLiteral("pass"));
+        const QByteArray announce = hex(kAnnounce);
+        const QByteArray masked = code.apply(announce);
+        check((quint8(masked.at(0)) & 0x80) && code.remove(masked) == announce &&
+                  !InterfaceAccessCode(QStringLiteral("net"), QStringLiteral("wrong")).remove(masked),
+              QStringLiteral("Interface access codes apply, verify and reject the wrong passphrase"));
+        int value = 0;
+        const QByteArray id = fullHash("message");
+        const QByteArray stamp = generateStamp(id, 6, nullptr, &value);
+        check(stamp.size() == 32 && value >= 6 && validateStamp(id, stamp, 6), QStringLiteral("Stamps are generated and validated"));
+    }
+
+    for (const bool ifac : {false, true}) {
+        Hub hub;
+        const QString net = ifac ? QStringLiteral("testnet") : QString();
+        const QString pass = ifac ? QStringLiteral("secret") : QString();
+        Peer alice(QStringLiteral("Alice"), hub.server.serverPort(), net, pass);
+        Peer bob(QStringLiteral("Bob"), hub.server.serverPort(), net, pass);
+        std::unique_ptr<Peer> stranger;
+        if (ifac)
+            stranger = std::make_unique<Peer>(QStringLiteral("Stranger"), hub.server.serverPort(), net, QStringLiteral("wrong"));
+        const QString label = ifac ? QStringLiteral(" (IFAC)") : QString();
+        check(waitFor([&] { return alice.node.onlineCount() == 1 && bob.node.onlineCount() == 1 && hub.clients.size() >= (ifac ? 3 : 2); }),
+              QStringLiteral("Messaging peers connect to the hub") + label);
+        alice.node.announce();
+        bob.node.announce();
+        check(waitFor([&] { return bob.node.destinations().contains(alice.messenger.address()) &&
+                                   alice.node.destinations().contains(bob.messenger.address()); }),
+              QStringLiteral("Peers hear each other's LXMF announces") + label);
+        if (stranger)
+            check(stranger->node.destinations().isEmpty() && stranger->node.status(QStringLiteral("hub")).invalidFrames > 0,
+                  QStringLiteral("A node with the wrong passphrase hears nothing"));
+        QString longText;
+        for (int i = 0; i < 300; ++i)
+            longText += QStringLiteral("long line %1\n").arg(i);
+        const QString shortId = bob.messenger.send(alice.messenger.address(), QStringLiteral("hi alice"));
+        const QString mediumId = bob.messenger.send(alice.messenger.address(), QString(300, QLatin1Char('x')));
+        const QString longId = bob.messenger.send(alice.messenger.address(), longText);
+        const auto state = [&bob](const QString &id) {
+            const std::optional<ChatMessage> message = bob.messenger.message(id);
+            return message ? message->state : MessageState::Failed;
+        };
+        check(waitFor([&] { return state(shortId) == MessageState::Delivered && state(mediumId) == MessageState::Delivered &&
+                                   state(longId) == MessageState::Delivered; }, 30000),
+              QStringLiteral("Short, medium and long messages are delivered") + label);
+        check(bob.messenger.message(shortId)->method == QStringLiteral("opportunistic") &&
+                  bob.messenger.message(mediumId)->method == QStringLiteral("link") &&
+                  bob.messenger.message(longId)->method == QStringLiteral("resource"),
+              QStringLiteral("Each size uses its delivery method") + label);
+        const QString secondLongId = bob.messenger.send(alice.messenger.address(), longText + QStringLiteral("again"));
+        const QString thirdLongId = bob.messenger.send(alice.messenger.address(), longText + QStringLiteral("once more"));
+        check(waitFor([&] { return state(secondLongId) == MessageState::Delivered && state(thirdLongId) == MessageState::Delivered; }, 30000),
+              QStringLiteral("Two large messages to one peer are sent one after the other and both arrive") + label);
+        const QList<ChatMessage> all = alice.messenger.messages(bob.messenger.address());
+        QList<ChatMessage> got;
+        for (const ChatMessage &m : all) {
+            if (!m.content.endsWith(QStringLiteral("again")) && !m.content.endsWith(QStringLiteral("once more")))
+                got.append(m);
+        }
+        check(got.size() == 3 && std::all_of(got.cbegin(), got.cend(), [](const ChatMessage &m) { return m.verified && !m.read; }) &&
+                  std::any_of(got.cbegin(), got.cend(), [&longText](const ChatMessage &m) { return m.content == longText; }),
+              QStringLiteral("Alice receives all three, signed, unread") + label);
+        check(alice.messenger.unreadCount() == 5 && alice.messenger.conversations().value(0).name == QStringLiteral("Bob"),
+              QStringLiteral("Conversations list Bob by name with 5 unread") + label);
+        Messenger restored(&alice.node);
+        restored.load(alice.messenger.saveJson());
+        check(restored.messages(bob.messenger.address()).size() == 5, QStringLiteral("Messages survive a save and load") + label);
+    }
 }
 
 void testInterop()
@@ -515,9 +766,11 @@ int main(int argc, char **argv)
     testConfigImport();
     testLiveSession();
     testFirewallDenied();
+    testMessaging();
     testFeature(screenshots);
     testInterop();
     testListenLive();
+    testLxmfInterop();
     if (failures)
         qCritical("%d check(s) failed", failures);
     return failures == 0 ? 0 : 1;

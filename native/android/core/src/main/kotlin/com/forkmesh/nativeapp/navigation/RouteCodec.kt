@@ -196,6 +196,7 @@ object RouteCodec {
             Route.Kind.Strata -> Route.Strata(repo)
             Route.Kind.Synapse -> Route.Synapse(repo)
             Route.Kind.OpenWrtRouter -> Route.OpenWrtRouter
+            Route.Kind.Reticulum -> Route.Reticulum
             Route.Kind.FaceChanger -> Route.FaceChanger
             Route.Kind.AppStoreStatus -> Route.AppStoreStatus
             Route.Kind.Runners -> Route.Runners

@@ -175,6 +175,10 @@ public:
     QByteArray hash() const { return truncatedHash(m_publicKey); }
     QByteArray sign(const QByteArray &data) const;
     bool verify(const QByteArray &signature, const QByteArray &data) const;
+    QByteArray encryptionPublicKey() const { return m_publicKey.left(32); }
+    QByteArray signingPublicKey() const { return m_publicKey.mid(32); }
+    QByteArray encrypt(const QByteArray &plaintext, const QByteArray &ratchetPublicKey = {}) const;
+    std::optional<QByteArray> decrypt(const QByteArray &token) const;
 
 private:
     QByteArray m_publicKey;
@@ -197,6 +201,56 @@ QString displayNameFromAppData(const QString &kind, const QByteArray &appData);
 std::optional<DiscoveredInterface> parseDiscoveryAppData(const QByteArray &appData,
                                                          QString *error = nullptr);
 int stampValue(const QByteArray &material, const QByteArray &stamp, int expandRounds);
+
+QByteArray x25519PublicFromPrivate(const QByteArray &privateKey);
+QByteArray x25519Exchange(const QByteArray &privateKey, const QByteArray &peerPublicKey);
+QByteArray ed25519PublicFromPrivate(const QByteArray &privateKey);
+QByteArray ed25519Sign(const QByteArray &privateKey, const QByteArray &data);
+bool ed25519Verify(const QByteArray &publicKey, const QByteArray &signature, const QByteArray &data);
+QByteArray tokenEncrypt(const QByteArray &key, const QByteArray &plaintext, const QByteArray &iv = {});
+std::optional<QByteArray> tokenDecrypt(const QByteArray &key, const QByteArray &token);
+
+class MsgPackWriter
+{
+public:
+    MsgPackWriter &nil();
+    MsgPackWriter &boolean(bool value);
+    MsgPackWriter &integer(qint64 value);
+    MsgPackWriter &real(double value);
+    MsgPackWriter &bin(const QByteArray &value);
+    MsgPackWriter &str(const QString &value);
+    MsgPackWriter &array(int count);
+    MsgPackWriter &map(int count);
+    MsgPackWriter &raw(const QByteArray &bytes);
+    QByteArray bytes() const { return m_bytes; }
+
+private:
+    void header(quint8 small, int smallLimit, quint8 base8, quint8 base16, quint8 base32, quint32 size);
+    QByteArray m_bytes;
+};
+
+bool msgPackArrayItems(const QByteArray &bytes, QList<QPair<int, int>> *items);
+
+class InterfaceAccessCode
+{
+public:
+    InterfaceAccessCode() = default;
+    InterfaceAccessCode(const QString &networkName, const QString &passphrase, int size = 16);
+    bool enabled() const { return m_size > 0; }
+    int size() const { return m_size; }
+    QByteArray key() const { return m_key; }
+    QByteArray apply(const QByteArray &raw) const;
+    std::optional<QByteArray> remove(const QByteArray &raw) const;
+
+private:
+    QByteArray m_key;
+    QByteArray m_signingKey;
+    int m_size = 0;
+};
+
+QByteArray buildProof(const QByteArray &signingPrivateKey, const QByteArray &packetHash, bool explicitProof,
+                      const QByteArray &destination, int destinationType);
+bool validateProof(const QByteArray &signingPublicKey, const QByteArray &packetHash, const QByteArray &proofData);
 
 QString hexHash(const QByteArray &hash);
 QString prettyHash(const QByteArray &hash);

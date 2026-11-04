@@ -184,6 +184,7 @@ public enum RouteCatalog {
         case .strata: return "Strata"
         case .synapse: return "Synapse"
         case .openWrtRouter: return "Router"
+        case .reticulum: return "Reticulum"
         case .fileExplorer: return "Files"
         case .nexus: return "NEXUS"
         case .faceChanger: return "Face Changer"
@@ -280,6 +281,7 @@ public enum RouteCatalog {
         case .strata: return "square.3.layers.3d"
         case .synapse: return "brain"
         case .openWrtRouter: return "wifi.router"
+        case .reticulum: return "antenna.radiowaves.left.and.right"
         case .fileExplorer: return "folder"
         case .nexus: return "network"
         case .faceChanger: return "theatermasks"
@@ -430,6 +432,7 @@ public enum HubCatalog {
         .destination(.eyeControl),
         .destination(.silentSpeech),
         .destination(.openWrtRouter),
+        .destination(.reticulum),
         .destination(.faceChanger),
         .destination(.videoMixDjStudio),
         .destination(.poker(table: nil)),

@@ -261,7 +261,7 @@ void StatTile::paintEvent(QPaintEvent *)
 
     if (m_spark.size() > 1) {
         const double maximum = std::max(1e-9, *std::max_element(m_spark.cbegin(), m_spark.cend()));
-        const QRectF area(width() * 0.52, 34, width() * 0.48 - 12, 30);
+        const QRectF area(width() * 0.52, 32, width() * 0.48 - 12, 22);
         QPainterPath path;
         for (int i = 0; i < m_spark.size(); ++i) {
             const QPointF point(area.left() + area.width() * i / (m_spark.size() - 1),
@@ -285,9 +285,14 @@ void StatTile::paintEvent(QPaintEvent *)
         painter.drawPath(path);
     }
 
-    painter.setFont(scaledFont(this, 15, true));
-    painter.setPen(colors.text);
     const double valueWidth = m_spark.size() > 1 ? width() * 0.5 - 14 : width() - 28;
+    double points = 15;
+    painter.setFont(scaledFont(this, points, true));
+    while (points > 10 && QFontMetricsF(painter.font()).horizontalAdvance(m_value) > valueWidth) {
+        points -= 0.5;
+        painter.setFont(scaledFont(this, points, true));
+    }
+    painter.setPen(colors.text);
     painter.drawText(QRectF(14, 30, valueWidth, 28), Qt::AlignLeft | Qt::AlignVCenter,
                      QFontMetricsF(painter.font()).elidedText(m_value, Qt::ElideRight, valueWidth));
     painter.setFont(scaledFont(this, 8.5));
