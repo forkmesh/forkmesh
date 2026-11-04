@@ -270,7 +270,8 @@ MASTODON_OUTREACH_FIELDS = frozenset({
     "mastodon_draft", "mastodon_status", "mastodon_why", "mastodon_segment",
     "mastodon_ask", "mastodon_prepared", "mastodon_followers", "mastodon_last_post"})
 MASTODON_STRATEGY_NOTE = "Mastodon outreach strategy"
-MASTODON_MENTION_PAGE = 40
+MASTODON_MENTION_PAGE = 80
+MASTODON_MENTION_PAGES = 5
 MASTODON_TEXT_URL_RE = re.compile(r"https?://\S+")
 MASTODON_TEXT_MENTION_RE = re.compile(
     r"(?<![A-Za-z0-9_])@([A-Za-z0-9_]{1,64})@[A-Za-z0-9-]{1,63}(?:\.[A-Za-z0-9-]{1,63})+")
@@ -7001,7 +7002,7 @@ def _replied_stage(contact, flows):
 def _mastodon_outreach_step(contact, direction, flows):
     fields = contact.get("fields") if isinstance(contact.get("fields"), dict) else {}
     status = str(fields.get("mastodon_status") or "")
-    if direction == "outbound" and status in MASTODON_QUEUE_STATUSES + ("skipped",):
+    if direction == "outbound" and status in MASTODON_QUEUE_STATUSES + ("skipped", ""):
         contact["fields"] = dict(fields, mastodon_status="sent")
         return "sent", ""
     if direction == "inbound" and status == "sent":
@@ -7336,12 +7337,22 @@ async def _mastodon_send(runtime, org_bi, org_name, account_bi, actor, data):
 async def _sync_mentions(runtime, org_bi, org_name, account_bi, actor, host, account,
                          token, config, known, now):
     cursor = str(config.get("mentionSinceId") or "")
-    path = "/api/v1/notifications?types[]=mention&limit=%d" % MASTODON_MENTION_PAGE
-    if cursor:
-        path += "&since_id=" + quote(cursor)
-    notes, error = await _mastodon_get(runtime, host, path, token)
-    if error or not isinstance(notes, list):
-        return 0, cursor, error
+    notes, edge = [], cursor
+    for _ in range(MASTODON_MENTION_PAGES if cursor else 1):
+        path = "/api/v1/notifications?types[]=mention&limit=%d" % MASTODON_MENTION_PAGE
+        if edge:
+            path += "&min_id=" + quote(edge)
+        page, error = await _mastodon_get(runtime, host, path, token)
+        if error or not isinstance(page, list):
+            if not notes:
+                return 0, cursor, error or "mastodon_unavailable"
+            break
+        page = [item for item in page if isinstance(item, dict)
+                and str(item.get("id") or "").isdigit()]
+        notes.extend(page)
+        if len(page) < MASTODON_MENTION_PAGE:
+            break
+        edge = str(max(int(item["id"]) for item in page))
     logged, newest = 0, int(cursor or 0)
     for note in sorted(notes, key=lambda item: int(str(item.get("id") or 0) or 0)):
         newest = max(newest, int(str(note.get("id") or 0) or 0))

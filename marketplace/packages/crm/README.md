@@ -516,7 +516,14 @@ Every toot sent is a linked message (`provider: "mastodon"`), as before.
   client's reply check or the toots sync) sets `replied` and moves a contact
   at its flow's contacted stage one stage on (`qualified` on Customers).
   The toots sync with a token holding `read:notifications` also reads
-  mentions and logs those from known contacts as inbound.
+  mentions and logs those from known contacts as inbound. It pages forward
+  from the last mention read (`min_id`, up to `MASTODON_MENTION_PAGES` pages
+  of 80), because `since_id` returns only the newest page and dropped the
+  older mentions of a busy day.
+- An outbound toot to a contact with no `mastodon_status` (one tooted by hand
+  before any draft existed) also sets `sent`, so a reply to it counts. On
+  2026-11-03 a contact imported from the followers CSV replied within the
+  hour and was missed because their status was still empty.
 - `activity` gains a `toots` kind (outbound Mastodon toots per member per
   day) for the leaderboard; Mastodon rows no longer count as `emails`.
 - The `mastodon_*` fields never count as a contact's handles
@@ -546,9 +553,15 @@ Code: `_mastodon_outreach`, `_save_mastodon_drafts`, `_mastodon_send`,
   `mastodon_status: sent` field. The web uses `/mastodon/send`, or without an
   organization token opens `https://<instance>/share?text=…` (the browser
   extension logs it).
-- **Check replies** (desktop, and when the page opens): reads the signed-in
-  account's mention notifications and logs each one from a known contact as
-  inbound, so the stage moves on its own.
+- **Check replies** (desktop, each time the CRM loads or is refreshed, and
+  when the Mastodon tab opens): reads the newest 80 mention notifications of
+  the Mastodon package's account and logs each one from a contact with that
+  handle as inbound, whatever their `mastodon_status`, so the stage moves on
+  its own. It used to run only when the Mastodon tab opened and only for
+  `sent` contacts, so a reply that came in while nobody opened that tab (a
+  relay operator's on 2026-11-04) stayed unlogged. Like every package page it
+  has no timer ([package system](../../../docs/marketplace/package-system.md)):
+  replies are found the next time someone opens the CRM.
 - **Prepare more** starts a desktop agent session from `prompt` (the
   `agent.start` window command fills the new-agent composer and starts it);
   the web copies `prompt` for an agent. The session researches handles, checks

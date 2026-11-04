@@ -445,6 +445,7 @@ QIcon octicon(const QString &name, const QColor &color, int side = 20)
 constexpr int kMastodonTootLimit = 500;
 constexpr int kMastodonLinkLength = 23;
 constexpr int kMastodonDailyTarget = 25;
+constexpr int kMastodonMentionPage = 80;
 constexpr int kMastodonSubjectLength = 180;
 constexpr int kLeaderboardDays = 7;
 constexpr int kLeaderboardTop = 3;
@@ -2544,8 +2545,8 @@ CrmFeature::CrmFeature(const forkmesh::market::NativePackageHost &host,
     m_mastodonReplies->setProperty("crmVariant", QStringLiteral("outline"));
     m_mastodonReplies->setCursor(Qt::PointingHandCursor);
     m_mastodonReplies->setToolTip(QStringLiteral(
-        "Read the signed-in Mastodon account's mentions and log each reply from a contact "
-        "we wrote to, so the contact moves on"));
+        "Read the signed-in Mastodon account's mentions and log each one from a contact; "
+        "a reply to our toot moves the contact on. Also runs each time the CRM loads"));
     mastodonHead->addWidget(m_mastodonReplies);
     m_mastodonPrepare = new QPushButton(QStringLiteral("Prepare more"));
     m_mastodonPrepare->setObjectName(QStringLiteral("primaryButton"));
@@ -3478,6 +3479,7 @@ void CrmFeature::loadOrganization()
             setStatus(QStringLiteral("Organization CRM loaded · role: %1").arg(m_role));
             queueAvatars();
             syncToots(true);
+            checkMastodonReplies(true);
             return;
         }
         if (!ok) {
@@ -3502,6 +3504,7 @@ void CrmFeature::loadOrganization()
         if (next.isEmpty()) {
             m_pagedSummary = {};
             cacheSummary(payload);
+            checkMastodonReplies(true);
         } else {
             m_pagedSummary = payload;
             loadRemainingContacts(organization, next, generation);
@@ -3549,6 +3552,7 @@ void CrmFeature::loadRemainingContacts(const QString &organization, const QStrin
         if (next.isEmpty()) {
             cacheSummary(summary);
             setStatus(QStringLiteral("Organization CRM loaded · role: %1").arg(m_role));
+            checkMastodonReplies(true);
             return;
         }
         loadRemainingContacts(organization, next, generation);
@@ -11305,16 +11309,13 @@ void CrmFeature::checkMastodonReplies(bool automatic)
     QHash<QString, QStringList> waiting;
     for (const QJsonValue &value : std::as_const(m_contacts)) {
         const QJsonObject contact = value.toObject();
-        if (text(contact.value(QStringLiteral("fields")).toObject(), "mastodon_status") !=
-            QLatin1String("sent"))
-            continue;
         const QString key = mastodonHandleKey(text(contact, "mastodon"));
-        if (!key.isEmpty())
+        if (!key.isEmpty() && key != follower.account)
             waiting[key].append(text(contact, "id"));
     }
     if (waiting.isEmpty()) {
         if (!automatic)
-            setStatus(QStringLiteral("No contact is waiting for a reply to a toot."));
+            setStatus(QStringLiteral("No contact has a Mastodon handle yet."));
         return;
     }
     m_mastodonRepliesChecking = true;
@@ -11326,7 +11327,7 @@ void CrmFeature::checkMastodonReplies(bool automatic)
     QUrl url(follower.instance + QStringLiteral("/api/v1/notifications"));
     QUrlQuery query;
     query.addQueryItem(QStringLiteral("types[]"), QStringLiteral("mention"));
-    query.addQueryItem(QStringLiteral("limit"), QStringLiteral("40"));
+    query.addQueryItem(QStringLiteral("limit"), QString::number(kMastodonMentionPage));
     url.setQuery(query);
     const auto finish = [this, automatic, org](int logged, const QString &error) {
         m_mastodonRepliesChecking = false;
@@ -11345,7 +11346,7 @@ void CrmFeature::checkMastodonReplies(bool automatic)
                 loadMastodonOutreach(false);
             }
         } else if (!automatic) {
-            setStatus(QStringLiteral("No new replies from contacts we wrote to."));
+            setStatus(QStringLiteral("No new Mastodon replies from contacts."));
         }
     };
     mastodonSignedCall(QByteArrayLiteral("GET"), url, follower.token,
