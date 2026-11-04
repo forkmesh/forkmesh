@@ -55,6 +55,7 @@
       organization_not_found: "No organization with that name that you belong to.",
       organization_admin_required: "You need to be an owner or admin of that organization.",
       invalid_places: "Pick at least one place.",
+      plugin_disabled_here: "This package is turned off on this instance.",
     };
     return known[code] || (code ? String(code).replace(/_/g, " ") : `HTTP ${status}`);
   }
@@ -146,6 +147,12 @@
     return null;
   }
 
+  function pluginsPolicyLabel(row) {
+    if (row.policy?.disabled) return pluginsLabel("Off on this instance", "attention");
+    if (row.policy?.restricted) return pluginsLabel("Limited here", "attention");
+    return null;
+  }
+
   function pluginsMineLabel(row) {
     if (!row.accountSync || !row.mine) return null;
     return row.mine.installed ? pluginsLabel("Installed for me", "success") : null;
@@ -159,6 +166,7 @@
     if (kind === "mine") return Boolean(row.mine?.installed);
     if (kind === "worker") return Boolean(row.surfaces?.worker);
     if (kind === "data") return Boolean(row.dataScope);
+    if (kind === "policy") return Boolean(row.policy?.restricted);
     return true;
   }
 
@@ -169,7 +177,7 @@
     const name = pluginsEl("span", "pc-name");
     const title = pluginsEl("span", "pc-chips");
     title.append(pluginsEl("strong", "", row.name || row.id));
-    for (const label of [pluginsKindLabel(row), pluginsMineLabel(row)]) if (label) title.append(label);
+    for (const label of [pluginsKindLabel(row), pluginsMineLabel(row), pluginsPolicyLabel(row)]) if (label) title.append(label);
     if (row.inBuild === false) title.append(pluginsLabel("Not in this build", "attention"));
     const meta = pluginsEl("span", "pc-id", `${row.id}${row.version ? ` · ${row.version}` : ""}`);
     name.append(title, meta);
@@ -177,7 +185,7 @@
     const items = pluginsShips(row);
     if (!items.length) ships.append(pluginsEl("span", "pc-muted", "Core feature switch"));
     for (const item of items) ships.append(pluginsLabel(item));
-    const places = pluginsEl("span", "pc-muted", pluginsPlaces(row.places));
+    const places = pluginsEl("span", "pc-muted", row.policy?.disabled ? "Off" : pluginsPlaces(row.policy?.places || row.places));
     const installs = row.installs || {};
     const parts = [];
     if (row.accountSync || installs.accounts) parts.push(`${pluginsCount(installs.accounts)} accounts`);
@@ -346,7 +354,7 @@
     const text = pluginsEl("div", "min-w-0");
     const title = pluginsEl("div", "pc-chips");
     title.append(pluginsEl("h2", "", row.name || row.id));
-    for (const label of [pluginsKindLabel(row), pluginsMineLabel(row)]) if (label) title.append(label);
+    for (const label of [pluginsKindLabel(row), pluginsMineLabel(row), pluginsPolicyLabel(row)]) if (label) title.append(label);
     text.append(title, pluginsEl("div", "pc-id", `${row.id}${row.version ? ` · version ${row.version}` : ""}${row.publisher ? ` · ${row.publisher}` : ""}`));
     if (row.summary) text.append(pluginsEl("p", "", row.summary));
     head.append(text, pluginsDetailActions(row));
@@ -418,6 +426,7 @@
       ["Needed by", pluginsPackageLinks(row.dependents)],
     ]));
     panel.append(facts);
+    panel.append(pluginsPolicyEditor(row));
     const installs = data.installs || {};
     const counts = row.installs || {};
     const usage = pluginsBox("Installs");
@@ -433,10 +442,56 @@
     if (!row.accountSync && row.dataScope !== "account") panel.append(pluginsOrganizations(row, installs.organizations || []));
   }
 
+  function pluginsPolicyEditor(row) {
+    const rule = row.policy || { restricted: false, disabled: false, places: row.places || [] };
+    const aside = rule.disabled ? "off for everyone" : rule.restricted ? `limited${rule.updatedBy ? ` by ${rule.updatedBy}` : ""}` : "every place it supports";
+    const box = pluginsBox("On this instance", aside);
+    box.append(pluginsEl("p", "pc-empty", "Where anyone on this instance can use it. Accounts keep their own choice inside these places. Untick every place to turn it off here: accounts stop seeing it, new installs are refused and its API stops answering."));
+    const form = pluginsEl("div", "pc-places");
+    for (const place of row.places || []) {
+      const label = pluginsEl("label");
+      const input = pluginsEl("input");
+      input.type = "checkbox";
+      input.value = place;
+      input.dataset.pluginsPolicyPlace = place;
+      input.checked = (rule.places || []).includes(place);
+      label.append(input, document.createTextNode(PLUGINS_PLACE_NAMES[place] || place));
+      form.append(label);
+    }
+    const save = pluginsButton("Save for this instance", "check");
+    save.dataset.pluginsPolicySave = row.id;
+    save.disabled = pluginsConsole.busy;
+    form.append(save);
+    if (rule.restricted) {
+      const reset = pluginsButton("Allow everywhere", "rotate-ccw");
+      reset.dataset.pluginsPolicyReset = row.id;
+      reset.disabled = pluginsConsole.busy;
+      form.append(reset);
+    }
+    box.append(form);
+    return box;
+  }
+
+  function savePluginsPolicy(reset) {
+    const row = pluginsConsole.detail?.package;
+    if (!row) return;
+    const name = row.name || row.id;
+    const places = $$("[data-plugins-policy-place]").filter((input) => input.checked).map((input) => input.value);
+    if (!reset && !places.length && !window.confirm(`Turn ${name} off for everyone on this instance? Accounts stop seeing it, new installs are refused and its API stops answering. Its data stays until you remove it.`)) return;
+    return pluginsBusy(async () => {
+      const payload = await pluginsRequest("POST", `/api/plugins/@console/${encodeURIComponent(row.id)}/policy`, reset ? { reset: true } : { places });
+      void window.ForkMeshAPI?.refreshPlugins?.(true);
+      await loadPluginsDetail(row.id);
+      pluginsConsole.packages = [];
+      const rule = payload.policy || {};
+      pluginsNotice("[data-plugins-detail-notice]", rule.disabled ? `${name} is off on this instance.` : rule.restricted ? `${name} is limited to ${pluginsPlaces(rule.places)} on this instance.` : `${name} is allowed on every place it supports.`, "success");
+    });
+  }
+
   function pluginsPlacesEditor(row) {
     const form = pluginsEl("div", "pc-places");
     form.append(pluginsEl("span", "pc-muted", "My places:"));
-    for (const place of row.places || []) {
+    for (const place of row.policy?.places || row.places || []) {
       const label = pluginsEl("label");
       const input = pluginsEl("input");
       input.type = "checkbox";
@@ -740,6 +795,8 @@
       const mine = event.target.closest("[data-plugins-mine]");
       if (mine) return void setMinePlugins(mine.dataset.pluginsMine);
       if (event.target.closest("[data-plugins-places-save]")) return void savePluginsPlaces();
+      if (event.target.closest("[data-plugins-policy-save]")) return void savePluginsPolicy(false);
+      if (event.target.closest("[data-plugins-policy-reset]")) return void savePluginsPolicy(true);
       const check = event.target.closest("[data-plugins-org-check]");
       if (check) return void checkPluginsOrganization(check.dataset.pluginsOrgCheck);
       const orgAction = event.target.closest("[data-plugins-org-action]");

@@ -12891,6 +12891,9 @@ async def plugin_api_handler(env, request, path, plugin):
     module = plugin_data.api_module(plugin)
     if module is None:
         return json_response({"error": "not_found"}, status=404)
+    if not await plugin_data.enabled_here(_PluginPurgeRuntime(env), plugin):
+        return json_response({"error": "plugin_disabled_here"}, status=404,
+                             cache_control="no-store")
     return await module.handle(_PluginApiRuntime(
         env, request, module, plugin_data.outbound_origins(plugin), plugin), path)
 

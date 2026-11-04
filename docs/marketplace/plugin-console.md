@@ -109,11 +109,44 @@ desktop code is core code) and World. The build stores it in the generated
 registry as `facts`, because a deployed App has no `marketplace/` folder;
 a source checkout reads the manifests (`catalog_facts`).
 
-## Not covered yet
+## Instance-wide places
 
-- An instance-wide switch per place (for example "never on the web for
-  anyone here"). Places today are each account's choice; the console edits
-  the admin's own.
+The Overview tab's **On this instance** box sets where anyone on the
+instance can use a package, on top of each account's own choice. The owner
+asked for it so an operator can run a lightweight instance: keep a plugin
+off the web, or turn it off altogether, without rebuilding.
+
+- `POST /api/plugins/@console/<id>/policy` with `{"places": [...]}` (a
+  subset of the manifest's places) or `{"reset": true}`. Same-origin,
+  admin only, audited as `plugin.console.policy`. Choosing every place the
+  manifest allows is the same as reset: the row is deleted.
+- Stored in `package_place_policy` (`package`, `places` comma list,
+  `updated_at`, `updated_by`). No row means no limit. The table is created
+  on first save, like `account_package_installs`; reads treat a missing
+  table as no rules.
+- **Some places**: `plugin_data._available_places` is the manifest's places
+  narrowed to the rule, so `availablePlaces` and `places` in
+  `GET /api/plugins/@account` shrink, a stored account choice outside the
+  rule is dropped from the answer (not from the row, so it comes back after
+  a reset), `places` requests outside it are `400 invalid_places`, and the
+  web sidebar (`GET /api/plugins/`) hides any package without `web`,
+  account-synced or not. Desktop and phones already follow `places`, so
+  they need no change.
+- **No place**: the package is *off on this instance*. It is never sent as
+  an empty `places` list, because the iPhone app reads an empty list as
+  "every place" (`PackagePlace.list`). Instead `_effective_installed` is
+  false for it and for every package that needs it, the account answer
+  carries `"disabledHere": true` with `installed: false`, account and
+  organization installs are `409 plugin_disabled_here`, organization state
+  rows carry `disabledHere`, and its Worker API answers
+  `404 plugin_disabled_here` (`plugin_api_handler` in `entry.py`). Its data
+  and install rows are kept, so turning it back on restores everyone's
+  installs.
+- Each App process caches the rules for 30 seconds
+  (`plugin_data.POLICY_TTL_MS`); the node that saves reloads at once, other
+  nodes and processes follow within that time.
+
+## Not covered yet
 - Worker log lines that are not in `error_log` (the desktop's live
   Worker tail has them, [Logs](../desktop/README.md)).
 - Per-account values of a package's settings.

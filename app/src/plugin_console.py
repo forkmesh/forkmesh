@@ -30,7 +30,7 @@ def _route(path):
     if clean == PATH:
         return "", ""
     match = re.fullmatch(
-        re.escape(PATH) + r"/([a-z][a-z0-9.-]{0,95})(?:/(rows|export))?", clean)
+        re.escape(PATH) + r"/([a-z][a-z0-9.-]{0,95})(?:/(rows|export|policy))?", clean)
     if not match:
         return None
     return match.group(1), match.group(2) or ""
@@ -184,6 +184,18 @@ async def _mine(runtime, account_bi, record):
     } for plugin in plugin_data._synced()}
 
 
+def _policy(plugin, row):
+    rule = plugin_data.policy(plugin)
+    manifest = [place for place in market_packages.PLACES
+                if place in (row.get("places") or market_packages.PLACES)]
+    if rule is None:
+        return {"restricted": False, "disabled": False, "places": manifest,
+                "updatedBy": "", "updatedAt": 0}
+    allowed = [place for place in manifest if place in rule["places"]]
+    return {"restricted": True, "disabled": not allowed, "places": allowed,
+            "updatedBy": rule["updatedBy"], "updatedAt": rule["updatedAt"]}
+
+
 def _package(row, facts, accounts, organizations, mine):
     plugin = row["id"]
     entry = plugin_data.REGISTRY.get(plugin, {})
@@ -206,6 +218,7 @@ def _package(row, facts, accounts, organizations, mine):
             "world": bool(fact.get("world") or surfaces.get("world")),
         },
         "places": list(row.get("places") or market_packages.PLACES),
+        "policy": _policy(plugin, row),
         "accountSync": bool(row.get("accountSync")),
         "dataScope": row.get("dataScope") or "",
         "default": bool(row.get("default")),
@@ -222,6 +235,7 @@ def _package(row, facts, accounts, organizations, mine):
 
 
 async def _list(runtime, account_bi, record):
+    await plugin_data.load_policy(runtime, fresh=True)
     rows, facts = _catalog()
     accounts, organizations = await _install_counts(runtime)
     mine = await _mine(runtime, account_bi, record)
@@ -310,6 +324,7 @@ async def _detail(runtime, account_bi, record, plugin):
     row, facts = _find(plugin)
     if row is None:
         return plugin_data._response(runtime, {"error": "plugin_not_found"}, 404)
+    await plugin_data.load_policy(runtime, fresh=True)
     accounts, organizations = await _install_counts(runtime)
     package = _package(row, facts, accounts, organizations,
                        await _mine(runtime, account_bi, record))
@@ -442,14 +457,48 @@ async def _export(runtime, actor, plugin):
     })
 
 
+async def _save_policy(runtime, actor, plugin, data):
+    row, _ = _find(plugin)
+    if row is None:
+        return plugin_data._response(runtime, {"error": "plugin_not_found"}, 404)
+    manifest = [place for place in market_packages.PLACES
+                if place in (row.get("places") or market_packages.PLACES)]
+    if data.get("reset") is True:
+        places = None
+    else:
+        places = data.get("places")
+        if (not isinstance(places, list)
+                or any(not isinstance(place, str) or place not in manifest for place in places)):
+            return plugin_data._response(runtime, {"error": "invalid_places"}, 400)
+        places = [place for place in manifest if place in places]
+        if places == manifest:
+            places = None
+    await plugin_data.save_policy(runtime, plugin, places, actor)
+    rule = _policy(plugin, row)
+    await runtime.audit(actor, "plugin.console.policy", "package_console", plugin,
+                        details={"package": plugin, "places": ",".join(rule["places"]),
+                                 "disabled": rule["disabled"]})
+    return plugin_data._response(runtime, {"ok": True, "plugin": plugin, "policy": rule})
+
+
 async def handle(runtime, path):
     route = _route(path)
     if route is None:
         return plugin_data._response(runtime, {"error": "not_found"}, 404)
-    if runtime.method() not in ("GET", "HEAD"):
-        return plugin_data._response(runtime, {"error": "method_not_allowed"}, 405, "GET")
+    allowed = ("POST",) if route[1] == "policy" else ("GET", "HEAD")
+    if runtime.method() not in allowed:
+        return plugin_data._response(
+            runtime, {"error": "method_not_allowed"}, 405, ", ".join(allowed))
+    data = {}
+    if route[1] == "policy":
+        if not runtime.same_origin():
+            return plugin_data._response(runtime, {"error": "origin_not_allowed"}, 403)
+        data, error = await runtime.json_body(plugin_data.MAX_BODY_BYTES)
+        if error:
+            return plugin_data._response(
+                runtime, {"error": error}, 413 if error == "payload_too_large" else 400)
     await runtime.ensure_schema()
-    account_bi, record = await runtime.session({})
+    account_bi, record = await runtime.session(data)
     actor = " ".join(str((record or {}).get("name") or "").split())[:64].lower()
     if not account_bi or not actor:
         return plugin_data._response(runtime, {"error": "invalid_session"}, 401)
@@ -465,4 +514,6 @@ async def handle(runtime, path):
         return await _rows(runtime, actor, plugin)
     if action == "export":
         return await _export(runtime, actor, plugin)
+    if action == "policy":
+        return await _save_policy(runtime, actor, plugin, data)
     return await _detail(runtime, str(account_bi), record, plugin)

@@ -52,16 +52,18 @@ class Runtime:
         self.name = name
         self.method_value = "GET"
         self.query = {}
+        self.body = {}
+        self.origin_ok = True
         self.audits = []
 
     def method(self): return self.method_value
-    def same_origin(self): return True
+    def same_origin(self): return self.origin_ok
     def now(self): return NOW
     def query_params(self): return dict(self.query)
     def response(self, payload, status=200, cache_control=None, extra_headers=None):
         return {"status": status, "data": payload, "cache": cache_control}
     async def ensure_schema(self): pass
-    async def json_body(self, _limit): return {}, ""
+    async def json_body(self, _limit): return dict(self.body), ""
     async def session(self, _data=None):
         return ("bi:" + self.name, {"name": self.name}) if self.name else ("", None)
     async def is_admin(self, name): return self.admin and name == self.name
@@ -94,6 +96,8 @@ def registry(monkeypatch):
     monkeypatch.setattr(plugin_data, "REGISTRY", REGISTRY)
     monkeypatch.setattr(plugin_data, "_module", lambda plugin: WATER if plugin == "water" else None)
     monkeypatch.setattr(plugin_console, "_MODULE_TABLES", {})
+    monkeypatch.setattr(plugin_data, "_POLICY", {})
+    monkeypatch.setattr(plugin_data, "_POLICY_AT", 0)
 
 
 def call(runtime, path):
@@ -265,3 +269,106 @@ def test_console_script_uses_the_console_and_existing_install_apis():
     view = (ROOT / "public" / "dashboard" / "partials" / "views" / "plugins.html").read_text()
     assert "--dashboard-primary-rgb" in view
     assert "cta" not in view and "success-rgb" not in view
+
+
+def post(runtime, path, body):
+    runtime.method_value = "POST"
+    runtime.body = body
+    try:
+        return call(runtime, path)
+    finally:
+        runtime.method_value = "GET"
+        runtime.body = {}
+
+
+def account_entry(runtime, plugin):
+    data = call(runtime, "/api/plugins/@account")["data"]
+    return next(item for item in data["packages"] if item["id"] == plugin)
+
+
+def test_policy_needs_an_administrator_a_post_and_the_same_origin():
+    assert call(Runtime(), "/api/plugins/@console/water/policy")["status"] == 405
+    assert post(Runtime(admin=False), "/api/plugins/@console/water/policy",
+                {"places": ["web"]})["status"] == 403
+    runtime = Runtime()
+    runtime.origin_ok = False
+    assert post(runtime, "/api/plugins/@console/water/policy",
+                {"places": ["web"]})["status"] == 403
+    for body in ({"places": ["watch"]}, {"places": "web"}, {}):
+        assert post(Runtime(), "/api/plugins/@console/water/policy", body)["status"] == 400
+
+
+def test_narrowing_places_narrows_every_account():
+    runtime = Runtime()
+    post(runtime, "/api/plugins/@account/water/install", {})
+    saved = post(runtime, "/api/plugins/@console/water/policy", {"places": ["desktop", "web"]})
+    assert saved["data"]["policy"] == {"restricted": True, "disabled": False,
+                                       "places": ["desktop", "web"], "updatedBy": "alice",
+                                       "updatedAt": NOW}
+    entry = account_entry(runtime, "water")
+    assert entry["installed"] is True
+    assert entry["availablePlaces"] == ["desktop", "web"]
+    assert entry["places"] == ["desktop", "web"]
+    assert post(runtime, "/api/plugins/@account/water/places",
+                {"places": ["mobile"]})["status"] == 400
+    assert "water" in call(runtime, "/api/plugins/")["data"]["plugins"]
+    post(runtime, "/api/plugins/@console/water/policy", {"places": ["mobile", "desktop"]})
+    assert "water" not in call(runtime, "/api/plugins/")["data"]["plugins"]
+    assert runtime.audits[-1][1] == "plugin.console.policy"
+    listed = {row["id"]: row for row in call(runtime, "/api/plugins/@console")["data"]["packages"]}
+    assert listed["water"]["policy"]["places"] == ["mobile", "desktop"]
+
+
+def test_turning_every_place_off_disables_the_package_here():
+    runtime = Runtime()
+    post(runtime, "/api/plugins/@account/water/install", {})
+    post(runtime, "/api/plugins/@console/water/policy", {"places": []})
+    entry = account_entry(runtime, "water")
+    assert entry["installed"] is False
+    assert entry["disabledHere"] is True
+    assert entry["places"] and entry["availablePlaces"]
+    refused = post(runtime, "/api/plugins/@account/water/install", {})
+    assert refused["status"] == 409
+    assert refused["data"] == {"error": "plugin_disabled_here"}
+    assert "water" not in call(runtime, "/api/plugins/")["data"]["plugins"]
+    assert asyncio.run(plugin_data.enabled_here(runtime, "water")) is False
+    detail = call(runtime, "/api/plugins/@console/water")["data"]
+    assert detail["package"]["policy"]["disabled"] is True
+
+
+def test_disabling_a_package_disables_what_needs_it():
+    dependents = [plugin for plugin, entry in REGISTRY.items()
+                  if "status-page" in (entry.get("dependencies") or ())]
+    assert dependents
+    runtime = Runtime()
+    post(runtime, "/api/plugins/@console/status-page/policy", {"places": []})
+    for plugin in dependents:
+        assert asyncio.run(plugin_data.enabled_here(runtime, plugin)) is False
+
+
+def test_organization_installs_are_refused_while_disabled():
+    runtime = Runtime()
+    post(runtime, "/api/plugins/@console/crm/policy", {"places": []})
+    assert post(runtime, "/api/plugins/acme/crm/install", {})["status"] == 409
+    state = call(runtime, "/api/plugins/acme")["data"]
+    assert next(item for item in state["plugins"] if item["id"] == "crm")["disabledHere"] is True
+
+
+def test_reset_and_all_places_both_remove_the_rule():
+    runtime = Runtime()
+    post(runtime, "/api/plugins/@console/water/policy", {"places": ["web"]})
+    assert post(runtime, "/api/plugins/@console/water/policy",
+                {"reset": True})["data"]["policy"]["restricted"] is False
+    post(runtime, "/api/plugins/@console/water/policy", {"places": ["web"]})
+    everything = REGISTRY["water"]["places"]
+    saved = post(runtime, "/api/plugins/@console/water/policy", {"places": list(everything)})
+    assert saved["data"]["policy"]["restricted"] is False
+    assert runtime.db.execute("SELECT COUNT(*) FROM package_place_policy").fetchone()[0] == 0
+
+
+def test_package_worker_api_refuses_a_disabled_package():
+    source = (ROOT / "src" / "entry.py").read_text(encoding="utf-8")
+    start = source.index("async def plugin_api_handler(")
+    body = source[start:source.index("\n\n\n", start)]
+    assert "plugin_data.enabled_here(" in body
+    assert body.index("enabled_here(") < body.index("module.handle(")

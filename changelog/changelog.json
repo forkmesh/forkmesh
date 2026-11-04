@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-04", "area": "Market", "text": "Instance administrators can choose on which places (phone, desktop, web) a Market package may be used across the whole instance, or turn it off there entirely, from the web Plugins page."},
   {"date": "2026-11-04", "area": "Market", "text": "Instance administrators get a Plugins page on the web dashboard that lists every Market plugin and switch with what it ships and where it is installed, and shows each one's tables, row counts, errors and activity, with install, places and data export."},
   {"date": "2026-10-31", "area": "Desktop", "text": "On Debian and Ubuntu you can now install ForkMesh with sudo apt install forkmesh after adding the ForkMesh apt repository, and sudo apt upgrade keeps it up to date."},
   {"date": "2026-10-31", "area": "Desktop", "text": "The Sessions page now lists every session from the Claude app's Code tab and groups them the same way: pinned, your named groups, then one group per folder, with the Claude app's titles."},

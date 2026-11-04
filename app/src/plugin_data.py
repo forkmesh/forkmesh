@@ -55,6 +55,16 @@ ACCOUNT_SCHEMA_ALTER = (
     "ALTER TABLE account_package_installs ADD COLUMN places TEXT NOT NULL DEFAULT ''",
 )
 _ACCOUNT_SCHEMA_READY = False
+POLICY_SCHEMA_UP = (
+    """CREATE TABLE IF NOT EXISTS package_place_policy (
+        package TEXT PRIMARY KEY,
+        places TEXT NOT NULL DEFAULT '',
+        updated_at INTEGER NOT NULL DEFAULT 0 CHECK(updated_at >= 0),
+        updated_by TEXT NOT NULL DEFAULT '')""",
+)
+POLICY_TTL_MS = 30 * 1000
+_POLICY = {}
+_POLICY_AT = 0
 
 
 def _module(plugin):
@@ -336,6 +346,74 @@ def _dependents(plugin):
     return seen
 
 
+def _clock(runtime):
+    now = getattr(runtime, "now", None)
+    if callable(now):
+        try:
+            return int(now())
+        except (TypeError, ValueError):
+            pass
+    return int(datetime.now(timezone.utc).timestamp() * 1000)
+
+
+async def load_policy(runtime, fresh=False):
+    global _POLICY, _POLICY_AT
+    now = _clock(runtime)
+    if not fresh and _POLICY_AT and 0 <= now - _POLICY_AT < POLICY_TTL_MS:
+        return _POLICY
+    try:
+        rows = await runtime.d1_all(
+            "SELECT package,places,updated_at,updated_by FROM package_place_policy")
+    except Exception as error:
+        if "no such table" not in str(error).lower():
+            raise
+        rows = []
+    _POLICY = {str(row.get("package") or ""): {
+        "places": _stored_places(row.get("places")),
+        "updatedAt": int(row.get("updated_at") or 0),
+        "updatedBy": str(row.get("updated_by") or ""),
+    } for row in rows or []}
+    _POLICY_AT = now
+    return _POLICY
+
+
+async def save_policy(runtime, plugin, places, actor):
+    for statement in POLICY_SCHEMA_UP:
+        await runtime.d1_run(statement)
+    if places is None:
+        await runtime.d1_run("DELETE FROM package_place_policy WHERE package=?", plugin)
+    else:
+        await runtime.d1_run(
+            "INSERT INTO package_place_policy(package,places,updated_at,updated_by) "
+            "VALUES(?,?,?,?) ON CONFLICT(package) DO UPDATE SET places=excluded.places,"
+            "updated_at=excluded.updated_at,updated_by=excluded.updated_by",
+            plugin, ",".join(place for place in PLACES if place in places),
+            _clock(runtime), actor)
+    return await load_policy(runtime, fresh=True)
+
+
+def policy(plugin):
+    return _POLICY.get(plugin)
+
+
+def _manifest_places(plugin):
+    declared = REGISTRY.get(plugin, {}).get("places") or PLACES
+    return [place for place in PLACES if place in declared] or list(PLACES)
+
+
+def disabled_here(plugin):
+    rule = _POLICY.get(plugin)
+    if rule is None:
+        return False
+    return not [place for place in _manifest_places(plugin) if place in rule["places"]]
+
+
+async def enabled_here(runtime, plugin):
+    await load_policy(runtime)
+    return not disabled_here(plugin) and not any(
+        disabled_here(dependency) for dependency in _requirements(plugin))
+
+
 async def _ensure_account_schema(runtime):
     global _ACCOUNT_SCHEMA_READY
     if _ACCOUNT_SCHEMA_READY:
@@ -354,6 +432,7 @@ async def _ensure_account_schema(runtime):
 async def _account_rows(runtime, account_bi):
     global _ACCOUNT_SCHEMA_READY
     await _ensure_account_schema(runtime)
+    await load_policy(runtime)
     query = ("SELECT package,installed,settings,places FROM account_package_installs "
              "WHERE account_bi=?")
     try:
@@ -380,8 +459,10 @@ async def _account_rows(runtime, account_bi):
 
 
 def _available_places(plugin):
-    declared = REGISTRY.get(plugin, {}).get("places") or PLACES
-    return [place for place in PLACES if place in declared] or list(PLACES)
+    manifest = _manifest_places(plugin)
+    rule = _POLICY.get(plugin)
+    allowed = [place for place in manifest if rule is None or place in rule["places"]]
+    return allowed or manifest
 
 
 def _stored_places(value):
@@ -474,9 +555,10 @@ async def _own_states(runtime, account_bi, rows, created_at, plugins=None):
 
 
 def _effective_installed(plugin, own):
-    if plugin not in REGISTRY or not own.get(plugin):
+    if plugin not in REGISTRY or not own.get(plugin) or disabled_here(plugin):
         return False
-    return all(own.get(dependency) for dependency in _requirements(plugin))
+    return all(own.get(dependency) and not disabled_here(dependency)
+               for dependency in _requirements(plugin))
 
 
 def _setting_value(setting, value):
@@ -516,6 +598,8 @@ def _account_payload(rows, own, changed=None):
             "places": _places(plugin, rows.get(plugin)),
             "availablePlaces": _available_places(plugin),
         }
+        if disabled_here(plugin):
+            package["disabledHere"] = True
         if _legacy_only(plugin, rows, own):
             package["legacy"] = True
         elif _unchosen(plugin, rows):
@@ -705,6 +789,8 @@ async def _handle_account(runtime, path):
     places, error = _requested_places(plugin, data)
     if error or (action == "places" and places is None):
         return _response(runtime, {"error": error or "invalid_places"}, 400)
+    if action == "install" and not await enabled_here(runtime, plugin):
+        return _response(runtime, {"error": "plugin_disabled_here"}, 409)
     if action == "install":
         return await _account_install(runtime, account_bi, actor, plugin, created_at, places)
     if action == "uninstall":
@@ -717,6 +803,7 @@ async def _handle_account(runtime, path):
 
 
 async def _visible(runtime, account_bi, account_name="", created_at=None):
+    await load_policy(runtime)
     rows = await runtime.d1_all(
         "SELECT DISTINCT i.plugin AS plugin FROM org_plugin_installs i "
         "JOIN org_members m ON m.org_bi=i.org_bi WHERE m.member_bi=? "
@@ -750,12 +837,15 @@ async def _visible(runtime, account_bi, account_name="", created_at=None):
                     runtime, plugin, account_bi, account_name)
         else:
             visible = plugin in org_installed or _fallback_installed(plugin, created_at)
+        if visible and (disabled_here(plugin) or "web" not in _available_places(plugin)):
+            visible = False
         if visible:
             plugins.append(plugin)
     return _response(runtime, {"ok": True, "plugins": plugins})
 
 
 async def _state(runtime, org_bi, org_name, role):
+    await load_policy(runtime)
     rows = await runtime.d1_all(
         "SELECT plugin,installed_by_name,installed_at FROM org_plugin_installs "
         "WHERE org_bi=? ORDER BY plugin",
@@ -770,6 +860,7 @@ async def _state(runtime, org_bi, org_name, role):
         module = _data_module(plugin)
         plugins.append({
             "id": plugin,
+            "disabledHere": disabled_here(plugin),
             "installed": bool(row),
             "installedBy": str((row or {}).get("installed_by_name") or ""),
             "installedAt": int((row or {}).get("installed_at") or 0),
@@ -927,6 +1018,8 @@ async def handle(runtime, path):
     if action == "install" and (REGISTRY[plugin].get("accountData")
                                 or REGISTRY[plugin].get("accountSync")):
         return _response(runtime, {"error": "plugin_installs_per_account"}, 409)
+    if action == "install" and not await enabled_here(runtime, plugin):
+        return _response(runtime, {"error": "plugin_disabled_here"}, 409)
     if action == "install":
         return await _install(
             runtime, org_bi, org_name, str(account_bi), actor, role, plugin)
