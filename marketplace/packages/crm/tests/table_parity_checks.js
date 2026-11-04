@@ -309,7 +309,10 @@ same(page.crmCustomColumnLabel("deal_size"), "Deal size", "the key reads back as
         "a contact the account does not follow yet gets Follow");
   check(stranger.includes("Follow @a@mastodon.social from @forkmesh@mastodon.social."), "its tooltip names the account that follows");
   page.crmFollowBack.followed = new Set(["a@mastodon.social"]);
-  same(page.crmFollowBackButton({ id: "m1", mastodon: "a@mastodon.social" }), "", "an account already followed gets no button");
+  const followed = page.crmFollowBackButton({ id: "m1", mastodon: "a@mastodon.social" });
+  check(followed.includes('data-crm-following="a@mastodon.social"') && followed.includes(">Following</span>") && !followed.includes("data-crm-follow-back"),
+        "an account already followed shows Following instead of a button");
+  check(followed.includes("@forkmesh@mastodon.social already follows @a@mastodon.social."), "its tooltip names the account that follows");
   same(page.crmFollowBackButton({ id: "me", mastodon: "@forkmesh@mastodon.social" }), "", "the organization's own account gets no button");
   same(page.crmFollowBackButton({ id: "n", name: "No handle" }), "", "a contact without a Mastodon handle gets no button");
   view.activeView = "list-a";
