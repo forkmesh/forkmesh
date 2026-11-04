@@ -233,7 +233,8 @@ object InboxFeature {
             val pending = if (action.opensApp) {
                 PendingIntent.getActivity(context, code, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
             } else {
-                PendingIntent.getBroadcast(context, code, intent, PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+                val mutability = if (action.isTextInput) PendingIntent.FLAG_MUTABLE else PendingIntent.FLAG_IMMUTABLE
+                PendingIntent.getBroadcast(context, code, intent, mutability or PendingIntent.FLAG_UPDATE_CURRENT)
             }
             val built = Notification.Action.Builder(Icon.createWithResource(context, R.drawable.ic_stat_ping), action.title, pending)
             if (action.isTextInput) {

@@ -232,7 +232,9 @@ private fun Activity.applyCallWindow(state: CallWindow) {
 
 @Composable
 private fun CallWindowEffect() {
-    val wanted by CallRinger.window.collectAsState()
+    val requested by CallRinger.window.collectAsState()
+    val minimized by DirectCallFeature.minimized.collectAsState()
+    val wanted = if (minimized) requested.copy(showWhenLocked = false, turnScreenOn = false) else requested
     val context = LocalContext.current
     DisposableEffect(wanted, context) {
         val activity = context.findActivity()

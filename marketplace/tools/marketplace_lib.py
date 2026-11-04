@@ -1171,6 +1171,13 @@ def install_package(
         manifest = load_manifest(source / "manifest.json")
         if manifest["id"] != package_id or manifest["version"] != entry.version:
             raise MarketplaceError("catalog package identity does not match its artifact")
+        if not (catalog.root / entry.manifest).is_file() and (
+            (manifest.get("creator") or {}).get("verified")
+            or (manifest.get("trust") or {}).get("signature") == "verified-bundle"
+        ):
+            raise MarketplaceError(
+                "a downloaded package cannot claim a verified creator or signature"
+            )
         scoped_migrations = [
             item for item in (manifest.get("lifecycle") or {}).get("migrations", [])
             if item.get("database", "device") == database_scope

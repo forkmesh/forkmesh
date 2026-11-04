@@ -2,6 +2,7 @@
 
 #include "NativePackageExtension.h"
 #include "NoteComments.h"
+#include "NoteTools.h"
 
 #include <QJsonArray>
 #include <QJsonObject>
@@ -146,7 +147,11 @@ private:
     void openReferenceLink(const QString &href);
     void searchIndexChanged();
     bool noteAiEditAvailable() const;
+    bool startNoteAiEdit(const QString &instruction,
+                         forkmesh::notes::NoteTextRange range);
     void applyNoteAiEdit(const QString &reply, const QString &error);
+    forkmesh::notes::NoteTextRange aiSelectionRange() const;
+    void aiSelectionChanged();
     void stopNoteAiEdit();
     void promptTargetChanged();
 
@@ -225,6 +230,8 @@ private:
     QString m_aiEditNoteId;
     QString m_aiEditBase;
     QString m_aiEditBaseTitle;
+    forkmesh::notes::NoteTextRange m_aiEditRange;
+    bool m_aiPromptSelection = false;
     int m_aiEditSequence = 0;
 };
 

@@ -2928,10 +2928,8 @@ void MainWindow::initializeDeferredGlobalLogDock()
         return;
     forkmesh::StartupTraceStep step(
         QStringLiteral("post-paint: build global agent composer"));
-    QWidget *logDock = buildNetworkLogDock();
-    if (!logDock)
+    if (!buildNetworkLogDock())
         return;
-    logDock->setParent(m_globalOverlayHost);
     loadPromptOverlayPlacement();
     positionGlobalFooterOverlays();
     setupGenieSpider();
@@ -3524,7 +3522,7 @@ void MainWindow::setDebugLogTailVisible(bool visible)
 
 QWidget *MainWindow::buildNetworkLogDock()
 {
-    auto *dock = new QWidget;
+    auto *dock = new QWidget(m_globalOverlayHost);
     m_footerDock = dock;
     dock->setObjectName("logDock");
     const bool next = Theme::isNext();

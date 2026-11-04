@@ -78,6 +78,11 @@ the current one. Unzip the new download over the same folder and press
 **Reload** on the extension's card in `chrome://extensions`. Keeping the same
 folder keeps the same extension id, so you stay signed in.
 
+**The popup.** It is 800 px wide with the vault and the CRM side by side and
+the folded sections two to a row; an open section takes the full width. The
+sections you leave open (**X profile stats**, **Reddit desk** and the rest)
+open again the next time.
+
 **Signing out.** **Sign out** in the popup ends the session on the server,
 forgets the token and locks the vault.
 

@@ -297,13 +297,13 @@ fades the top bar in on a pop to the root (`ShellChrome.returnToRoot(on:)`).
 Because it hides the bar through UIKit, a page pushed straight from a
 notification into a fresh tab could inherit the hidden bar and lose Back. So
 ping detail pages (`InboxItemScreen`, `PingDetailScreen`, every entry point)
-use `shellKeepsNavigationBar()` (`Shell/ShellPageBarKeeper.swift`) and also
-draw their own back control (`ping-detail-back`): "All pings" as a link on
-`PingDetailScreen`, a 44 pt glass circle pinned above the list on
-`InboxItemScreen`. Android's ping pages draw their own back button (`RoutePage`,
-`FmPanelHeader`), which is the same glass circle and cannot be hidden, so
-`InboxItemScreen.kt` adds nothing to it; `PingDetailScreen.kt` also has the
-"All pings" link (`PingBackLink`).
+use `shellKeepsNavigationBar()` (`Shell/ShellPageBarKeeper.swift`), and the
+bar's own back button (a glass circle on iOS 26) is the only way back: no
+second back link on the page. `InboxItemScreen` has no title either, so its
+bar is just Back (2026-11-04: the page had shown the bar's Back and title plus
+a second glass back button under it). Android's ping pages draw one back
+button (`RoutePage`, `FmPanelHeader`); `InboxItemScreen.kt` passes an empty
+title so its bar is also just Back.
 
 **Bottom clearance.** The bar floats over pages. `HomeShell.barClearance` (bar
 height plus `barMargin`, 32 pt; zero with the keyboard up or on iPad) travels

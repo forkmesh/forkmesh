@@ -1,6 +1,6 @@
 # Security findings register
 
-Reviewed through: `fc80139d04` on 2026-10-28 (full-system sweep, two rounds; S-38 to S-83)
+Reviewed through: `8b4a8a7598` on 2026-11-04 (full-system sweep, three rounds; S-38 to S-92)
 
 Sentinel ([sentinel.md](sentinel.md)) keeps this page: fixed findings with the
 test that guards each fix, and open items that are already public. Unfixed
@@ -135,6 +135,15 @@ IDs: `C-` code audit, `I-` infrastructure audit, `S-<n>` later reviews.
 | S-81 | The shared package mail sender had no per-account cap and used a caller-chosen display name | Low | Fixed | `app/tests/test_mail_budget.py` |
 | S-82 | Commit-id reads could force unbounded graph walks on the gateway | Low | Fixed | `app/tests/test_mirror_gateway.py` |
 | S-83 | One request from a fleet runner could get its address probe-banned from the App | Low | Fixed | `deploy/tests/test_no_main_node.py` |
+| S-84 | A signature re-encoded in its last base64url character decoded to the same bytes and slipped past the issue-event replay checks | Medium | Fixed | `app/tests/test_signature_encoding.py`, `server/intake_test.go`, `desktop/tests/test_crypto.cpp` |
+| S-85 | The host decoded a static path twice, so `%255C` gave an off-site redirect and `%252F` skipped worker-first routes | Medium | Fixed | `app/tests/host/test_host_shim_units.py` |
+| S-86 | The admin database editor could write the autoscale tables, which add WireGuard peers and firewall sources on every core | High | Fixed | `app/tests/test_admin_database.py`, `deploy/tests/test_fleet_peers.py` |
+| S-87 | A platform admin could set `wantsAgent` on any owner's issue and start a coding agent on their desktop | Medium | Fixed | `app/tests/test_repo_agents.py` |
+| S-88 | Vault: an organization auditor could edit logins shared with write, and an owner who left an organization still saw its roster and filed grants to it | Medium | Fixed | `marketplace/packages/vault/tests/test_vault_api.py` |
+| S-89 | A downloaded package could declare its own verified creator and signature badges | Medium | Fixed | `marketplace/tests/test_marketplace_lifecycle.py` |
+| S-90 | Siri could tell, continue or stop agents from a locked iPhone; a minimized Android call kept the app over the lock screen; non-reply notification actions were mutable | Medium | Fixed, unguarded | |
+| S-91 | A catalog clone URL could name a local folder; the single-instance socket trusted another user's listener; the identity key was briefly written with the umask | Low | Fixed | `app/tests/test_catalog_clone_url.py` (socket and key file unguarded) |
+| S-92 | Log redaction missed encrypted private keys and later cookies on a `Cookie:` line | Low | Fixed | `deploy/tests/test_logread.py` |
 
 ## Open, already public
 

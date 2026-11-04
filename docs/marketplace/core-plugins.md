@@ -197,6 +197,9 @@ An account-synced install has places: `mobile`, `desktop` and `web`.
   `{"places": [...]}`; dependencies get the same places.
   `POST /api/plugins/@account/<id>/places` changes them (400
   `invalid_places`, 409 `plugin_not_installed`).
+- An administrator can narrow the places for the whole instance, or turn a
+  package off there, on the web Plugins page; `availablePlaces` then follows
+  that rule ([plugin-console.md](plugin-console.md#instance-wide-places)).
 - `GET /api/plugins/` (the web sidebar) lists an account-synced package only
   when `web` is one of its places. A dependency only has to be installed, not
   placed. An answer without `places` counts as every place.

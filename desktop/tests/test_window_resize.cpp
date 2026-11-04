@@ -18268,7 +18268,41 @@ else:
                   window.testRepoDetailTabDeferred(4) &&
                   window.testRepoDetailTabDeferred(9),
               QStringLiteral("expensive repository tabs begin deferred"));
-        window.testClickRepoDetailTab(3);
+        {
+            const QSet<QWidget *> before = [] {
+                const QWidgetList all = QApplication::allWidgets();
+                return QSet<QWidget *>(all.cbegin(), all.cend());
+            }();
+            StyleChangeCounter counter;
+            qApp->installEventFilter(&counter);
+            QElapsedTimer timer;
+            timer.start();
+            window.testClickRepoDetailTab(3);
+            const qint64 elapsed = timer.elapsed();
+            qApp->removeEventFilter(&counter);
+            int built = 0;
+            int changes = 0;
+            int maxPerWidget = 0;
+            for (QWidget *widget : QApplication::allWidgets()) {
+                if (before.contains(widget))
+                    continue;
+                ++built;
+                const int count = counter.counts.value(widget);
+                changes += count;
+                maxPerWidget = qMax(maxPerWidget, count);
+            }
+            qInfo().noquote()
+                << QStringLiteral("agents tab build: %1 ms, %2 new widgets, "
+                                  "%3 style changes, at most %4 on one widget")
+                       .arg(elapsed)
+                       .arg(built)
+                       .arg(changes)
+                       .arg(maxPerWidget);
+            check(built > 0 && changes <= built * 2,
+                  QStringLiteral("building the Agents tab restyles each new "
+                                 "widget about once, not once per ancestor it "
+                                 "is moved under"));
+        }
         check(!window.testRepoDetailTabDeferred(3) &&
                   window.testRepoDetailTabDeferred(4) &&
                   window.testRepoDetailTabDeferred(5) &&

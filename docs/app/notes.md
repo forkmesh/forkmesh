@@ -305,6 +305,11 @@ Known differences:
 - On iOS the format bar adds text at the end of the note: the text editor
   cannot report the selection before iOS 18.
 - Local (on-disk) notes are a desktop feature.
+- Writing with AI on a selection: the web asks the site's Workers AI through
+  `POST /api/notes/assist` ([notes assist](notes-assist.md)); the desktop asks
+  the default local agent (Claude Code or Codex) through the composer and the
+  editor's right-click menu ([desktop notes](../desktop/notes.md#rewriting-a-selection)),
+  with the same quick actions. The phone apps do not have it yet.
 
 ## Tests
 

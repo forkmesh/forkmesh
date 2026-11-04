@@ -1,7 +1,11 @@
 package mirrornode
 
 import (
+	"bufio"
 	"context"
+	"crypto/sha1"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -26,6 +31,7 @@ const (
 	hostedArchiveMaxText     = 300
 	hostedArchiveInvalid     = "invalid archive sync"
 	hostedArchiveDir         = ".archive"
+	hostedArchiveMaxRefs     = 100
 )
 
 var (
@@ -34,6 +40,7 @@ var (
 	hostedArchiveKeyPattern        = regexp.MustCompile(`^[A-Za-z0-9]{8,64}$`)
 	hostedArchiveCollectionPattern = regexp.MustCompile(`^[a-z0-9_]{1,64}$`)
 	hostedArchiveMessagePattern    = regexp.MustCompile(`(?s)<Message>(.*?)</Message>`)
+	hostedArchiveObjectPattern     = regexp.MustCompile(`^[0-9a-f]{40}([0-9a-f]{24})?$`)
 )
 
 type hostedArchiveUploaded struct {
@@ -54,13 +61,32 @@ type hostedArchiveSync struct {
 	Uploaded        *hostedArchiveUploaded `json:"uploaded,omitempty"`
 }
 
+type hostedArchiveRef struct {
+	Name   string `json:"name"`
+	Commit string `json:"commit"`
+}
+
+type hostedArchiveBundle struct {
+	Bytes         int64
+	SHA1          string
+	RoutingDigest string
+	Head          *hostedArchiveRef
+	Refs          []hostedArchiveRef
+	RefCount      int
+}
+
 type hostedArchiveReport struct {
-	Revision string `json:"revision"`
-	Digest   string `json:"digest"`
-	OK       bool   `json:"ok"`
-	At       int64  `json:"at"`
-	Error    string `json:"error"`
-	Bytes    int64  `json:"bytes"`
+	Revision      string             `json:"revision"`
+	Digest        string             `json:"digest"`
+	OK            bool               `json:"ok"`
+	At            int64              `json:"at"`
+	Error         string             `json:"error"`
+	Bytes         int64              `json:"bytes"`
+	SHA1          string             `json:"sha1,omitempty"`
+	RoutingDigest string             `json:"routingDigest,omitempty"`
+	Head          *hostedArchiveRef  `json:"head,omitempty"`
+	Refs          []hostedArchiveRef `json:"refs,omitempty"`
+	RefCount      int                `json:"refCount,omitempty"`
 }
 
 type hostedArchiveState struct {
@@ -299,10 +325,17 @@ func (r *hostedReplicator) uploadArchiveBundle(id, gitDir string, sync hostedArc
 	ctx, cancel := context.WithTimeout(context.Background(), hostedArchiveTimeout)
 	defer cancel()
 	report := hostedArchiveReport{Revision: sync.Revision, Digest: digest}
-	bytes, err := r.bundleAndUpload(ctx, id, gitDir, sync)
+	bundle, err := r.bundleAndUpload(ctx, id, gitDir, sync)
 	report.At = r.now().UnixMilli()
 	report.OK = err == nil
-	report.Bytes = bytes
+	report.Bytes = bundle.Bytes
+	if err == nil {
+		report.SHA1 = bundle.SHA1
+		report.RoutingDigest = bundle.RoutingDigest
+		report.Head = bundle.Head
+		report.Refs = bundle.Refs
+		report.RefCount = bundle.RefCount
+	}
 	if err != nil {
 		report.Error = redactHostedArchiveError(err.Error(), sync)
 		if report.Error == "" {
@@ -313,18 +346,24 @@ func (r *hostedReplicator) uploadArchiveBundle(id, gitDir string, sync hostedArc
 	return report
 }
 
-func (r *hostedReplicator) bundleAndUpload(ctx context.Context, id, gitDir string, sync hostedArchiveSync) (int64, error) {
+func (r *hostedReplicator) bundleAndUpload(ctx context.Context, id, gitDir string,
+	sync hostedArchiveSync) (hostedArchiveBundle, error) {
+	var bundle hostedArchiveBundle
 	dir := filepath.Join(r.cfg.Root, hostedArchiveDir)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return 0, err
+		return bundle, err
 	}
 	file, err := os.CreateTemp(dir, id+"-*.bundle")
 	if err != nil {
-		return 0, err
+		return bundle, err
 	}
 	path := file.Name()
 	file.Close()
 	defer os.Remove(path)
+	head := gitValue(ctx, gitDir, "symbolic-ref", "--quiet", "HEAD")
+	if !strings.HasPrefix(head, "refs/heads/") {
+		head = "refs/heads/main"
+	}
 	args := []string{"-C", gitDir, "bundle", "create", "--quiet", path}
 	if gitValue(ctx, gitDir, "rev-parse", "--verify", "--quiet", "HEAD^{commit}") != "" {
 		args = append(args, "HEAD")
@@ -340,18 +379,76 @@ func (r *hostedReplicator) bundleAndUpload(ctx context.Context, id, gitDir strin
 		if text == "" {
 			text = err.Error()
 		}
-		return 0, errors.New("git bundle: " + text)
+		return bundle, errors.New("git bundle: " + text)
 	}
-	info, err := os.Stat(path)
+	bundle, err = describeHostedArchiveBundle(bundleCtx, path, head)
 	if err != nil {
-		return 0, err
+		return bundle, err
 	}
 	upload := r.uploadArchive
 	if upload == nil {
 		upload = putHostedArchive
 	}
-	if err := upload(ctx, sync, path, info.Size()); err != nil {
-		return info.Size(), err
+	if err := upload(ctx, sync, path, bundle.Bytes); err != nil {
+		return bundle, err
 	}
-	return info.Size(), nil
+	return bundle, nil
+}
+
+func describeHostedArchiveBundle(ctx context.Context, path, head string) (hostedArchiveBundle, error) {
+	var bundle hostedArchiveBundle
+	file, err := os.Open(path)
+	if err != nil {
+		return bundle, err
+	}
+	defer file.Close()
+	hash := sha1.New()
+	size, err := io.Copy(hash, file)
+	if err != nil {
+		return bundle, err
+	}
+	bundle.Bytes = size
+	bundle.SHA1 = hex.EncodeToString(hash.Sum(nil))
+	output, err := exec.CommandContext(ctx, "git", "bundle", "list-heads", path).Output()
+	if err != nil {
+		return bundle, fmt.Errorf("git bundle list-heads: %w", err)
+	}
+	refs := map[string]string{}
+	scanner := bufio.NewScanner(strings.NewReader(string(output)))
+	for scanner.Scan() {
+		parts := strings.Fields(scanner.Text())
+		if len(parts) != 2 || !hostedArchiveObjectPattern.MatchString(parts[0]) ||
+			(!strings.HasPrefix(parts[1], "refs/heads/") && !strings.HasPrefix(parts[1], "refs/tags/")) ||
+			!hostedArchiveText(parts[1]) {
+			continue
+		}
+		refs[parts[1]] = parts[0]
+	}
+	names := make([]string, 0, len(refs))
+	for name := range refs {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	var routing []string
+	for _, name := range names {
+		if name == head || strings.HasPrefix(name, "refs/tags/") {
+			routing = append(routing, refs[name]+" "+name)
+		}
+	}
+	digest := sha256.Sum256([]byte(strings.Join(routing, "\n")))
+	bundle.RoutingDigest = hex.EncodeToString(digest[:])
+	if commit, ok := refs[head]; ok {
+		bundle.Head = &hostedArchiveRef{Name: head, Commit: commit}
+	}
+	bundle.RefCount = len(names)
+	sort.SliceStable(names, func(i, j int) bool {
+		return names[i] == head && names[j] != head
+	})
+	for _, name := range names {
+		if len(bundle.Refs) == hostedArchiveMaxRefs {
+			break
+		}
+		bundle.Refs = append(bundle.Refs, hostedArchiveRef{Name: name, Commit: refs[name]})
+	}
+	return bundle, nil
 }
