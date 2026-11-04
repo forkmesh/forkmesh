@@ -54,7 +54,7 @@ def main() -> None:
     prompt_launch = between(
         AGENTS,
         "int MainWindow::startAdHocAgentForRepo(",
-        "void MainWindow::startAgentFromComposer(",
+        "bool MainWindow::startAgentFromComposer(",
     )
     assert "session.orgTask = !orgTaskId.trimmed().isEmpty();" in prompt_launch
 

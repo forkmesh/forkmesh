@@ -811,6 +811,8 @@ set(FORKMESH_APP_SOURCES
     src/PingSyncState.cpp
     src/DesktopPingForward.h
     src/DesktopPingForward.cpp
+    src/CompactCelebration.h
+    src/CompactCelebration.cpp
     src/AgentCliTasks.h
     src/AgentCliTasks.cpp
     src/DesktopPowerAlert.h
@@ -5127,6 +5129,23 @@ forkmesh_link_opengl(forkmesh-perf-tests)
     endif()
     add_test(NAME forkmesh-desktop-ping-forward-tests
         COMMAND forkmesh-desktop-ping-forward-tests)
+
+    qt_add_executable(forkmesh-compact-celebration-tests
+        tests/test_compact_celebration.cpp
+        src/CompactCelebration.h
+        src/CompactCelebration.cpp
+    )
+    target_include_directories(forkmesh-compact-celebration-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-compact-celebration-tests PRIVATE Qt6::Widgets)
+    if(APPLE)
+        set_target_properties(forkmesh-compact-celebration-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+    add_test(NAME forkmesh-compact-celebration-tests
+        COMMAND forkmesh-compact-celebration-tests)
+    set_tests_properties(forkmesh-compact-celebration-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
     qt_add_executable(forkmesh-agent-cli-tasks-tests
         tests/test_agent_cli_tasks.cpp
