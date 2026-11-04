@@ -1008,8 +1008,10 @@ void NotesPage::buildNotesSection()
         refreshNotes();
     });
     heading->addWidget(refresh);
-    auto *versions = new QPushButton(QStringLiteral("Versions"));
+    auto *versions = new QPushButton(QStringLiteral("History"));
     versions->setObjectName(QStringLiteral("ghostButton"));
+    versions->setToolTip(QStringLiteral(
+        "Every saved version: who saved it and when, to view or restore"));
     setOcticon(versions, "history", 14);
     connect(versions, &QPushButton::clicked, this,
             &NotesPage::showNoteVersions);
@@ -1039,7 +1041,7 @@ void NotesPage::buildNotesSection()
     setOcticon(m_commentsButton, "comment", 14);
     m_commentsButton->hide();
     connect(m_commentsButton, &QPushButton::clicked, this,
-            [this] { toggleSidePanel(false); });
+            [this] { toggleSidePanel(NoteSideTab::Comments); });
     heading->addWidget(m_commentsButton);
     m_chatButton = new QPushButton(forkmesh::notes::noteChatButtonLabel(0));
     m_chatButton->setObjectName(QStringLiteral("ghostButton"));
@@ -1050,8 +1052,21 @@ void NotesPage::buildNotesSection()
         "Chat with everyone who can open this note; the number counts new messages"));
     setOcticon(m_chatButton, "people", 14);
     m_chatButton->hide();
-    connect(m_chatButton, &QPushButton::clicked, this, [this] { toggleSidePanel(true); });
+    connect(m_chatButton, &QPushButton::clicked, this,
+            [this] { toggleSidePanel(NoteSideTab::Chat); });
     heading->addWidget(m_chatButton);
+    m_activityButton = new QPushButton(QStringLiteral("Activity"));
+    m_activityButton->setObjectName(QStringLiteral("ghostButton"));
+    m_activityButton->setProperty("noteActivityButton", true);
+    m_activityButton->setCursor(Qt::PointingHandCursor);
+    m_activityButton->setCheckable(true);
+    m_activityButton->setToolTip(QStringLiteral(
+        "Views, edits, shares, publishing and restores, live"));
+    setOcticon(m_activityButton, "pulse", 14);
+    m_activityButton->hide();
+    connect(m_activityButton, &QPushButton::clicked, this,
+            [this] { toggleSidePanel(NoteSideTab::Activity); });
+    heading->addWidget(m_activityButton);
     auto *convert = new QPushButton(QStringLiteral("Convert"));
     convert->setObjectName(QStringLiteral("ghostButton"));
     convert->setCursor(Qt::PointingHandCursor);
@@ -1419,6 +1434,14 @@ void NotesPage::buildNotesSection()
     commentHooks.newComment = [this] { startNoteComment(); };
     commentHooks.closed = [this] { setCommentsPanelOpen(false); };
     commentHooks.chatChanged = [this] { updateCommentControls(); };
+    commentHooks.currentVersion = [this] {
+        return m_selectedNote.value(QStringLiteral("cloudVersion"))
+            .toInt(m_selectedNote.value(QStringLiteral("version")).toInt());
+    };
+    commentHooks.canEdit = [this] {
+        return forkmesh::notes::noteCanEdit(selectedNoteRole());
+    };
+    commentHooks.restoreVersion = [this](int version) { restoreNoteVersion(version); };
     m_commentsPanel = new NoteCommentsPanel(std::move(commentHooks));
     m_commentsPanel->hide();
     splitter->addWidget(m_commentsPanel);
@@ -3399,65 +3422,43 @@ void NotesPage::showNoteVersions()
         m_noteDirty = true;
         return;
     }
-    requestNotes(QByteArrayLiteral("GET"),
-                 QStringLiteral("/api/notes/%1/versions").arg(cloudId), {},
-                 [this, cloudId](bool ok, const QJsonObject &payload,
-                                 const QString &error) {
-        if (!ok) {
-            m_notesStatus->setText(QStringLiteral("Versions unavailable: %1").arg(error));
+    if (collabNoteId().isEmpty()) {
+        m_notesStatus->setText(QStringLiteral(
+            "Save this note to the cloud to see who saved each version."));
+        return;
+    }
+    toggleSidePanel(NoteSideTab::History);
+}
+
+void NotesPage::restoreNoteVersion(int version)
+{
+    const QString cloudId = selectedNoteCloudId();
+    if (cloudId.isEmpty() || version <= 0)
+        return;
+    const int current = m_selectedNote.value(QStringLiteral("cloudVersion"))
+        .toInt(m_selectedNote.value(QStringLiteral("version")).toInt());
+    if (version == current)
+        return;
+    requestNotes(QByteArrayLiteral("POST"),
+                 QStringLiteral("/api/notes/%1/versions").arg(cloudId),
+                 QJsonObject{{QStringLiteral("version"), version},
+                             {QStringLiteral("baseVersion"), current}},
+                 [this, cloudId](bool restored, const QJsonObject &result,
+                                 const QString &restoreError) {
+        if (selectedNoteCloudId() != cloudId)
+            return;
+        if (!restored) {
+            m_notesStatus->setText(QStringLiteral("Restore failed: %1").arg(restoreError));
             return;
         }
-        QStringList labels;
-        const QJsonArray versions = payload.value(QStringLiteral("versions")).toArray();
-        const int current = m_selectedNote.value(QStringLiteral("cloudVersion"))
-            .toInt(m_selectedNote.value(QStringLiteral("version")).toInt());
-        for (const QJsonValue &value : versions) {
-            const QJsonObject entry = value.toObject();
-            const int number = entry.value(QStringLiteral("version")).toInt();
-            QString label = QStringLiteral("Version %1 — %2").arg(number).arg(
-                QDateTime::fromMSecsSinceEpoch(static_cast<qint64>(
-                    entry.value(QStringLiteral("createdAt")).toDouble()))
-                    .toLocalTime().toString(QStringLiteral("yyyy-MM-dd HH:mm")));
-            const QString author = entry.value(QStringLiteral("author")).toString();
-            if (!author.isEmpty())
-                label += QStringLiteral(" — @%1").arg(author);
-            if (number == current)
-                label += QStringLiteral(" (current)");
-            labels << label;
-        }
-        if (labels.isEmpty()) {
-            m_notesStatus->setText(QStringLiteral("No saved versions yet."));
-            return;
-        }
-        bool accepted = false;
-        const QString chosen = QInputDialog::getItem(
-            this, QStringLiteral("Note history"),
-            QStringLiteral("Who edited this note and when. Pick one to restore it as a new version."),
-            labels, 0, false, &accepted);
-        const int index = labels.indexOf(chosen);
-        if (!accepted || index < 0)
-            return;
-        const int version = versions.at(index).toObject()
-            .value(QStringLiteral("version")).toInt();
-        if (version == current)
-            return;
-        requestNotes(QByteArrayLiteral("POST"),
-                     QStringLiteral("/api/notes/%1/versions").arg(cloudId),
-                     QJsonObject{{QStringLiteral("version"), version},
-                                 {QStringLiteral("baseVersion"), current}},
-                     [this](bool restored, const QJsonObject &result,
-                            const QString &restoreError) {
-            if (!restored) {
-                m_notesStatus->setText(QStringLiteral("Restore failed: %1").arg(restoreError));
-                return;
-            }
-            m_selectedNote = result.value(QStringLiteral("note")).toObject();
-            m_noteTitle->setText(m_selectedNote.value(QStringLiteral("title")).toString());
-            updateNoteEmojiButton();
-            m_noteEditor->setMarkdown(m_selectedNote.value(QStringLiteral("markdown")).toString());
-            m_noteDirty = false;
-            m_notesStatus->setText(QStringLiteral("Snapshot restored as a new version."));
-        });
+        m_selectedNote = result.value(QStringLiteral("note")).toObject();
+        m_noteTitle->setText(m_selectedNote.value(QStringLiteral("title")).toString());
+        updateNoteEmojiButton();
+        m_noteEditor->setMarkdown(m_selectedNote.value(QStringLiteral("markdown")).toString());
+        m_noteDirty = false;
+        m_notesStatus->setText(QStringLiteral("Snapshot restored as a new version."));
+        if (m_commentsPanel)
+            m_commentsPanel->reloadActivity();
     });
 }
 
@@ -3482,6 +3483,7 @@ void NotesPage::syncNoteCollab()
         m_presenceNoteId = id;
         m_commentsKey = QJsonValue();
         m_chatKey = QJsonValue();
+        m_activityKey = QJsonValue();
         m_followName.clear();
         m_peers.clear();
         m_lastTypedMs = 0;
@@ -3591,12 +3593,19 @@ void NotesPage::pollNotePresence()
                 m_commentsPanel->reloadChat();
             m_chatKey = chatKey;
         }
+        const QJsonValue activityKey = payload.value(QStringLiteral("activityKey"));
+        if (!activityKey.isUndefined() && !activityKey.isNull()) {
+            if (!m_activityKey.isUndefined() && activityKey != m_activityKey &&
+                m_commentsPanel)
+                m_commentsPanel->reloadActivity();
+            m_activityKey = activityKey;
+        }
         schedulePresencePoll(std::exchange(m_presenceQueued, false)
                                  ? 0
                                  : forkmesh::notes::notePresencePollMs(
                                        !m_followName.isEmpty(),
                                        m_commentsPanel && m_commentsPanel->isVisible() &&
-                                           m_commentsPanel->chatShown()));
+                                           m_commentsPanel->tab() != NoteSideTab::Comments));
     });
 }
 
@@ -3723,14 +3732,18 @@ void NotesPage::updateCommentControls()
     m_commentsButton->setVisible(collab);
     m_commentsButton->setText(forkmesh::notes::commentsButtonLabel(
         collab ? m_commentsPanel->openCount() : 0));
-    m_commentsButton->setChecked(collab && m_commentsPanel->isVisible() &&
-                                 !m_commentsPanel->chatShown());
+    const bool panelOpen = collab && m_commentsPanel->isVisible();
+    const NoteSideTab tab = m_commentsPanel->tab();
+    m_commentsButton->setChecked(panelOpen && tab == NoteSideTab::Comments);
     if (m_chatButton) {
         m_chatButton->setVisible(collab);
         m_chatButton->setText(forkmesh::notes::noteChatButtonLabel(
             collab ? m_commentsPanel->chatUnread() : 0));
-        m_chatButton->setChecked(collab && m_commentsPanel->isVisible() &&
-                                 m_commentsPanel->chatShown());
+        m_chatButton->setChecked(panelOpen && tab == NoteSideTab::Chat);
+    }
+    if (m_activityButton) {
+        m_activityButton->setVisible(collab);
+        m_activityButton->setChecked(panelOpen && tab == NoteSideTab::Activity);
     }
     m_commentButton->setVisible(collab);
     bool selected = m_noteEditor->sourceEdit()->textCursor().hasSelection();
@@ -3765,26 +3778,29 @@ void NotesPage::setCommentsPanelOpen(bool open)
         m_commentsPanel->clearActive();
         clearCommentHighlight();
     }
+    const NoteSideTab tab = m_commentsPanel->tab();
     if (m_commentsButton)
-        m_commentsButton->setChecked(open && !m_commentsPanel->chatShown());
+        m_commentsButton->setChecked(open && tab == NoteSideTab::Comments);
     if (m_chatButton)
-        m_chatButton->setChecked(open && m_commentsPanel->chatShown());
+        m_chatButton->setChecked(open && tab == NoteSideTab::Chat);
+    if (m_activityButton)
+        m_activityButton->setChecked(open && tab == NoteSideTab::Activity);
 }
 
-void NotesPage::toggleSidePanel(bool chat)
+void NotesPage::toggleSidePanel(NoteSideTab tab)
 {
     if (!m_commentsPanel)
         return;
-    if (m_commentsPanel->isVisible() && m_commentsPanel->chatShown() == chat) {
+    if (m_commentsPanel->isVisible() && m_commentsPanel->tab() == tab) {
         setCommentsPanelOpen(false);
         return;
     }
-    m_commentsPanel->showTab(chat);
+    m_commentsPanel->showTab(tab);
     setCommentsPanelOpen(true);
-    if (chat) {
+    if (tab == NoteSideTab::Chat)
         m_commentsPanel->focusChat();
+    if (tab != NoteSideTab::Comments)
         schedulePresencePoll(forkmesh::notes::kPresenceChatMs);
-    }
     updateCommentControls();
 }
 

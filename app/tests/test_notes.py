@@ -158,6 +158,16 @@ def test_note_lifecycle_acl_versions_and_repository_links():
                     f"/api/notes/{note_id}/versions")
     assert outsider["status"] == 200
     assert all("author" not in item for item in outsider["data"]["versions"])
+    one = call(runtime.use("GET", "bob", query={"version": "1"}),
+               f"/api/notes/{note_id}/versions")["data"]["version"]
+    assert (one["version"], one["author"], one["title"], one["markdown"]) == (
+        1, "alice", "Launch plan", "# One")
+    assert call(runtime.use("GET", "carol", query={"version": "1"}),
+                f"/api/notes/{note_id}/versions")["status"] == 404
+    assert call(runtime.use("GET", "bob", query={"version": "9"}),
+                f"/api/notes/{note_id}/versions")["status"] == 404
+    assert call(runtime.use("GET", "bob", query={"version": "x"}),
+                f"/api/notes/{note_id}/versions")["status"] == 400
     restored = call(runtime.use("POST", "bob", {
         "version": 1, "baseVersion": 2,
     }), f"/api/notes/{note_id}/versions")

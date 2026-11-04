@@ -73,6 +73,17 @@ class NotesApi(private val api: ApiService) {
     fun restore(id: String, version: Long, baseVersion: Long): JsonObject =
         jsonObject(call("POST", "/$id/versions", linkedMapOf("version" to version, "baseVersion" to baseVersion))["note"])
 
+    fun version(id: String, version: Long): NoteVersion = NoteVersion.from(jsonObject(call("GET", "/$id/versions?version=$version")["version"]))
+
+    fun activity(id: String): NoteActivityPayload = NoteActivityPayload.from(call("GET", "/$id/activity"))
+
+    fun chat(id: String): NoteChatPayload = NoteChatPayload.from(call("GET", "/$id/chat"))
+
+    fun sendChat(id: String, body: String): NoteChatPayload =
+        NoteChatPayload.from(call("POST", "/$id/chat", linkedMapOf("body" to body.trim())))
+
+    fun deleteChat(id: String, messageId: String): NoteChatPayload = NoteChatPayload.from(call("DELETE", "/$id/chat/$messageId"))
+
     fun addShare(id: String, type: String, name: String, role: String): List<JsonObject> =
         jsonObjects(call("POST", "/$id/shares", linkedMapOf("type" to type, "name" to NotesLogic.shareName(name), "role" to role))["shares"])
 

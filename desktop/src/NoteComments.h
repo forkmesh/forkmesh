@@ -573,6 +573,174 @@ inline QString noteChatButtonLabel(int unread)
                       : QStringLiteral("Chat");
 }
 
+constexpr qint64 kNoteEditGroupMs = 30LL * 60 * 1000;
+
+enum class NoteSideTab { Comments, Chat, Activity, History };
+
+struct NoteActivityEntry {
+    QString kind;
+    QString actor;
+    qint64 at = 0;
+    int count = 1;
+    int version = 0;
+    int fromVersion = 0;
+    int readers = 0;
+    QJsonObject detail;
+};
+
+inline QList<NoteActivityEntry> noteActivityEntries(const QJsonObject &payload)
+{
+    QList<NoteActivityEntry> events;
+    for (const QJsonValue &value : payload.value(QLatin1String("events")).toArray()) {
+        const QJsonObject event = value.toObject();
+        NoteActivityEntry entry;
+        entry.kind = event.value(QLatin1String("kind")).toString();
+        if (entry.kind.isEmpty())
+            continue;
+        entry.actor = event.value(QLatin1String("actor")).toString();
+        entry.at = qint64(event.value(QLatin1String("at")).toDouble());
+        entry.count = qMax(1, event.value(QLatin1String("count")).toInt(1));
+        entry.version = event.value(QLatin1String("version")).toInt();
+        entry.fromVersion = entry.version;
+        entry.detail = event.value(QLatin1String("detail")).toObject();
+        events.append(entry);
+    }
+    const QJsonObject counts = payload.value(QLatin1String("counts")).toObject();
+    const int webViews = counts.value(QLatin1String("webViews")).toInt();
+    if (webViews > 0) {
+        NoteActivityEntry web;
+        web.kind = QStringLiteral("web");
+        web.at = qint64(counts.value(QLatin1String("webLastViewedAt")).toDouble());
+        web.count = webViews;
+        web.readers = counts.value(QLatin1String("webReaders")).toInt();
+        events.append(web);
+    }
+    std::stable_sort(events.begin(), events.end(),
+                     [](const NoteActivityEntry &a, const NoteActivityEntry &b) {
+        return a.at > b.at;
+    });
+    QList<NoteActivityEntry> grouped;
+    qint64 oldestAt = 0;
+    for (const NoteActivityEntry &entry : std::as_const(events)) {
+        if (entry.kind == QLatin1String("edit") && !grouped.isEmpty() &&
+            grouped.constLast().kind == QLatin1String("edit") &&
+            grouped.constLast().actor == entry.actor &&
+            oldestAt - entry.at <= kNoteEditGroupMs) {
+            NoteActivityEntry &last = grouped.last();
+            last.fromVersion = entry.version;
+            ++last.count;
+            oldestAt = entry.at;
+            continue;
+        }
+        NoteActivityEntry copy = entry;
+        if (copy.kind == QLatin1String("edit"))
+            copy.count = 1;
+        oldestAt = entry.at;
+        grouped.append(copy);
+    }
+    return grouped;
+}
+
+inline QString noteActivityText(const NoteActivityEntry &entry)
+{
+    const QString name = entry.detail.value(QLatin1String("name")).toString(
+        QStringLiteral("someone"));
+    const QString role = entry.detail.value(QLatin1String("role")).toString()
+            == QLatin1String("editor")
+        ? QStringLiteral("can edit")
+        : QStringLiteral("can view");
+    const QString ref = QStringLiteral("%1/%2#%3")
+        .arg(entry.detail.value(QLatin1String("owner")).toString(),
+             entry.detail.value(QLatin1String("repo")).toString())
+        .arg(entry.detail.value(QLatin1String("number")).toInt());
+    const QString &kind = entry.kind;
+    if (kind == QLatin1String("view"))
+        return entry.count > 1 ? QStringLiteral("viewed it %1 times").arg(entry.count)
+                               : QStringLiteral("viewed it");
+    if (kind == QLatin1String("web"))
+        return QStringLiteral("%1 of the published page%2")
+            .arg(entry.count == 1 ? QStringLiteral("1 read")
+                                  : QStringLiteral("%1 reads").arg(entry.count),
+                 entry.readers > 1 ? QStringLiteral(" by %1 readers").arg(entry.readers)
+                                   : QString());
+    if (kind == QLatin1String("edit"))
+        return entry.count > 1
+            ? QStringLiteral("edited it · v%1–v%2, %3 saves")
+                  .arg(entry.fromVersion).arg(entry.version).arg(entry.count)
+            : QStringLiteral("edited it · v%1").arg(entry.version);
+    if (kind == QLatin1String("create"))
+        return QStringLiteral("created the note");
+    if (kind == QLatin1String("restore")) {
+        const int as = entry.detail.value(QLatin1String("as")).toInt();
+        return QStringLiteral("restored version %1%2")
+            .arg(entry.detail.value(QLatin1String("version")).toInt())
+            .arg(as ? QStringLiteral(" as v%1").arg(as) : QString());
+    }
+    if (kind == QLatin1String("share"))
+        return QStringLiteral("shared it with %1 · %2").arg(name, role);
+    if (kind == QLatin1String("role"))
+        return QStringLiteral("changed %1 to %2").arg(name, role);
+    if (kind == QLatin1String("unshare"))
+        return QStringLiteral("stopped sharing with %1").arg(name);
+    if (kind == QLatin1String("publish"))
+        return QStringLiteral("published it to the web");
+    if (kind == QLatin1String("unpublish"))
+        return QStringLiteral("unpublished it");
+    if (kind == QLatin1String("link"))
+        return QStringLiteral("linked %1").arg(ref);
+    if (kind == QLatin1String("unlink"))
+        return QStringLiteral("unlinked %1").arg(ref);
+    if (kind == QLatin1String("export"))
+        return QStringLiteral("downloaded the Markdown");
+    if (kind == QLatin1String("copy-link"))
+        return QStringLiteral("copied the link");
+    if (kind == QLatin1String("task"))
+        return QStringLiteral("turned it into a task");
+    if (kind == QLatin1String("issue"))
+        return entry.detail.contains(QLatin1String("repo"))
+            ? QStringLiteral("filed issue %1 from it").arg(ref)
+            : QStringLiteral("filed an issue from it");
+    if (kind == QLatin1String("comment"))
+        return entry.detail.value(QLatin1String("reply")).toBool()
+            ? QStringLiteral("replied to a comment")
+            : QStringLiteral("commented");
+    if (kind == QLatin1String("resolve"))
+        return QStringLiteral("resolved a comment");
+    if (kind == QLatin1String("reopen"))
+        return QStringLiteral("reopened a comment");
+    return kind;
+}
+
+inline QString noteActivityActor(const NoteActivityEntry &entry, const QString &me)
+{
+    if (entry.kind == QLatin1String("web"))
+        return QString();
+    if (entry.actor.isEmpty())
+        return QStringLiteral("Someone");
+    return entry.actor.compare(me, Qt::CaseInsensitive) == 0 ? QStringLiteral("You")
+                                                             : entry.actor;
+}
+
+struct NoteVersionEntry {
+    int version = 0;
+    qint64 createdAt = 0;
+    QString author;
+};
+
+inline QList<NoteVersionEntry> noteVersionEntries(const QJsonArray &values)
+{
+    QList<NoteVersionEntry> versions;
+    for (const QJsonValue &value : values) {
+        const QJsonObject item = value.toObject();
+        const int number = item.value(QLatin1String("version")).toInt();
+        if (number <= 0)
+            continue;
+        versions.append({number, qint64(item.value(QLatin1String("createdAt")).toDouble()),
+                         item.value(QLatin1String("author")).toString()});
+    }
+    return versions;
+}
+
 inline int notePresencePollMs(bool following, bool chatOpen)
 {
     return following ? kPresenceFollowMs : chatOpen ? kPresenceChatMs : kPresencePollMs;

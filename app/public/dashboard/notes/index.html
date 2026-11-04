@@ -4348,8 +4348,8 @@
             .notes-follow { display: inline-flex; align-items: center; gap: .4rem; color: var(--nt-accent); }
             .notes-follow button { border-radius: .25rem; padding: 0 .3rem; color: var(--nt-muted); }
             .notes-follow button:hover { color: rgb(var(--dashboard-foreground-rgb)); }
-            .notes-panel-tabs { display: flex; flex: 1; gap: 2px; }
-            .notes-panel-tabs button { display: inline-flex; align-items: center; gap: .3rem; height: var(--dashboard-control-height-sm); border-radius: var(--dashboard-control-radius); padding: 0 .55rem; font-size: 13px; font-weight: 600; color: var(--nt-muted); }
+            .notes-panel-tabs { display: flex; flex: 1; min-width: 0; gap: 1px; }
+            .notes-panel-tabs button { display: inline-flex; align-items: center; gap: .3rem; height: var(--dashboard-control-height-sm); border-radius: var(--dashboard-control-radius); padding: 0 .4rem; white-space: nowrap; font-size: 13px; font-weight: 600; color: var(--nt-muted); }
             .notes-panel-tabs button:hover { color: rgb(var(--dashboard-foreground-rgb)); }
             .notes-panel-tabs button[aria-selected="true"] { background: var(--nt-selected); color: rgb(var(--dashboard-foreground-rgb)); box-shadow: inset 0 -2px 0 var(--nt-primary); }
             .notes-panel-body { display: flex; flex: 1; min-height: 0; flex-direction: column; }
@@ -4522,7 +4522,7 @@
             .notes-version button { align-self: center; font-size: .75rem; font-weight: 500; color: var(--nt-accent); opacity: 0; }
             .notes-version:hover button, .notes-version button:focus-visible { opacity: 1; }
             .notes-version-tag { align-self: center; font-size: .7rem; color: var(--nt-primary); }
-            .notes-activity { display: flex; width: 18rem; flex: none; min-height: 0; flex-direction: column; border-left: 1px solid var(--nt-soft); background: rgb(var(--dashboard-card-rgb)); }
+            .notes-activity { display: flex; width: 22rem; flex: none; min-height: 0; flex-direction: column; border-left: 1px solid var(--nt-soft); background: rgb(var(--dashboard-card-rgb)); }
             .notes-activity-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding: .6rem .6rem .35rem 1rem; }
             .notes-activity-head h2 { margin: 0; flex: 1; font-size: 13px; font-weight: 600; }
             .notes-activity-head button[data-note-activity-all] { font-size: .72rem; color: var(--nt-accent); }
@@ -4531,7 +4531,19 @@
             .notes-activity-stat:hover { color: rgb(var(--dashboard-foreground-rgb)); }
             .notes-activity-stat[aria-pressed="true"] { background: rgb(var(--dashboard-card-rgb)); color: rgb(var(--dashboard-foreground-rgb)); box-shadow: 0 0 0 1px var(--nt-primary); }
             .notes-activity-num { font-size: 1rem; font-weight: 600; line-height: 1.3; color: rgb(var(--dashboard-foreground-rgb)); font-variant-numeric: tabular-nums; }
-            .notes-activity-link { margin: 0 1rem .35rem; align-self: flex-start; font-size: .72rem; font-weight: 500; color: var(--nt-accent); }
+            .notes-activity-links { display: flex; justify-content: space-between; gap: .5rem; margin: 0 1rem; }
+            .notes-activity-link { margin-bottom: .35rem; font-size: .72rem; font-weight: 500; color: var(--nt-accent); }
+            .notes-activity-link[hidden] { display: none; }
+            .notes-side-column .notes-versions { flex: 1; min-height: 0; }
+            .notes-side-column .notes-versions[hidden] { display: none; }
+            .notes-version-actions { display: flex; align-self: center; gap: .6rem; }
+            .notes-version-view { display: flex; flex: 1; min-height: 0; flex-direction: column; }
+            .notes-version-view[hidden] { display: none; }
+            .notes-version-view-head { display: flex; align-items: center; gap: .5rem; border-bottom: 1px solid var(--nt-soft); padding: .35rem .75rem .5rem; }
+            .notes-version-view-head > div { flex: 1; min-width: 0; }
+            .notes-version-view-head button[data-note-restore] { font-size: .75rem; font-weight: 500; color: var(--nt-accent); }
+            .notes-version-view-body { flex: 1; min-height: 0; overflow-y: auto; padding: .75rem 1rem 1rem; font-size: .85rem; }
+            .notes-version-view-body h1 { margin: 0 0 .5rem; font-size: 1.05rem; font-weight: 600; }
             .notes-act-list { flex: 1; min-height: 0; margin: 0; overflow-y: auto; padding: .15rem .5rem 1rem; list-style: none; }
             .notes-act { display: grid; grid-template-columns: 1.5rem minmax(0, 1fr); gap: .5rem; border-radius: .375rem; padding: .4rem .5rem; }
             .notes-act:hover { background: var(--nt-hover); }
@@ -4628,7 +4640,7 @@
             .notes-page-drawer .notes-banner { margin: .75rem 1.1rem 0; }
             .notes-page-include { margin-top: .7rem; }
             @media (max-width: 1100px) { .notes-bar [data-note-mode-group] { display: none; } }
-            @media (max-width: 1279px) { .notes-activity { position: absolute; z-index: 20; top: 0; right: 0; bottom: 0; width: min(20rem, 100%); border-left-color: var(--nt-border); box-shadow: -8px 0 24px rgb(1 4 9 / .3); } }
+            @media (max-width: 1279px) { .notes-activity { position: absolute; z-index: 20; top: 0; right: 0; bottom: 0; width: min(22rem, 100%); border-left-color: var(--nt-border); box-shadow: -8px 0 24px rgb(1 4 9 / .3); } }
             @media (max-width: 767px) {
               .notes-app { grid-template-columns: minmax(0, 1fr); }
               .notes-filters button { padding-inline: .25rem; }
@@ -4706,7 +4718,7 @@
                   <button data-note-comments-toggle type="button" class="notes-btn" title="Comments" aria-label="Show comments" aria-pressed="false" aria-controls="note-comments"><i data-lucide="message-square"></i><span data-note-comments-count class="notes-count">Comments</span></button>
                   <button data-note-chat-toggle type="button" class="notes-btn" title="Chat" aria-label="Show chat" aria-pressed="false" aria-controls="note-comments"><i data-lucide="messages-square"></i>Chat<span data-note-chat-badge class="notes-unread" hidden></span></button>
                   <button data-note-share-open type="button" class="notes-btn" aria-haspopup="dialog" aria-expanded="false"><i data-lucide="user-plus"></i>Share</button>
-                  <button data-note-activity-toggle type="button" class="notes-icon-btn" title="Activity" aria-label="Show activity" aria-pressed="false" aria-controls="note-activity"><i data-lucide="activity"></i></button>
+                  <button data-note-activity-toggle type="button" class="notes-icon-btn" title="Activity and history" aria-label="Show activity" aria-pressed="false" aria-controls="note-comments"><i data-lucide="activity"></i></button>
                   <button data-note-menu-open type="button" class="notes-icon-btn" aria-label="More actions" aria-haspopup="menu" aria-expanded="false"><i data-lucide="ellipsis"></i></button>
                 </header>
 
@@ -4755,21 +4767,13 @@
                     </div>
                   </div>
                 </div>
-                <aside data-note-activity id="note-activity" class="notes-activity" aria-label="Activity" hidden>
+                <aside data-note-comments id="note-comments" class="notes-activity notes-side-column" aria-label="Comments, chat, activity and history" hidden>
                   <div class="notes-activity-head">
-                    <h2>Activity</h2>
-                    <button data-note-activity-all data-note-activity-tab="all" type="button" hidden>Show all</button>
-                    <button data-note-activity-close type="button" class="notes-icon-btn" aria-label="Close activity"><i data-lucide="x"></i></button>
-                  </div>
-                  <div data-note-activity-summary class="notes-activity-sum" role="group" aria-label="Filter activity"></div>
-                  <button data-note-activity-history type="button" class="notes-activity-link" hidden>Open version history</button>
-                  <ol data-note-activity-list class="notes-act-list" aria-live="polite"></ol>
-                </aside>
-                <aside data-note-comments id="note-comments" class="notes-activity" aria-label="Comments and chat" hidden>
-                  <div class="notes-activity-head">
-                    <div class="notes-panel-tabs" role="tablist" aria-label="Comments and chat">
+                    <div class="notes-panel-tabs" role="tablist" aria-label="Comments, chat, activity and history">
                       <button type="button" role="tab" data-note-panel-tab="comments" aria-selected="true" aria-controls="note-panel-comments">Comments</button>
                       <button type="button" role="tab" data-note-panel-tab="chat" aria-selected="false" aria-controls="note-panel-chat">Chat<span data-note-chat-unread class="notes-unread" hidden></span></button>
+                      <button type="button" role="tab" data-note-panel-tab="activity" aria-selected="false" aria-controls="note-panel-activity">Activity</button>
+                      <button type="button" role="tab" data-note-panel-tab="history" aria-selected="false" aria-controls="note-panel-history">History</button>
                     </div>
                     <button data-note-comment-general type="button" class="notes-icon-btn" title="Comment on the whole note" aria-label="Comment on the whole note"><i data-lucide="message-square-plus"></i></button>
                     <button data-note-comments-close type="button" class="notes-icon-btn" aria-label="Close panel"><i data-lucide="x"></i></button>
@@ -4790,6 +4794,19 @@
                       <textarea data-note-chat-input rows="2" maxlength="2000" placeholder="Message everyone in this note" aria-label="Chat message"></textarea>
                       <button type="submit" class="notes-btn" aria-label="Send message"><i data-lucide="send"></i></button>
                     </form>
+                  </div>
+                  <div data-note-panel="activity" id="note-panel-activity" class="notes-panel-body" role="tabpanel" hidden>
+                    <div data-note-activity-summary class="notes-activity-sum" role="group" aria-label="Filter activity"></div>
+                    <div class="notes-activity-links">
+                      <button data-note-activity-history type="button" class="notes-activity-link" hidden>Open version history</button>
+                      <button data-note-activity-all data-note-activity-tab="all" type="button" class="notes-activity-link" hidden>Show all</button>
+                    </div>
+                    <ol data-note-activity-list class="notes-act-list" aria-live="polite"></ol>
+                  </div>
+                  <div data-note-panel="history" id="note-panel-history" class="notes-panel-body" role="tabpanel" hidden>
+                    <p data-note-notice="versions" class="notes-notice" role="status" hidden></p>
+                    <div data-note-versions class="notes-versions" aria-live="polite"></div>
+                    <div data-note-version-view class="notes-version-view" hidden></div>
                   </div>
                   <div data-note-mention-list class="notes-suggest notes-mention-list" role="listbox" aria-label="People to mention" hidden></div>
                 </aside>
@@ -4881,15 +4898,6 @@
                   <hr data-note-delete-sep />
                   <button data-note-delete type="button" role="menuitem"><i data-lucide="trash-2"></i>Delete note</button>
                 </div>
-
-                <aside data-note-versions-panel class="notes-drawer" aria-label="Version history" hidden>
-                  <div class="notes-drawer-head">
-                    <h2>Version history</h2>
-                    <button data-note-versions-close type="button" class="notes-icon-btn" aria-label="Close version history"><i data-lucide="x"></i></button>
-                  </div>
-                  <p data-note-notice="versions" class="notes-notice" role="status" hidden></p>
-                  <div data-note-versions class="notes-versions"></div>
-                </aside>
               </div>
 
               <div data-note-page-view class="notes-main" style="flex:1" hidden>

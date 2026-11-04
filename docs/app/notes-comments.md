@@ -121,6 +121,33 @@ presence routes answer `chatKey` (message count and newest time) so polling
 clients reload when it moves. Clients count messages from others newer than
 the last one you saw in that note as unread, on the Chat button and tab.
 
+## The side column
+
+Since 2026-11-04 the note editor on the web and the desktop has one right
+column with four tabs, so the people working on a note see what is happening
+without leaving it:
+
+- **Comments**, the threads above.
+- **Chat**, the thread above.
+- **Activity**, the timeline from [notes](notes.md#on-the-page): views,
+  edits, shares, publishing, links and restores, newest first.
+- **History**, the saved versions (`GET /api/notes/<id>/versions`), newest
+  first, each with who saved it and when. **View** opens one read-only with
+  its title and formatted Markdown (`GET /api/notes/<id>/versions?version=<n>`
+  answers `version: {version, createdAt, author, title, markdown, emoji}` for
+  the owner, editors and viewers; `version_not_found`, `invalid_version`);
+  **Restore** (owner and editors) saves it as a new version.
+
+Every tab is live. On the socket, `note-activity` and `note-updated` reload
+Activity, `note-updated` reloads History, and `note-chat` reloads Chat. The
+desktop, which polls, reloads Activity and History when the presence answer's
+`activityKey` moves (the note's version, the number of events, their summed
+`hits` and the latest `last_at`, so a folded repeat view counts too). The
+comments and chat buttons, the Activity button and **Version history** in the
+menu all open the column on their tab. Phones have no room for a column:
+iOS and Android show History, Activity and Chat as tabs of one sheet
+([phone notes](../native/notes.md)).
+
 ## Following someone
 
 Every client sends where its caret is: the web page sends `{"type":
@@ -165,8 +192,9 @@ HTTP:
   `state` is `invalid_presence`; a viewer's `editing` is stored as `viewing`.
 
 Both also answer `commentsKey`, the number of comments and the time of the
-latest change, and `chatKey`, the same for chat messages, so a polling client
-reloads comments or chat only when they move. A
+latest change, `chatKey`, the same for chat messages, and `activityKey` (see
+[the side column](#the-side-column)), so a polling client reloads comments,
+chat, activity or history only when they move. A
 polled peer is forgotten 20 seconds after its last poll; the desktop polls
 every 5 seconds while a note is open and sends `left` when it closes the note.
 Presence lives in the room's memory only: nothing about who opened a note is
@@ -189,7 +217,10 @@ with its replies, the cap, anonymous readers refused, removal with the note,
 and the presence routes. `app/tests/test_notes_chat.py` covers the chat:
 sealed bodies, listing, the length rule, outsiders refused, deleting your own
 or (as owner) anyone's, the 500-message window, removal with the note, the
-`chatKey`, and the room remembering cursor lines for polling followers.
+`chatKey`, the `activityKey`, and the room remembering cursor lines for polling
+followers; `app/tests/test_notes.py` covers viewing one version.
 `app/browser_tests/tests/dashboard-notes-live.spec.js` drives the web page:
 Live mode block editing, commenting on a selection in a live block, following
-a collaborator, and the chat tab with its unread count.
+a collaborator, the chat tab with its unread count, and the column's Activity
+and History tabs updating from socket frames, viewing a version and opening
+History from the menu.

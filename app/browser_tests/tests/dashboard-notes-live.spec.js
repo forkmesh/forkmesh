@@ -5,7 +5,7 @@ const NOTES_PAGE_PATH = path.resolve(__dirname, "..", "..", "public", "dashboard
 const NOTE_ID = "c".repeat(32);
 const MARKDOWN = "# Plan\n\nFirst paragraph here.\n\n- one\n- two\n\nLast words.";
 
-async function openNotes(page, { calls = [], messages = [], mode = "live", markdown = MARKDOWN } = {}) {
+async function openNotes(page, { calls = [], messages = [], mode = "live", markdown = MARKDOWN, activity = [], versions = null, note: noteFields = {} } = {}) {
   await page.addInitScript((initialMode) => {
     localStorage.setItem("forkmesh.session", JSON.stringify({
       nodeName: "alice", email: "alice@example.test", emailVerified: true,
@@ -44,6 +44,8 @@ async function openNotes(page, { calls = [], messages = [], mode = "live", markd
     visibility: "private", updatedAt: Date.now(), shares: [{ type: "user", name: "bob", role: "editor" }],
     links: [], webSocketUrl: `/api/notes/${NOTE_ID}/ws`,
   };
+  Object.assign(note, noteFields);
+  const history = versions || [{ version: 1, createdAt: Date.now(), author: "alice" }];
   await page.route("**/api/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -70,8 +72,13 @@ async function openNotes(page, { calls = [], messages = [], mode = "live", markd
       }
       answer = { ok: true, messages, canModerate: true };
       if (request.method() === "POST") answer.message = messages[messages.length - 1];
+    } else if (url.pathname === `/api/notes/${NOTE_ID}/versions`) {
+      const number = Number(url.searchParams.get("version"));
+      answer = url.searchParams.has("version")
+        ? { ok: true, version: { ...history.find((item) => item.version === number), title: `Draft ${number}`, markdown: `Old **v${number}**`, emoji: "" } }
+        : { ok: true, versions: history };
     } else if (url.pathname.endsWith("/activity")) {
-      answer = { ok: true, counts: {}, events: [] };
+      answer = { ok: true, counts: { versions: note.version }, events: activity };
     }
     return route.fulfill({ status: 200, contentType: "application/json; charset=utf-8", body: JSON.stringify(answer) });
   });
@@ -186,4 +193,47 @@ test("chat in the side panel sends messages and counts unread ones", async ({ pa
   await page.locator("[data-note-panel-tab=\"chat\"]").click();
   await expect(page.locator("[data-note-chat-unread]")).toBeHidden();
   await expect(page.locator("[data-note-chat-list] .notes-chat-msg")).toHaveCount(3);
+});
+
+test("the right column shows activity and history live beside the chat", async ({ page }) => {
+  const now = Date.now();
+  const activity = [{ kind: "create", actor: "alice", at: now - 60_000, version: 1 }];
+  const versions = [{ version: 1, createdAt: now - 60_000, author: "alice" }];
+  await openNotes(page, { mode: "preview", activity, versions });
+  await page.locator("[data-note-activity-toggle]").click();
+  const column = page.locator("[data-note-comments]");
+  await expect(column).toBeVisible();
+  await expect(page.locator("[data-note-panel-tab=\"activity\"]")).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator("[data-note-activity-list] .notes-act")).toHaveText([/You.*created the note/s]);
+
+  activity.unshift({ kind: "share", actor: "alice", at: now, detail: { name: "bob", role: "editor" } });
+  await page.evaluate(() => window.__sockets[0].emit({ type: "note-activity" }));
+  await expect(page.locator("[data-note-activity-list] .notes-act").first()).toContainText("shared it with bob");
+
+  await page.locator("[data-note-panel-tab=\"history\"]").click();
+  await expect(page.locator("[data-note-panel=\"activity\"]")).toBeHidden();
+  await expect(page.locator("[data-note-versions] .notes-version")).toHaveCount(1);
+  await expect(page.locator("[data-note-versions] .notes-version")).toContainText(["Version 1"]);
+
+  versions.unshift({ version: 2, createdAt: now, author: "bob" });
+  await page.evaluate(() => window.__sockets[0].emit({ type: "note-updated", version: 1, actor: "bob" }));
+  await expect(page.locator("[data-note-versions] .notes-version")).toHaveCount(2);
+  await expect(page.locator("[data-note-versions] .notes-version").first()).toContainText("bob");
+
+  await page.locator("[data-note-version-show=\"2\"]").click();
+  await expect(page.locator("[data-note-version-view]")).toBeVisible();
+  await expect(page.locator("[data-note-version-view] h1")).toHaveText("Draft 2");
+  await expect(page.locator("[data-note-version-view] strong")).toHaveText("v2");
+  await expect(page.locator("[data-note-version-view] [data-note-restore=\"2\"]")).toBeVisible();
+  await page.locator("[data-note-version-back]").click();
+  await expect(page.locator("[data-note-versions]")).toBeVisible();
+
+  await page.locator("[data-note-panel-tab=\"chat\"]").click();
+  await expect(page.locator("[data-note-chat-form]")).toBeVisible();
+  await page.locator("[data-note-comments-close]").click();
+  await expect(column).toBeHidden();
+  await page.locator("[data-note-menu-open]").click();
+  await page.locator("[data-note-versions-open]").click();
+  await expect(column).toBeVisible();
+  await expect(page.locator("[data-note-panel=\"history\"]")).toBeVisible();
 });
