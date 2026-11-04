@@ -10,6 +10,7 @@ import re
 import unicodedata
 
 from organization_rbac import ORG_INSIDER_ROLE_SQL
+import notes_assist
 
 
 PREFIX = "/api/notes"
@@ -46,6 +47,7 @@ MAX_CHAT = 500
 MAX_CHAT_BODY = 2000
 MAX_LINE = 1000000
 PAGES = PREFIX + "/pages"
+ASSIST = PREFIX + "/assist"
 PAGE_ACCENTS = ("blue", "purple", "pink", "red", "orange", "yellow", "teal", "gray")
 PAGE_LAYOUTS = ("outline", "continuous")
 PAGE_KINDS = frozenset({"note", "section", "link"})
@@ -104,6 +106,8 @@ def _route(path):
         return "collection", "", "", ""
     if clean == PAGES:
         return "pages", "", "", ""
+    if clean == ASSIST:
+        return "assist", "", "", ""
     page = re.fullmatch(r"/api/notes/pages/([0-9a-f]{32})(?:/(shares))?", clean)
     if page:
         return "pages", page.group(1), page.group(2) or "", ""
@@ -1467,7 +1471,7 @@ async def handle(runtime, path):
         return _response(runtime, {"error": "not_found"}, status=404)
     method = runtime.method()
     kind, note_id, action, comment_id = route
-    allowed = (("GET", "POST") if kind == "pages" and not note_id else
+    allowed = (("GET", "POST") if kind in ("pages", "assist") and not note_id else
                ("GET", "POST", "DELETE") if kind == "pages" and action == "shares" else
                ("GET", "PATCH", "DELETE") if kind == "pages" else
                ("GET", "POST") if not note_id else
@@ -1488,6 +1492,10 @@ async def handle(runtime, path):
             return _response(runtime, {"error": error}, status=413 if error == "payload_too_large" else 400)
     await runtime.ensure_schema()
     account_bi, actor = await _actor(runtime, data)
+    if kind == "assist":
+        return await notes_assist.handle(
+            runtime, lambda payload, status=200: _response(runtime, payload, status=status),
+            method, account_bi, data)
     if kind == "pages":
         return await _pages(runtime, method, note_id, action, account_bi, actor, data)
     if not note_id:

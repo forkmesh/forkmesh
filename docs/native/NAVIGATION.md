@@ -297,13 +297,13 @@ fades the top bar in on a pop to the root (`ShellChrome.returnToRoot(on:)`).
 Because it hides the bar through UIKit, a page pushed straight from a
 notification into a fresh tab could inherit the hidden bar and lose Back. So
 ping detail pages (`InboxItemScreen`, `PingDetailScreen`, every entry point)
-use `shellKeepsNavigationBar()` (`Shell/ShellPageBarKeeper.swift`) and also
-draw their own back control (`ping-detail-back`): "All pings" as a link on
-`PingDetailScreen`, a 44 pt glass circle pinned above the list on
-`InboxItemScreen`. Android's ping pages draw their own back button (`RoutePage`,
-`FmPanelHeader`), which is the same glass circle and cannot be hidden, so
-`InboxItemScreen.kt` adds nothing to it; `PingDetailScreen.kt` also has the
-"All pings" link (`PingBackLink`).
+use `shellKeepsNavigationBar()` (`Shell/ShellPageBarKeeper.swift`), and the
+bar's own back button (a glass circle on iOS 26) is the only way back: no
+second back link on the page. `InboxItemScreen` has no title either, so its
+bar is just Back (2026-11-04: the page had shown the bar's Back and title plus
+a second glass back button under it). Android's ping pages draw one back
+button (`RoutePage`, `FmPanelHeader`); `InboxItemScreen.kt` passes an empty
+title so its bar is also just Back.
 
 **Bottom clearance.** The bar floats over pages. `HomeShell.barClearance` (bar
 height plus `barMargin`, 32 pt; zero with the keyboard up or on iPad) travels
@@ -699,7 +699,12 @@ describes, moves, and offers three depths.
   and past meetings with cancel, and Booking settings (page, hours, meeting
   types, email) saved with one `PUT /api/booking/page`
   ([Booking Page](../marketplace/booking.md)). Android: `Route.Booking`,
-  `Booking.kt`, `feature/booking/`.
+  `Booking.kt`, `feature/booking/`. A booking's **Join video call** opens
+  the Meeting screen in the app.
+- **Meeting** (`.meeting(room, key)`, `/call?<room>#<key>`): the
+  [meeting room](../app/meeting-rooms.md#phones) page in an in-app web view
+  locked to the active server. Open to guests. Android: `Route.Meeting`,
+  `MeetingLink.kt`, `feature/meeting/`.
 - **App Store Status** (`.appStoreStatus`, `/dashboard/app-store-status`,
   Insights group): the App Store Connect snapshot the desktop last published,
   read from `GET /api/app-store-status` and drawn natively
@@ -1367,6 +1372,7 @@ current tab. Desktop-only capabilities have no destination.
 | Conversation, thread | `.channel(id)`, `.thread(channel, id)` | Chat | 9.5-9.19 |
 | DM | `.dm(user)` | Chat | 9.10 |
 | Discord (through the desktop) | `.discord(guild, channel)` | Chat | 9.17 |
+| Meeting room (a booked video meeting) | `.meeting(room, key)` | current | — |
 | Mesh room | `.channel(.mesh)` | Chat | 8.7 |
 | Profile (`/@name`) | `.profile(name)` | current | 8.5 |
 | People | `.people` | current | 8.5, 9.10 |
@@ -1420,6 +1426,7 @@ the website's own:
 | `/dashboard/apps` | `.settings(section: "apps")` |
 | `/ledger.html`, `/market.html`, `/status.html` | `.ledger`, `.market`, `.status` |
 | `/market/<package-id>` (plugin share link; not `/market/previews/…`) | `.market`, then `.package(id)` |
+| `/call?<room>#<key>` (also `forkmesh://call?<room>#<key>`) | `.meeting(room, key)` |
 | anything else | opens in the browser |
 
 `oauth` is a reserved owner, so `/oauth/authorize` always opens in the

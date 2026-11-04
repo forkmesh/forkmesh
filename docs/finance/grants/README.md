@@ -1,6 +1,6 @@
 # Grants
 
-The 100 grants, funds and credit programs that best fit ForkMesh, ranked, with
+The grants, funds and credit programs that best fit ForkMesh, ranked, with
 the amount, deadline, who can apply, the application steps, every document the
 application asks for, and a one-click ChatGPT draft for each. Researched on
 2026-10-16 against each funder's own pages.
@@ -30,7 +30,7 @@ The CRM has a **Grants** pipeline type (`grants`) with the stages
 pipeline.
 
 The CRM ships this list (`marketplace/packages/crm/content/worker/crm_grants.csv`,
-written by the same build). An empty Grants pipeline shows **Load the 100
+written by the same build). An empty Grants pipeline shows **Load the
 ranked grants**: an owner or admin clicks it (on the desktop, right-click the
 pipeline tab) and every grant lands on that pipeline at its first stage, in the
 open list or a new list named after the pipeline. Loading again only adds

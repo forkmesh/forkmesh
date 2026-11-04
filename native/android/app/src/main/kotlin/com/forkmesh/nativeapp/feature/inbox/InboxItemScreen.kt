@@ -113,7 +113,7 @@ class InboxItemScreen(private val item: InboxItem) : Screen() {
                 fixing = null
             }
         }
-        RoutePage(item.kindLabel, navigator) {
+        RoutePage("", navigator) {
             if (model == null) {
                 FmEmptyState("inbox", "Inbox", message = "Sign in to see what needs you.")
                 return@RoutePage

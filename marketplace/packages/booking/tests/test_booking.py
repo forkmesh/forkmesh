@@ -2,6 +2,7 @@ import asyncio
 from datetime import datetime
 import hashlib
 import json
+import re
 from pathlib import Path
 import sqlite3
 import sys
@@ -654,3 +655,141 @@ def test_visits_are_pruned_exported_and_purged():
     track(runtime, "view")
     call(runtime.use("POST"), "/api/booking/uninstall")
     assert runtime.db.execute("SELECT COUNT(*) FROM booking_visits").fetchone()[0] == 0
+
+
+ROOM_LINK = re.compile(r"https://app\.forkmesh\.com/call\?([0-9a-f]{32})#([0-9a-f]{64})")
+
+
+def room_of(runtime):
+    stored = json.loads(runtime.db.execute("SELECT data FROM booking_bookings").fetchone()[0]
+                        .split("]:", 1)[1])
+    match = ROOM_LINK.fullmatch(stored["location"]["detail"])
+    assert match and stored["location"]["room"] is True, stored["location"]
+    return match.group(1), match.group(2)
+
+
+def room(runtime, room_id, action="", method="GET", body=None, query=None):
+    path = f"/api/booking/-/call/{room_id}" + (f"/{action}" if action else "")
+    return call(runtime.use(method, actor="", body=body, query=query), path)
+
+
+def test_video_bookings_get_their_own_encrypted_room_link():
+    runtime = Runtime()
+    response = book(runtime, ms(2026, 11, 3, 15, 0))
+    assert response["status"] == 201, response
+    room_id, key = room_of(runtime)
+    link = f"https://app.forkmesh.com/call?{room_id}#{key}"
+    location = response["data"]["booking"]["location"]
+    assert location["url"] == link and location["room"] is True
+    assert location["text"] == "ForkMesh video call, end-to-end encrypted: " + link
+    guest_mail, owner_mail = runtime.mail
+    assert "Join the video call" in guest_mail["html"] and link in guest_mail["text"]
+    assert "Join the video call" in owner_mail["html"]
+    event = runtime.db.execute("SELECT data FROM calendar_events").fetchone()[0]
+    assert json.loads(event.removeprefix("sealed:"))["meetingUrl"] == link
+    assert owner(runtime)["upcoming"][0]["location"]["detail"] == link
+    stored = runtime.db.execute("SELECT room_bi, booking_id FROM booking_rooms").fetchone()
+    assert stored[0] == hashlib.sha256(("booking-room:" + room_id).encode()).hexdigest()
+    assert key not in json.dumps([list(row) for row in runtime.db.execute(
+        "SELECT * FROM booking_rooms").fetchall()])
+    second = book(runtime, ms(2026, 11, 3, 16, 0), email="ada@example.org")
+    assert second["data"]["booking"]["location"]["url"] != link
+
+
+def test_a_video_type_with_its_own_link_keeps_it():
+    runtime = Runtime()
+    call(runtime.use("PUT", body={"types": [{"id": "intro", "title": "Intro", "minutes": 30,
+                                             "location": {"kind": "video",
+                                                          "detail": "https://meet.example/me"}}]}),
+         "/api/booking/page")
+    response = book(runtime, ms(2026, 11, 3, 15, 0), type_id="intro")
+    assert response["data"]["booking"]["location"]["url"] == "https://meet.example/me"
+    assert response["data"]["booking"]["location"]["room"] is False
+    assert runtime.db.execute("SELECT COUNT(*) FROM booking_rooms").fetchone()[0] == 0
+
+
+def test_the_room_opens_half_an_hour_before_and_closes_two_hours_after():
+    runtime = Runtime()
+    start = ms(2026, 11, 3, 15, 0)
+    book(runtime, start)
+    room_id, _key = room_of(runtime)
+    info = room(runtime, room_id)["data"]["room"]
+    assert info["state"] == "early" and info["host"] == "alice" and info["title"] == "Meeting"
+    assert info["opensAt"] == start - 30 * 60000 and info["closesAt"] == start + 150 * 60000
+    assert "grace" not in json.dumps(info).lower()
+    assert room(runtime, room_id, "ticket", "POST")["data"]["error"] == "room_early"
+    runtime.clock = start - 30 * 60000
+    assert room(runtime, room_id)["data"]["room"]["state"] == "open"
+    runtime.clock = start + 150 * 60000 + 1
+    assert room(runtime, room_id, "signal")["data"]["error"] == "room_ended"
+    assert room(runtime, "f" * 32)["status"] == 404
+    assert room(runtime, "nothex")["status"] == 404
+
+
+def test_tickets_come_from_the_host_and_are_rate_limited():
+    runtime = Runtime()
+    start = ms(2026, 11, 3, 15, 0)
+    book(runtime, start)
+    room_id, _key = room_of(runtime)
+    runtime.clock = start
+    assert room(runtime, room_id, "ticket", "POST")["status"] == 503
+    assert room(runtime, room_id, "ticket")["status"] == 405
+    asked = []
+
+    async def call_ticket(value):
+        asked.append(value)
+        return {"ticket": "t.sig", "room": "r" * 64, "peer": "a" * 32, "url": "wss://n1/calls/ws"}
+
+    runtime.call_ticket = call_ticket
+    response = room(runtime, room_id, "ticket", "POST")
+    assert response["status"] == 200 and response["data"]["ticket"] == "t.sig"
+    assert response["data"]["peer"] == "a" * 32 and response["data"]["url"] == "wss://n1/calls/ws"
+    assert asked == [room_id]
+    for _ in range(booking.VISITOR_HOURLY_TICKETS - 1):
+        room(runtime, room_id, "ticket", "POST")
+    assert room(runtime, room_id, "ticket", "POST")["status"] == 429
+
+
+def test_signals_relay_only_sealed_boxes_while_the_room_is_open():
+    runtime = Runtime()
+    start = ms(2026, 11, 3, 15, 0)
+    book(runtime, start)
+    room_id, _key = room_of(runtime)
+    runtime.clock = start
+    empty = room(runtime, room_id, "signal")["data"]
+    assert empty["frames"] == [] and empty["seq"] == 0
+    boxes = ["A" * 40, "B_-" * 20]
+    for box in boxes:
+        assert room(runtime, room_id, "signal", "POST", {"box": box})["status"] == 202
+    for bad in ("", "short", "A" * 39, "A" * 40 + "!", "A" * (booking.MAX_SIGNAL_BOX + 1)):
+        assert room(runtime, room_id, "signal", "POST", {"box": bad})["status"] == 400
+    listed = room(runtime, room_id, "signal")["data"]
+    assert [frame["box"] for frame in listed["frames"]] == boxes
+    after = room(runtime, room_id, "signal", query={"after": listed["frames"][0]["seq"]})["data"]
+    assert [frame["box"] for frame in after["frames"]] == boxes[1:]
+    assert after["seq"] == listed["seq"]
+    runtime.clock = start + 3 * 60000
+    late = room(runtime, room_id, "signal")["data"]
+    assert late["frames"] == [] and late["seq"] == listed["seq"]
+
+
+def test_cancelled_meetings_close_the_room_and_purge_removes_it():
+    runtime = Runtime()
+    start = ms(2026, 11, 3, 15, 0)
+    response = book(runtime, start)
+    room_id, _key = room_of(runtime)
+    token = response["data"]["booking"]["token"]
+    runtime.clock = start
+    room(runtime, room_id, "signal", "POST", {"box": "C" * 64})
+    runtime.clock = start - 60 * 60000
+    call(runtime.use("POST", actor="", body={}), f"/api/booking/-/b/{token}/cancel")
+    runtime.clock = start
+    assert room(runtime, room_id)["data"]["room"]["state"] == "cancelled"
+    assert room(runtime, room_id, "ticket", "POST")["data"]["error"] == "room_cancelled"
+    asyncio.run(booking.deliver_reminders(runtime.use("GET")))
+    assert runtime.db.execute("SELECT COUNT(*) FROM booking_room_signals").fetchone()[0] == 1
+    runtime.clock = start + 7 * 3600000
+    asyncio.run(booking.deliver_reminders(runtime.use("GET")))
+    assert runtime.db.execute("SELECT COUNT(*) FROM booking_room_signals").fetchone()[0] == 0
+    call(runtime.use("POST"), "/api/booking/uninstall")
+    assert runtime.db.execute("SELECT COUNT(*) FROM booking_rooms").fetchone()[0] == 0

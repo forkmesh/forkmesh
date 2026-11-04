@@ -76,7 +76,8 @@ def test_extension_is_manifest_v3_with_the_narrowest_permissions():
                  "dashboard.js", "popup.js", "popup.html", "popup-vault.js",
                  "vault.js", "vault-crypto.js", "vault-client.js", "x.js", "reddit.js",
                  "marketing-capture.js", "capture.html", "capture.js", "x-developer.js",
-                 "zoho-tidy.js", "zoho-sort.js", "map.html", "map.js", "map-source.js", "codemap.js"):
+                 "zoho-tidy.js", "zoho-sort.js", "map.html", "map.js", "map-source.js", "codemap.js",
+                 "x-crm.js", "x-sent.js"):
         assert (EXTENSION / name).is_file()
     for size in ("16", "32", "48", "128"):
         assert (EXTENSION / MANIFEST["icons"][size]).is_file()
@@ -251,7 +252,7 @@ def test_a_mastodon_conversation_links_like_an_email_on_an_instance_granted_once
     assert '"mastodon conversation" if provider == "mastodon"' in WORKER
     # The dashboard shows a linked thread beside the linked mail.
     assert 'mastodon: "Mastodon"' in WEB_SCRIPT
-    assert '["gmail", "zoho", "mastodon"].includes(email.provider)' in WEB_SCRIPT
+    assert '["gmail", "zoho", "mastodon", "x"].includes(email.provider)' in WEB_SCRIPT
 
 
 def test_the_icon_files_any_page_under_a_contact_and_the_date_is_editable():
@@ -496,6 +497,163 @@ def test_a_toot_is_logged_the_moment_mastodon_says_it_was_sent(tmp_path):
     assert toot["providerUrl"].endswith("/@forkmesh/117553400000000002")
 
 
+def test_x_conversations_link_and_your_posts_and_messages_are_tracked_like_mastodon():
+    x_crm = (EXTENSION / "x-crm.js").read_text(encoding="utf-8")
+    x_sent = (EXTENSION / "x-sent.js").read_text(encoding="utf-8")
+    scripts = MANIFEST["content_scripts"]
+    assert {"matches": ["https://x.com/*", "https://twitter.com/*"], "js": ["panel.js", "x-crm.js"],
+            "css": ["content.css"], "run_at": "document_idle"} in scripts
+    assert {"matches": ["https://x.com/*", "https://twitter.com/*"], "js": ["x-sent.js"],
+            "world": "MAIN", "run_at": "document_start"} in scripts
+    assert 'provider: "x"' in x_crm
+    assert '{ type: "fm-track-tweet", post }' in x_crm
+    assert 'event.data?.source !== "forkmesh-x-sent"' in x_crm
+    assert "CreateTweet|CreateNoteTweet" in x_sent and "dm\\/new2?\\.json" in x_sent
+    assert "target.origin !== location.origin" in x_sent
+    for forbidden in ("chrome.", "sessionToken", "console."):
+        assert forbidden not in x_sent
+    track = BACKGROUND.split("const trackTweet = ", 1)[1].split("\n});\n", 1)[0]
+    assert "if (!fromX(sender))" in track
+    assert "if (!state.track || !current.sessionToken || !current.organization)" in track
+    assert "author !== mine && author !== (await xState()).handle" in track
+    assert 'provider: "x", direction: "outbound", createContact: true' in track
+    assert 'POPUP_ONLY.add("fm-tweet-set-track");' in BACKGROUND
+    for key in ("fm-track-tweet", "fm-tweet-settings", "fm-tweet-set-track"):
+        assert f'"{key}"' in BACKGROUND
+    assert "data-track-tweets" in POPUP_HTML and "data-tweet-status" in POPUP_HTML
+    assert '{ type: "fm-tweet-set-track", track: event.target.checked }' in POPUP
+    assert "X_POST.test(tab.url" in POPUP
+    assert "provider: ui.message.provider" in PANEL
+    assert 'EMAIL_PROVIDERS = frozenset({"gmail", "zoho", "mastodon", "x", "other"})' in WORKER
+    assert '"x conversation" if on_x' in WORKER
+    assert 'x: "X"' in WEB_SCRIPT
+    assert '["gmail", "zoho", "mastodon", "x"].includes(email.provider)' in WEB_SCRIPT
+    assert 'provider == QLatin1String("x")' in CRM_DESKTOP
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_your_x_posts_and_messages_add_contacts_through_the_crm_worker():
+    result = subprocess.run(
+        [shutil.which("node"), "--no-warnings",
+         str(PACKAGE / "tests" / "background_x_correspondence_harness.js")],
+        capture_output=True, text=True, timeout=300,
+        env={"PATH": "/usr/local/bin:/usr/bin:/bin", "PYTHON": sys.executable})
+    assert result.returncode == 0, result.stdout[-3000:] + result.stderr[-2000:]
+    assert "checks passed" in result.stdout
+
+
+X_CREATED = {"data": {"create_tweet": {"tweet_results": {"result": {
+    "__typename": "Tweet", "rest_id": "1853490000000000002",
+    "core": {"user_results": {"result": {"core": {"screen_name": "forkmesh", "name": "ForkMesh"},
+                                         "legacy": {"screen_name": "forkmesh"}}}},
+    "legacy": {
+        "full_text": "@AdaLovelace @GraceHopper Would you try ForkMesh?",
+        "created_at": "Tue Nov 03 16:30:00 +0000 2026",
+        "conversation_id_str": "1853482000000000001",
+        "in_reply_to_status_id_str": "1853482000000000001",
+        "in_reply_to_screen_name": "AdaLovelace",
+        "entities": {"user_mentions": [
+            {"screen_name": "AdaLovelace", "name": "Ada Lovelace"},
+            {"screen_name": "GraceHopper", "name": "Grace Hopper"},
+            {"screen_name": "forkmesh", "name": "ForkMesh"}]},
+    }}}}}}
+X_DM_SENT = {
+    "entries": [{"message": {"id": "1853490000000000009", "time": "1793723500000", "conversation_id": "12-34",
+                             "message_data": {"id": "1853490000000000009", "time": "1793723500000",
+                                              "sender_id": "12", "recipient_id": "34",
+                                              "text": "Hello from ForkMesh"}}}],
+    "users": {"12": {"id_str": "12", "screen_name": "forkmesh", "name": "ForkMesh"},
+              "34": {"id_str": "34", "screen_name": "Linus", "name": "Linus T"}},
+}
+
+
+def _x_harness(mode, tmp_path):
+    import http.server
+    import threading
+
+    class Handler(http.server.SimpleHTTPRequestHandler):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, directory=str(PACKAGE), **kwargs)
+
+        def log_message(self, *args):
+            pass
+
+        def do_POST(self):
+            self.rfile.read(int(self.headers.get("Content-Length") or 0))
+            reply = (X_CREATED if self.path.endswith("/CreateTweet")
+                     else X_DM_SENT if self.path == "/i/api/1.1/dm/new2.json" else X_CREATED)
+            body = json.dumps(reply).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        result = subprocess.run(
+            [_headless_chrome(), "--headless", "--no-sandbox", f"--user-data-dir={tmp_path}",
+             "--host-resolver-rules=MAP x.test 127.0.0.1", "--virtual-time-budget=30000", "--dump-dom",
+             f"http://x.test:{server.server_address[1]}/tests/x_crm_harness.html?mode={mode}"],
+            capture_output=True, text=True, timeout=180)
+    finally:
+        server.shutdown()
+    found = re.search(r"(RESULT|ERROR) (.*)</pre>", result.stdout, re.S)
+    assert found and found.group(1) == "RESULT", result.stdout[-3000:] + result.stderr[-2000:]
+    return json.loads(found.group(2))
+
+
+@pytest.mark.skipif(_headless_chrome() is None, reason="no headless Chrome")
+def test_your_post_on_x_gets_the_header_and_logs_the_people_it_replies_to_and_mentions(tmp_path):
+    out = _x_harness("page", tmp_path)
+    assert out["message"] == {
+        "provider": "x", "messageId": "1853482133370019840", "threadId": "1853482000000000001",
+        "direction": "outbound", "from": "forkmesh", "handle": "adalovelace", "contactName": "Ada Lovelace",
+        "twitter": "@adalovelace", "mastodon": "",
+        "subject": "We do! @GraceHopper try ForkMesh #git", "sentAt": 1793722140000,
+        "providerUrl": "https://x.com/forkmesh/status/1853482133370019840",
+        "participants": ["adalovelace", "gracehopper"]}
+    assert out["placed"] is True
+    assert out["hotkeys"] == 0
+    assert len(out["tracked"]) == 1
+    post = out["tracked"][0]
+    assert post["statusId"] == "1853482133370019840" and post["kind"] == "post"
+    assert post["author"]["handle"] == post["mine"] == "forkmesh"
+    assert post["people"] == [{"handle": "adalovelace", "name": "Ada Lovelace"},
+                              {"handle": "gracehopper", "name": ""}]
+
+
+@pytest.mark.skipif(_headless_chrome() is None, reason="no headless Chrome")
+def test_someone_elses_post_on_x_names_them_and_logs_nothing_by_itself(tmp_path):
+    out = _x_harness("theirs", tmp_path)
+    message = out["message"]
+    assert message["direction"] == "inbound" and message["from"] == "gracehopper"
+    assert message["handle"] == "gracehopper" and message["contactName"] == "Grace Hopper"
+    assert message["threadId"] == "1853482000000000005"
+    assert message["participants"] == ["gracehopper"]
+    assert out["placed"] is True
+    assert out["tracked"] == []
+
+
+@pytest.mark.skipif(_headless_chrome() is None, reason="no headless Chrome")
+def test_a_post_or_direct_message_is_logged_the_moment_x_says_it_was_sent(tmp_path):
+    out = _x_harness("sent", tmp_path)
+    assert len(out["tracked"]) == 2
+    post, dm = out["tracked"]
+    assert post["kind"] == "post" and post["statusId"] == "1853490000000000002"
+    assert post["threadId"] == "1853482000000000001"
+    assert post["author"]["handle"] == post["mine"] == "forkmesh"
+    assert post["people"] == [{"handle": "adalovelace", "name": ""}, {"handle": "gracehopper", "name": "Grace Hopper"}]
+    assert post["subject"] == "@AdaLovelace @GraceHopper Would you try ForkMesh?"
+    assert post["sentAt"] == 1793723400000
+    assert post["providerUrl"] == "https://x.com/forkmesh/status/1853490000000000002"
+    assert dm["kind"] == "dm" and dm["statusId"] == "1853490000000000009" and dm["threadId"] == "12-34"
+    assert dm["people"] == [{"handle": "linus", "name": "Linus T"}]
+    assert dm["sentAt"] == 1793723500000
+    assert dm["providerUrl"] == "https://x.com/messages/12-34"
+
+
 @pytest.mark.skipif(_headless_chrome() is None, reason="no headless Chrome")
 def test_a_new_zoho_email_looks_up_its_to_address_and_links_to_it_when_sent(tmp_path):
     out = _compose_harness("send", tmp_path)
@@ -562,6 +720,20 @@ def test_a_zoho_header_with_names_only_finds_the_address_in_attributes_or_the_li
     assert 'xpathNodes(`//*[@*[contains(., "${messageId}")]]`, document)' in CONTENT
 
 
+def test_the_popup_is_wide_compact_and_reopens_the_sections_left_open():
+    assert "body { margin: 0; width: 800px; max-height: 600px; overflow-x: hidden; overflow-y: auto;" in POPUP_HTML
+    assert 'section[data-view="connected"] { grid-template-columns: repeat(2, minmax(0, 1fr));' in POPUP_HTML
+    assert "details[open], .bottom-actions) { grid-column: 1 / -1; }" in POPUP_HTML
+    assert "height: 26px; border-radius: 6px;" in POPUP_HTML
+    assert "height: 28px; border: 1px solid var(--border)" in POPUP_HTML
+    assert 'const SECTIONS = ["note", "x", "marketing", "reddit", "mastodon"];' in POPUP
+    for name in ("note", "x", "marketing", "reddit", "mastodon"):
+        assert f"data-{name}-section" in POPUP_HTML
+    assert "await reopenSections();\n}" in POPUP
+    assert 'await chrome.storage.local.set({ popupOpenSections: open ? [...rest, name] : rest });' in POPUP
+    assert "!section.hidden && !section.open" in POPUP
+
+
 def test_zoho_mail_lists_sort_by_sender_subject_or_date_in_the_page_only():
     sorter = (EXTENSION / "zoho-sort.js").read_text(encoding="utf-8")
     script = next(script for script in MANIFEST["content_scripts"] if "zoho-sort.js" in script["js"])
@@ -608,6 +780,52 @@ def test_zoho_inbox_zero_search_grouping_and_actions_logic():
         capture_output=True, text=True, timeout=60, env={"PATH": "/usr/local/bin:/usr/bin:/bin"})
     assert result.returncode == 0, result.stdout[-3000:] + result.stderr[-2000:]
     assert "checks passed" in result.stdout
+
+
+def _zoho_list_harness(mode, tmp_path):
+    result = subprocess.run(
+        [_headless_chrome(), "--headless", "--no-sandbox", "--allow-file-access-from-files",
+         f"--user-data-dir={tmp_path}", "--virtual-time-budget=30000", "--dump-dom",
+         (PACKAGE / "tests" / "zoho_list_harness.html").as_uri() + f"?mode={mode}"],
+        capture_output=True, text=True, timeout=180)
+    found = re.search(r"(RESULT|ERROR) (.*)</pre>", result.stdout, re.S)
+    assert found and found.group(1) == "RESULT", result.stdout[-3000:] + result.stderr[-2000:]
+    return json.loads(found.group(2))
+
+
+@pytest.mark.skipif(_headless_chrome() is None, reason="no headless Chrome")
+@pytest.mark.parametrize("mode", ["aria", "opened-in-set", "input"])
+def test_zoho_delete_removes_exactly_the_messages_shown_with_a_message_open(mode, tmp_path):
+    out = _zoho_list_harness(mode, tmp_path)
+    assert out["count"] == "3 of 6 loaded"
+    assert out["asked"] == "Delete 3 messages? Zoho Mail moves them to Trash."
+    assert out["done"] == [["delete", ["m2", "m4", "m6"]]]
+    assert out["left"] == ["m1", "m3", "m5"]
+    assert out["status"] == "Deleted 3 messages."
+
+
+@pytest.mark.skipif(_headless_chrome() is None, reason="no headless Chrome")
+def test_zoho_delete_all_skips_the_select_all_box(tmp_path):
+    out = _zoho_list_harness("all", tmp_path)
+    assert out["count"] == "6 loaded"
+    assert out["done"] == [["delete", ["m1", "m2", "m3", "m4", "m5", "m6"]]]
+    assert out["left"] == []
+
+
+@pytest.mark.skipif(_headless_chrome() is None, reason="no headless Chrome")
+def test_zoho_select_ticks_only_the_messages_shown(tmp_path):
+    out = _zoho_list_harness("select", tmp_path)
+    assert out["ticked"] == ["m2", "m4", "m6"]
+    assert out["done"] == []
+    assert out["status"] == "Selected 3 messages in Zoho Mail."
+
+
+@pytest.mark.skipif(_headless_chrome() is None, reason="no headless Chrome")
+def test_zoho_delete_stops_when_zoho_does_not_tick_every_message(tmp_path):
+    out = _zoho_list_harness("stuck", tmp_path)
+    assert out["done"] == []
+    assert len(out["left"]) == 6
+    assert out["status"].startswith("Zoho Mail selected 2 of 3; nothing else was done.")
 
 
 def test_the_reddit_desk_is_filled_from_pages_you_open_without_touching_reddit():
@@ -856,7 +1074,7 @@ def test_the_refresh_panel_follows_the_tab_without_touching_any_channel_site():
         assert (EXTENSION / name).is_file()
     assert [script["js"] for script in MANIFEST["content_scripts"]] == [
         ["panel.js", "content.js"], ["dashboard.js"], ["x.js"], ["reddit.js"], ["x-developer.js"],
-        ["zoho-tidy.js", "zoho-sort.js"], ["zoho-console.js"]]
+        ["zoho-tidy.js", "zoho-sort.js"], ["zoho-console.js"], ["panel.js", "x-crm.js"], ["x-sent.js"]]
     for gone in ("fm-bar-", "BAR_", "refresh-bar", "barMark", "fm-refresh-bar"):
         assert gone not in BACKGROUND, gone
     assert BACKGROUND.count("chrome.scripting.registerContentScripts(") == 1

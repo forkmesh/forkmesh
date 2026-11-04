@@ -20,6 +20,8 @@ the [browser extension guide](../browser-extension.md). Back to the
   │   │   ├── content.js         Gmail and Zoho Mail reader, send tracking
   │   │   ├── mastodon.js x.js reddit.js forum.js   page readers
   │   │   ├── mastodon-sent.js   in the Mastodon page: the posts you send
+  │   │   ├── x-crm.js           X post reader for the CRM header
+  │   │   ├── x-sent.js          in the X page: the posts and messages you send
   │   │   └── refresh-*          side panel
   │   └── web/                   /dashboard/extension install and update page
   ├── preview/                   Market screenshot
@@ -118,9 +120,11 @@ zip and loads only when the 3D view opens.
 | `tests/test_extension_vault.py` | The vault background code under a fake browser against the real vault worker module |
 | `tests/test_extension_forum.py` | Discourse detection and the mirror setup link |
 | `tests/mastodon_harness.html` | Mastodon 5's post page and a sent post, read by the real scripts in headless Chrome |
-| `tests/background_*_harness.js` | Node harnesses for capture, Mastodon, Reddit, refresh panel, repositories, vault, X posts, X and Zoho setup |
+| `tests/x_crm_harness.html` | X post pages (yours and someone else's), a sent post and a sent direct message, read by the real scripts in headless Chrome |
+| `tests/background_*_harness.js` | Node harnesses for capture, Mastodon, Reddit, refresh panel, repositories, vault, X posts, X correspondence, X and Zoho setup |
 | `tests/repo_map_harness.js` | The repository map's tree and source reads under a fake `fetch` |
 | `tests/zoho_tidy_harness.js` | Zoho Mail search, sender grouping and toolbar button matching |
+| `tests/zoho_list_harness.html` | Select and Delete on a Zoho-like list in headless Chrome: with a message open, with a select-all box, with real inputs, and with a box that will not tick |
 
 The pytest wrappers run the harnesses with Node and stand up
 `crm_stdio_server.py` and `marketing_stdio_server.py` as the server side.
@@ -155,12 +159,29 @@ The pytest wrappers run the harnesses with Node and stand up
   it calls ship together. 2.30.0 and CRM 1.50.0 sat on `main` unserved because
   every deploy failed its test gate, so the panel found no lists; 2.31.0 also
   takes in the open-tracking changes merged after 2.30.0 without a bump.
+- The Zoho Mail tools read a row's tick from its checkbox first (an input's
+  `checked`, then `aria-checked`, then the box's class) and only then from the
+  row. Zoho marks the open message's row as selected (`zmLSel`,
+  `aria-selected`), the same mark `content.js` uses to find that row, so 2.33.0
+  counted it as ticked: Delete gave up whenever a message outside the set was
+  open, and skipped the open message when it was inside the set. A "Select
+  all" box named only by `title` in the list also made every checkbox its own
+  row, so a search found nothing. The row depth is now the most common one
+  between neighbouring boxes, and select-all boxes are skipped by any label.
 - Other packages must not pin this one's exact version. The CRM page keeps
   only the oldest build it works with (`CRM_EXTENSION_MINIMUM`) and links to
   `/dashboard/extension`.
 - Chrome limits the manifest `description` to 132 characters;
   `minimum_chrome_version` is 137 for WebCrypto Ed25519 and X25519.
-- `popup.html` is 600 px wide (Chrome caps a popup at 800 by 600) and takes
+- `popup.html` is 800 px wide, the most Chrome allows (it caps a popup at 800
+  by 600), so the body scrolls itself: a page scrollbar would take width and
+  add a sideways one. The signed-in view is a two-column grid with compact
+  controls (26 px buttons, 28 px fields) so more shows without scrolling;
+  rows tied to the tab, open sections and the bottom buttons span both
+  columns, and `grid-auto-flow: dense` fills the gaps. The names of open
+  sections are kept in `chrome.storage.local` (`popupOpenSections`) and
+  reopened after the first render; each toggle writes only its own name, so
+  a section hidden on this tab keeps its state. It takes
   every colour from CSS variables set once for light and once for dark, so
   no rule needs its own dark override.
 - A user who loaded the extension from a different folder gets a new Chrome

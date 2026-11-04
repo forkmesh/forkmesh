@@ -233,33 +233,28 @@ struct AgentsScreen: View {
     }
 
     private var tabBar: some View {
-        HStack(spacing: FmSpace.x3) {
+        VStack(alignment: .leading, spacing: FmSpace.x1) {
             Text("Agents")
                 .fmText(.displaySmall)
                 .lineLimit(1)
-                .fixedSize()
                 .accessibilityAddTraits(.isHeader)
-            Spacer(minLength: 0)
+                .padding(.horizontal, FmSpace.x4)
             ScrollView(.horizontal, showsIndicators: false) {
                 tools
-                    .environment(\.agentToolsGrouped, true)
-                    .padding(.horizontal, FmSpace.x1)
-                    .frame(height: 40)
-                    .shellGlass(Capsule())
+                    .padding(.horizontal, FmSpace.x4)
                     .padding(.vertical, FmSpace.x1)
             }
             .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
             .fixedSize(horizontal: false, vertical: true)
-            .defaultScrollAnchor(.trailing)
         }
-        .padding(.leading, FmSpace.x4)
-        .padding(.trailing, FmSpace.x3)
-        .frame(height: 56)
+        .padding(.top, FmSpace.x2)
+        .padding(.bottom, FmSpace.x1)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .genieKeepsClear()
     }
 
     private var tools: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 6) {
             if stoppingAll || !stopAllTargets.isEmpty {
                 Button {
                     stopAllCount = stopAllTargets.count
@@ -829,22 +824,11 @@ extension AgentLineSort {
 }
 
 struct AgentToolChip: ViewModifier {
-    @Environment(\.agentToolsGrouped) private var grouped
-
     func body(content: Content) -> some View {
-        if grouped {
-            content
-                .frame(minWidth: 36, minHeight: 36)
-                .contentShape(Capsule())
-        } else {
-            content
-                .frame(height: 30)
-                .shellGlass(RoundedRectangle(cornerRadius: FmRadius.md, style: .continuous))
-                .contentShape(RoundedRectangle(cornerRadius: FmRadius.md, style: .continuous))
-        }
+        content
+            .frame(minWidth: 30)
+            .frame(height: 30)
+            .shellGlass(RoundedRectangle(cornerRadius: FmRadius.md, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: FmRadius.md, style: .continuous))
     }
-}
-
-extension EnvironmentValues {
-    @Entry var agentToolsGrouped: Bool = false
 }

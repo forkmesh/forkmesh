@@ -1099,7 +1099,9 @@ video, Diagnose and call audio are in section 27, "Calls".
   `canUseFullScreenIntent()`. The manifest declares `USE_FULL_SCREEN_INTENT`.
   Everything stops on accept, decline, a stale invite or an active call.
 - **Lock screen.** `CallWindowEffect` sets `setShowWhenLocked` while an invite
-  rings or a call is active and `setTurnScreenOn` only while ringing.
+  rings or a full-screen call is active and `setTurnScreenOn` only while
+  ringing. A minimized call clears both, so Back or minimize on a locked phone
+  returns to the lock screen instead of exposing the rest of the app.
 - **Incoming screen.** Full screen: caller, "Video call" or "Voice call", large
   red Decline and green Accept. It sits above the pre-call layer, which stays
   composed so its preview survives a decline.

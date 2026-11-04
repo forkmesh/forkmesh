@@ -112,6 +112,20 @@ final class BookingTests: XCTestCase {
         XCTAssertEqual(guest.badges(now: monday), ["Cancelled by guest"])
     }
 
+    func testForkMeshRoomsShowAJoinLink() {
+        let link = "https://app.forkmesh.com/call?" + String(repeating: "a", count: 32) + "#" + String(repeating: "b", count: 64)
+        var booking = BookingOverview(json: overview()).upcoming[0]
+        XCTAssertNil(booking.joinURL)
+        booking.location = BookingLocation(json: ["kind": .string("video"), "detail": .string(link), "room": .bool(true)])
+        XCTAssertTrue(booking.location.room)
+        XCTAssertEqual(booking.joinURL?.absoluteString, link)
+        XCTAssertEqual(booking.whereText, "ForkMesh video call, end-to-end encrypted")
+        XCTAssertEqual(booking.location.body, ["kind": .string("video"), "detail": .string(link)])
+        booking.status = "cancelled"
+        XCTAssertNil(booking.joinURL)
+        XCTAssertEqual(BookingText.locationHint("video"), "Leave empty for a private ForkMesh video room")
+    }
+
     func testLabels() {
         XCTAssertEqual(BookingText.displayLink("https://forkmesh.com/meet?alice"), "forkmesh.com/meet?alice")
         XCTAssertEqual(BookingText.displayLink("http://localhost:8787/meet?a"), "localhost:8787/meet?a")

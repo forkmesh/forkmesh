@@ -24,7 +24,7 @@ class NavigationTest {
         Route.Pull(repo, 9, PullTab.Files), Route.Review(repo, 9), Route.Discussion(repo, 2), Route.Run(repo, "r1"),
         Route.Release(repo, "v1/x"), Route.Project(repo, "p"), Route.Milestones(repo), Route.RepoSettings(repo, "git"),
         Route.LocalRepos, Route.LocalRepo("l1"), Route.QuickEdit("l1", "a.txt"), Route.Chat, Route.Channel("general"),
-        Route.Thread("general", "m1"), Route.Dm("bob"), Route.Discord("g", null), Route.Profile("bob"), Route.People, Route.Docs,
+        Route.Thread("general", "m1"), Route.Dm("bob"), Route.Discord("g", null), Route.Meeting("0".repeat(32), "a".repeat(64)), Route.Profile("bob"), Route.People, Route.Docs,
         Route.Search("q", SearchScope.Issues), Route.Notes, Route.Note(""), Route.Note("n", "c1"), Route.NotePage("p1"), Route.NotePage("p1", "n1"), Route.Tasks("mine"), Route.Task("t"),
         Route.Calendar("2026-09-24", CalendarMode.Week), Route.Event("e"), Route.Booking(null), Route.Booking("0123456789abcdef0123456789abcdef"), Route.Timers, Route.Desktops,
         Route.Desktop("d", "logs"), Route.Hosts, Route.Host("mirror35", null), Route.Provision("v1"), Route.Network(null),
@@ -629,6 +629,7 @@ class NavigationTest {
         val open = listOf(
             Route.Repos(RepoScope.Network), Route.Repo(repo, null), Route.Issue(repo, 1), Route.Chat, Route.Activity,
             Route.Settings(null), Route.Projects, Route.Tour, Route.Inbox(InboxFilter.All), Route.Search("q", SearchScope.Issues),
+            Route.Meeting("0".repeat(32), "a".repeat(64)),
         )
         for (route in open) expect(GuestGate.action(route, guest = true) == null, "${route.kind.raw} stays open to guests")
         for (item in HubCatalog.workspace + HubCatalog.operate + HubCatalog.business + HubCatalog.personal) {

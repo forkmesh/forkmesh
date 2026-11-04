@@ -19,6 +19,7 @@ Administrators: **Settings → AI review**.
 | --- | --- | --- |
 | Review pull requests automatically | off | Nothing is queued or sent while off. |
 | On for every public repository | off | Off: repositories opt in. On: repositories opt out. |
+| Writing help in Notes | on | Lets people rewrite a note selection with the same model and credentials, whether or not reviews are on ([notes assist](notes-assist.md)). |
 | Cloudflare account ID | none | 32 hex characters. |
 | API token | none | Sealed with `encrypt_row` in `instance_settings` (`ai_review`). The page shows only whether one is set. |
 | Model | `@cf/openai/gpt-oss-120b` | Models are limited to an approved list (`APPROVED_AI_REVIEW_MODELS`); anything else is refused. |

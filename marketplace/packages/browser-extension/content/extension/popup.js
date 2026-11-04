@@ -12,6 +12,7 @@ let unreadToot = null;
 
 // A Mastodon post's address: /@grace/113489, /deck/@grace/113489, or
 // /users/grace/statuses/113489.
+const X_POST = /^https:\/\/(?:x|twitter)\.com\/[A-Za-z0-9_]{1,15}\/status\/\d{5,25}(?:[/?#]|$)/;
 const MASTODON_POST = /^\/(?:deck\/)?(?:@[^/]+|users\/[^/]+\/statuses)\/\d{5,25}(?:\/|$)/;
 
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
@@ -132,6 +133,22 @@ async function renderToots() {
   note("[data-toot-status]", intro + recent);
 }
 
+async function renderTweets() {
+  const result = await send({ type: "fm-tweet-settings" });
+  if (!result.ok) return note("[data-tweet-status]", humanError(result));
+  $("[data-track-tweets]").checked = Boolean(result.track);
+  const last = result.last;
+  const intro = result.track
+    ? "Post, reply or send a direct message on X and everyone it mentions or goes to is logged in the CRM, new people as contacts, with a ping for each."
+    : "Your X posts and messages are not logged on their own; use the header on the post instead.";
+  const people = last?.contacts?.length ? last.contacts.join(", ") : "";
+  const what = last?.dm ? "message" : "post";
+  const recent = !last ? "" : last.error && !people
+    ? ` Last ${what} not logged (${ago(last.at)}): ${last.error}.`
+    : people ? ` Last logged ${ago(last.at)}: ${people}${last.created ? ` (${last.created} new)` : ""}.` : "";
+  note("[data-tweet-status]", intro + recent);
+}
+
 async function renderStatus(status) {
   const current = status || await send({ type: "fm-status" });
   $("[data-account]").textContent = current.connected ? current.account || "" : "";
@@ -157,10 +174,28 @@ async function renderStatus(status) {
   await renderOrganizations();
   await renderSent();
   await renderToots();
+  await renderTweets();
   await renderMastodon();
   await renderNote();
   await renderX();
   await renderPanel();
+  await reopenSections();
+}
+
+const SECTIONS = ["note", "x", "marketing", "reddit", "mastodon"];
+
+async function reopenSections() {
+  const { popupOpenSections = [] } = await chrome.storage.local.get("popupOpenSections");
+  for (const name of SECTIONS) {
+    const section = $(`[data-${name}-section]`);
+    if (popupOpenSections.includes(name) && !section.hidden && !section.open) section.open = true;
+  }
+}
+
+async function rememberSection(name, open) {
+  const { popupOpenSections = [] } = await chrome.storage.local.get("popupOpenSections");
+  const rest = popupOpenSections.filter((item) => item !== name);
+  await chrome.storage.local.set({ popupOpenSections: open ? [...rest, name] : rest });
 }
 
 async function signIn(event) {
@@ -199,7 +234,7 @@ async function signIn(event) {
 async function activeReadableTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) return null;
-  if (MAIL_URL.test(tab.url || "")) return tab;
+  if (MAIL_URL.test(tab.url || "") || X_POST.test(tab.url || "")) return tab;
   try {
     const url = new URL(tab.url || "");
     return url.protocol === "https:" && mastodonHosts.includes(url.hostname) ? tab : null;
@@ -988,6 +1023,9 @@ document.addEventListener("DOMContentLoaded", () => {
   ForkMeshVaultPopup.bind(send);
   ForkMeshRepoPopup.bind(send);
   ForkMeshForumPopup.bind(send);
+  for (const name of SECTIONS) {
+    $(`[data-${name}-section]`).addEventListener("toggle", (event) => void rememberSection(name, event.target.open));
+  }
   $("[data-sign-in-form]").addEventListener("submit", signIn);
   $("[data-organization]").addEventListener("change", async (event) => {
     await send({ type: "fm-set-organization", organization: event.target.value });
@@ -1013,6 +1051,10 @@ document.addEventListener("DOMContentLoaded", () => {
   $("[data-track-toots]").addEventListener("change", async (event) => {
     await send({ type: "fm-toot-set-track", track: event.target.checked });
     await renderToots();
+  });
+  $("[data-track-tweets]").addEventListener("change", async (event) => {
+    await send({ type: "fm-tweet-set-track", track: event.target.checked });
+    await renderTweets();
   });
   $("[data-note-section]").addEventListener("toggle", (event) => {
     if (event.target.open) void loadNoteContacts();

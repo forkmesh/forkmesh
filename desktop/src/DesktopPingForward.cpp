@@ -339,6 +339,48 @@ bool isFreshCelebration(const QJsonObject &alert, qint64 nowMs)
     return ts > 0 && qAbs(nowMs - ts) <= kCelebrationFreshMs;
 }
 
+QString celebrationHeadline(const QStringList &titles)
+{
+    QStringList clean;
+    for (const QString &title : titles) {
+        const QString trimmed = title.simplified();
+        if (!trimmed.isEmpty())
+            clean.append(trimmed);
+    }
+    const QString party = QStringLiteral("\U0001F389");
+    if (clean.isEmpty())
+        return titles.size() > 1 ? QStringLiteral("%1 %2 updates").arg(party).arg(titles.size())
+                                 : party;
+    const QString newest = clean.last();
+    if (clean.size() == 1)
+        return newest;
+    const int count = int(clean.size());
+    int start = 0;
+    while (start < newest.size() && !newest.at(start).isLetterOrNumber())
+        ++start;
+    const QString prefix = newest.left(start);
+    const QString rest = newest.mid(start);
+    const QString tracked = QStringLiteral(" tracked ");
+    const bool same = clean.count(newest) == count;
+    const int at = rest.indexOf(tracked);
+    if (same && at > 0) {
+        QString noun = rest.left(at);
+        if (!noun.contains(QLatin1Char(' ')) && noun.size() > 1 && noun.at(1).isLower())
+            noun[0] = noun.at(0).toLower();
+        if (!noun.endsWith(QLatin1Char('s')))
+            noun += QLatin1Char('s');
+        return QStringLiteral("%1%2 %3%4").arg(prefix).arg(count).arg(noun, rest.mid(at));
+    }
+    if (same)
+        return QStringLiteral("%1 (%2)").arg(newest).arg(count);
+    bool allTracked = true;
+    for (const QString &title : std::as_const(clean))
+        allTracked = allTracked && title.contains(tracked);
+    if (allTracked && at > 0)
+        return QStringLiteral("%1%2 messages%3").arg(prefix).arg(count).arg(rest.mid(at));
+    return QStringLiteral("%1 (+%2 more)").arg(newest).arg(count - 1);
+}
+
 bool cameOnline(qint64 lastOnlineMs, qint64 nowMs)
 {
     return lastOnlineMs <= 0 || nowMs - lastOnlineMs >= kOnlineGapMs;

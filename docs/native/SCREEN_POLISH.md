@@ -35,8 +35,12 @@ sign-in and sign-up screens are unchanged. Navigation is in
 
 ## Screens
 
-- **Agents.** The tools that show (sort, list view, runners, terminal, watch
-  and the rest) sit in one glass capsule beside the title. When there are no
+- **Agents.** Each tool that shows (sort, list view, runners, terminal, watch
+  and the rest) is its own small glass square (`AgentToolChip`, 30 pt; 36 dp on
+  Android). On iPhone the row sits under the title and scrolls sideways when it
+  is wider than the screen; one capsule beside the title squeezed the tools
+  under the title and clipped them (2026-11-04). Android keeps the rest in More,
+  so its row fits beside the title. When there are no
   agents, `AgentPipelineArt` draws prompt → mirror → branch → pull request →
   merged, with a dot that travels the path in 1.6 s on appear and on tap
   (the final frame with Reduce Motion). Two "Try one" rows open the composer

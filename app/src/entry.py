@@ -155,11 +155,6 @@ provider_mirror_push_config = _repository_provider_mirror.export(
 provider_mirror_record_push = _repository_provider_mirror.export(
     "record_push")
 PROVIDER_MIRROR_CRON_DELIVERIES = 10
-_repository_archive_sync = _LazyModule("repository_archive_sync")
-repo_archive_sync_handler = _repository_archive_sync.export(
-    "repo_archive_sync_handler")
-archive_sync_config = _repository_archive_sync.export("sync_config")
-archive_sync_record = _repository_archive_sync.export("record_sync")
 _apps_runtime = _LazyModule("apps_runtime")
 apps_handler = _apps_runtime.export("apps_handler")
 apps_oauth_token_handler = _apps_runtime.export("oauth_token_handler")
@@ -939,6 +934,8 @@ PLUGIN_MEMBER_EMAILS_PERMISSION = "organization.members.email"
 PLUGIN_MEMBER_EMAILS_LIMIT = 50
 PLUGIN_DISCORD_CONNECTOR_PERMISSION = "organization.discord.read"
 PLUGIN_DISCORD_MESSAGES_PERMISSION = "organization.discord.messages.read"
+PLUGIN_REPOSITORY_ARCHIVE_PERMISSION = "repository.archive.upload"
+PLUGIN_REPOSITORY_MIRRORS_PERMISSION = "repository.mirrors.read"
 PLUGIN_MEMBER_ROLES = {"pro_member": "pro", "supporting_member": "supporter"}
 # The ping kind notify_pending_inbox raises for the event that CREATES an item,
 # keyed by the inbox source (issue #714).
@@ -1222,7 +1219,7 @@ _URL_EXPORT_NAMES = (
     "AP_USER_SUB_RE", "AP_REPO_RE", "AP_REPO_SUB_RE", "AP_OBJECT_RE",
     "AP_OBJECT_MEDIA_RE", "REPO_FEDI_COMMENTS_RE", "REPO_AP_PUBLISH_RE",
     "REPO_AP_DIGEST_RE", "REPO_AP_POSTS_RE", "REPO_WEBHOOKS_RE",
-    "REPO_PROVIDER_MIRROR_RE", "REPO_ARCHIVE_SYNC_RE", "REPO_FORUM_RE",
+    "REPO_PROVIDER_MIRROR_RE", "REPO_FORUM_RE",
     "REPO_CARD_RE",
     "REPO_MEDIA_RE", "REPO_STAR_RE", "REPO_REACTIONS_RE", "REPO_VIEW_RE",
     "REPO_VIEWS_RE", "REPO_ISSUE_VIEW_RE", "REPO_ISSUE_VIEWS_RE",
@@ -11488,6 +11485,31 @@ def chat_call_ticket(secret, channel_id, peer, now_ms, account_bi,
     }
 
 
+PLUGIN_CALL_ROOM_RE = re.compile(r"^[0-9a-f]{32}$")
+PLUGIN_CALL_ID_RE = re.compile(r"^[a-z][a-z0-9-]{0,63}$")
+
+
+def plugin_call_channel(plugin, room):
+    return "plugin:" + str(plugin) + ":" + str(room)
+
+
+async def plugin_call_ticket(env, plugin, room):
+    plugin, room = str(plugin or ""), str(room or "")
+    if not PLUGIN_CALL_ID_RE.fullmatch(plugin) or not PLUGIN_CALL_ROOM_RE.fullmatch(room):
+        return None
+    secret = str(getattr(env, "FORKMESH_CALLS_SECRET", "") or "")
+    nodes = chat_call_nodes(getattr(env, "FORKMESH_CALLS_NODES", "") or "")
+    if len(secret) < 32 or not nodes:
+        return None
+    peer = bytes(js_crypto.getRandomValues(Uint8Array.new(16)).to_py()).hex()
+    ticket = chat_call_ticket(
+        secret, plugin_call_channel(plugin, room), peer, int(Date.now()),
+        "plugin-peer:" + plugin + ":" + peer)
+    ticket["url"] = chat_call_pick(
+        ticket["room"], nodes, await _chat_call_healthy(nodes))
+    return ticket
+
+
 class _ChatChannelsRuntime(_WorldCommunityRuntime):
     async def ensure_schema(self):
         await super().ensure_schema()
@@ -11864,6 +11886,13 @@ class _NotesRuntime(_WorldCommunityRuntime):
         record = await _account_identity_rec_by_bi(self.env, account_bi)
         return clean_string(
             (record or {}).get("name") or "", MAX_NODE_NAME).lower()
+
+    async def assist_config(self):
+        config = await ai_review_settings(self.env)
+        return config if ai_review_notes_ready(config) else None
+
+    async def assist_call(self, config, messages):
+        return await ai_review_call_provider(self.env, config, messages)
 
     async def viewer(self, note_id):
         """Blind per-note reader key behind a published note's view count.
@@ -12328,6 +12357,14 @@ async def _plugin_ai_json(env, account_bi, system_prompt, user_prompt, schema,
     return {"ok": False, "error": "provider_error" if last_error else "unusable_response"}
 
 
+class _PluginInternalGet:
+    method = "GET"
+
+    def __init__(self, url):
+        self.url = url
+        self.headers = {}
+
+
 class _PluginApiRuntime(_WorldCommunityRuntime):
     """Least-privilege adapter for a package-owned Worker API."""
 
@@ -12467,6 +12504,51 @@ class _PluginApiRuntime(_WorldCommunityRuntime):
             return None
         return await decrypt_row(self.env, value, key=key)
 
+    def _may(self, permission):
+        return permission in plugin_data.permissions(self._plugin)
+
+    async def repository_facts(self, owner, repo):
+        if not self._may(PLUGIN_REPOSITORY_ARCHIVE_PERMISSION):
+            return {"exists": False, "private": True, "hosted": False}
+        _repo_bi, row = await _security_scan_repository_row(
+            self.env, owner, repo)
+        private = bool(await _repo_is_private(self.env, owner, repo))
+        try:
+            hosted = bool(await d1_first(
+                self.env, "SELECT id FROM hosted_repos WHERE key_bi=? AND"
+                " deleted_at=0", await blind_index(
+                    self.env, str(owner).lower() + "/" + str(repo))))
+        except Exception:
+            hosted = False
+        return {"exists": bool(row) or hosted, "private": private,
+                "hosted": hosted}
+
+    async def repository_administrator(self, owner, repo, data=None):
+        if (not self._may(PLUGIN_REPOSITORY_ARCHIVE_PERMISSION)
+                or self.request is None):
+            return ""
+        actor = await _authed_account_name(
+            self.env, self.request, data if isinstance(data, dict) else {})
+        if actor and await _repo_admin_allowed(self.env, actor, owner, repo):
+            return actor
+        return ""
+
+    async def repository_mirrors(self, owner, repo):
+        if (not self._may(PLUGIN_REPOSITORY_MIRRORS_PERMISSION)
+                or await _repo_is_private(self.env, owner, repo)):
+            return None
+        request = _PluginInternalGet(
+            "https://forkmesh.internal/api/repo/%s/%s/mirrors"
+            % (quote(str(owner)), quote(str(repo))))
+        try:
+            response = await repo_mirrors_handler(
+                self.env, request, owner, repo)
+        except Exception:
+            return None
+        if int(getattr(response, "status", 0) or 0) != 200:
+            return None
+        return await _response_json(response)
+
     async def account_exists(self, name):
         """True when ``name`` is an active user account a package may share
         organization records with. Only the yes/no leaves the host."""
@@ -12593,6 +12675,9 @@ class _PluginApiRuntime(_WorldCommunityRuntime):
             return ""
         key = "PACKAGE_" + plugin.upper().replace("-", "_") + "_" + clean
         return str(getattr(self.env, key, "") or "").strip()
+
+    async def call_ticket(self, room):
+        return await plugin_call_ticket(self.env, self._plugin, room)
 
     async def send_mailtrap(self, supplied_token, payload):
         token = str(supplied_token or "").strip()
@@ -12942,8 +13027,34 @@ async def plugin_api_handler(env, request, path, plugin):
     module = plugin_data.api_module(plugin)
     if module is None:
         return json_response({"error": "not_found"}, status=404)
+    if not await plugin_data.enabled_here(_PluginPurgeRuntime(env), plugin):
+        return json_response({"error": "plugin_disabled_here"}, status=404,
+                             cache_control="no-store")
     return await module.handle(_PluginApiRuntime(
         env, request, module, plugin_data.outbound_origins(plugin), plugin), path)
+
+
+def _plugin_host_runtime(env, plugin):
+    return _PluginApiRuntime(
+        env, None, plugin_data.api_module(plugin),
+        plugin_data.outbound_origins(plugin), plugin)
+
+
+async def plugin_archive_upload_keys(env):
+    return await plugin_data.archive_upload_keys(
+        lambda plugin: _plugin_host_runtime(env, plugin))
+
+
+async def plugin_archive_upload_config(env, owner, name, aliases, keys):
+    return await plugin_data.archive_upload_config(
+        lambda plugin: _plugin_host_runtime(env, plugin),
+        owner, name, aliases, keys)
+
+
+async def plugin_record_archive_upload(env, owner, name, aliases, report):
+    return await plugin_data.record_archive_upload(
+        lambda plugin: _plugin_host_runtime(env, plugin),
+        owner, name, aliases, report)
 
 
 async def plugin_lifecycle_handler(env, request, path):
@@ -16976,6 +17087,9 @@ ai_review_handler = _ai_review.export("handler")
 ai_review_cron = _ai_review.export("run_cron")
 ai_review_enqueue = _ai_review.export("enqueue")
 ai_review_note_push = _ai_review.export("note_push")
+ai_review_settings = _ai_review.export("settings")
+ai_review_notes_ready = _ai_review.export("notes_ready")
+ai_review_call_provider = _ai_review.export("call_provider")
 recent_push_remember = _recent_pushes.export("remember")
 recent_push_forget = _recent_pushes.export("forget_branches")
 recent_push_mark_pulled = _recent_pushes.export("mark_pulled")
@@ -17474,6 +17588,8 @@ def _repository_logo_image_response(logo, public=True):
                 else "private, no-store, max-age=0, must-revalidate"
             ),
             "x-content-type-options": "nosniff",
+            "content-security-policy":
+                "default-src 'none'; style-src 'unsafe-inline'; sandbox",
         },
     }))
 
@@ -21326,8 +21442,9 @@ def _apply_browser_security_headers(response, pathname):
             "frame-src 'self'",
             "frame-src 'self' " + _TURNSTILE_CHALLENGE_ORIGIN, 1,
         )
-    devices = ("camera", "microphone") if chat_page else _plugin_device_page(
-        path)
+    call_page = path in ("/call", "/call.html")
+    devices = ("camera", "microphone") if chat_page or call_page else (
+        _plugin_device_page(path))
     if devices:
         csp = csp.replace(
             "media-src 'self' blob: https:", _DEVICE_PAGE_MEDIA_SRC, 1)
@@ -42794,13 +42911,14 @@ async def _accept_issue_submission(env, request, owner, repo, repo_bi, data,
         # "wantsAgent" makes the owner's node start a coding agent on this
         # issue automatically once merged — unlike the other meta fields
         # above, that's an immediate, unreviewed side effect, so it's only
-        # honored when the request comes from a privileged account: the repo
-        # owner, or an admin acting on the owner's behalf (adhoc #225).
+        # honored when the request comes from the repo owner's own account
+        # (adhoc #225).
         wants_agent = False
         agent_model = ""
         agent_provider = ""
         if meta_in.get("wantsAgent"):
-            ok, err = await _authorize_owner_account(env, owner, data, request)
+            ok, err = await _authorize_owner_account(env, owner, data, request,
+                                                     allow_admin=False)
             if not ok:
                 return err
             wants_agent = True

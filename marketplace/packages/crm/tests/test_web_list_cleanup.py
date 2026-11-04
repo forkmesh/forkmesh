@@ -25,8 +25,8 @@ def test_list_cleanup_finds_sorts_and_moves_people_when_run():
 def test_list_cleanup_is_a_more_page_with_its_own_panel():
     sections = WEB_VIEW.split("<div data-crm-sections", 1)[1].split("</div>", 1)[0]
     tabs = [chunk.split('"', 1)[0] for chunk in sections.split('data-crm-section-tab="')[1:]]
-    assert tabs == ["contacts", "inbox", "outreach", "team", "cleanup", "zoho"]
-    assert 'const CRM_SECTIONS = ["contacts", "inbox", "outreach", "team", "cleanup", "zoho"];' in WEB_SCRIPT
+    assert tabs == ["contacts", "inbox", "outreach", "mastodon", "team", "cleanup", "zoho"]
+    assert 'const CRM_SECTIONS = ["contacts", "inbox", "outreach", "mastodon", "team", "cleanup", "zoho"];' in WEB_SCRIPT
     panel = WEB_VIEW.split('<div data-crm-section="cleanup"', 1)[1].split('<div data-crm-section="zoho"', 1)[0]
     for hook in ("data-crm-cleanup-search", "data-crm-cleanup-list", "data-crm-cleanup-keep-all",
                  "data-crm-cleanup-head", "data-crm-cleanup-rows", "data-crm-cleanup-empty"):

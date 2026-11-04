@@ -71,6 +71,7 @@ object Features {
         com.forkmesh.nativeapp.feature.reticulum.ReticulumFeature.install()
         com.forkmesh.nativeapp.feature.appstorestatus.AppStoreStatusFeature.install()
         com.forkmesh.nativeapp.feature.booking.BookingFeature.install()
+        com.forkmesh.nativeapp.feature.meeting.MeetingFeature.install()
         com.forkmesh.nativeapp.feature.runners.RunnersFeature.install()
         com.forkmesh.nativeapp.feature.usage.UsageFeature.install()
         com.forkmesh.nativeapp.feature.rssreader.RssReaderFeature.install(app)

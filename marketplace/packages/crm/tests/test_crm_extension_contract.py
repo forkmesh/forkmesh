@@ -22,7 +22,7 @@ PACKAGE_MANIFEST = json.loads((CRM_PACKAGE / "manifest.json").read_text(encoding
 
 def test_worker_link_endpoint_keeps_the_provider_message_on_the_record():
     assert '"lookup|link|copy"' in WORKER or "lookup|link|copy" in WORKER
-    assert 'EMAIL_PROVIDERS = frozenset({"gmail", "zoho", "mastodon", "other"})' in WORKER
+    assert 'EMAIL_PROVIDERS = frozenset({"gmail", "zoho", "mastodon", "x", "other"})' in WORKER
     assert "async def _link_email(" in WORKER
     assert "async def _lookup_contact(" in WORKER
     assert 'https://mail.google.com/mail/u/%d/#all/%s' in WORKER

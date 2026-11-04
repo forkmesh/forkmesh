@@ -18331,7 +18331,41 @@ else:
                   window.testRepoDetailTabDeferred(4) &&
                   window.testRepoDetailTabDeferred(9),
               QStringLiteral("expensive repository tabs begin deferred"));
-        window.testClickRepoDetailTab(3);
+        {
+            const QSet<QWidget *> before = [] {
+                const QWidgetList all = QApplication::allWidgets();
+                return QSet<QWidget *>(all.cbegin(), all.cend());
+            }();
+            StyleChangeCounter counter;
+            qApp->installEventFilter(&counter);
+            QElapsedTimer timer;
+            timer.start();
+            window.testClickRepoDetailTab(3);
+            const qint64 elapsed = timer.elapsed();
+            qApp->removeEventFilter(&counter);
+            int built = 0;
+            int changes = 0;
+            int maxPerWidget = 0;
+            for (QWidget *widget : QApplication::allWidgets()) {
+                if (before.contains(widget))
+                    continue;
+                ++built;
+                const int count = counter.counts.value(widget);
+                changes += count;
+                maxPerWidget = qMax(maxPerWidget, count);
+            }
+            qInfo().noquote()
+                << QStringLiteral("agents tab build: %1 ms, %2 new widgets, "
+                                  "%3 style changes, at most %4 on one widget")
+                       .arg(elapsed)
+                       .arg(built)
+                       .arg(changes)
+                       .arg(maxPerWidget);
+            check(built > 0 && changes <= built * 2,
+                  QStringLiteral("building the Agents tab restyles each new "
+                                 "widget about once, not once per ancestor it "
+                                 "is moved under"));
+        }
         check(!window.testRepoDetailTabDeferred(3) &&
                   window.testRepoDetailTabDeferred(4) &&
                   window.testRepoDetailTabDeferred(5) &&
@@ -23220,6 +23254,45 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
               .arg(issuesBack)
               .arg(branchesBack)
               .arg(window.testPackageInstalled(QStringLiteral("special-agents"))));
+
+    check(window.testRailButtonShown(QStringLiteral("files")) &&
+              window.testSetPackageInstalled(QStringLiteral("files"), false) &&
+              !window.testRailButtonShown(QStringLiteral("files")) &&
+              window.testSetPackageInstalled(QStringLiteral("files"), true) &&
+              window.testRailButtonShown(QStringLiteral("files")),
+          QStringLiteral("the Files rail button follows the Files package"));
+
+    const QString bugsPackage = QStringLiteral("bug-reports");
+    if (window.testNativePackageIds().contains(bugsPackage)) {
+        for (int i = 0; i < 50 && !window.findChild<QPushButton *>(
+                                       QStringLiteral("nativePackageNav-bug-reports"));
+             ++i)
+            QApplication::processEvents();
+        window.testShowNativePackage(bugsPackage);
+        QApplication::processEvents();
+        auto *bugsNav = window.findChild<QPushButton *>(
+            QStringLiteral("nativePackageNav-bug-reports"));
+        auto *bugsPage =
+            window.findChild<QWidget *>(QStringLiteral("bugReportsSection"));
+        check(window.testPackageInstalled(bugsPackage) &&
+                  window.testNativePackageActionVisible(bugsPackage) && bugsNav &&
+                  bugsNav->toolTip() == QStringLiteral("Open Bugs") &&
+                  window.testRailButtonShown(QStringLiteral("package:bug-reports")) &&
+                  bugsPage &&
+                  bugsPage->findChild<QPlainTextEdit *>(
+                      QStringLiteral("bugReportsMessage")),
+              QStringLiteral("Bugs is a package page in the left rail with its "
+                             "report form (installed=%1 nav=%2 page=%3)")
+                  .arg(window.testPackageInstalled(bugsPackage))
+                  .arg(bugsNav != nullptr)
+                  .arg(bugsPage != nullptr));
+        check(window.testSetPackageInstalled(bugsPackage, false) &&
+                  !window.testNativePackageActionVisible(bugsPackage) &&
+                  window.testSetPackageInstalled(bugsPackage, true),
+              QStringLiteral("removing Bugs takes its rail button away"));
+    } else {
+        check(false, QStringLiteral("this build has the Bugs package page"));
+    }
 
     // Discord is a package too: its only chrome is the connector card in
     // Settings, and removal must scrub the bot token the package owned.

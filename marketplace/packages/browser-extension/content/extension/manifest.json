@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "ForkMesh: CRM and Password Vault",
-  "version": "2.33.0",
-  "description": "Fill ForkMesh Password Vault logins, link mail and Mastodon threads to CRM contacts, and update Marketing channels in a click",
+  "version": "2.35.0",
+  "description": "Fill ForkMesh Password Vault logins, link mail, Mastodon and X threads to CRM contacts, and update Marketing channels in a click",
   "minimum_chrome_version": "137",
   "permissions": [
     "storage",
@@ -138,6 +138,31 @@
         "zoho-console.js"
       ],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://x.com/*",
+        "https://twitter.com/*"
+      ],
+      "js": [
+        "panel.js",
+        "x-crm.js"
+      ],
+      "css": [
+        "content.css"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://x.com/*",
+        "https://twitter.com/*"
+      ],
+      "js": [
+        "x-sent.js"
+      ],
+      "world": "MAIN",
+      "run_at": "document_start"
     }
   ]
 }

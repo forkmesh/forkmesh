@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="referrer" content="no-referrer" />
+    <title>ForkMesh video meeting</title>
+    <meta name="description" content="A private, end-to-end encrypted ForkMesh video meeting." />
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="theme-color" content="#080d12" />
+    <meta name="color-scheme" content="dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="stylesheet" href="/call-room.css?v=${version}" />
+    <script type="module" src="/call-room.js?v=${version}"></script>
+  </head>
+  <body class="mr-body">
+    <header class="mr-top">
+      <a class="mr-brand" href="/" aria-label="ForkMesh home"><img src="/favicon/favicon.svg" alt="" width="22" height="22" /><span>ForkMesh</span></a>
+      <div class="mr-top-title" data-mr="top-title"></div>
+      <button type="button" class="mr-lock" data-mr="lock" aria-expanded="false" aria-controls="mr-trust">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></svg>
+        <span data-mr="lock-label">End-to-end encrypted</span>
+      </button>
+      <div class="mr-quality" data-mr="quality"></div>
+    </header>
+
+    <section class="mr-trust" id="mr-trust" data-mr="trust" hidden>
+      <h2>How this meeting stays private</h2>
+      <ul>
+        <li><strong>Encrypted on your device.</strong> Your audio and video are encrypted in this browser before they leave it, with a key only people holding this meeting's link have.</li>
+        <li><strong>The call server cannot see or hear you.</strong> ForkMesh's call server only forwards the encrypted media. Names and the keys each person uses are sealed the same way before they are relayed.</li>
+        <li><strong>The key stays in the link.</strong> It is the part after <code>#</code>, which browsers never send to a server. ForkMesh made the link when the meeting was booked and gave it only to the guest and the host. Treat it like a key: anyone you give it to can join.</li>
+        <li><strong>Effects and transcripts stay here.</strong> Faces, backgrounds, voices and the transcript all run on this device. ForkMesh records nothing.</li>
+      </ul>
+      <p class="mr-code-row">Meeting code <span class="mr-code" data-mr="code"></span><span class="mr-code-words" data-mr="code-words"></span></p>
+      <p class="mr-muted">Read the code aloud together. Everyone in this meeting sees the same code; a different code means a different room.</p>
+    </section>
+
+    <main class="mr-main" data-mr="main">
+      <section class="mr-message" data-mr="message" hidden>
+        <h1 data-mr="message-title"></h1>
+        <p data-mr="message-text"></p>
+      </section>
+
+      <section class="mr-lobby" data-mr="lobby" hidden>
+        <div class="mr-preview">
+          <div class="mr-preview-frame">
+            <video data-mr="preview" playsinline muted autoplay></video>
+            <div class="mr-preview-empty" data-mr="preview-empty"><p data-mr="preview-text">Starting your camera…</p></div>
+            <div class="mr-preview-tools">
+              <button type="button" class="mr-round" data-mr="lobby-mic" aria-pressed="true" title="Microphone"></button>
+              <button type="button" class="mr-round" data-mr="lobby-cam" aria-pressed="true" title="Camera"></button>
+            </div>
+          </div>
+          <div class="mr-effects" data-mr="effects">
+            <label class="mr-field"><span>Face</span><select data-mr="face"></select></label>
+            <label class="mr-field"><span>Background</span><select data-mr="background"></select></label>
+            <label class="mr-field"><span>Outfit</span><select data-mr="outfit"></select></label>
+            <div class="mr-voice" data-mr="voice"></div>
+            <p class="mr-muted mr-effects-note" data-mr="effects-note">Effects run on this device. Only the result is sent.</p>
+            <input type="file" accept="image/*" data-mr="face-file" hidden />
+            <input type="file" accept="image/*" data-mr="background-file" hidden />
+          </div>
+        </div>
+        <div class="mr-join">
+          <p class="mr-eyebrow" data-mr="eyebrow">Video meeting</p>
+          <h1 data-mr="title">Loading the meeting…</h1>
+          <p class="mr-host" data-mr="host"></p>
+          <p class="mr-when" data-mr="when"></p>
+          <p class="mr-status" data-mr="status" aria-live="polite"></p>
+          <label class="mr-field mr-name"><span>Your name</span><input type="text" maxlength="40" autocomplete="name" data-mr="name" placeholder="How others will see you" /></label>
+          <button type="button" class="mr-cta" data-mr="join" disabled>Join meeting</button>
+          <p class="mr-error" data-mr="join-error" role="alert" hidden></p>
+          <div class="mr-assurance">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4.5 6v5.5c0 4.6 3.1 8.4 7.5 9.5 4.4-1.1 7.5-4.9 7.5-9.5V6z"/><path d="m8.8 12 2.2 2.2 4.4-4.4"/></svg>
+            <div>
+              <p><strong>Private by design.</strong> End-to-end encrypted with the key in your link. ForkMesh's servers cannot see or hear this meeting.</p>
+              <button type="button" class="mr-link" data-mr="trust-more">How it works</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="mr-call" data-mr="call" hidden>
+        <div class="mr-stage">
+          <div class="mr-grid" data-mr="grid"></div>
+          <div class="mr-toasts" data-mr="toasts" aria-live="polite"></div>
+        </div>
+        <aside class="mr-side" data-mr="side" hidden>
+          <div class="mr-tabs" role="tablist">
+            <button type="button" role="tab" data-mr-tab="people" aria-selected="true">People</button>
+            <button type="button" role="tab" data-mr-tab="transcript" aria-selected="false">Transcript</button>
+            <button type="button" role="tab" data-mr-tab="effects" aria-selected="false">Effects</button>
+            <button type="button" class="mr-side-close" data-mr="side-close" aria-label="Close panel">×</button>
+          </div>
+          <div class="mr-panel" data-mr-panel="people">
+            <ul class="mr-people" data-mr="people"></ul>
+            <p class="mr-muted">Everyone here has the meeting link. If someone you don't expect joins, leave and ask the host for a new time.</p>
+          </div>
+          <div class="mr-panel" data-mr-panel="transcript" hidden>
+            <div class="mr-tr-head">
+              <label class="mr-field"><span>Language</span><select data-mr="tr-lang"></select></label>
+              <button type="button" class="mr-button" data-mr="tr-toggle">Start transcript</button>
+            </div>
+            <p class="mr-muted" data-mr="tr-status">Speech is turned into text on this device. No audio or text leaves it.</p>
+            <button type="button" class="mr-button" data-mr="tr-install" hidden>Download offline speech model</button>
+            <ol class="mr-transcript" data-mr="tr-lines"></ol>
+            <div class="mr-tr-actions">
+              <button type="button" class="mr-button" data-mr="tr-copy">Copy</button>
+              <button type="button" class="mr-button" data-mr="tr-download">Download .txt</button>
+              <button type="button" class="mr-button" data-mr="tr-clear">Clear</button>
+            </div>
+          </div>
+          <div class="mr-panel" data-mr-panel="effects" hidden></div>
+        </aside>
+        <nav class="mr-controls" aria-label="Meeting controls">
+          <button type="button" class="mr-control" data-mr="mute" aria-pressed="false"></button>
+          <button type="button" class="mr-control" data-mr="camera" aria-pressed="false"></button>
+          <button type="button" class="mr-control" data-mr="open-effects"></button>
+          <button type="button" class="mr-control" data-mr="open-transcript" aria-pressed="false"></button>
+          <button type="button" class="mr-control" data-mr="open-people"></button>
+          <button type="button" class="mr-control mr-leave" data-mr="leave"></button>
+        </nav>
+      </section>
+    </main>
+  </body>
+</html>

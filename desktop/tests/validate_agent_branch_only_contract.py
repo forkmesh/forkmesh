@@ -66,7 +66,7 @@ def main() -> None:
 
     composer = between(
         AGENTS,
-        "void MainWindow::startAgentFromComposer()",
+        "bool MainWindow::startAgentFromComposer()",
         "QString MainWindow::saveNewAgentPromptImage(",
     )
     assert "/*createPr=*/false" in composer

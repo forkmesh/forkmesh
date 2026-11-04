@@ -28,7 +28,7 @@ object RouteParser {
     private val reservedOwners = setOf(
         "api", "dashboard", "assets", "static", ".well-known", "docs", "login", "logout", "signup", "auth",
         "admin", "world", "legal", "blog", "download", "downloads", "pricing", "help", "raw", "ws", "org", "orgs",
-        "settings", "status", "ledger", "market", "search", "explore", "new", "privacy", "terms", "oauth",
+        "settings", "status", "ledger", "market", "search", "explore", "new", "privacy", "terms", "oauth", "call",
     )
     private val safeSegment = Regex("^[A-Za-z0-9._-]+$")
     private val publishedNoteId = Regex("^[0-9a-f]{32}$")
@@ -75,12 +75,19 @@ object RouteParser {
         if (scheme == CUSTOM_SCHEME) {
             val host = uri.host ?: uri.rawAuthority ?: return null
             if (host.isEmpty()) return null
+            if (host.lowercase() == "call" && pathSegments.isEmpty()) {
+                return MeetingLink.route(uri.rawQuery, uri.rawFragment)?.let { ParsedLink(explicitProject, listOf(it)) }
+            }
             val stack = customRoutes(listOf(host) + pathSegments, query, me) ?: return null
             return ParsedLink(explicitProject, stack)
         }
         if (scheme != "https") return null
         val host = uri.host ?: return null
         if (!isUniversalLinkHost(host)) return null
+        if (pathSegments.size == 1 && pathSegments[0].lowercase() == "call") {
+            val meeting = MeetingLink.route(uri.rawQuery, uri.rawFragment) ?: return null
+            return ParsedLink(explicitProject ?: projectId(host), listOf(meeting), explicitProject != null)
+        }
         val stack = sharedPackage(pathSegments) ?: routes(pathSegments, query, me) ?: return null
         return ParsedLink(explicitProject ?: projectId(host), stack, explicitProject != null)
     }
