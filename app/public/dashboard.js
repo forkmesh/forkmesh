@@ -5004,6 +5004,40 @@
     if (action !== "delete") restoreCommentEditFocus(target, "[data-repo-pull-comment-edit]", "repoPullCommentEdit");
   }
 
+  async function handleWebPullDescriptionEdit() {
+    const detail = state.repoRecordDetail;
+    const repo = detail?.repo;
+    const number = Number(detail?.number || 0);
+    if (!repo || detail?.kind !== "pulls" || !number) return;
+    if (!state.session?.nodeName) {
+      location.href = "/login?next="
+        + encodeURIComponent(`${location.pathname}${location.search}`);
+      return;
+    }
+    const parsed = detail.parsed || {};
+    const values = parsed.values || {};
+    if (!pullDescriptionEditable(values)) return;
+    const edit = pullDescriptionEdit(values, parsed.pullConversation);
+    const current = String(edit ? edit.body || "" : parsed.body || "");
+    const nextBody = await openIssueCommentEditor(
+      PULL_DESCRIPTION_TARGET, current,
+      "[data-repo-pull-description-edit]", "repoPullDescriptionEdit");
+    if (nextBody === null) return;
+    const trimmed = String(nextBody).replace(/[\r\n]+$/, "");
+    if (trimmed === current.replace(/[\r\n]+$/, "")) return;
+    let result;
+    try {
+      result = await submitWebPullCommentEdit(repo, number, PULL_DESCRIPTION_TARGET, trimmed);
+    } catch (error) {
+      showErrorNotice(webIssueActionError(error, "edit-comment"));
+      return;
+    }
+    if (state.repoRecordDetail !== detail) return;
+    parsed.pullConversation = [...(parsed.pullConversation || []), result.event];
+    paintPullDescription(repo, trimmed);
+    restoreCommentEditFocus(PULL_DESCRIPTION_TARGET, "[data-repo-pull-description-edit]", "repoPullDescriptionEdit");
+  }
+
   async function handleWebIssueAction(action, target = "") {
     const detail = state.repoRecordDetail;
     const repo = detail?.repo;
@@ -25876,6 +25910,44 @@
     return Boolean(name) && name === String(target.authorName || "").trim().toLowerCase();
   }
 
+  const PULL_DESCRIPTION_TARGET = "description";
+
+  function pullDescriptionEditApplies(change, values) {
+    if (!change || change.type !== "comment-edit" || String(change.target || "") !== PULL_DESCRIPTION_TARGET) return false;
+    if (change.author && change.author === values?.author) return true;
+    const name = String(change.authorName || "").trim().toLowerCase();
+    return Boolean(name) && name === String(values?.authorName || "").trim().toLowerCase();
+  }
+
+  function pullDescriptionEdit(values, conversation) {
+    let latest = null;
+    for (const ev of Array.isArray(conversation) ? conversation : []) {
+      if (!pullDescriptionEditApplies(ev, values)) continue;
+      if (!latest || pullTimestamp(latest.ts) <= pullTimestamp(ev.ts)) latest = ev;
+    }
+    return latest;
+  }
+
+  function pullDescriptionEditable(values) {
+    if (String(values?.status || "open").trim().toLowerCase() === "deleted") return false;
+    return webSessionAuthored({ author: values?.author, authorName: values?.authorName });
+  }
+
+  function recordOpeningBodyHtml(repo, body) {
+    return String(body || "").trim()
+      ? `<div data-repo-record-body data-repo-record-opening-text class="px-4 py-4 ${MD_BODY_CLASS}">${renderRecordMarkdown(body, repo)}</div>`
+      : `<p data-repo-record-opening-text class="px-4 py-4 text-[14px] italic text-muted-foreground">No description provided.</p>`;
+  }
+
+  function paintPullDescription(repo, body) {
+    const card = document.querySelector("[data-repo-pull-description-card]");
+    const text = card?.querySelector("[data-repo-record-opening-text]");
+    if (!text) return;
+    text.outerHTML = recordOpeningBodyHtml(repo, body);
+    card.dataset.repoRecordDescription = String(body || "").trim() ? "body" : "empty";
+    card.querySelector("[data-repo-pull-description-edited]")?.removeAttribute("hidden");
+  }
+
   function pullReviewKeepsVerdict(target) {
     return target?.type === "review" && (target.state === "approved" || target.state === "changes_requested");
   }
@@ -26867,11 +26939,11 @@
   function openIssueCommentEditor(target, body, selector = "[data-repo-issue-comment-edit]", key = "repoIssueCommentEdit") {
     const button = visibleCommentEditButton(target, selector, key);
     const inline = button?.closest("[data-repo-pull-inline-comment-card]");
-    const card = inline || button?.closest("[data-repo-issue-comment]");
+    const card = inline || button?.closest("[data-repo-issue-comment], [data-repo-pull-description-card]");
     const panel = inline ? inline.querySelector("[data-repo-pull-inline-comment-text]")?.parentElement : card?.querySelector(".rounded-md.border");
     if (!panel) return Promise.resolve(window.prompt("Edit comment", body));
     panel.querySelector("[data-repo-issue-comment-editor]")?.remove();
-    const text = panel.querySelector("[data-repo-issue-comment-text], [data-repo-pull-inline-comment-text]");
+    const text = panel.querySelector("[data-repo-issue-comment-text], [data-repo-pull-inline-comment-text], [data-repo-record-opening-text]");
     const form = document.createElement("form");
     form.dataset.repoIssueCommentEditor = "";
     form.className = "grid gap-2 p-3";
@@ -29819,7 +29891,9 @@
     // An empty description stays empty (issue #651): substituting placeholder
     // copy here guaranteed the opening block always had a padded body to show,
     // so a title-only issue rendered a large card saying nothing.
-    const body = parsed.body || "";
+    const descriptionEdit = kind === "pulls" ? pullDescriptionEdit(values, parsed.pullConversation) : null;
+    const body = descriptionEdit ? String(descriptionEdit.body || "") : parsed.body || "";
+    const canEditDescription = kind === "pulls" && pullDescriptionEditable(values);
     const recordLabel = `#${escapeHtml(number)}`;
     const isPulls = kind === "pulls";
     const isDiscussions = kind === "discussions";
@@ -29852,18 +29926,17 @@
     // keep a slim "opened" line because their hero spends that row naming the
     // merge refs instead.
     const isOwner = String(repo.owner || "").toLowerCase() === String(values.author || author).toLowerCase();
-    const openingBody = hasBody
-      ? `<div data-repo-record-body class="px-4 py-4 ${MD_BODY_CLASS}">${renderRecordMarkdown(displayBody, repo)}</div>`
-      : `<p class="px-4 py-4 text-[14px] italic text-muted-foreground">No description provided.</p>`;
+    const openingBody = recordOpeningBodyHtml(repo, displayBody);
     const openingBlock = `
-                <div data-repo-record-description="${hasBody ? "body" : "empty"}" class="grid min-w-0 gap-4 sm:grid-cols-[40px_minmax(0,1fr)]">
+                <div data-repo-record-description="${hasBody ? "body" : "empty"}"${isPulls ? " data-repo-pull-description-card" : ""} class="grid min-w-0 gap-4 sm:grid-cols-[40px_minmax(0,1fr)]">
                   <span class="hidden sm:block">${issueActorAvatarHtml(author, values.author, "h-10 w-10")}</span>
                   <div class="relative min-w-0 overflow-hidden rounded-md border border-border bg-background">
                     <div class="flex min-w-0 flex-wrap items-center gap-1.5 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] py-1.5 pl-4 pr-2 text-[14px] text-muted-foreground">
-                      <span class="min-w-0 truncate">${issueCardAuthorHtml(author, values.author)} commented <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time></span>
+                      <span class="min-w-0 truncate">${issueCardAuthorHtml(author, values.author)} commented <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time>${isPulls ? `<span data-repo-pull-description-edited${descriptionEdit ? "" : " hidden"}> · edited</span>` : ""}</span>
                       <span class="ml-auto flex shrink-0 items-center gap-1">
                         <span class="rounded-full border border-border px-2 text-[12px] font-medium leading-5">${isOwner ? "Owner" : "Contributor"}</span>
                         <span class="rounded-full border border-border px-2 text-[12px] font-medium leading-5">Author</span>
+                        ${canEditDescription ? `<button type="button" data-repo-pull-description-edit="${PULL_DESCRIPTION_TARGET}" aria-label="Edit description" title="Edit description" class="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="pencil" class="h-4 w-4"></i></button>` : ""}
                       </span>
                     </div>
                     ${openingBody}
@@ -51811,6 +51884,11 @@ Your reply
           "delete-comment",
           issueCommentDeleteButton.dataset.repoIssueCommentDelete || "",
         );
+        return;
+      }
+
+      if (event.target.closest("[data-repo-pull-description-edit]")) {
+        void handleWebPullDescriptionEdit();
         return;
       }
 

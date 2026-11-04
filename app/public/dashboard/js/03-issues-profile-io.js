@@ -1727,6 +1727,40 @@
     if (action !== "delete") restoreCommentEditFocus(target, "[data-repo-pull-comment-edit]", "repoPullCommentEdit");
   }
 
+  async function handleWebPullDescriptionEdit() {
+    const detail = state.repoRecordDetail;
+    const repo = detail?.repo;
+    const number = Number(detail?.number || 0);
+    if (!repo || detail?.kind !== "pulls" || !number) return;
+    if (!state.session?.nodeName) {
+      location.href = "/login?next="
+        + encodeURIComponent(`${location.pathname}${location.search}`);
+      return;
+    }
+    const parsed = detail.parsed || {};
+    const values = parsed.values || {};
+    if (!pullDescriptionEditable(values)) return;
+    const edit = pullDescriptionEdit(values, parsed.pullConversation);
+    const current = String(edit ? edit.body || "" : parsed.body || "");
+    const nextBody = await openIssueCommentEditor(
+      PULL_DESCRIPTION_TARGET, current,
+      "[data-repo-pull-description-edit]", "repoPullDescriptionEdit");
+    if (nextBody === null) return;
+    const trimmed = String(nextBody).replace(/[\r\n]+$/, "");
+    if (trimmed === current.replace(/[\r\n]+$/, "")) return;
+    let result;
+    try {
+      result = await submitWebPullCommentEdit(repo, number, PULL_DESCRIPTION_TARGET, trimmed);
+    } catch (error) {
+      showErrorNotice(webIssueActionError(error, "edit-comment"));
+      return;
+    }
+    if (state.repoRecordDetail !== detail) return;
+    parsed.pullConversation = [...(parsed.pullConversation || []), result.event];
+    paintPullDescription(repo, trimmed);
+    restoreCommentEditFocus(PULL_DESCRIPTION_TARGET, "[data-repo-pull-description-edit]", "repoPullDescriptionEdit");
+  }
+
   async function handleWebIssueAction(action, target = "") {
     const detail = state.repoRecordDetail;
     const repo = detail?.repo;

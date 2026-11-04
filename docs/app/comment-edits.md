@@ -61,6 +61,36 @@ Code:
 
 Tests: `app/tests/test_pull_comment_edit_delete.py`.
 
+## Pull request descriptions
+
+A pull's description was fixed when it was opened: the pull signature covers
+title, base, head, patch and commits but not `description`, and the web
+revision drops it, so the author had no way to correct it. A description edit
+is now an ordinary `comment-edit` whose `target` is the word `description`
+(`PULL_DESCRIPTION_TARGET`). The relay, the gateways and the Go intake already
+accept and store a `comment-edit` with any non-empty target, so nothing on the
+wire changed.
+
+The same author rule applies, with the pull's `pull.md` record as the target:
+the change counts only when its signer is the pull's `author` key or its
+`authorName` account (`pullDescriptionEditApplies`). The newest such edit
+replaces the description; edits by anyone else are ignored. The description
+edits never show as timeline rows, because `foldPullCommentChanges` already
+drops every `comment-edit` and only the id-targeted ones change a comment.
+
+- web: `pullDescriptionEdit` picks the edit, `renderRepoRecordDetail` shows it
+  with "· edited", and the pull's author (`pullDescriptionEditable`: signed
+  in as the author, pull not deleted, merged and closed pulls included) gets a
+  pencil in the opening card. It opens the shared `openIssueCommentEditor`;
+  `handleWebPullDescriptionEdit` signs the event and `paintPullDescription`
+  redraws just that card;
+- `.txt` view: `folded_description` in `app/host/forkmesh_host/repo_views.py`
+  (the bundle now carries the pull's `authorName`).
+
+Tests: `app/tests/test_pull_description_edit.py`,
+`test_pull_text_shows_the_authors_newest_description_edit` in
+`app/tests/host/test_repo_views.py`.
+
 ## Issue comments
 
 `_accept_issue_submission` still lets managers sign `edit` and `delete`. When
@@ -136,5 +166,8 @@ save was in flight. Tests: `app/tests/test_comment_editor_focus_frontend.py`.
 
 - The phone apps do not offer comment edit or delete, and their issue
   timelines do not fold `edit`/`delete` events.
+- The desktop and the phone apps do not offer a pull description edit and
+  still show the description from `pull.md`; `PullStore::foldCommentChanges`
+  ignores the `description` target.
 - Discussion comments can still only be hard-deleted by moderators on the
   desktop.
