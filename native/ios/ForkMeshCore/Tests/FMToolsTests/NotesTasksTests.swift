@@ -190,7 +190,7 @@ final class NotesTests: XCTestCase {
         XCTAssertFalse(editor.showsSave)
         XCTAssertFalse(editor.canEdit)
         XCTAssertTrue(editor.meta.hasSuffix("read only"))
-        XCTAssertEqual(editor.menuItems.map(\.value), ["history", "copy_link", "export", "export_pdf"])
+        XCTAssertEqual(editor.menuItems.map(\.value), ["history", "activity", "copy_link", "export", "export_pdf"])
         XCTAssertEqual(editor.saveState, "View only")
         XCTAssertEqual(editor.shownMode, .preview)
     }
@@ -217,13 +217,13 @@ final class NotesTests: XCTestCase {
         }
         let editor = NoteEditorModel(noteId: noteId, call: api.call, clock: clock)
         await editor.load()
-        XCTAssertEqual(editor.menuItems.map(\.value), ["history", "copy_link", "export", "export_pdf", "share", "publish", "delete"])
+        XCTAssertEqual(editor.menuItems.map(\.value), ["history", "activity", "copy_link", "export", "export_pdf", "share", "publish", "delete"])
         editor.title = "Typed but unsaved"
         let visibility = await editor.setVisibility("public")
         XCTAssertEqual(visibility.notice?.message, "Published. Anyone with the link can read it.")
         XCTAssertEqual(api.last?.body, ["baseVersion": 3, "visibility": "public"])
         XCTAssertEqual(editor.title, "Typed but unsaved")
-        XCTAssertEqual(editor.menuItems.map(\.value), ["history", "copy_link", "open_public", "export", "export_pdf", "share", "unpublish", "delete"])
+        XCTAssertEqual(editor.menuItems.map(\.value), ["history", "activity", "copy_link", "open_public", "export", "export_pdf", "share", "unpublish", "delete"])
 
         let history = editor.historyModel()!
         await history.load()

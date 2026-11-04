@@ -332,7 +332,8 @@ account picture), then "+N", a pencil badge on editors, a tooltip "<name> ·
 viewing|editing" on each, and a line such as "ana is editing…", "Live · ana is
 viewing" or "Live · 3 others here". Clicking the faces lists everyone with
 their state; picking one opens the profile. When the answer's `commentsKey`
-moves, the comments reload; when its `chatKey` moves, the chat reloads.
+moves, the comments reload; when its `chatKey` moves, the chat reloads; when
+its `activityKey` moves, Activity and History reload.
 
 Each poll also sends the caret's `line` (1-based block number) and `column`,
 and moving the caret to another line polls within a second, so people
@@ -395,7 +396,7 @@ shown, the thread of a reply included (`trustedNoteLink()`).
 
 ## Chat
 
-The side panel has Comments and Chat tabs; the Chat button in the heading row
+The side panel has Comments, Chat, Activity and History tabs; the Chat button in the heading row
 opens it on Chat and counts messages from others you have not seen
 ("Chat (2)"). The tab lists the note's chat
 ([notes-comments.md](../app/notes-comments.md#chat)) oldest first; Enter
@@ -404,14 +405,40 @@ messages (anyone's when you own the note) have Delete. The newest message time
 you have seen is kept per note in `notes/chatSeen/<id>`. While Chat is open the
 presence poll runs every 2 s so new messages arrive quickly.
 
-## Versions
+## Activity and History
+
+Since 2026-11-04 the side panel is the note's right column for everything
+live: the Activity button in the heading row opens it on Activity, the History
+button on History. Both are cloud notes only; the contract is
+[the side column](../app/notes-comments.md#the-side-column).
+
+- **Activity** lists `GET /api/notes/<id>/activity` newest first: views
+  ("bob viewed it 3 times"), saves (one person's saves less than 30 minutes
+  apart fold into "edited it · v3–v4, 2 saves"), shares, role changes,
+  publishing, restores, links, comments and exports, plus the published page's
+  reads, with the web's wording (`noteActivityEntries()`, `noteActivityText()`
+  and `noteActivityActor()` in `NoteComments.h`; your own rows read "You").
+- **History** lists `GET /api/notes/<id>/versions`: each version with who saved
+  it and when, View and, for owners and editors, Restore. View fetches
+  `?version=<n>` and shows that version's title and Markdown read-only, with
+  Restore and a back arrow. Restore asks first, then posts the version with the
+  current `baseVersion` (`NotesPage::restoreNoteVersion()`), so it is saved as
+  the newest version.
+- **Live.** The presence answer's `activityKey` (version, number of events,
+  view count and latest event time) moves on every save, view, share and
+  restore; when it does, `NoteCommentsPanel::reloadActivity()` reloads the tab
+  on screen and marks the other stale, so it reloads when shown. While Chat,
+  Activity or History is open the presence poll runs every 2 s.
 
 Every save of a cloud note is kept as a version (the newest 100), with the
-saving account in `note_versions.author_bi`. `GET /api/notes/<id>/versions`
-returns each version's `author` name. The desktop's Versions button opens
-"Note history"; picking an older version restores it as a new version. Only the
-owner and collaborators see author names; a reader of a published note sees
-versions and times only. Local-only notes keep author-less snapshots on disk.
+saving account in `note_versions.author_bi`. Only the owner and collaborators
+see author names; a reader of a published note sees versions and times only.
+Local-only notes keep author-less snapshots on disk, and History on one of
+those still opens the "Local note versions" picker.
+
+Layout modes: the right column is part of the Notes page's own splitter, so it
+looks and works the same in Control Tower and Focus
+([two layout modes](ui-redesign.md#two-layout-modes)).
 
 ## Authentication
 
@@ -477,7 +504,9 @@ dashboard and World open it from their own origin; the desktop does not use it
   on a white card at the device pixel ratio, redrawn when the column narrows),
   and real PDFs: a note with a cover, contents, a figure and a page break gives
   four pages, starts with `%PDF` and has one page object per page; a landscape
-  Letter page is 792 × 612 pt; an unwritable path fails.
+  Letter page is 792 × 612 pt; an unwritable path fails. It also covers the
+  right column's Activity rows (folded saves, published page reads, view
+  counts, shares, restores, "You") and History entries.
 - `desktop/tests/test_window_resize.cpp` `checkNoteSaveAlert`: finds the title
   and storage controls by object name (the search box is the first line edit
   on the page).

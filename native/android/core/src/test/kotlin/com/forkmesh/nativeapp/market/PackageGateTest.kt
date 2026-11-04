@@ -352,6 +352,15 @@ class PackageGateTest {
         expect("secureDrive" !in ids)
     }
 
+    fun testReticulumIsAGatedPackage() {
+        assertEq("reticulum", PackageGate.HUB_ITEMS[Route.Kind.Reticulum.raw])
+        assertEq("reticulum", PackageGate.ROUTE_KINDS[Route.Kind.Reticulum])
+        assertEq("reticulum", MarketPackage.NATIVE_DESTINATIONS["reticulum"])
+        assertEq("reticulum", PackageMenu.packageFor(Route.Kind.Reticulum))
+        val hidden = PackageSurfaces.of(store(legacy = false)::shows).hubItems
+        expect("reticulum" in hidden)
+    }
+
     fun testFilesIsAGatedPackage() {
         assertEq("files", PackageGate.HUB_ITEMS[Route.Kind.Files.raw])
         assertEq("files", PackageGate.ROUTE_KINDS[Route.Kind.Files])

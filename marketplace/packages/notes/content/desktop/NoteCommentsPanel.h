@@ -15,6 +15,7 @@ class QPushButton;
 class QScrollArea;
 class QShowEvent;
 class QStackedWidget;
+class QTextBrowser;
 class QTimer;
 class QVBoxLayout;
 
@@ -36,6 +37,9 @@ public:
         std::function<void()> newComment;
         std::function<void()> closed;
         std::function<void()> chatChanged;
+        std::function<int()> currentVersion;
+        std::function<bool()> canEdit;
+        std::function<void(int)> restoreVersion;
     };
 
     explicit NoteCommentsPanel(Hooks hooks, QWidget *parent = nullptr);
@@ -49,16 +53,32 @@ public:
     void clearActive();
     int openCount() const { return m_openCount; }
     bool loaded() const { return m_loaded; }
-    void showTab(bool chat);
+    void showTab(NoteSideTab tab);
+    void showTab(bool chat) { showTab(chat ? NoteSideTab::Chat : NoteSideTab::Comments); }
+    NoteSideTab tab() const { return m_tab; }
     bool chatShown() const { return m_chatTab; }
     int chatUnread() const { return m_chatUnread; }
     void reloadChat();
     void focusChat();
+    void reloadActivity();
 
 protected:
     void showEvent(QShowEvent *event) override;
 
 private:
+    QWidget *buildActivityPage();
+    QWidget *buildHistoryPage();
+    void loadShownTab();
+    void loadActivity();
+    void renderActivity();
+    void loadHistory();
+    void renderHistory();
+    void showVersion(int version);
+    void renderVersion();
+    void closeVersion();
+    void restoreVersion(int version);
+    void setActivityStatus(const QString &text);
+    void setHistoryStatus(const QString &text);
     void applyChat(const QJsonObject &payload);
     void renderChat();
     void sendChat();
@@ -135,6 +155,30 @@ private:
     QVBoxLayout *m_chatListLayout = nullptr;
     QPlainTextEdit *m_chatBox = nullptr;
     QPushButton *m_chatSend = nullptr;
+
+    NoteSideTab m_tab = NoteSideTab::Comments;
+    QPushButton *m_activityTabButton = nullptr;
+    QPushButton *m_historyTabButton = nullptr;
+    QList<NoteActivityEntry> m_activity;
+    bool m_activityLoaded = false;
+    bool m_activityStale = true;
+    int m_activitySequence = 0;
+    QLabel *m_activityStatus = nullptr;
+    QScrollArea *m_activityScroll = nullptr;
+    QVBoxLayout *m_activityListLayout = nullptr;
+    QList<NoteVersionEntry> m_versions;
+    bool m_historyLoaded = false;
+    bool m_historyStale = true;
+    int m_historySequence = 0;
+    int m_versionSequence = 0;
+    QJsonObject m_versionShown;
+    QLabel *m_historyStatus = nullptr;
+    QStackedWidget *m_historyPages = nullptr;
+    QScrollArea *m_historyScroll = nullptr;
+    QVBoxLayout *m_historyListLayout = nullptr;
+    QLabel *m_versionHeading = nullptr;
+    QPushButton *m_versionRestore = nullptr;
+    QTextBrowser *m_versionBody = nullptr;
 };
 
 }

@@ -84,6 +84,28 @@ def test_presence_carries_the_cursor_line_and_the_chat_key():
     assert read["data"]["chatKey"].startswith("1:")
 
 
+def test_presence_activity_key_moves_with_edits_views_and_shares():
+    runtime = ChatRuntime()
+    note_id = shared_note(runtime)
+    path = f"/api/notes/{note_id}/presence"
+
+    def key():
+        return call(runtime.use("GET", "bob"), path)["data"]["activityKey"]
+
+    first = key()
+    assert first.startswith("1:1:1:")
+    assert key() == first
+    call(runtime.use("PATCH", "bob", {"baseVersion": 1, "markdown": "# Two"}), f"/api/notes/{note_id}")
+    edited = key()
+    assert edited.split(":")[0] == "2" and edited != first
+    call(runtime.use("POST", "bob", {"kind": "view"}), f"/api/notes/{note_id}/activity")
+    viewed = key()
+    call(runtime.use("POST", "bob", {"kind": "view"}), f"/api/notes/{note_id}/activity")
+    again = key()
+    assert len({edited, viewed, again}) == 3
+    assert again.split(":")[1] == viewed.split(":")[1]
+
+
 def test_room_remembers_cursor_lines_for_polling_followers():
     editor, viewer = FakeSocket("editor", "ana"), FakeSocket("viewer", "bo")
     room, _clock = make_room([editor, viewer])

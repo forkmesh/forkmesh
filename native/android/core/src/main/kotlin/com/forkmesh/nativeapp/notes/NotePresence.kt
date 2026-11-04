@@ -20,6 +20,8 @@ sealed class NoteRoomEvent {
     data object Deleted : NoteRoomEvent()
     data object AccessChanged : NoteRoomEvent()
     data object Comments : NoteRoomEvent()
+    data object Activity : NoteRoomEvent()
+    data object Chat : NoteRoomEvent()
     data class Left(val clientId: String) : NoteRoomEvent()
 }
 
@@ -72,6 +74,8 @@ class NotePresence(val clientId: String) {
             "note-deleted" -> NoteRoomEvent.Deleted
             "access-changed" -> NoteRoomEvent.AccessChanged
             "note-comments" -> NoteRoomEvent.Comments
+            "note-activity" -> NoteRoomEvent.Activity
+            "note-chat" -> NoteRoomEvent.Chat
             "leave" -> if (sender.isNotEmpty() && sender != clientId) NoteRoomEvent.Left(sender) else null
             else -> null
         }

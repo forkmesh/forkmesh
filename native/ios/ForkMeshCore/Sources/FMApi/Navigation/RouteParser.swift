@@ -288,6 +288,7 @@ public enum RouteParser {
         case "strata": return tail.isEmpty ? [.strata(query["repo"].flatMap(RepoRef.init(slug:)))] : nil
         case "synapse": return tail.isEmpty ? [.synapse(query["repo"].flatMap(RepoRef.init(slug:)))] : nil
         case "openwrt": return tail.isEmpty ? [.openWrtRouter] : nil
+        case "reticulum": return tail.isEmpty ? [.reticulum] : nil
         case "files": return tail.isEmpty ? [.fileExplorer] : nil
         case "nexus": return tail.isEmpty ? [.nexus] : nil
         case "face-changer": return [.faceChanger]
@@ -378,6 +379,8 @@ public enum RouteParser {
             return tail.isEmpty ? [.instanceFeed(post: instanceFeedPost(query["post"]))] : nil
         case "mastodon":
             return tail.isEmpty ? [.mastodon] : nil
+        case "reticulum":
+            return tail.isEmpty ? [.reticulum] : nil
         case "secure-drive":
             return tail.isEmpty ? [.secureDrive] : nil
         case "poker":

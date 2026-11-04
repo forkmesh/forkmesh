@@ -163,6 +163,7 @@ object RouteCatalog {
         Route.Kind.Strata -> "Strata"
         Route.Kind.Synapse -> "Synapse"
         Route.Kind.OpenWrtRouter -> "Router"
+        Route.Kind.Reticulum -> "Reticulum"
         Route.Kind.FaceChanger -> "Face Changer"
         Route.Kind.AppStoreStatus -> "App Store Status"
         Route.Kind.Runners -> "Runners"
@@ -257,6 +258,7 @@ object RouteCatalog {
         Route.Kind.Strata -> "layers"
         Route.Kind.Synapse -> "polyline"
         Route.Kind.OpenWrtRouter -> "router"
+        Route.Kind.Reticulum -> "hub"
         Route.Kind.FaceChanger -> "face"
         Route.Kind.AppStoreStatus -> "phone_iphone"
         Route.Kind.Runners -> "dns"
@@ -385,6 +387,7 @@ object HubCatalog {
         HubItem.destination(Route.PhoneSecurity),
         HubItem.destination(Route.SilentSpeech),
         HubItem.destination(Route.OpenWrtRouter),
+        HubItem.destination(Route.Reticulum),
         HubItem.destination(Route.FaceChanger),
         HubItem.destination(Route.RssReader),
         HubItem.destination(Route.VideoMixDjStudio),

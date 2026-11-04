@@ -19,6 +19,8 @@
   const NOTE_CHAT_SEEN_KEY = "forkmesh.notes.chat-seen";
   const NOTE_SEARCH_MS = 250;
   const NOTE_ACTIVITY_KEY = "forkmesh.notes.activity";
+  const NOTE_SIDE_TAB_KEY = "forkmesh.notes.sideTab";
+  const NOTE_SIDE_TABS = ["comments", "chat", "activity", "history"];
   const NOTE_ACTIVITY_REFRESH_MS = 1200;
   const NOTE_EDIT_GROUP_MS = 30 * 60 * 1000;
   const NOTE_ACTIVITY_OVERLAY = "(max-width: 1279px)";
@@ -766,7 +768,7 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
     renderNoteLinks(note);
     renderNoteList();
     connectNoteSocket(note);
-    if (!$("[data-note-versions-panel]").hidden) void loadNoteVersions();
+    if (noteSideShows("history")) void loadNoteVersions();
     refreshNoteIcons();
   }
 
@@ -911,16 +913,17 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
     refreshNoteIcons();
   }
 
-  function setNoteActivityOpen(open, remember = true) {
+  function noteSideShows(tab) {
     const view = state.notesView;
-    view.activityOpen = open;
-    if (remember) { try { localStorage.setItem(NOTE_ACTIVITY_KEY, open ? "open" : "closed"); } catch (_) {} }
-    const panel = $("[data-note-activity]");
-    if (panel) panel.hidden = !open;
-    const toggle = $("[data-note-activity-toggle]");
-    toggle?.setAttribute("aria-pressed", open ? "true" : "false");
-    toggle?.setAttribute("aria-label", open ? "Hide activity" : "Show activity");
-    if (open) renderNoteActivity();
+    return Boolean(view.commentsOpen && view.panelTab === tab);
+  }
+
+  function rememberNoteSide() {
+    const view = state.notesView;
+    try {
+      localStorage.setItem(NOTE_ACTIVITY_KEY, view.commentsOpen ? "open" : "closed");
+      localStorage.setItem(NOTE_SIDE_TAB_KEY, view.panelTab);
+    } catch (_) {}
   }
 
   function setNoteActivityTab(tab) {
@@ -1068,26 +1071,77 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
     }
   }
 
+  function noteVersionHint(version) {
+    return `${escapeHtml(relativeTimeLabel(version.createdAt))}${version.author ? ` · by ${issuePersonNameHtml(`@${version.author}`, "")}` : ""}`;
+  }
+
+  function scheduleNoteVersions() {
+    const view = state.notesView;
+    clearTimeout(view.versionsTimer);
+    if (noteSideShows("history")) view.versionsTimer = setTimeout(() => void loadNoteVersions(), NOTE_ACTIVITY_REFRESH_MS);
+  }
+
   async function loadNoteVersions() {
-    const note = state.notesView.selected; if (!note) return;
+    const view = state.notesView, note = view.selected; if (!note) return;
     const target = $("[data-note-versions]");
+    const generation = ++view.versionsGeneration;
     try {
       const payload = await noteRequest(`/api/notes/${note.id}/versions`);
-      const canEdit = noteCanEdit(note);
+      if (generation !== view.versionsGeneration || view.selected?.id !== note.id) return;
+      const canEdit = noteCanEdit(view.selected), canView = view.selected.role !== "public";
       target.innerHTML = (payload.versions || []).map((version) => {
-        const current = version.version === note.version;
+        const current = version.version === view.selected.version;
         return `
         <div class="notes-version" data-current="${current ? "true" : "false"}">
           <span class="notes-version-node"></span>
-          <div><div class="notes-version-name">Version ${version.version}</div><div class="notes-version-hint">${escapeHtml(relativeTimeLabel(version.createdAt))}${version.author ? ` · by ${issuePersonNameHtml(`@${version.author}`, "")}` : ""}</div></div>
-          ${current ? '<span class="notes-version-tag">Current</span>'
-            : canEdit ? `<button type="button" data-note-restore="${version.version}">Restore</button>` : "<span></span>"}
+          <div><div class="notes-version-name">Version ${version.version}</div><div class="notes-version-hint">${noteVersionHint(version)}</div></div>
+          <span class="notes-version-actions">${canView ? `<button type="button" data-note-version-show="${version.version}">View</button>` : ""}${current ? '<span class="notes-version-tag">Current</span>'
+            : canEdit ? `<button type="button" data-note-restore="${version.version}">Restore</button>` : ""}</span>
         </div>`;
       }).join("") || '<p class="p-3 text-xs text-muted-foreground">No saved versions yet.</p>';
+      if (view.versionShown && (view.versionShown.noteId !== note.id || !(payload.versions || []).some((version) => version.version === view.versionShown.version))) closeNoteVersion();
+      else if (view.versionShown) renderNoteVersion();
     } catch (error) {
+      if (generation !== view.versionsGeneration) return;
       target.innerHTML = `<div class="fm-flash fm-flash-danger"><i data-lucide="circle-alert"></i><div class="fm-flash-body">${escapeHtml(error.message)}</div></div>`;
       refreshNoteIcons();
     }
+  }
+
+  function renderNoteVersion() {
+    const view = state.notesView, shown = view.versionShown, box = $("[data-note-version-view]");
+    if (!box) return;
+    box.hidden = !shown;
+    $("[data-note-versions]").hidden = Boolean(shown);
+    if (!shown) { box.innerHTML = ""; return; }
+    const current = shown.version === view.selected?.version;
+    box.innerHTML = `
+      <div class="notes-version-view-head">
+        <button type="button" class="notes-icon-btn" data-note-version-back aria-label="Back to all versions" title="Back to all versions"><i data-lucide="chevron-left"></i></button>
+        <div><div class="notes-version-name">Version ${shown.version}${current ? " · Current" : ""}</div><div class="notes-version-hint">${noteVersionHint(shown)}</div></div>
+        ${!current && noteCanEdit(view.selected) ? `<button type="button" data-note-restore="${shown.version}">Restore</button>` : ""}
+      </div>
+      <div class="notes-version-view-body">
+        <h1>${shown.emoji ? `${escapeHtml(shown.emoji)} ` : ""}${escapeHtml(shown.title || "Untitled note")}</h1>
+        <article class="notes-preview">${renderMarkdown(shown.markdown || "", { noteDocument: true })}</article>
+      </div>`;
+    refreshNoteIcons();
+  }
+
+  async function showNoteVersion(number) {
+    const view = state.notesView, note = view.selected; if (!note) return;
+    try {
+      const payload = await noteRequest(`/api/notes/${note.id}/versions?version=${encodeURIComponent(number)}`);
+      if (view.selected?.id !== note.id) return;
+      view.versionShown = payload.version ? { ...payload.version, noteId: note.id } : null;
+      renderNoteVersion();
+      $("[data-note-version-back]")?.focus();
+    } catch (error) { noteNotice("versions", error.message, "bad"); }
+  }
+
+  function closeNoteVersion() {
+    state.notesView.versionShown = null;
+    renderNoteVersion();
   }
 
   function noteMe() { return String(state.session?.nodeName || "").toLowerCase(); }
@@ -1214,6 +1268,7 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
         }
       }
       if (["note-activity", "note-updated"].includes(frame.type)) scheduleNoteActivity();
+      if (frame.type === "note-updated") scheduleNoteVersions();
       if (frame.type === "note-updated" && frame.version > (view.selected?.version || 0) && !view.savePromise) {
         // With unsaved local edits the next autosave meets the 409 and asks.
         if (!view.localDirty) void selectNote(note.id);
@@ -1722,28 +1777,34 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
   }
 
   function renderNotePanelToggles() {
-    const view = state.notesView;
-    const comments = view.commentsOpen && view.panelTab === "comments", chat = view.commentsOpen && view.panelTab === "chat";
-    const commentsToggle = $("[data-note-comments-toggle]"), chatToggle = $("[data-note-chat-toggle]");
+    const comments = noteSideShows("comments"), chat = noteSideShows("chat");
+    const activity = noteSideShows("activity") || noteSideShows("history");
+    const commentsToggle = $("[data-note-comments-toggle]"), chatToggle = $("[data-note-chat-toggle]"), activityToggle = $("[data-note-activity-toggle]");
     commentsToggle?.setAttribute("aria-pressed", comments ? "true" : "false");
     commentsToggle?.setAttribute("aria-label", comments ? "Hide comments" : "Show comments");
     chatToggle?.setAttribute("aria-pressed", chat ? "true" : "false");
     chatToggle?.setAttribute("aria-label", chat ? "Hide chat" : "Show chat");
+    activityToggle?.setAttribute("aria-pressed", activity ? "true" : "false");
+    activityToggle?.setAttribute("aria-label", activity ? "Hide activity" : "Show activity");
   }
 
   function setNotePanelTab(tab) {
     const view = state.notesView;
-    view.panelTab = tab === "chat" ? "chat" : "comments";
+    const previous = view.panelTab;
+    view.panelTab = NOTE_SIDE_TABS.includes(tab) ? tab : "comments";
     document.querySelectorAll("[data-note-panel-tab]").forEach((button) =>
       button.setAttribute("aria-selected", button.dataset.notePanelTab === view.panelTab ? "true" : "false"));
     document.querySelectorAll("[data-note-panel]").forEach((panel) => { panel.hidden = panel.dataset.notePanel !== view.panelTab; });
     const general = $("[data-note-comment-general]");
     if (general) general.hidden = view.panelTab !== "comments";
-    if (view.panelTab === "chat") hideNoteMentions();
+    if (view.panelTab !== "comments") hideNoteMentions();
     renderNotePanelToggles();
     view.chatScroll = view.panelTab === "chat";
     renderNoteChat();
     renderNoteComments();
+    if (view.panelTab === "activity") renderNoteActivity();
+    if (view.panelTab === "history" && (previous !== "history" || !view.commentsOpen)) void loadNoteVersions();
+    if (view.commentsOpen) rememberNoteSide();
   }
 
   function openNotePanel(tab) {
@@ -1753,8 +1814,7 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
   }
 
   function toggleNotePanel(tab) {
-    const view = state.notesView;
-    if (view.commentsOpen && view.panelTab === tab) setNoteCommentsOpen(false);
+    if (noteSideShows(tab)) setNoteCommentsOpen(false);
     else openNotePanel(tab);
   }
 
@@ -2277,13 +2337,13 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
     refreshNoteIcons();
   }
 
-  function setNoteCommentsOpen(open) {
+  function setNoteCommentsOpen(open, remember = true) {
     const view = state.notesView;
     view.commentsOpen = open;
-    if (open && view.activityOpen) setNoteActivityOpen(false, false);
     const panel = $("[data-note-comments]");
     if (panel) panel.hidden = !open;
     renderNotePanelToggles();
+    if (remember) rememberNoteSide();
     if (!open) { view.commentDraft = null; hideNoteMentions(); }
     renderNoteComments();
     renderNoteChat();
@@ -2909,10 +2969,10 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
     clearTimeout(view.saveTimer);
     Object.assign(view, {
       selected: null, localDirty: false, conflict: null, emojiPending: null, comments: null,
-      commentDraft: null, commentEditing: "", commentFocus: "", activity: null, linking: false,
+      commentDraft: null, commentEditing: "", commentFocus: "", activity: null, linking: false, versionShown: null,
     });
     $("[data-note-conflict]").hidden = true;
-    $("[data-note-versions-panel]").hidden = true;
+    renderNoteVersion();
   }
 
   async function openNotePage(id, { noteId = "", customize = false } = {}) {
@@ -3618,7 +3678,7 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
       socketNoteId: "", shareOrgs: null, shareSuggestions: [], shareSuggestionIndex: -1,
       shareGeneration: 0, shareTimer: 0, searchMatches: null, searchGeneration: 0,
       searchTimer: 0, converting: false, activity: null, activityTab: "all",
-      activityTimer: 0, activityGeneration: 0, activityOpen: false,
+      activityTimer: 0, activityGeneration: 0, versionsTimer: 0, versionsGeneration: 0, versionShown: null,
       comments: null, commentsOpen: false, commentsTimer: 0, commentsGeneration: 0,
       commentsRenderTimer: 0, commentDraft: null, commentEditing: "", commentFocus: "",
       pendingComment: noteLinkedComment(), mention: null, selectionSource: "",
@@ -3632,24 +3692,21 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
     });
     try { view.mode = NOTE_MODES.includes(localStorage.getItem(NOTE_MODE_KEY)) ? localStorage.getItem(NOTE_MODE_KEY) : "split"; } catch (_) { view.mode = "split"; }
 
-    let activityPreference = "";
-    try { activityPreference = localStorage.getItem(NOTE_ACTIVITY_KEY) || ""; } catch (_) {}
-    setNoteActivityOpen(activityPreference ? activityPreference === "open" : !window.matchMedia(NOTE_ACTIVITY_OVERLAY).matches, false);
+    let sidePreference = "", sideTab = "";
+    try { sidePreference = localStorage.getItem(NOTE_ACTIVITY_KEY) || ""; sideTab = localStorage.getItem(NOTE_SIDE_TAB_KEY) || ""; } catch (_) {}
+    setNotePanelTab(NOTE_SIDE_TABS.includes(sideTab) ? sideTab : "activity");
+    setNoteCommentsOpen(sidePreference ? sidePreference === "open" : !window.matchMedia(NOTE_ACTIVITY_OVERLAY).matches, false);
     $("[data-note-activity-toggle]")?.addEventListener("click", () => {
-      if (!view.activityOpen && view.commentsOpen) setNoteCommentsOpen(false);
-      setNoteActivityOpen(!view.activityOpen);
+      if (noteSideShows("activity") || noteSideShows("history")) setNoteCommentsOpen(false);
+      else openNotePanel("activity");
     });
     wireNoteComments();
     wireNoteAssist();
     wireNoteLiveAndChat();
-    $("[data-note-activity-close]")?.addEventListener("click", () => setNoteActivityOpen(false));
-    $("[data-note-activity]")?.addEventListener("click", (event) => {
+    $("[data-note-panel=\"activity\"]")?.addEventListener("click", (event) => {
       const tab = event.target.closest("[data-note-activity-tab]");
       if (tab) setNoteActivityTab(tab.dataset.noteActivityTab);
-      if (event.target.closest("[data-note-activity-history]")) {
-        $("[data-note-versions-panel]").hidden = false; void loadNoteVersions();
-        $("[data-note-versions-close]")?.focus();
-      }
+      if (event.target.closest("[data-note-activity-history]")) openNotePanel("history");
     });
     document.querySelectorAll("[data-note-new]").forEach((button) => button.addEventListener("click", () => void createNote()));
     $("[data-note-search]")?.addEventListener("input", searchNotes);
@@ -3690,9 +3747,9 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
       }
       if (event.key === "Escape") {
         if (view.linking) { view.linking = false; renderNoteLinks(view.selected); return; }
-        closeNotePopovers(); $("[data-note-versions-panel]").hidden = true;
-        if (window.matchMedia(NOTE_ACTIVITY_OVERLAY).matches && view.activityOpen) setNoteActivityOpen(false, false);
-        if (window.matchMedia(NOTE_ACTIVITY_OVERLAY).matches && view.commentsOpen && !view.commentDraft) setNoteCommentsOpen(false);
+        closeNotePopovers();
+        if (view.versionShown && noteSideShows("history")) closeNoteVersion();
+        else if (window.matchMedia(NOTE_ACTIVITY_OVERLAY).matches && view.commentsOpen && !view.commentDraft) setNoteCommentsOpen(false, false);
         $("[data-note-comment-float]").hidden = true;
         $("[data-note-assist-float]").hidden = true;
         closeNoteAssist();
@@ -3710,11 +3767,13 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
       if (!event.target.closest(".notes-pop, [data-note-share-open], [data-note-menu-open], [data-note-presence], [data-note-live], [data-note-emoji-open], [data-note-page-emoji], [data-note-page-share-open]")) closeNotePopovers();
     });
     $("[data-note-versions-open]")?.addEventListener("click", () => {
-      closeNotePopovers(); $("[data-note-versions-panel]").hidden = false; void loadNoteVersions();
-      $("[data-note-versions-close]")?.focus();
+      closeNotePopovers(); openNotePanel("history");
+      document.querySelector("[data-note-panel-tab=\"history\"]")?.focus();
     });
-    $("[data-note-versions-close]")?.addEventListener("click", () => { $("[data-note-versions-panel]").hidden = true; });
-    $("[data-note-versions]")?.addEventListener("click", async (event) => {
+    $("[data-note-panel=\"history\"]")?.addEventListener("click", async (event) => {
+      const show = event.target.closest("[data-note-version-show]");
+      if (show) { void showNoteVersion(Number(show.dataset.noteVersionShow)); return; }
+      if (event.target.closest("[data-note-version-back]")) { closeNoteVersion(); return; }
       const button = event.target.closest("[data-note-restore]"); if (!button) return;
       const note = view.selected, version = Number(button.dataset.noteRestore);
       try {
@@ -3722,6 +3781,7 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
         const payload = await noteRequest(`/api/notes/${note.id}/versions`, "POST", { version, baseVersion: view.selected.version });
         storeNote(payload.note); renderNoteEditor(view.selected);
         noteNotice("versions", `Restored version ${version} as a new version`);
+        closeNoteVersion(); void loadNoteVersions();
         scheduleNoteActivity();
       } catch (error) { noteNotice("versions", error.message, "bad"); }
     });

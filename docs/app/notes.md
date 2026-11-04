@@ -157,22 +157,24 @@ shares), so the list needs no request per row.
 - **The "Shared with …" line** wraps onto a second line instead of being cut
   off after the first name or two, breaks long names, and ends with an
   ellipsis only past two lines; hovering it shows the whole list.
-- **The Activity column** (the pulse button next to Share) lists the events
+- **The Activity tab** of the note's right column (the pulse button next to
+  Share; see [the side column](notes-comments.md#the-side-column)) lists the events
   newest first, each with an icon, the person ("You" for yourself), what they
   did and when. Saves by the same person within 30 minutes are one line
   ("edited it · v12–v14, 3 saves"). Above the list, the three numbers are also
-  filters: Views, History (edits, creation and restores, with a link to
-  Version history) and Actions; picking the same one again, or **Show all**,
+  filters: Views, History (edits, creation and restores, with a link to the
+  History tab) and Actions; picking the same one again, or **Show all**,
   shows everything.
 - On windows of 1280 px and wider the column sits beside the editor and is
   open until you close it; narrower, it slides over the editor and starts
-  closed. The choice is remembered (`forkmesh.notes.activity`).
+  closed. Whether it is open is remembered (`forkmesh.notes.activity`), and
+  which tab (`forkmesh.notes.sideTab`).
 - Opening a note records a view; saving, sharing, publishing, linking and
   restoring refresh the column, as do `note-activity` and `note-updated`
   messages from collaborators.
 
-The desktop, iOS and Android apps read the same listing, so their view
-counts include members' views, but they have no Activity column yet.
+The desktop shows the same timeline in its side panel, and iOS and Android
+in the note's History · Activity · Chat sheet.
 
 ## Unread notes and the last edit
 

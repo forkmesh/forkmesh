@@ -1,3 +1,4 @@
+#include "NoteComments.h"
 #include "NoteDocument.h"
 #include "NoteDocumentRender.h"
 
@@ -390,6 +391,84 @@ void testDeferredPreviewFigure()
     check(centre() == QColor(0x09, 0x69, 0xda), "the drawn figure replaces the empty card");
 }
 
+QJsonObject activityEvent(const QString &kind, const QString &actor, qint64 at,
+                          const QJsonObject &extra = {})
+{
+    QJsonObject event{{QStringLiteral("kind"), kind},
+                      {QStringLiteral("actor"), actor},
+                      {QStringLiteral("at"), double(at)}};
+    for (auto it = extra.begin(); it != extra.end(); ++it)
+        event.insert(it.key(), it.value());
+    return event;
+}
+
+void testSideColumnActivity()
+{
+    const qint64 now = 1'800'000'000'000LL;
+    const QJsonObject payload{
+        {QStringLiteral("counts"),
+         QJsonObject{{QStringLiteral("webViews"), 4},
+                     {QStringLiteral("webReaders"), 2},
+                     {QStringLiteral("webLastViewedAt"), double(now - 500)}}},
+        {QStringLiteral("events"),
+         QJsonArray{
+             activityEvent(QStringLiteral("share"), QStringLiteral("alice"), now,
+                           {{QStringLiteral("detail"),
+                             QJsonObject{{QStringLiteral("name"), QStringLiteral("bob")},
+                                         {QStringLiteral("role"), QStringLiteral("editor")}}}}),
+             activityEvent(QStringLiteral("edit"), QStringLiteral("bob"), now - 1000,
+                           {{QStringLiteral("version"), 4}}),
+             activityEvent(QStringLiteral("edit"), QStringLiteral("bob"), now - 2000,
+                           {{QStringLiteral("version"), 3}}),
+             activityEvent(QStringLiteral("edit"), QStringLiteral("bob"),
+                           now - 2000 - kNoteEditGroupMs - 1,
+                           {{QStringLiteral("version"), 2}}),
+             activityEvent(QStringLiteral("view"), QStringLiteral("bob"),
+                           now - 2 * kNoteEditGroupMs, {{QStringLiteral("count"), 3}}),
+             activityEvent(QStringLiteral("restore"), QStringLiteral("alice"),
+                           now - 3 * kNoteEditGroupMs,
+                           {{QStringLiteral("detail"),
+                             QJsonObject{{QStringLiteral("version"), 1},
+                                         {QStringLiteral("as"), 5}}}}),
+             activityEvent(QString(), QStringLiteral("x"), now),
+         }},
+    };
+    const QList<NoteActivityEntry> entries = noteActivityEntries(payload);
+    check(entries.size() == 6, "activity groups close edits and drops kindless events");
+    if (entries.size() != 6)
+        return;
+    check(entries.at(0).kind == QLatin1String("share") &&
+              noteActivityText(entries.at(0)) == QLatin1String("shared it with bob · can edit"),
+          "a share names the person and the role");
+    check(noteActivityActor(entries.at(0), QStringLiteral("Alice")) == QLatin1String("You"),
+          "your own events read You");
+    check(entries.at(1).kind == QLatin1String("web") &&
+              noteActivityText(entries.at(1)) ==
+                  QLatin1String("4 reads of the published page by 2 readers") &&
+              noteActivityActor(entries.at(1), QString()).isEmpty(),
+          "published page reads join the timeline without an actor");
+    check(noteActivityText(entries.at(2)) == QLatin1String("edited it · v3–v4, 2 saves"),
+          "saves by one person close together fold into one row");
+    check(noteActivityText(entries.at(3)) == QLatin1String("edited it · v2"),
+          "an older save starts a new row");
+    check(noteActivityText(entries.at(4)) == QLatin1String("viewed it 3 times") &&
+              noteActivityActor(entries.at(4), QStringLiteral("alice")) == QLatin1String("bob"),
+          "views keep their count and the viewer's name");
+    check(noteActivityText(entries.at(5)) == QLatin1String("restored version 1 as v5"),
+          "a restore names both versions");
+
+    const QList<NoteVersionEntry> versions = noteVersionEntries(QJsonArray{
+        QJsonObject{{QStringLiteral("version"), 2},
+                    {QStringLiteral("createdAt"), double(now)},
+                    {QStringLiteral("author"), QStringLiteral("bob")}},
+        QJsonObject{{QStringLiteral("version"), 0}},
+        QJsonObject{{QStringLiteral("version"), 1}, {QStringLiteral("createdAt"), double(now - 9)}},
+    });
+    check(versions.size() == 2 && versions.at(0).author == QLatin1String("bob") &&
+              versions.at(0).createdAt == now && versions.at(1).author.isEmpty(),
+          "history keeps numbered versions with who saved them and when");
+}
+
 }
 
 int main(int argc, char **argv)
@@ -405,6 +484,7 @@ int main(int argc, char **argv)
     testPreviewObjects();
     testDeferredPreviewFigure();
     testPdf();
+    testSideColumnActivity();
     if (failures) {
         std::fprintf(stderr, "%d note document check(s) failed\n", failures);
         return 1;

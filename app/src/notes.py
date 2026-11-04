@@ -571,10 +571,37 @@ async def _author_names(runtime, note_id, rows, account_bi, actor):
     return names
 
 
+async def _version(runtime, row, account_bi, actor, role):
+    if role == "public":
+        return _response(runtime, {"error": "note_not_found"}, status=404)
+    try:
+        target = int(runtime.query_params().get("version"))
+    except (TypeError, ValueError, OverflowError):
+        return _response(runtime, {"error": "invalid_version"}, status=400)
+    item = await runtime.d1_first(
+        "SELECT version,author_bi,created_at,data FROM note_versions "
+        "WHERE note_id=? AND version=?", row["note_id"], target)
+    if not item:
+        return _response(runtime, {"error": "version_not_found"}, status=404)
+    names = await _author_names(runtime, row["note_id"], [item], account_bi, actor)
+    stored = await runtime.open(item.get("data"))
+    stored = stored if isinstance(stored, dict) else {}
+    return _response(runtime, {"ok": True, "version": {
+        "version": int(item.get("version") or 0),
+        "createdAt": int(item.get("created_at") or 0),
+        "author": names.get(str(item.get("author_bi") or ""), ""),
+        "title": str(stored.get("title") or "Untitled note"),
+        "markdown": str(stored.get("markdown") or ""),
+        "emoji": str(stored.get("emoji") or ""),
+    }})
+
+
 async def _versions(runtime, row, account_bi, actor, method, data):
     role = await _role(runtime, row, account_bi)
     if not role:
         return _response(runtime, {"error": "note_not_found"}, status=404)
+    if method == "GET" and "version" in runtime.query_params():
+        return await _version(runtime, row, account_bi, actor, role)
     if method == "GET":
         rows = await runtime.d1_all(
             "SELECT version,author_bi,created_at FROM note_versions "
@@ -1031,6 +1058,17 @@ async def _chat_key(runtime, note_id):
     return "%d:%d" % (int(row.get("total") or 0), int(row.get("latest") or 0))
 
 
+async def _activity_key(runtime, row):
+    events = await runtime.d1_first(
+        "SELECT COUNT(*) AS total,COALESCE(MAX(last_at),0) AS latest,"
+        "COALESCE(SUM(hits),0) AS hits FROM note_events WHERE note_id=?",
+        row["note_id"]) or {}
+    return "%d:%d:%d:%d" % (int(row.get("version") or 1),
+                            int(events.get("total") or 0),
+                            int(events.get("hits") or 0),
+                            int(events.get("latest") or 0))
+
+
 async def _chat_payload(runtime, row, account_bi, actor):
     note_id = row["note_id"]
     rows = await runtime.d1_all(
@@ -1121,7 +1159,8 @@ async def _presence(runtime, row, actor, role, method, data):
     return _response(runtime, {
         "ok": True, "peers": peers,
         "commentsKey": await _comments_key(runtime, row["note_id"]),
-        "chatKey": await _chat_key(runtime, row["note_id"])})
+        "chatKey": await _chat_key(runtime, row["note_id"]),
+        "activityKey": await _activity_key(runtime, row)})
 
 
 async def _page_row(runtime, page_id):
