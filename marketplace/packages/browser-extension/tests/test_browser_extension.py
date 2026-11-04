@@ -562,6 +562,20 @@ def test_a_zoho_header_with_names_only_finds_the_address_in_attributes_or_the_li
     assert 'xpathNodes(`//*[@*[contains(., "${messageId}")]]`, document)' in CONTENT
 
 
+def test_the_popup_is_wide_compact_and_reopens_the_sections_left_open():
+    assert "body { margin: 0; width: 800px; max-height: 600px; overflow-x: hidden; overflow-y: auto;" in POPUP_HTML
+    assert 'section[data-view="connected"] { grid-template-columns: repeat(2, minmax(0, 1fr));' in POPUP_HTML
+    assert "details[open], .bottom-actions) { grid-column: 1 / -1; }" in POPUP_HTML
+    assert "height: 26px; border-radius: 6px;" in POPUP_HTML
+    assert "height: 28px; border: 1px solid var(--border)" in POPUP_HTML
+    assert 'const SECTIONS = ["note", "x", "marketing", "reddit", "mastodon"];' in POPUP
+    for name in ("note", "x", "marketing", "reddit", "mastodon"):
+        assert f"data-{name}-section" in POPUP_HTML
+    assert "await reopenSections();\n}" in POPUP
+    assert 'await chrome.storage.local.set({ popupOpenSections: open ? [...rest, name] : rest });' in POPUP
+    assert "!section.hidden && !section.open" in POPUP
+
+
 def test_zoho_mail_lists_sort_by_sender_subject_or_date_in_the_page_only():
     sorter = (EXTENSION / "zoho-sort.js").read_text(encoding="utf-8")
     script = next(script for script in MANIFEST["content_scripts"] if "zoho-sort.js" in script["js"])

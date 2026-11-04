@@ -161,6 +161,23 @@ async function renderStatus(status) {
   await renderNote();
   await renderX();
   await renderPanel();
+  await reopenSections();
+}
+
+const SECTIONS = ["note", "x", "marketing", "reddit", "mastodon"];
+
+async function reopenSections() {
+  const { popupOpenSections = [] } = await chrome.storage.local.get("popupOpenSections");
+  for (const name of SECTIONS) {
+    const section = $(`[data-${name}-section]`);
+    if (popupOpenSections.includes(name) && !section.hidden && !section.open) section.open = true;
+  }
+}
+
+async function rememberSection(name, open) {
+  const { popupOpenSections = [] } = await chrome.storage.local.get("popupOpenSections");
+  const rest = popupOpenSections.filter((item) => item !== name);
+  await chrome.storage.local.set({ popupOpenSections: open ? [...rest, name] : rest });
 }
 
 async function signIn(event) {
@@ -988,6 +1005,9 @@ document.addEventListener("DOMContentLoaded", () => {
   ForkMeshVaultPopup.bind(send);
   ForkMeshRepoPopup.bind(send);
   ForkMeshForumPopup.bind(send);
+  for (const name of SECTIONS) {
+    $(`[data-${name}-section]`).addEventListener("toggle", (event) => void rememberSection(name, event.target.open));
+  }
   $("[data-sign-in-form]").addEventListener("submit", signIn);
   $("[data-organization]").addEventListener("change", async (event) => {
     await send({ type: "fm-set-organization", organization: event.target.value });

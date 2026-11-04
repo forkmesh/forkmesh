@@ -11,7 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
-  {"date": "2026-11-04", "area": "Market", "text": "Browser extension 2.34.0 opens a wider window, and Zoho Mail's Select and Delete now act on exactly the messages shown, even with a message open."},
+  {"date": "2026-11-04", "area": "Market", "text": "Browser extension 2.34.0 opens a wider, more compact window that shows two sections per row and remembers which ones you left open, and Zoho Mail's Select and Delete now act on exactly the messages shown, even with a message open."},
   {"date": "2026-11-04", "area": "Android", "text": "An inbox item shows only its back button at the top, a ping has one back button instead of two, and the Agents tools each sit in their own small glass square."},
   {"date": "2026-11-04", "area": "iPhone", "text": "An inbox item shows only its back button at the top, a ping has one back button instead of two, and the Agents tools each sit in their own small glass square under the title."},
   {"date": "2026-11-04", "area": "Desktop", "text": "Text you copy anywhere in the desktop now pastes with its line breaks, paragraph spacing, list markers and table columns."},

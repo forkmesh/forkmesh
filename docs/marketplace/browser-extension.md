@@ -171,7 +171,14 @@ The pytest wrappers run the harnesses with Node and stand up
 - Chrome limits the manifest `description` to 132 characters;
   `minimum_chrome_version` is 137 for WebCrypto Ed25519 and X25519.
 - `popup.html` is 800 px wide, the most Chrome allows (it caps a popup at 800
-  by 600), and takes
+  by 600), so the body scrolls itself: a page scrollbar would take width and
+  add a sideways one. The signed-in view is a two-column grid with compact
+  controls (26 px buttons, 28 px fields) so more shows without scrolling;
+  rows tied to the tab, open sections and the bottom buttons span both
+  columns, and `grid-auto-flow: dense` fills the gaps. The names of open
+  sections are kept in `chrome.storage.local` (`popupOpenSections`) and
+  reopened after the first render; each toggle writes only its own name, so
+  a section hidden on this tab keeps its state. It takes
   every colour from CSS variables set once for light and once for dark, so
   no rule needs its own dark override.
 - A user who loaded the extension from a different folder gets a new Chrome
