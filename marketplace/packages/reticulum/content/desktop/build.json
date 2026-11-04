@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    "ReticulumProtocol.h",
+    "ReticulumProtocol.cpp",
+    "ReticulumNode.h",
+    "ReticulumNode.cpp",
+    "ReticulumGraphics.h",
+    "ReticulumGraphics.cpp",
+    "ReticulumFeature.h",
+    "ReticulumFeature.cpp"
+  ],
+  "mocHeaders": [],
+  "testSources": [
+    "tests/test_reticulum.cpp",
+    "ReticulumProtocol.h",
+    "ReticulumProtocol.cpp",
+    "ReticulumNode.h",
+    "ReticulumNode.cpp",
+    "ReticulumGraphics.h",
+    "ReticulumGraphics.cpp",
+    "ReticulumFeature.h",
+    "ReticulumFeature.cpp"
+  ],
+  "testLibraries": [
+    "Qt6::Core",
+    "Qt6::Network",
+    "Qt6::Widgets",
+    "OpenSSL::Crypto"
+  ],
+  "testHostSources": [
+    "NativePackageExtension.h",
+    "NativePackageExtension.cpp"
+  ]
+}
