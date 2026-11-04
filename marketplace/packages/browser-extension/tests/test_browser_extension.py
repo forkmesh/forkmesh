@@ -610,6 +610,52 @@ def test_zoho_inbox_zero_search_grouping_and_actions_logic():
     assert "checks passed" in result.stdout
 
 
+def _zoho_list_harness(mode, tmp_path):
+    result = subprocess.run(
+        [_headless_chrome(), "--headless", "--no-sandbox", "--allow-file-access-from-files",
+         f"--user-data-dir={tmp_path}", "--virtual-time-budget=30000", "--dump-dom",
+         (PACKAGE / "tests" / "zoho_list_harness.html").as_uri() + f"?mode={mode}"],
+        capture_output=True, text=True, timeout=180)
+    found = re.search(r"(RESULT|ERROR) (.*)</pre>", result.stdout, re.S)
+    assert found and found.group(1) == "RESULT", result.stdout[-3000:] + result.stderr[-2000:]
+    return json.loads(found.group(2))
+
+
+@pytest.mark.skipif(_headless_chrome() is None, reason="no headless Chrome")
+@pytest.mark.parametrize("mode", ["aria", "opened-in-set", "input"])
+def test_zoho_delete_removes_exactly_the_messages_shown_with_a_message_open(mode, tmp_path):
+    out = _zoho_list_harness(mode, tmp_path)
+    assert out["count"] == "3 of 6 loaded"
+    assert out["asked"] == "Delete 3 messages? Zoho Mail moves them to Trash."
+    assert out["done"] == [["delete", ["m2", "m4", "m6"]]]
+    assert out["left"] == ["m1", "m3", "m5"]
+    assert out["status"] == "Deleted 3 messages."
+
+
+@pytest.mark.skipif(_headless_chrome() is None, reason="no headless Chrome")
+def test_zoho_delete_all_skips_the_select_all_box(tmp_path):
+    out = _zoho_list_harness("all", tmp_path)
+    assert out["count"] == "6 loaded"
+    assert out["done"] == [["delete", ["m1", "m2", "m3", "m4", "m5", "m6"]]]
+    assert out["left"] == []
+
+
+@pytest.mark.skipif(_headless_chrome() is None, reason="no headless Chrome")
+def test_zoho_select_ticks_only_the_messages_shown(tmp_path):
+    out = _zoho_list_harness("select", tmp_path)
+    assert out["ticked"] == ["m2", "m4", "m6"]
+    assert out["done"] == []
+    assert out["status"] == "Selected 3 messages in Zoho Mail."
+
+
+@pytest.mark.skipif(_headless_chrome() is None, reason="no headless Chrome")
+def test_zoho_delete_stops_when_zoho_does_not_tick_every_message(tmp_path):
+    out = _zoho_list_harness("stuck", tmp_path)
+    assert out["done"] == []
+    assert len(out["left"]) == 6
+    assert out["status"].startswith("Zoho Mail selected 2 of 3; nothing else was done.")
+
+
 def test_the_reddit_desk_is_filled_from_pages_you_open_without_touching_reddit():
     reader = (EXTENSION / "reddit.js").read_text(encoding="utf-8")
     script = MANIFEST["content_scripts"][3]

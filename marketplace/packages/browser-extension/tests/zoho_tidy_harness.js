@@ -61,9 +61,12 @@ check("grouping keeps the subject sort inside each group",
 check("order does not change the input", same(ids(rows), [0, 1, 2, 3, 4, 5, 6]));
 
 check("a checked input is ticked", tidy.ticked({ checked: true }));
+check("an unchecked input wins over a selected row", !tidy.ticked({ checked: false, rowClass: "zmLItm zmLSel selected" }));
 check("aria-checked true is ticked", tidy.ticked({ ariaChecked: "true" }));
-check("aria-checked false wins over a class", !tidy.ticked({ ariaChecked: "false", rowClass: "selected" }));
-check("a selected row class is ticked", tidy.ticked({ rowClass: "zmList zmLSelected" }));
+check("aria-checked false wins over a class", !tidy.ticked({ ariaChecked: "false", rowClass: "zmLChecked" }));
+check("a checked box class is ticked", tidy.ticked({ boxClass: "zmCheckbox checked" }));
+check("a checked row class is ticked", tidy.ticked({ boxClass: "zmCheckbox", rowClass: "zmLItm zmLChecked" }));
+check("the open message's row is not a tick", !tidy.ticked({ boxClass: "zmCheckbox", rowClass: "zmLItm zmLSel selected" }));
 check("unchecked and checkbox classes are not ticks", !tidy.ticked({ boxClass: "zmchkbox unchecked", rowClass: "unselected" }));
 
 check("Zoho's Delete is the delete action", tidy.actionOf("Delete") === "delete" && tidy.actionOf("Move to Trash") === "delete");
