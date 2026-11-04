@@ -138,6 +138,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     if (orgLabel) orgLabel.textContent = state.crmView.organization;
     $(`[data-crm-install]`)?.classList.toggle("hidden", !canManage);
     $(`[data-crm-install-denied]`)?.classList.toggle("hidden", canManage);
+    renderCrmLeaderboardStrip();
   }
 
   function downloadCrmJson(exportPayload, filename) {
@@ -2164,9 +2165,11 @@ window.ForkMeshDashboard.registerPage("crm", ({
       const payload = await crmRequest(crmOrganizationPath(`/contacts/${id}`), "PATCH", body);
       replace(payload.contact);
       crmMessage("notice", note);
+      return true;
     } catch (error) {
       crmMessage("error", `${failure}: ${error.message}`);
       await loadCrm();
+      return false;
     }
   }
 
@@ -4788,7 +4791,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     }
     $(`[data-crm-failed-summary]`)?.classList.toggle("text-destructive", Number(summary.failed || 0) > 0);
     renderCrmSections(); renderCrmFlowFilters(); renderCrmContacts(); renderCrmEmails(); renderCrmMail(); renderCrmOutreach();
-    renderCrmTeam(); renderCrmMailLinks(); crmNoteListViewed(); renderCrmZohoBar(); renderCrmMyZoho();
+    renderCrmTeam(); renderCrmLeaderboardStrip(); renderCrmMailLinks(); crmNoteListViewed(); renderCrmZohoBar(); renderCrmMyZoho();
     $(`[data-crm-account-evidence]`)?.classList.toggle("hidden", !state.crmView.canManageSettings);
     renderCrmUsersImport();
     if ($(`[data-crm-lists-dialog]`)?.open) renderCrmListsOverview();
@@ -4805,7 +4808,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
   // Contacts, Inbox (linked email and Zoho boxes) and Outreach are tabs. The
   // open one is in the address as ?section= so it survives a reload or a link.
 
-  const CRM_SECTIONS = ["contacts", "inbox", "outreach", "team", "cleanup", "zoho"];
+  const CRM_SECTIONS = ["contacts", "inbox", "outreach", "mastodon", "team", "cleanup", "zoho"];
 
   function crmSectionFromUrl() {
     const section = new URL(location.href).searchParams.get("section") || "";
@@ -4819,6 +4822,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     if (next === "contacts") url.searchParams.delete("section");
     else url.searchParams.set("section", next);
     history.replaceState(history.state, "", url);
+    if (next === "mastodon") crmMastodon.stale = true;
     renderCrmSections();
     if (focus) $$(`[data-crm-section-tab]`).find((tab) => tab.dataset.crmSectionTab === next)?.focus();
   }
@@ -4853,6 +4857,12 @@ window.ForkMeshDashboard.registerPage("crm", ({
       badge.textContent = Number(counts[badge.dataset.crmSectionCount] || 0).toLocaleString();
     });
     renderCrmCleanup();
+    const org = state.crmView.organization;
+    if (current === "mastodon" && state.crmView.installed && org
+        && (crmMastodon.stale || crmMastodon.org !== org) && !(crmMastodon.loading && crmMastodon.org === org)) {
+      crmMastodon.stale = false;
+      void loadCrmMastodon();
+    }
   }
 
   const CRM_CLEANUP_SHOWN = 500;
@@ -5090,7 +5100,8 @@ window.ForkMeshDashboard.registerPage("crm", ({
     return (state.crmView.activity.members || []).map((member) => {
       const row = { name: member.name };
       for (const series of CRM_TEAM_SERIES) row[series.key] = crmTeamSum(member[series.key], from);
-      row.touches = row.emails + row.outreach;
+      row.toots = crmTeamSum(member.toots, from);
+      row.touches = row.emails + row.outreach + row.toots;
       return row;
     }).sort((a, b) => b.touches - a.touches || b.contacts - a.contacts || a.name.localeCompare(b.name));
   }
@@ -5162,7 +5173,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     const ranking = crmTeamRanking();
     if (view.teamMember && !ranking.some((row) => row.name === view.teamMember)) view.teamMember = "";
     const me = crmOutreach()?.name || "";
-    board.innerHTML = ranking.map((row, index) => `<tr data-crm-team-row="${escapeHtml(row.name)}" class="crm-team-row" aria-selected="${row.name === view.teamMember}"><td class="px-2 py-2 text-xs text-muted-foreground">${index + 1}</td><td class="px-2 py-2 font-medium text-foreground">${escapeHtml(row.name)}${row.name === me ? ` <span class="text-xs font-normal text-muted-foreground">(you)</span>` : ""}</td><td class="px-2 py-2 text-right">${row.emails.toLocaleString()}</td><td class="px-2 py-2 text-right">${row.outreach.toLocaleString()}</td><td class="px-2 py-2 text-right">${row.contacts.toLocaleString()}</td><td class="px-2 py-2 text-right font-semibold">${row.touches.toLocaleString()}</td></tr>`).join("");
+    board.innerHTML = ranking.map((row, index) => `<tr data-crm-team-row="${escapeHtml(row.name)}" class="crm-team-row" aria-selected="${row.name === view.teamMember}"><td class="px-2 py-2 text-xs text-muted-foreground">${index + 1}</td><td class="px-2 py-2 font-medium text-foreground">${escapeHtml(row.name)}${row.name === me ? ` <span class="text-xs font-normal text-muted-foreground">(you)</span>` : ""}</td><td class="px-2 py-2 text-right">${row.emails.toLocaleString()}</td><td class="px-2 py-2 text-right">${row.outreach.toLocaleString()}</td><td class="px-2 py-2 text-right">${row.toots.toLocaleString()}</td><td class="px-2 py-2 text-right">${row.contacts.toLocaleString()}</td><td class="px-2 py-2 text-right font-semibold">${row.touches.toLocaleString()}</td></tr>`).join("");
     $(`[data-crm-team-empty]`)?.classList.toggle("hidden", ranking.some((row) => row.touches || row.contacts));
     $$(`[data-crm-team-period-option]`).forEach((button) => button.setAttribute("aria-pressed", String(Number(button.dataset.crmTeamPeriodOption) === view.teamPeriod)));
     const select = $(`[data-crm-team-member]`);
@@ -5197,6 +5208,329 @@ window.ForkMeshDashboard.registerPage("crm", ({
       tip.style.top = `${Math.max(0, event.clientY - rect.top - tip.offsetHeight - 8)}px`;
     };
     host.onmouseleave = () => tip.classList.add("hidden");
+  }
+
+  const CRM_LEADERBOARD_DAYS = 7;
+  const CRM_LEADERBOARD_KINDS = ["emails", "outreach", "toots"];
+
+  function crmLeaderboardTop(activity = state.crmView.activity, limit = 3) {
+    const days = activity?.days || [];
+    const from = Math.max(0, days.length - CRM_LEADERBOARD_DAYS);
+    return (activity?.members || []).map((member) => ({
+      name: String(member.name || ""),
+      total: CRM_LEADERBOARD_KINDS.reduce((sum, kind) => sum + crmTeamSum(member[kind], from), 0),
+    })).filter((row) => row.name && row.total > 0)
+      .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name))
+      .slice(0, limit);
+  }
+
+  function crmLeaderboardLine(activity = state.crmView.activity) {
+    const top = crmLeaderboardTop(activity);
+    return top.length ? [`${CRM_LEADERBOARD_DAYS} days`, ...top.map((row) => `${row.name} ${row.total.toLocaleString()}`)].join(" · ") : "";
+  }
+
+  function renderCrmLeaderboardStrip() {
+    const strip = $(`[data-crm-leaderboard]`); if (!strip) return;
+    const line = state.crmView.installed ? crmLeaderboardLine() : "";
+    strip.textContent = line;
+    strip.hidden = !line;
+  }
+
+  function openCrmLeaderboard() {
+    state.crmView.teamPeriod = CRM_LEADERBOARD_DAYS;
+    state.crmView.teamMember = "";
+    selectCrmSection("team");
+    renderCrmTeam();
+  }
+
+  const CRM_TOOT_LIMIT = 500;
+  const CRM_TOOT_URL_LENGTH = 23;
+  const CRM_MASTODON_SHOWN = 50;
+  const CRM_MASTODON_SHARE = "https://mastodon.social/share";
+  const crmMastodon = {
+    org: "", stale: false, loading: false, data: null, missing: false, error: "", hint: "",
+    shown: CRM_MASTODON_SHOWN, drafts: new Map(), notes: new Map(), busy: new Set(),
+  };
+
+  function crmTootLength(text) {
+    const countable = String(text || "")
+      .replace(/https?:\/\/[^\s<>"]+/gi, (url) => {
+        const tail = url.match(/[.,;:!?'")\]]+$/)?.[0] || "";
+        return "x".repeat(CRM_TOOT_URL_LENGTH) + tail;
+      })
+      .replace(/(^|[^/\w])@([a-z0-9_]+(?:[a-z0-9_.-]+[a-z0-9_]+)?)@[a-z0-9.-]+[a-z0-9]+/gi, "$1@$2");
+    if (typeof Intl !== "undefined" && Intl.Segmenter) {
+      let count = 0;
+      for (const _ of new Intl.Segmenter().segment(countable)) count += 1;
+      return count;
+    }
+    return [...countable].length;
+  }
+
+  function crmMastodonField(item, key) {
+    return String(item?.[key] ?? item?.fields?.[key] ?? "");
+  }
+
+  function crmMastodonQueue() {
+    return crmMastodon.data?.queue || [];
+  }
+
+  function crmMastodonDraft(item) {
+    return crmMastodon.drafts.has(item.id) ? crmMastodon.drafts.get(item.id) : crmMastodonField(item, "mastodon_draft");
+  }
+
+  function crmMastodonHandle(item) {
+    return String(item?.handle || item?.mastodon || "").trim();
+  }
+
+  function crmMastodonRate(row) {
+    const sent = Number(row?.sent || 0);
+    return sent ? `${Math.round(Number(row.replied || 0) * 100 / sent)}%` : "–";
+  }
+
+  function crmMastodonCountHtml(id, text) {
+    const length = crmTootLength(text);
+    const over = length > CRM_TOOT_LIMIT;
+    return `<span data-crm-mastodon-count="${escapeHtml(id)}" title="Characters as Mastodon counts them: a link is ${CRM_TOOT_URL_LENGTH}, a mention counts its user part" class="text-xs ${over ? "font-semibold text-destructive" : "text-muted-foreground"}" style="font-variant-numeric:tabular-nums">${length.toLocaleString()} / ${CRM_TOOT_LIMIT}</span>`;
+  }
+
+  function crmMastodonCardHtml(item, canSend) {
+    const id = escapeHtml(item.id);
+    const handle = crmMastodonHandle(item);
+    const profile = crmMastodonUrl(handle);
+    const status = crmMastodonField(item, "mastodon_status");
+    const locked = status === "follow-first";
+    const segment = crmMastodonField(item, "mastodon_segment");
+    const ask = crmMastodonField(item, "mastodon_ask");
+    const why = crmMastodonField(item, "mastodon_why");
+    const prepared = crmMastodonField(item, "mastodon_prepared");
+    const draft = crmMastodonDraft(item);
+    const length = crmTootLength(draft);
+    const busy = crmMastodon.busy.has(item.id);
+    const note = crmMastodon.notes.get(item.id);
+    const name = escapeHtml(item.name || handle || "Unnamed contact");
+    const title = crmContactById(item.id)
+      ? `<button data-crm-mastodon-open="${id}" type="button" class="truncate text-left text-sm font-semibold text-foreground hover:underline">${name}</button>`
+      : `<span class="truncate text-sm font-semibold text-foreground">${name}</span>`;
+    const link = profile
+      ? `<a data-crm-mastodon-profile href="${escapeHtml(profile)}" target="_blank" rel="noopener noreferrer" class="crm-link truncate font-mono text-xs">${escapeHtml(handle)}</a>`
+      : `<span class="truncate font-mono text-xs text-muted-foreground">${escapeHtml(handle)}</span>`;
+    const chips = [
+      segment && `<span data-crm-mastodon-segment class="fm-label">${escapeHtml(segment)}</span>`,
+      ask && `<span data-crm-mastodon-ask class="fm-label fm-label-accent">${escapeHtml(ask)}</span>`,
+      locked && `<span class="fm-label fm-label-attention">locked</span>`,
+      status === "follow-requested" && `<span class="fm-label fm-label-attention">follow requested</span>`,
+    ].filter(Boolean).join("");
+    const lockedNote = locked
+      ? `<p data-crm-mastodon-locked class="text-xs text-foreground">This account is locked and we don't follow it: open the profile, follow by hand, and send once they accept. The web cannot follow.</p>`
+      : status === "follow-requested" ? `<p class="text-xs text-muted-foreground">Follow requested: send once they accept.</p>` : "";
+    const send = locked ? ""
+      : `<button data-crm-mastodon-send="${id}" type="button" title="${canSend ? "Send as a direct toot from the organization's Mastodon account" : "Opens Mastodon's share page with this text; the browser extension logs the toot"}" class="fm-btn fm-btn-sm"${busy || !draft.trim() || length > CRM_TOOT_LIMIT ? " disabled" : ""}>${busy ? "Sending…" : "Send"}</button>`;
+    const open = (locked || status === "follow-requested") && profile
+      ? `<a data-crm-mastodon-follow href="${escapeHtml(profile)}" target="_blank" rel="noopener noreferrer" class="fm-btn fm-btn-sm">Open profile &#8599;</a>` : "";
+    return `<article data-crm-mastodon-card="${id}" class="grid gap-2 p-3">
+        <div class="flex min-w-0 flex-wrap items-center gap-2">${title}${link}${chips}${prepared ? `<span class="ml-auto text-xs text-muted-foreground">prepared ${escapeHtml(prepared)}</span>` : ""}</div>
+        ${why ? `<p data-crm-mastodon-why class="text-xs text-muted-foreground">${escapeHtml(why)}</p>` : ""}
+        ${lockedNote}
+        <textarea data-crm-mastodon-draft="${id}" rows="3" maxlength="5000" aria-label="Toot to ${name}" class="w-full rounded-md border border-border bg-background px-2 py-1.5 text-control text-foreground outline-none focus:ring-1 focus:ring-ring"${busy ? " disabled" : ""}>${escapeHtml(draft)}</textarea>
+        <div class="flex flex-wrap items-center gap-2">${crmMastodonCountHtml(item.id, draft)}<span data-crm-mastodon-note="${id}" role="status" aria-live="polite" class="min-w-0 flex-1 text-xs ${note?.bad ? "text-destructive" : "text-muted-foreground"}">${escapeHtml(note?.text || "")}</span>${open}${send}<button data-crm-mastodon-skip="${id}" type="button" title="Set this contact's Mastodon status to skipped" class="fm-btn fm-btn-sm fm-btn-invisible"${busy ? " disabled" : ""}>Skip</button></div>
+      </article>`;
+  }
+
+  function crmMastodonStrategyHtml(stats) {
+    const row = (kind, item) => `<tr data-crm-mastodon-strategy-row="${escapeHtml(`${kind}:${item.key}`)}"><td class="px-3 py-1.5 text-foreground">${escapeHtml(item.key)}</td><td class="px-3 py-1.5 text-right">${Number(item.prepared || 0).toLocaleString()}</td><td class="px-3 py-1.5 text-right">${Number(item.sent || 0).toLocaleString()}</td><td class="px-3 py-1.5 text-right">${Number(item.replied || 0).toLocaleString()}</td><td class="px-3 py-1.5 text-right font-semibold">${crmMastodonRate(item)}</td></tr>`;
+    const group = (label, kind, items) => items.length
+      ? `<tr><th colspan="5" class="bg-secondary px-3 py-1 text-left text-[10px] font-semibold uppercase text-muted-foreground">${label}</th></tr>${items.map((item) => row(kind, item)).join("")}` : "";
+    return group("Segments", "segment", stats?.segments || []) + group("Asks", "ask", stats?.asks || []);
+  }
+
+  function renderCrmMastodon() {
+    const section = $(`[data-crm-mastodon]`); if (!section) return;
+    const data = crmMastodon.data;
+    const missing = crmMastodon.missing || Boolean(crmMastodon.error);
+    const unavailable = $(`[data-crm-mastodon-unavailable]`);
+    if (unavailable) {
+      unavailable.hidden = !missing && !(crmMastodon.loading && !data);
+      unavailable.innerHTML = crmMastodon.missing
+        ? "Not available yet: this organization's CRM does not serve the Mastodon queue yet."
+        : crmMastodon.error ? `${escapeHtml(`Could not load the Mastodon queue: ${crmMastodon.error}`)} <button data-crm-mastodon-retry type="button" class="fm-btn fm-btn-sm ml-2">Try again</button>`
+        : "Loading the Mastodon queue…";
+    }
+    const body = $(`[data-crm-mastodon-body]`);
+    if (body) body.hidden = !data;
+    const prepare = $(`[data-crm-mastodon-prepare]`);
+    if (prepare) prepare.disabled = !data?.prompt;
+    const stats = $(`[data-crm-mastodon-stats]`);
+    if (stats) {
+      const today = data?.stats?.today || {}; const week = data?.stats?.week || {};
+      const replies = Number(week.replied || 0);
+      stats.innerHTML = data
+        ? `<span data-crm-mastodon-today class="font-semibold text-foreground">${Number(today.sent || 0).toLocaleString()}</span> / ${Number(data.dailyTarget || 0).toLocaleString()} sent today · <span data-crm-mastodon-replies class="font-semibold text-foreground">${replies.toLocaleString()}</span> ${replies === 1 ? "reply" : "replies"} this week · ${crmMastodonQueue().length.toLocaleString()} in the queue${data.canSend ? "" : " · no organization token: Send opens Mastodon's share page"}`
+        : "Prepared toots to internet-freedom maintainers, sent one at a time.";
+    }
+    const hint = $(`[data-crm-mastodon-hint]`);
+    if (hint) hint.textContent = crmMastodon.hint;
+    const queue = crmMastodonQueue();
+    const list = $(`[data-crm-mastodon-queue]`);
+    if (list) list.innerHTML = queue.slice(0, crmMastodon.shown).map((item) => crmMastodonCardHtml(item, Boolean(data?.canSend))).join("");
+    const empty = $(`[data-crm-mastodon-empty]`);
+    if (empty) empty.hidden = !data || queue.length > 0;
+    const more = $(`[data-crm-mastodon-more]`);
+    if (more) {
+      const rest = queue.length - crmMastodon.shown;
+      more.hidden = rest <= 0;
+      more.textContent = rest > 0 ? `Show ${Math.min(rest, CRM_MASTODON_SHOWN).toLocaleString()} more of ${rest.toLocaleString()}` : "";
+    }
+    const strategy = $(`[data-crm-mastodon-strategy]`);
+    if (strategy) strategy.innerHTML = crmMastodonStrategyHtml(data?.stats);
+    const strategyEmpty = $(`[data-crm-mastodon-strategy-empty]`);
+    if (strategyEmpty) strategyEmpty.hidden = Boolean((data?.stats?.segments || []).length || (data?.stats?.asks || []).length);
+  }
+
+  async function loadCrmMastodon() {
+    const org = state.crmView.organization; if (!org) return;
+    if (crmMastodon.org !== org) {
+      crmMastodon.data = null; crmMastodon.shown = CRM_MASTODON_SHOWN; crmMastodon.hint = "";
+      crmMastodon.drafts.clear(); crmMastodon.notes.clear(); crmMastodon.busy.clear();
+    }
+    crmMastodon.org = org; crmMastodon.loading = true;
+    renderCrmMastodon();
+    try {
+      const query = new URLSearchParams({ tz: String(-new Date().getTimezoneOffset()) });
+      const payload = await crmRequest(crmOrganizationPath(`/mastodon?${query}`));
+      if (crmMastodon.org !== org) return;
+      crmMastodon.data = { ...payload, queue: Array.isArray(payload.queue) ? payload.queue : [] };
+      crmMastodon.missing = false; crmMastodon.error = "";
+    } catch (error) {
+      if (crmMastodon.org !== org) return;
+      crmMastodon.data = null;
+      crmMastodon.missing = error.status === 404;
+      crmMastodon.error = crmMastodon.missing ? "" : String(error.message || "failed");
+    } finally {
+      if (crmMastodon.org === org) { crmMastodon.loading = false; renderCrmMastodon(); }
+    }
+  }
+
+  function crmMastodonNote(id, text, bad = false) {
+    if (text) crmMastodon.notes.set(id, { text, bad }); else crmMastodon.notes.delete(id);
+  }
+
+  function crmMastodonDone(id) {
+    const data = crmMastodon.data; if (!data) return;
+    data.queue = data.queue.filter((entry) => entry.id !== id);
+    crmMastodon.drafts.delete(id); crmMastodon.notes.delete(id); crmMastodon.busy.delete(id);
+  }
+
+  function crmMastodonCountSent(item) {
+    const stats = crmMastodon.data.stats = crmMastodon.data.stats || {};
+    for (const period of ["today", "week"]) {
+      stats[period] = { sent: 0, replied: 0, ...stats[period] };
+      stats[period].sent = Number(stats[period].sent || 0) + 1;
+    }
+    for (const [list, key] of [["segments", "mastodon_segment"], ["asks", "mastodon_ask"]]) {
+      const row = (stats[list] || []).find((entry) => entry.key === crmMastodonField(item, key));
+      if (row) row.sent = Number(row.sent || 0) + 1;
+    }
+  }
+
+  function crmMastodonSetStatus(id, status) {
+    const item = crmMastodonQueue().find((entry) => entry.id === id);
+    if (item) {
+      if (item.fields && typeof item.fields === "object") item.fields.mastodon_status = status;
+      item.mastodon_status = status;
+    }
+    const contact = crmContactById(id);
+    if (contact) contact.fields = { ...(contact.fields || {}), mastodon_status: status };
+  }
+
+  async function sendCrmMastodon(id) {
+    const data = crmMastodon.data;
+    const item = crmMastodonQueue().find((entry) => entry.id === id);
+    if (!data || !item || crmMastodon.busy.has(id)) return;
+    const text = crmMastodonDraft(item);
+    if (!text.trim() || crmTootLength(text) > CRM_TOOT_LIMIT) return;
+    if (!data.canSend) {
+      window.open(`${CRM_MASTODON_SHARE}?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
+      crmMastodonNote(id, "Opened Mastodon's share page in a new tab: post it there and the browser extension logs the toot on this contact.");
+      renderCrmMastodon();
+      return;
+    }
+    crmMastodon.busy.add(id); crmMastodonNote(id, "");
+    renderCrmMastodon();
+    try {
+      await crmRequest(crmOrganizationPath("/mastodon/send"), "POST", { contactId: id, text });
+      crmMastodonSetStatus(id, "sent");
+      crmMastodonCountSent(item);
+      crmMastodonDone(id);
+      crmMessage("notice", `Sent to ${crmMastodonHandle(item) || item.name || "the contact"}.`);
+    } catch (error) {
+      const code = error.payload?.error;
+      if (error.status === 409 && code === "follow_first") {
+        crmMastodonSetStatus(id, "follow-first");
+        crmMastodonNote(id, "Not sent: the account is locked and we don't follow it.", true);
+      } else if (error.status === 429 && code === "mastodon_daily_limit") {
+        crmMastodonNote(id, `Not sent: the organization reached its limit of ${Number(data.dailyLimit || 0).toLocaleString()} toots in 24 hours. Try again later.`, true);
+      } else {
+        crmMastodonNote(id, `Not sent: ${error.message}`, true);
+      }
+    } finally {
+      crmMastodon.busy.delete(id);
+      renderCrmMastodon();
+    }
+  }
+
+  async function skipCrmMastodon(id) {
+    const item = crmMastodonQueue().find((entry) => entry.id === id);
+    if (!item || crmMastodon.busy.has(id)) return;
+    crmMastodon.busy.add(id);
+    renderCrmMastodon();
+    const saved = await crmPatchContact(id, { fields: { mastodon_status: "skipped" } },
+      `Skipped ${item.name || crmMastodonHandle(item) || "the contact"} on Mastodon.`, "Could not skip");
+    crmMastodon.busy.delete(id);
+    if (saved) crmMastodonDone(id);
+    else crmMastodonNote(id, "Could not skip: try again.", true);
+    renderCrmMastodon();
+  }
+
+  async function prepareCrmMastodon() {
+    const prompt = crmMastodon.data?.prompt || "";
+    if (!prompt) return;
+    try {
+      const copied = navigator.clipboard?.writeText(prompt);
+      if (!copied) throw new Error("no clipboard");
+      await copied;
+      crmMastodon.hint = "Prompt copied: paste it into an agent session";
+    } catch { crmMastodon.hint = "Could not copy the prompt: this browser blocked the clipboard."; }
+    renderCrmMastodon();
+  }
+
+  function onCrmMastodonInput(event) {
+    const input = event.target.closest?.("[data-crm-mastodon-draft]"); if (!input) return;
+    const id = input.dataset.crmMastodonDraft;
+    crmMastodon.drafts.set(id, input.value);
+    const count = $(`[data-crm-mastodon-count="${CSS.escape(id)}"]`);
+    if (count) count.outerHTML = crmMastodonCountHtml(id, input.value);
+    const send = $(`[data-crm-mastodon-send="${CSS.escape(id)}"]`);
+    if (send && !crmMastodon.busy.has(id)) send.disabled = !input.value.trim() || crmTootLength(input.value) > CRM_TOOT_LIMIT;
+  }
+
+  function onCrmMastodonClick(event) {
+    const send = event.target.closest("[data-crm-mastodon-send]");
+    if (send) { void sendCrmMastodon(send.dataset.crmMastodonSend); return; }
+    const skip = event.target.closest("[data-crm-mastodon-skip]");
+    if (skip) { void skipCrmMastodon(skip.dataset.crmMastodonSkip); return; }
+    const open = event.target.closest("[data-crm-mastodon-open]");
+    if (open) { openCrmContactDetail(open.dataset.crmMastodonOpen); return; }
+    if (event.target.closest("[data-crm-mastodon-prepare]")) { void prepareCrmMastodon(); return; }
+    if (event.target.closest("[data-crm-mastodon-retry]")) { void loadCrmMastodon(); return; }
+    if (event.target.closest("[data-crm-mastodon-more]")) { crmMastodon.shown += CRM_MASTODON_SHOWN; renderCrmMastodon(); }
+  }
+
+  function wireCrmMastodon() {
+    const section = $(`[data-crm-mastodon]`); if (!section) return;
+    section.addEventListener("click", onCrmMastodonClick);
+    section.addEventListener("input", onCrmMastodonInput);
+    $(`[data-crm-refresh]`)?.addEventListener("click", () => { if (state.crmView.section === "mastodon") void loadCrmMastodon(); });
   }
 
   function crmOutreachHint(message = "", bad = false) {
@@ -8192,6 +8526,8 @@ window.ForkMeshDashboard.registerPage("crm", ({
       state.crmView.teamTable = !state.crmView.teamTable; renderCrmTeam();
     });
     wireCrmCleanup();
+    wireCrmMastodon();
+    $(`[data-crm-leaderboard]`)?.addEventListener("click", openCrmLeaderboard);
     const sections = $(`[data-crm-sections]`);
     sections?.addEventListener("click", (event) => {
       const tab = event.target.closest("[data-crm-section-tab]");
