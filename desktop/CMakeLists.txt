@@ -1112,6 +1112,8 @@ set(FORKMESH_APP_SOURCES
     src/HiddenUnicode.cpp
     src/HiddenUnicodeGuard.h
     src/HiddenUnicodeGuard.cpp
+    src/CopyFormatting.h
+    src/CopyFormatting.cpp
     src/AdBannerWidget.h
     src/AdBannerWidget.cpp
     src/SecretDiffBanner.h
@@ -3736,6 +3738,17 @@ forkmesh_link_opengl(forkmesh-window-tests)
         set_target_properties(forkmesh-hidden-unicode-tests PROPERTIES MACOSX_BUNDLE FALSE)
     endif()
 
+    qt_add_executable(forkmesh-copy-formatting-tests
+        tests/test_copy_formatting.cpp
+        src/CopyFormatting.h
+        src/CopyFormatting.cpp
+    )
+    target_link_libraries(forkmesh-copy-formatting-tests PRIVATE Qt6::Widgets)
+    target_include_directories(forkmesh-copy-formatting-tests PRIVATE src)
+    if(APPLE)
+        set_target_properties(forkmesh-copy-formatting-tests PROPERTIES MACOSX_BUNDLE FALSE)
+    endif()
+
     qt_add_executable(forkmesh-genie-vitals-tests
         tests/test_genie_vitals.cpp
         src/GenieVitals.h
@@ -4526,6 +4539,8 @@ forkmesh_link_opengl(forkmesh-perf-tests)
              COMMAND forkmesh-ad-banner-model-tests)
     add_test(NAME forkmesh-hidden-unicode-tests
              COMMAND forkmesh-hidden-unicode-tests)
+    add_test(NAME forkmesh-copy-formatting-tests
+             COMMAND forkmesh-copy-formatting-tests)
     add_test(NAME forkmesh-genie-vitals-tests
              COMMAND forkmesh-genie-vitals-tests)
     add_test(NAME forkmesh-genie-landmarks-tests
@@ -4914,6 +4929,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-window-fade-tests
         forkmesh-message-box-clicks-tests
         forkmesh-hidden-unicode-tests
+        forkmesh-copy-formatting-tests
         forkmesh-tests forkmesh-window-tests
         forkmesh-qt-runtime-diagnostics-tests
         forkmesh-prompt-spellcheck-tests

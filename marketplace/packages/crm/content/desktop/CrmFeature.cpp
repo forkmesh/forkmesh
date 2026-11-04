@@ -4390,7 +4390,8 @@ void CrmFeature::attachRowWidgets(int row)
                 follow->setFixedHeight(26);
                 follow->setMinimumWidth(
                     QFontMetrics(labelFont).horizontalAdvance(follow->text()) + 26);
-                follow->setCursor(Qt::PointingHandCursor);
+                if (follow->isEnabled())
+                    follow->setCursor(Qt::PointingHandCursor);
                 room = follow->minimumWidth() + 4;
             }
             if (QTableWidgetItem *item = m_contactsTable->item(row, column)) {
@@ -10377,9 +10378,16 @@ QPushButton *CrmFeature::mastodonFollowButton(const QString &key, QWidget *paren
         ? follower.account
         : mastodonHandleKey(text(m_settings.value(QStringLiteral("mastodon")).toObject(),
                                  "account"));
-    if (key.isEmpty() || key == account || m_mastodonFollowed.contains(key))
+    if (key.isEmpty() || key == account)
         return nullptr;
     const bool connected = !follower.account.isEmpty();
+    if (m_mastodonFollowed.contains(key)) {
+        auto *following = new QPushButton(QStringLiteral("Following"), parent);
+        following->setObjectName(QStringLiteral("ghostButton"));
+        following->setToolTip(QStringLiteral("@%1 already follows @%2.").arg(account, key));
+        following->setEnabled(false);
+        return following;
+    }
     const bool back = connected && m_mastodonFollowBack.contains(key);
     auto *button = new QPushButton(back ? QStringLiteral("Follow back")
                                         : QStringLiteral("Follow"), parent);

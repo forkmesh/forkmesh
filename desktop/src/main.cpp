@@ -10,6 +10,7 @@
 #include "AppPaths.h"
 #include "BrowserPrivacy.h"
 #include "ControlNode.h"
+#include "CopyFormatting.h"
 #include "DirectorySizeScan.h"
 #include "DesktopDisplayReadiness.h"
 #include "DesktopLauncherIcon.h"
@@ -780,6 +781,7 @@ int main(int argc, char *argv[])
         app.setStyle(QStyleFactory::create("Fusion"));
         forkmesh::ui::SplitterHairline::install(&app);
         forkmesh::hiddenunicode::installInputGuard(&app);
+        forkmesh::copyformat::installClipboardFormatting(&app);
     }
 
     {

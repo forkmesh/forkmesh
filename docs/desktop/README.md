@@ -35,6 +35,7 @@ an attacker can do with the desktop's keys is in the
 | [side-rail-and-terminals.md](side-rail-and-terminals.md) | The right-hand side rail, its browser, terminal tabs and the MCP terminal tools for agents |
 | [busy-ring.md](busy-ring.md) | The spinning ring around a working button or rail icon, on desktop, web and phones |
 | [markdown-preview.md](markdown-preview.md) | One render path for every Markdown preview and its GitHub-style styling |
+| [copy-formatting.md](copy-formatting.md) | Copied text keeps its line breaks, blank lines, list markers and table columns |
 | [browser.md](browser.md) | The embedded ungoogled Chromium browser, its switches, blocked hosts and profile |
 | [agents-ui.md](agents-ui.md) | The Agents page: list, detail pane, Claude Code session control, transcript, composer, cloud rows, Models board |
 | [sessions-page.md](sessions-page.md) | The Sessions page and its side panels |
@@ -86,6 +87,7 @@ Everything is in `desktop/`.
 | `src/CodeHealth.*`, `src/ComponentHealthBoard.*`, `src/StatsDashboard.*`, `src/HomeBoard.*` | Health, Stats and Home pages |
 | `src/NativePackageExtension.*`, `src/ForkMeshPackageRegistry.*`, `src/*HostFeed.*` | Market packages hosted in the desktop and the host sockets they use |
 | `src/MarkdownRender.h`, `src/MarkdownDocument.h`, `src/MarkdownPreviewStyle.h` | Markdown rendering shared by README views, file previews, composers and packages ([markdown-preview](markdown-preview.md)) |
+| `src/CopyFormatting.*` | Plain text for a copy that keeps the layout on screen ([copy-formatting](copy-formatting.md)) |
 | `src/Tooltips.h` | The app-drawn tooltip window |
 | `tests/` | Qt Test programs (`test_*.cpp`) and Python source validators (`validate_*.py`) |
 
