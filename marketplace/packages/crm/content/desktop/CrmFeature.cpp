@@ -7052,7 +7052,7 @@ void CrmFeature::showSheetTabMenu(const QString &id, const QPoint &globalPositio
             ->setEnabled(!importBusy());
     if (!flowId.isEmpty() && flowIconId(flowId) == QLatin1String("grants") &&
         flowContactCount(flowId) == 0) {
-        QAction *grants = menu.addAction(QStringLiteral("Load the 100 ranked grants"), this,
+        QAction *grants = menu.addAction(QStringLiteral("Load the ranked grants"), this,
                                          [this, id] { loadRankedGrants(id); });
         grants->setEnabled(m_canManageSettings && !importBusy());
         grants->setToolTip(m_canManageSettings
