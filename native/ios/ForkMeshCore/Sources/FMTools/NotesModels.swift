@@ -75,6 +75,11 @@ let noteErrorMessages: [String: String] = [
     "page_not_found": "This page no longer exists, or you no longer have access to it.",
     "invalid_page": "Some of this page's settings are not valid.",
     "too_many_entries": "A page holds at most 300 entries.",
+    "invalid_message": "Write a message of up to 2000 characters.",
+    "message_author_required": "Only the person who sent a message, or the note's owner, can delete it.",
+    "message_not_found": "That message was already deleted.",
+    "version_not_found": "That version is no longer kept.",
+    "invalid_version": "That version could not be opened.",
 ]
 
 public typealias ToolsSleep = @Sendable (_ millis: Int) async throws -> Void
@@ -546,6 +551,11 @@ public final class NoteEditorModel {
     public private(set) var linkBusy = false
     public private(set) var room: NoteRoomModel?
     public private(set) var comments: NoteCommentsModel?
+    public private(set) var history: NoteHistoryModel?
+    public private(set) var activity: NoteActivityModel?
+    public private(set) var chat: NoteChatModel?
+    public private(set) var liveTab: NoteLiveTab?
+    @ObservationIgnored private let chatSeen: NoteChatSeen
     public private(set) var selectionRequest: NoteSelectionRequest?
     public private(set) var emojiDraft: String?
     @ObservationIgnored private var requestSerial = 0
@@ -562,9 +572,11 @@ public final class NoteEditorModel {
     public init(
         noteId: String?, call: @escaping ToolsApiCall, clock: Clock = SystemClock(),
         sleep: @escaping ToolsSleep = toolsTaskSleep, webLink: @escaping ToolsWebLink = { _ in nil },
-        openSocket: NoteSocketOpen? = nil, me: String = "", openComment: String? = nil, seen: NoteViewsSeen = .shared
+        openSocket: NoteSocketOpen? = nil, me: String = "", openComment: String? = nil, seen: NoteViewsSeen = .shared,
+        chatSeen: NoteChatSeen = .shared
     ) {
         self.seen = seen
+        self.chatSeen = chatSeen
         self.noteId = noteId
         self.call = call
         self.clock = clock
@@ -643,7 +655,7 @@ public final class NoteEditorModel {
 
     /// The overflow menu: (value, label) in display order.
     public var menuItems: [(value: String, label: String)] {
-        var items: [(value: String, label: String)] = [("history", "History"), ("copy_link", "Copy link")]
+        var items: [(value: String, label: String)] = [("history", "History"), ("activity", "Activity"), ("copy_link", "Copy link")]
         if isPublic { items.append(("open_public", "Open published page")) }
         items.append(("export", "Export Markdown"))
         items.append(("export_pdf", NoteDocument.menuLabel))
@@ -662,6 +674,8 @@ public final class NoteEditorModel {
         title = savedTitle
         markdown = savedMarkdown
         comments?.isOwner = isOwner
+        history?.currentVersion = version
+        history?.canRestore = canEdit
         seen.record(note)
     }
 
@@ -674,11 +688,11 @@ public final class NoteEditorModel {
     }
 
     /// A restored version from the history sheet replaces the text.
-    public func applyRestored(_ note: JSONObject) -> ToolsOutcome {
+    public func applyRestored(_ note: JSONObject, version restored: Int? = nil) -> ToolsOutcome {
         conflict = nil
         saveFailure = ""
         apply(note)
-        return .done("Version restored")
+        return .done(restored.map { NoteHistoryModel.restoredMessage($0) } ?? "Version restored")
     }
 
     public func recordView() async {
@@ -700,6 +714,7 @@ public final class NoteEditorModel {
             loading = false
             joinRoom()
             joinComments()
+            joinLive()
         } catch {
             loading = false
             self.error = notesErrorText(error, "This note could not be opened.")
@@ -770,6 +785,7 @@ public final class NoteEditorModel {
             saving = false
             joinRoom()
             joinComments()
+            joinLive()
             if saveQueued || dirty {
                 saveQueued = false
                 edited()
@@ -812,6 +828,13 @@ public final class NoteEditorModel {
             model.focus(openComment)
             commentsOpen = true
         }
+    }
+
+    private func joinLive() {
+        guard history == nil, error.isEmpty, let id else { return }
+        history = NoteHistoryModel(noteId: id, currentVersion: version, canRestore: canEdit, call: call, clock: clock, sleep: sleep)
+        activity = NoteActivityModel(noteId: id, me: me, call: call, clock: clock, sleep: sleep)
+        chat = NoteChatModel(noteId: id, me: me, call: call, clock: clock, sleep: sleep, seen: chatSeen)
     }
 
     public func leave() {
@@ -869,7 +892,13 @@ public final class NoteEditorModel {
             markdown = draftMarkdown
         case .commentsChanged:
             comments?.reloadSoon()
+        case .activityChanged:
+            if activity?.loaded == true { activity?.reloadSoon() }
+        case .chatChanged:
+            chat?.reloadSoon()
         case let .updated(newVersion):
+            if history?.versions != nil { history?.reloadSoon() }
+            if activity?.loaded == true { activity?.reloadSoon() }
             guard newVersion > version, !dirty, !saving else { return }
             Task { await reload() }
         case .deleted:
@@ -1083,8 +1112,23 @@ public final class NoteEditorModel {
     }
 
     public func historyModel() -> NoteHistoryModel? {
+        if let history {
+            history.currentVersion = version
+            history.canRestore = canEdit
+            return history
+        }
         guard let id else { return nil }
-        return NoteHistoryModel(noteId: id, currentVersion: version, canRestore: canEdit, call: call, clock: clock)
+        return NoteHistoryModel(noteId: id, currentVersion: version, canRestore: canEdit, call: call, clock: clock, sleep: sleep)
+    }
+
+    public func showLive(_ tab: NoteLiveTab?) {
+        if tab != nil, history == nil { joinLive() }
+        if tab != nil {
+            history?.currentVersion = version
+            history?.canRestore = canEdit
+        }
+        liveTab = history == nil ? nil : tab
+        chat?.setVisible(liveTab == .chat)
     }
 
     public func shareModel() -> NoteShareModel? {
@@ -1098,31 +1142,89 @@ public final class NoteEditorModel {
 @Observable
 public final class NoteHistoryModel {
     public static let title = "History"
+    public static let emptyMessage = "No saved versions yet."
 
     @ObservationIgnored private let call: ToolsApiCall
     @ObservationIgnored private let clock: Clock
+    @ObservationIgnored private let sleep: ToolsSleep
+    @ObservationIgnored var reloadTask: Task<Void, Never>?
+    @ObservationIgnored private var reloadGeneration = 0
     public let noteId: String
-    public let currentVersion: Int
-    public let canRestore: Bool
+    public var currentVersion: Int
+    public var canRestore: Bool
     public private(set) var versions: [JSONObject]?
     public private(set) var error = ""
     public private(set) var busy = false
+    public private(set) var shown: NoteVersionSnapshot?
 
-    public init(noteId: String, currentVersion: Int, canRestore: Bool, call: @escaping ToolsApiCall, clock: Clock = SystemClock()) {
+    public init(
+        noteId: String, currentVersion: Int, canRestore: Bool, call: @escaping ToolsApiCall, clock: Clock = SystemClock(),
+        sleep: @escaping ToolsSleep = toolsTaskSleep
+    ) {
         self.noteId = noteId
         self.currentVersion = currentVersion
         self.canRestore = canRestore
         self.call = call
         self.clock = clock
+        self.sleep = sleep
     }
 
     public func load() async {
         do {
             versions = ToolsJSON.maps(try await call("GET", "/\(noteId)/versions", nil)["versions"])
+            error = ""
+            if let shown, versions?.contains(where: { version($0) == shown.version }) == false { self.shown = nil }
         } catch {
-            self.error = notesErrorText(error, "History is unavailable.")
+            if versions == nil { self.error = notesErrorText(error, "History is unavailable.") }
         }
     }
+
+    public func reloadSoon() {
+        reloadGeneration += 1
+        let generation = reloadGeneration
+        let sleep = self.sleep
+        reloadTask = Task { [weak self] in
+            do { try await sleep(NoteActivity.reloadDelayMillis) } catch { return }
+            guard let self, self.reloadGeneration == generation else { return }
+            await self.load()
+        }
+    }
+
+    public func view(_ version: Int) async -> String? {
+        busy = true
+        defer { busy = false }
+        do {
+            let data = try await call("GET", "/\(noteId)/versions?version=\(version)", nil)
+            shown = NoteVersionSnapshot(json: ToolsJSON.object(data["version"]))
+            return nil
+        } catch {
+            return notesErrorText(error, "That version could not be opened.")
+        }
+    }
+
+    public func closeView() {
+        shown = nil
+    }
+
+    public func viewTitle(_ snapshot: NoteVersionSnapshot) -> String {
+        "Version \(snapshot.version)" + (snapshot.version == currentVersion ? " · Current" : "")
+    }
+
+    public func viewSubtitle(_ snapshot: NoteVersionSnapshot) -> String {
+        let when = Format.relativeTime(snapshot.createdAt, nowMillis: clock.nowMillis)
+        return snapshot.author.isEmpty ? when : "\(when) · by @\(snapshot.author)"
+    }
+
+    public func restorable(_ version: Int) -> Bool { canRestore && version != currentVersion }
+
+    public func restoreConfirmation(_ version: Int) -> ToolsConfirmation {
+        ToolsConfirmation(
+            title: "Restore version \(version)?",
+            message: "The note goes back to the title and text of version \(version), saved as a new version. The current text stays in the history.",
+            confirm: "Restore", cancel: "Cancel", destructive: false)
+    }
+
+    public static func restoredMessage(_ version: Int) -> String { "Restored version \(version) as a new version" }
 
     public func version(_ entry: JSONObject) -> Int { ToolsJSON.int(entry["version"]) }
     public func title(_ entry: JSONObject) -> String { "Version \(version(entry))" }
@@ -1140,7 +1242,11 @@ public final class NoteHistoryModel {
             let data = try await call("POST", "/\(noteId)/versions", [
                 "version": .int(Int64(version)), "baseVersion": .int(Int64(currentVersion)),
             ])
-            return (ToolsJSON.object(data["note"]), nil)
+            let note = ToolsJSON.object(data["note"])
+            busy = false
+            shown = nil
+            currentVersion = ToolsJSON.int(note["version"])
+            return (note, nil)
         } catch {
             busy = false
             return (nil, notesErrorText(error, "That version was not restored."))

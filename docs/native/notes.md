@@ -120,8 +120,9 @@ comments sheet, the faces and the "Here now" list.
   user picks **Save as PDF** there. Android's WebView is Chromium, so the CSS
   `@page` margins and the "N / M" bottom-centre numbers apply as on the web.
   Views: `NoteDocumentViews.kt`; tests: `NoteDocumentTest`.
-- History shows author names; restore, publish / make private, delete with
-  confirmation and Turn into a task / issue are unchanged.
+- Publish / make private, delete with confirmation and Turn into a task /
+  issue are unchanged. History moved into the History · Activity · Chat
+  sheet (below).
 
 ### Sharing
 
@@ -230,6 +231,47 @@ replaced after every change.
   wait. Reconnecting the socket reloads too, in case a frame was missed.
 - Errors show in the sheet in plain words (`NoteCommentText.error`).
 
+### History, activity and chat
+
+The phone version of the web and desktop editor's right column
+([notes-comments.md](../app/notes-comments.md), "Chat"): one bottom sheet,
+`NoteLiveSheet` (`feature/tools/NoteLiveViews.kt`), with the tabs
+**History**, **Activity** and **Chat** (`NoteLiveTab`). The ⋯ menu's
+**History** and **Activity** open it on that tab, and a chat button
+(`forum_outlined`) beside the comments button opens it on Chat. Logic and
+wording are in core `NoteActivity.kt`.
+
+- **History.** `GET /versions`, newest first: "Version N", "2h ago · by
+  @ana", **View** and **Current** or **Restore** (owners and editors). View
+  (or tapping the row) fetches `GET /versions?version=N` and shows that
+  version's emoji, title and Markdown preview read-only, with Back and
+  Restore. Restore asks first ("Restore version 3?") and then sends
+  `{version, baseVersion}`; the editor shows "Restored version 3 as a new
+  version".
+- **Activity.** `GET /activity` parsed by `NoteActivity.entries`: the web's
+  sentences ("ana viewed it 3 times", "You shared it with bo · can edit",
+  "restored version 3 as v9", "linked ana/site#12"), each with the relative
+  time and an icon per kind. As on the web, a run of edits by one person
+  within 30 minutes folds into one row ("edited it · v4–v6, 3 saves") and
+  `counts.webViews` adds "5 reads of the published page by 3 readers". The
+  header shows "7 views · 4 versions · 1 action".
+- **Chat.** `GET /chat`, oldest first: "You" or "@name", time and body;
+  your own messages, or every message when `canModerate`, have a delete
+  button that asks first ("bo's message will be removed for everyone.").
+  The field takes up to 2000 characters and Send posts `{body}`. Errors are
+  plain words (`NoteChat.error`: `invalid_message`,
+  `message_author_required`, `message_not_found`).
+- **Unread.** The editor loads chat with the note, so the chat button
+  carries a badge: messages by others newer than the newest one you saw in
+  that note (`NoteChat.unread`). The newest `createdAt` seen is stored per
+  note in `Prefs("forkmesh.notes")` under `chatSeen.<id>` whenever the Chat
+  tab shows messages.
+- **Live.** `note-chat` frames reload chat (even with the sheet closed, so
+  the badge stays current), `note-activity` reloads Activity and
+  `note-updated` reloads History and Activity, each 300 ms after the last
+  frame (`NoteChat.RELOAD_MS`, `NoteActivity.RELOAD_MS`). Reconnecting the
+  socket reloads chat too.
+
 ### Pages and note emoji
 
 The contract is `docs/app/notes-pages.md`. Core: `NotePages.kt`
@@ -289,6 +331,10 @@ a fixed clock in `America/New_York` (today, yesterday across a year end, this
 year, older, and the same instant in another zone), "· by <name>", the row
 fields, badges and "+N", clearing the dot locally, the view request, and the
 long-press header (roles, share lines, "Not shared", the full date "by").
+`NoteActivityTest` covers activity parsing, edit folding, web reads and every
+sentence, chat parsing, unread counts and badges, chat and version errors,
+the history text, the chat, activity and version requests, and the
+`note-activity` and `note-chat` frames.
 `NotePagesTest` covers the emoji rules and the common set, parsing pages and
 the page detail, outline rows with folding and locked notes, reading order,
 outline editing, the saved fields and links, and every page request.
@@ -300,7 +346,8 @@ and the codec round trip.
 Code: FMTools (`native/ios/ForkMeshCore/Sources/FMTools/NotesModels.swift`:
 `NotesListModel`, `NoteEditorModel`, `NoteHistoryModel`, `NoteShareModel`;
 `NotesListDetails.swift`: row details and the access header;
-`NotePresence.swift`: the live room; `NoteComments.swift`: comments) holds
+`NotePresence.swift`: the live room; `NoteComments.swift`: comments;
+`NoteLive.swift`: activity, chat and the version view) holds
 the state and is tested on Linux (see Tests below).
 `native/ios/ForkMesh/Features/Tools/NotesScreen.swift` holds the list, the
 editor and its sheets, and `NoteCommentsViews.swift` the text view, the
@@ -536,6 +583,39 @@ On screen:
   text removes the highlight.
 - Comment boxes offer `@` suggestions as chips under the field.
 
+### History, activity and chat
+
+The same sheet as on Android: `NoteLiveSheet` in `NotesScreen.swift`, with
+the tabs **History**, **Activity** and **Chat** (`NoteLiveTab`) in an
+`FmSegmentTabBar` under an `FmPanelHeader`. `NoteEditorModel` creates
+`history`, `activity` and `chat` once the note is loaded or first saved and
+keeps them, so the sheet and the badge share one state; `showLive(_:)` opens
+a tab (`liveTab`) or closes the sheet. The ⋯ menu has **History** and
+**Activity**; a chat button (`forum_outlined`) in the toolbar opens Chat.
+
+- **History** (`NoteHistoryModel`): "Version N", "2h ago · by @ana",
+  **View** and **Current** or **Restore**. `view(_:)` loads
+  `GET /versions?version=N` into `shown` (`NoteVersionSnapshot`), drawn
+  read-only with `NotePreview` under its emoji and title, with Back and
+  Restore. Restore asks first (`restoreConfirmation`) and the editor shows
+  "Restored version 3 as a new version".
+- **Activity** (`NoteActivityModel`, `NoteActivity`): the web's sentences,
+  icons and folding, as described for Android, with the "views · versions ·
+  actions" summary in the header.
+- **Chat** (`NoteChatModel`, `NoteChat`): oldest first, "You" or "@name",
+  time, body; Delete on your own messages or, with `canModerate`, on all,
+  after a confirmation; a multi-line field and Send. Errors use
+  `noteErrorMessages` (`invalid_message`, `message_author_required`,
+  `message_not_found`, `version_not_found`).
+- **Unread.** The editor loads chat with the note. `unread` counts messages
+  by others newer than the newest one seen; `NoteChatSeen` keeps that time
+  per note in `UserDefaults` (`fm.notes.chatSeen`, the last 200 notes) and
+  is updated while the Chat tab is showing (`setVisible`).
+- **Live.** `note-chat` becomes `NoteRoomEvent.chatChanged` and reloads chat
+  even with the sheet closed; `note-activity` (`activityChanged`) reloads
+  Activity; `note-updated` reloads History and Activity once they have
+  loaded. Each waits 300 ms after the last frame.
+
 ### Pages and note emoji
 
 The contract is `docs/app/notes-pages.md`; the look and wording follow
@@ -634,6 +714,11 @@ opening a thread from a link, picking and commenting on a selection, viewers
 commenting, the room's `note-comments` frame) and `NotesListDetailsTests.swift`
 (the last-edit formatter in fixed UTC, Tokyo and New York calendars, badges,
 avatars, unread and the recorded view, the long-press header and actions).
+`NoteLiveTests.swift` covers the activity sentences, folding and summary,
+the activity model, chat parsing, unread and the stored seen time, sending
+and deleting with their errors, viewing and restoring a version, the
+editor's live sheet and its reloads on `note-chat`, `note-activity` and
+`note-updated`.
 `NotePagesTests.swift` covers the emoji rule, outline rows and collapsing,
 outline editing, the pages list, loading a page with its notes, the recorded
 view, customizing and conflicts, sharing with `includeNotes`, deleting, and
