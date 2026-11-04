@@ -237,6 +237,19 @@
             .notes-here-follow:hover { background: var(--nt-hover); }
             .notes-here-follow[aria-pressed="true"] { background: var(--nt-selected); }
             .notes-comment-float { position: absolute; z-index: 15; box-shadow: 0 4px 12px rgb(1 4 9 / .3); }
+            .notes-assist-float { position: absolute; z-index: 15; box-shadow: 0 4px 12px rgb(1 4 9 / .3); }
+            .notes-assist { width: min(26rem, calc(100% - 1rem)); }
+            .notes-assist h2 { display: flex; align-items: center; gap: .4rem; }
+            [data-view="notes"] .notes-assist h2 svg.lucide { width: 15px; height: 15px; color: var(--nt-accent); }
+            .notes-assist-source { display: -webkit-box; overflow: hidden; margin: 0 0 .6rem; border-left: 3px solid rgb(var(--dashboard-accent-rgb) / .55); padding: 0 .45rem; font-size: .72rem; line-height: 1.4; color: var(--nt-muted); overflow-wrap: anywhere; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+            .notes-assist-form { display: flex; gap: .4rem; }
+            .notes-assist-actions { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .6rem; }
+            .notes-assist-actions .notes-btn[aria-pressed="true"] { border-color: var(--nt-primary); background: var(--nt-selected); }
+            .notes-assist-result { display: block; width: 100%; min-height: 6rem; max-height: 18rem; resize: vertical; border: 1px solid var(--nt-border); border-radius: .375rem; background: rgb(var(--dashboard-background-rgb)); padding: .45rem .55rem; font-size: .8rem; line-height: 1.5; color: rgb(var(--dashboard-foreground-rgb)); }
+            .notes-assist-result:focus { outline: none; border-color: var(--nt-primary); box-shadow: inset 0 0 0 1px var(--nt-primary); }
+            .notes-assist-buttons { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .55rem; }
+            .notes-assist-apply { border-color: var(--nt-primary); color: var(--nt-primary); }
+            .notes-assist-hint { margin: 0; padding: 0 1rem .75rem; font-size: .68rem; color: var(--nt-faint); }
             .notes-thread-list { display: grid; flex: 1; min-height: 0; align-content: start; gap: .5rem; margin: 0; overflow-y: auto; padding: .15rem .6rem 1rem; list-style: none; }
             .notes-thread { border: 1px solid var(--nt-soft); border-radius: .5rem; padding: .55rem .6rem; background: rgb(var(--dashboard-card-rgb)); }
             .notes-thread[data-focus="true"] { border-color: var(--nt-primary); box-shadow: inset 0 0 0 1px var(--nt-primary); }
@@ -512,6 +525,7 @@
                         <button type="button" class="notes-icon-btn" data-note-format="link" title="Link" aria-label="Link"><i data-lucide="link"></i></button>
                         <span class="notes-toolbar-sep"></span>
                         <button type="button" class="notes-icon-btn" data-note-comment-selection title="Comment on selection (⌘⌥M)" aria-label="Comment on selection"><i data-lucide="message-square-plus"></i></button>
+                        <button type="button" class="notes-icon-btn" data-note-assist-open title="Write with AI (⌘J)" aria-label="Write with AI" aria-haspopup="dialog" aria-expanded="false"><i data-lucide="sparkles"></i></button>
                       </div>
                       <textarea data-note-markdown class="notes-markdown" spellcheck="true" placeholder="Start writing in Markdown…" aria-label="Note body"></textarea>
                     </div>
@@ -562,6 +576,29 @@
                   <div data-note-mention-list class="notes-suggest notes-mention-list" role="listbox" aria-label="People to mention" hidden></div>
                 </aside>
                 <button data-note-comment-float type="button" class="notes-btn notes-comment-float" hidden><i data-lucide="message-square-plus"></i>Comment</button>
+                <button data-note-assist-float type="button" class="notes-btn notes-assist-float" hidden><i data-lucide="sparkles"></i>Ask AI</button>
+                <div data-note-assist-panel class="notes-pop notes-assist" role="dialog" aria-label="Write with AI" hidden>
+                  <div class="notes-pop-sec">
+                    <h2><i data-lucide="sparkles"></i><span data-note-assist-heading>Write with AI</span></h2>
+                    <p data-note-assist-source class="notes-assist-source" hidden></p>
+                    <form data-note-assist-form class="notes-assist-form">
+                      <div class="notes-field"><input data-note-assist-prompt maxlength="500" autocomplete="off" placeholder="Tell AI what to write or change…" aria-label="Instruction for AI" /></div>
+                      <button data-note-assist-ask type="submit" class="notes-btn">Ask</button>
+                    </form>
+                    <div data-note-assist-actions class="notes-assist-actions" role="group" aria-label="Quick actions"></div>
+                  </div>
+                  <div data-note-assist-result-sec class="notes-pop-sec" hidden>
+                    <textarea data-note-assist-result class="notes-assist-result" rows="6" spellcheck="true" aria-label="AI suggestion"></textarea>
+                    <div class="notes-assist-buttons">
+                      <button data-note-assist-apply="replace" type="button" class="notes-btn notes-assist-apply"><i data-lucide="replace"></i>Replace selection</button>
+                      <button data-note-assist-apply="below" type="button" class="notes-btn"><i data-lucide="text-cursor-input"></i>Insert below</button>
+                      <button data-note-assist-retry type="button" class="notes-btn"><i data-lucide="refresh-cw"></i>Try again</button>
+                      <button data-note-assist-discard type="button" class="notes-btn">Discard</button>
+                    </div>
+                  </div>
+                  <p data-note-notice="assist" class="notes-notice" role="status" hidden></p>
+                  <p class="notes-assist-hint">The selected text and your instruction go to this site's AI provider to write the suggestion; nothing is stored.</p>
+                </div>
                 <span data-note-follow-tag class="notes-follow-tag" hidden></span>
                 </div>
 

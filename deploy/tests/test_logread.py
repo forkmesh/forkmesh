@@ -352,3 +352,10 @@ def test_logread_step_is_known_and_dry_runs(tmp_path, capsys):
                                Runner(execute=False))
     assert not ssh.runs and not ssh.puts
     assert "[dry-run]" in capsys.readouterr().out
+
+
+def test_encrypted_keys_and_every_cookie_are_redacted():
+    assert logread.redact("-----BEGIN ENCRYPTED PRIVATE KEY-----\nMIIF\n") == (
+        "<redacted: private key material>")
+    line = logread.redact("Cookie: fm_session=abc123; fm_csrf=zzz999")
+    assert "abc123" not in line and "zzz999" not in line

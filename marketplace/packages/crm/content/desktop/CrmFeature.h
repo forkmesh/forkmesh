@@ -285,6 +285,9 @@ public:
     static QStringList pictureSources(const QJsonObject &contact);
     static bool parseEmailDraft(const QString &reply, const QString &deckUrl,
                                 QString *subject, QString *body);
+    static int mastodonLength(const QString &text);
+    static QString leaderboardLine(const QJsonObject &activity);
+    static QString mastodonShareUrl(const QString &account, const QString &text);
 
 protected:
     void changeEvent(QEvent *event) override;
@@ -500,7 +503,8 @@ private:
     using MastodonReplyHandler =
         std::function<void(int, const QJsonDocument &, const QUrl &)>;
     void mastodonSignedCall(const QByteArray &verb, const QUrl &url, const QString &token,
-                            MastodonReplyHandler done);
+                            MastodonReplyHandler done, const QByteArray &body = QByteArray(),
+                            const QByteArray &idempotencyKey = QByteArray());
     using MastodonHandlesHandler =
         std::function<void(const QSet<QString> &, const QString &)>;
     void readMastodonHandles(const QUrl &url, const MastodonFollower &follower, int pages,
@@ -515,6 +519,24 @@ private:
     bool mastodonColumnShown() const;
     QPushButton *mastodonFollowButton(const QString &key, QWidget *parent);
     void updateMastodonBar();
+    void loadMastodonOutreach(bool checkReplies);
+    void renderMastodonOutreach();
+    QFrame *mastodonOutreachCard(const QJsonObject &item);
+    QJsonObject mastodonOutreachItem(const QString &contactId) const;
+    void replaceMastodonOutreachItem(const QJsonObject &item);
+    void dropMastodonOutreachItem(const QString &contactId);
+    void setMastodonCardState(const QString &contactId, const QString &error, bool busy);
+    void prepareMoreMastodon();
+    void sendMastodonDraft(const QString &contactId);
+    void postMastodonDraft(const QString &contactId, const MastodonFollower &follower,
+                           const QString &draft);
+    void logMastodonDraft(const QString &contactId, const QString &url, const QString &draft);
+    void saveMastodonFields(const QString &contactId, const QJsonObject &fields,
+                            std::function<void(bool, const QString &)> done);
+    void skipMastodonDraft(const QString &contactId);
+    void followMastodonDraft(const QString &contactId);
+    void checkMastodonReplies(bool automatic);
+    void renderLeaderboardStrip();
     void applyMastodonLatest(const QString &key);
     void fillMastodonItem(QTableWidgetItem *item, const QString &key) const;
     // Contact pictures beside the name: queued once per load (opening the page
@@ -694,6 +716,26 @@ private:
     std::function<bool(const QString &, const QString &, QString *, QString *, QString *)> m_signProof;
     std::function<void(const QString &)> m_openWebPage;
     std::function<QJsonObject()> m_mastodonSignIn;
+    std::function<bool(const QString &, const QJsonObject &)> m_windowCommand;
+    QWidget *m_teamPage = nullptr;
+    QLabel *m_leaderStrip = nullptr;
+    QWidget *m_mastodonPage = nullptr;
+    QLabel *m_mastodonHeader = nullptr;
+    QLabel *m_mastodonNote = nullptr;
+    QPushButton *m_mastodonPrepare = nullptr;
+    QPushButton *m_mastodonReplies = nullptr;
+    QWidget *m_mastodonCardList = nullptr;
+    QTableWidget *m_mastodonStrategy = nullptr;
+    QJsonObject m_mastodonOutreach;
+    QString m_mastodonOutreachOrg;
+    QString m_mastodonOutreachState;
+    QHash<QString, QPointer<QFrame>> m_mastodonCards;
+    QHash<QString, QString> m_mastodonDrafts;
+    QHash<QString, QString> m_mastodonCardErrors;
+    QHash<QString, QString> m_mastodonFollowCards;
+    QSet<QString> m_mastodonSending;
+    bool m_mastodonOutreachLoading = false;
+    bool m_mastodonRepliesChecking = false;
     QJsonArray m_decks;
     QSet<QString> m_drafting;
     QSet<QString> m_autoSending;

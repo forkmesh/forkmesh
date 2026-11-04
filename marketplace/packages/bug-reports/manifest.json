@@ -11,8 +11,8 @@
   },
   "type": "extension.native",
   "category": "Support",
-  "version": "1.1.0",
-  "summary": "Send a private bug report with screenshots, videos or files to ForkMesh administrators from Home or the menu.",
+  "version": "1.2.0",
+  "summary": "Report a bug privately to ForkMesh administrators, follow what happened to your reports, and, for administrators, triage reported bugs.",
   "screenshots": [
     {
       "path": "preview/market.svg",
@@ -33,8 +33,28 @@
     "desktop": "builtin:bug-reports",
     "ios": "builtin:bug-reports",
     "android": "builtin:bug-reports",
+    "web": "builtin:bug-reports",
+    "dashboard-view": "content/web/view.html",
+    "dashboard-script": "content/web/page.js",
     "settings": "builtin:package"
   },
+  "contributions": [
+    {
+      "socket": "dashboard.page",
+      "entrypoint": "dashboard-view",
+      "config": {
+        "route": "/dashboard/bugs",
+        "title": "Bugs",
+        "description": "Report a bug privately, follow your reports, and triage reported bugs if you are an administrator.",
+        "script": "dashboard-script",
+        "navigation": {
+          "label": "Bugs",
+          "icon": "bug",
+          "order": 47
+        }
+      }
+    }
+  ],
   "permissions": [
     {
       "id": "support.report",

@@ -283,6 +283,7 @@ SessionSidePanels::SessionSidePanels(QWidget *parent) : QScrollArea(parent)
     m_layout = new QVBoxLayout(m_inner);
     m_layout->setContentsMargins(16, 0, 16, 12);
     m_layout->setSpacing(0);
+    setWidget(m_inner);
 
     for (const QString &key : sessioninsights::defaultCardOrder())
         makeCard(key, cardTitle(key), cardHint(key));
@@ -412,7 +413,6 @@ SessionSidePanels::SessionSidePanels(QWidget *parent) : QScrollArea(parent)
     QObject::connect(m_elapsedTimer, &QTimer::timeout, this, [this] { refreshBackground(); });
 
     m_layout->addStretch(1);
-    setWidget(m_inner);
     reloadLayout();
     refreshActivity();
     refreshDetails();

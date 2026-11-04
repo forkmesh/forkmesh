@@ -883,24 +883,29 @@ def test_my_reports_page():
     assert second["nextOffset"] is None
 
 
-def test_my_reports_need_a_bearer_session():
+def test_my_reports_need_a_signed_in_session():
     runtime = _Runtime()
     module = runtime.namespace()
     _file_reports_from_two_people(runtime, module)
 
-    no_bearer = _mine(module)
+    runtime.account = "alice"
     cookie_only = _mine(module, headers={"cookie": "session=x"})
     runtime.account = ""
+    no_session = _mine(module)
     signed_out = _mine(module, headers={"authorization": "Bearer stale"})
+    stale_cookie = _mine(module, headers={"cookie": "session=stale"})
+    confirm = _mine(module, method="POST",
+                    body={"report": "a" * 32, "fixed": True})
     runtime.account = "alice"
     deleted = _mine(module, headers={"authorization": "Bearer token"},
                     method="DELETE")
-    confirm = _mine(module, method="POST",
-                    body={"report": "a" * 32, "fixed": True})
 
-    assert no_bearer.status == 401
-    assert cookie_only.status == 401
+    assert cookie_only.status == 200
+    assert {item["id"] for item in cookie_only.json["reports"]} == {
+        "a" * 32, "d" * 32}
+    assert no_session.status == 401
     assert signed_out.status == 401
+    assert stale_cookie.status == 401
     assert deleted.status == 405
     assert confirm.status == 401
     assert "reports" not in signed_out.json

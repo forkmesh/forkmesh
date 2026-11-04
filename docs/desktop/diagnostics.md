@@ -808,6 +808,30 @@ returned, so summed frame totals overstate a function's own cost.
   keys are dropped once, and the startup no longer rewrites and fsyncs
   `ForkMesh.conf` after every session that ended with the prompt floating.
 
+### Rules from report #25 (2026-11-04)
+
+- **Build a big page top-down.** Under the application style sheet every
+  `setParent` runs `QWidgetPrivate::inheritStyle` over the whole moved
+  subtree: a `StyleChange` to each widget, and an unpolish and polish of any
+  widget a `sizeHint` already polished. A page built bottom-up is walked once
+  per ancestor it is moved under. Opening the Agents tab (the most frequent
+  stall, x131, about 1.1 s) did that for the transcript five times: code
+  split, output page, detail pane, splitter, page stack, page, repository
+  stack. `buildAgentsTab` now creates the page in `m_repoDetailStack` and the
+  page stack, splitter, list and detail panes and the output page in their
+  parents before filling them, so `ensureRepoDetailTabBuilt`'s
+  `insertWidget` moves nothing. The two session side panels (about 200
+  widgets each) were the rest: `SessionSidePanels` sets its inner widget
+  before adding the cards, and the tower copy and the workspace Details copy
+  are created in the code split and the details host. The offscreen
+  `--repo-lazy-only` window test went from 649 ms and 5,125 style changes for
+  697 new widgets to 219 ms and 1,186, and now fails above two per widget.
+- **Create the composer dock in its host.** `buildNetworkLogDock` creates the
+  dock in `m_globalOverlayHost`. It was built unparented and moved in
+  afterwards (`…-p2661941-0001`, ~500 ms), and the
+  `positionGlobalFooterOverlays` it runs while building showed the parentless
+  dock as a top-level window until the move hid it again.
+
 ### Startup: installed package pages after first paint
 
 Building every installed package's page inside `buildChatPage` costs seconds

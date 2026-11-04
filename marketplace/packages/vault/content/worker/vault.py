@@ -398,6 +398,12 @@ async def _shares(runtime, item_id):
     return [dict(row) for row in rows or []]
 
 
+async def _org_insider(runtime, org_bi, member_bi):
+    return bool(await runtime.d1_first(
+        "SELECT 1 AS one FROM org_members WHERE org_bi=? AND member_bi=? "
+        "AND role IN " + ORG_INSIDER_ROLE_SQL, org_bi, member_bi))
+
+
 async def _readable_grant(runtime, item_id, account_bi):
     """The best live grant ``account_bi`` holds on an item, or None.
 
@@ -406,7 +412,9 @@ async def _readable_grant(runtime, item_id, account_bi):
     Write beats read when a person is reached twice.
     """
     rows = await runtime.d1_all(
-        "SELECT g.via_kind,g.via_bi,g.data,s.permission,s.target_name "
+        "SELECT g.via_kind,g.via_bi,g.data,s.permission,s.target_name,"
+        "(SELECT m.role FROM org_members m WHERE m.org_bi=g.via_bi "
+        "AND m.member_bi=g.recipient_bi) AS org_role "
         "FROM vault_grants g JOIN vault_shares s ON s.item_id=g.item_id "
         "AND s.target_kind=g.via_kind AND s.target_bi=g.via_bi "
         "WHERE g.item_id=? AND g.recipient_bi=? AND (g.via_kind='user' OR EXISTS("
@@ -415,6 +423,9 @@ async def _readable_grant(runtime, item_id, account_bi):
         item_id, account_bi)
     best = None
     for row in rows or []:
+        row = dict(row)
+        if row.get("via_kind") == "organization" and row.get("org_role") == "auditor":
+            row["permission"] = "read"
         if best is None or (row.get("permission") == "write"
                             and best.get("permission") != "write"):
             best = row
@@ -519,10 +530,8 @@ async def _grant_rows(runtime, item_id, owner_bi, grants):
         if kind == "user":
             covered = recipient_bi == share["target_bi"]
         else:
-            covered = bool(await runtime.d1_first(
-                "SELECT 1 AS one FROM org_members WHERE org_bi=? AND member_bi=? "
-                "AND role IN " + ORG_INSIDER_ROLE_SQL,
-                share["target_bi"], recipient_bi))
+            covered = (await _org_insider(runtime, share["target_bi"], owner_bi)
+                       and await _org_insider(runtime, share["target_bi"], recipient_bi))
         key = (recipient_bi, kind, share["target_bi"])
         if not covered or key in seen:
             return None, "invalid_grants"
@@ -736,9 +745,11 @@ async def _recipients(runtime, row):
         if share["target_kind"] == "user":
             bundle = await _bundle_of(runtime, share["target_bi"])
             members = [{"name": share["target_name"], "bundle": bundle}]
-        else:
+        elif await _org_insider(runtime, share["target_bi"], row["owner_bi"]):
             members = [_public_member(m) for m in await _org_members(runtime, share["target_bi"])
                        if m["bi"] != row["owner_bi"]]
+        else:
+            members = []
         out.append({"kind": share["target_kind"], "name": share["target_name"],
                     "permission": share["permission"], "members": members})
     return out
@@ -751,7 +762,9 @@ async def _pending(runtime, account_bi):
     rows = await runtime.d1_all(
         "SELECT s.item_id,s.target_bi,s.target_name,s.permission FROM vault_shares s "
         "JOIN vault_items i ON i.item_id=s.item_id "
-        "WHERE i.owner_bi=? AND s.target_kind='organization' LIMIT 500", account_bi)
+        "WHERE i.owner_bi=? AND s.target_kind='organization' AND EXISTS("
+        "SELECT 1 FROM org_members m WHERE m.org_bi=s.target_bi AND m.member_bi=i.owner_bi "
+        "AND m.role IN " + ORG_INSIDER_ROLE_SQL + ") LIMIT 500", account_bi)
     pending, rosters = [], {}
     for row in rows or []:
         org_bi = str(row["target_bi"])

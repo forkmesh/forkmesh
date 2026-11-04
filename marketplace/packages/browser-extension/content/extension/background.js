@@ -153,10 +153,10 @@ async function signOut() {
 
 // The name and details ride along so a contact filed under another address,
 // or under a name alone, is still found.
-async function lookup({ email, handle, name, contact, organization }) {
+async function lookup({ provider, email, handle, name, contact, organization }) {
   const org = await requireOrganization(organization);
   const payload = await api(orgPath(org, "/contacts/lookup"), "POST", {
-    email, handle, name: String(name || "").trim(), contact: contactDetails(contact),
+    provider: provider === "x" ? "x" : "", email, handle, name: String(name || "").trim(), contact: contactDetails(contact),
   });
   return {
     ok: true, organization: org, contact: payload.contact || null,
@@ -578,6 +578,101 @@ const trackToot = ({ toot }) => tootSerial(async () => {
     at: Date.now(), providerUrl: permalink.href, contacts: logged, created,
     error: failed.length ? `not logged: ${failed.join(", ")}` : "",
   });
+  return { ok: true, tracked: logged.length > 0, logged: logged.length, created, contacts: logged };
+});
+
+const TWEET_KEY = "xCorrespondence";
+const TWEET_HOSTS = new Set(["x.com", "twitter.com"]);
+const TWEET_THREAD = /^\d{1,25}(?:-\d{1,25})?$/;
+
+let tweetQueue = Promise.resolve();
+const tweetSerial = (work) => (tweetQueue = tweetQueue.then(work, work));
+
+async function tweetState() {
+  const stored = (await chrome.storage.local.get([TWEET_KEY]))[TWEET_KEY] || {};
+  return { track: stored.track !== false, seen: stored.seen || {}, last: stored.last || null };
+}
+
+async function tweetSettings() {
+  const { track, last } = await tweetState();
+  return { ok: true, track, last };
+}
+
+async function setTrackTweets({ track }) {
+  const state = await tweetState();
+  await chrome.storage.local.set({ [TWEET_KEY]: { ...state, track: Boolean(track) } });
+  return tweetSettings();
+}
+
+function tweetPermalink(post) {
+  let url;
+  try { url = new URL(String(post.providerUrl || "")); } catch { return null; }
+  if (url.protocol !== "https:" || !TWEET_HOSTS.has(url.hostname)) return null;
+  const dm = post.kind === "dm";
+  const path = dm ? url.pathname.match(/^\/messages\/(\d{1,25}(?:-\d{1,25})?)$/)
+    : url.pathname.match(/^\/([A-Za-z0-9_]{1,15})\/status\/(\d{5,25})$/);
+  if (!path || (!dm && path[2] !== post.statusId)) return null;
+  return { href: `https://x.com${url.pathname}`, dm };
+}
+
+function fromX(sender) {
+  try { return TWEET_HOSTS.has(new URL(String(sender?.tab?.url || "")).hostname); } catch { return false; }
+}
+
+const trackTweet = ({ post: sent }, sender) => tweetSerial(async () => {
+  if (!fromX(sender)) throw new ApiError("forbidden_sender", 403);
+  const current = await settings();
+  const state = await tweetState();
+  const post = sent && typeof sent === "object" ? sent : {};
+  if (!state.track || !current.sessionToken || !current.organization) return { ok: true, tracked: false };
+  const statusId = String(post.statusId || "");
+  const permalink = TOOT_ID.test(statusId) ? tweetPermalink(post) : null;
+  if (!permalink) throw new ApiError("invalid_post", 400);
+  const key = `${permalink.dm ? "dm" : "post"}/${statusId}`;
+  if (state.seen[key]) return { ok: true, tracked: false, seen: true };
+  const author = xHandleOf(post.author?.handle);
+  const mine = xHandleOf(post.mine);
+  if (!author) return { ok: true, tracked: false };
+  if (author !== mine && author !== (await xState()).handle) return { ok: true, tracked: false, mine: false };
+  const people = [];
+  for (const person of Array.isArray(post.people) ? post.people : []) {
+    const handle = xHandleOf(person?.handle);
+    if (handle && handle !== author && handle !== mine && !people.some((item) => item.handle === handle)) {
+      people.push({ handle, name: String(person?.name || "").trim().slice(0, 120) });
+    }
+  }
+  const threadId = TWEET_THREAD.test(String(post.threadId || "")) ? String(post.threadId) : statusId;
+  const logged = [];
+  const failed = [];
+  let created = 0;
+  for (const [index, person] of people.slice(0, TOOT_PEOPLE).entries()) {
+    try {
+      const result = await link({
+        organization: current.organization,
+        message: {
+          provider: "x", direction: "outbound", createContact: true,
+          messageId: index ? `${statusId}/${person.handle}` : statusId, threadId,
+          handle: person.handle, contactName: person.name, account: author,
+          subject: String(post.subject || ""), sentAt: Number(post.sentAt), providerUrl: permalink.href,
+        },
+      });
+      if (result.contactCreated) created += 1;
+      logged.push(String(result.contact?.name || `@${person.handle}`));
+    } catch (error) {
+      if (TOOT_RETRY.has(error?.code) || !error?.status || error.status >= 500) {
+        await chrome.storage.local.set({ [TWEET_KEY]: { ...state, last: {
+          at: Date.now(), providerUrl: permalink.href, contacts: logged, created, error: error?.message || "request failed",
+        } } });
+        throw error;
+      }
+      failed.push(`@${person.handle}`);
+    }
+  }
+  const seen = Object.entries({ ...state.seen, [key]: Date.now() }).sort((a, b) => b[1] - a[1]).slice(0, TOOT_SEEN);
+  await chrome.storage.local.set({ [TWEET_KEY]: { track: state.track, seen: Object.fromEntries(seen), last: {
+    at: Date.now(), providerUrl: permalink.href, contacts: logged, created, dm: permalink.dm,
+    error: failed.length ? `not logged: ${failed.join(", ")}` : "",
+  } } });
   return { ok: true, tracked: logged.length > 0, logged: logged.length, created, contacts: logged };
 });
 
@@ -3374,6 +3469,7 @@ const POPUP_ONLY = new Set(["fm-reddit-stats", "fm-reddit-refresh", "fm-reddit-s
   "fm-reddit-clear-errors", "fm-reddit-monitor-add", "fm-reddit-log-add", "fm-reddit-monitor-remove", "fm-reddit-check", "fm-reddit-profile-update", "fm-reddit-auto-check", "fm-reddit-auto-update", "fm-reddit-accounts-change", "fm-open-reddit-desk", "fm-marketing-capture-tab", "fm-marketing-setup", "fm-x-live-stop",
   "fm-refresh-plan", "fm-refresh-run", "fm-refresh-channel"]);
 POPUP_ONLY.add("fm-toot-set-track");
+POPUP_ONLY.add("fm-tweet-set-track");
 for (const type of ["fm-repo-info", "fm-repo-mirror", "fm-repo-open"]) POPUP_ONLY.add(type);
 for (const type of ["fm-forum-detect", "fm-forum-mirror"]) POPUP_ONLY.add(type);
 const CAPTURE_PAGE_ONLY = new Set(["fm-marketing-capture-job", "fm-marketing-capture-continue"]);
@@ -3427,6 +3523,9 @@ const HANDLERS = {
   "fm-track-toot": trackToot,
   "fm-toot-settings": tootSettings,
   "fm-toot-set-track": setTrackToots,
+  "fm-track-tweet": trackTweet,
+  "fm-tweet-settings": tweetSettings,
+  "fm-tweet-set-track": setTrackTweets,
   "fm-open-extensions": openExtensions,
   "fm-host-pattern": grantHost,
   "fm-x-handle": async () => ({ ok: true, handle: (await xState()).handle }),
