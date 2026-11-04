@@ -1457,6 +1457,8 @@ def test_mastodon_network_tab_offers_follow_back_for_followers_not_followed():
     button = _feature_body("mastodonFollowButton")
     assert "m_mastodonFollowBack.contains(key)" in button
     assert "m_mastodonFollowed.contains(key)" in button
+    following = button.split("m_mastodonFollowed.contains(key)", 1)[1].split("return following;", 1)[0]
+    assert 'QStringLiteral("Following")' in following and "setEnabled(false)" in following
     assert 'QStringLiteral("Follow")' in button and 'QStringLiteral("Follow back")' in button
     assert "connected && !m_mastodonFollowing.contains(key)" in button
     assert "[this, key] { followMastodonBack(key); }" in button

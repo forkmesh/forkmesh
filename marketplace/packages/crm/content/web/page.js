@@ -7049,9 +7049,17 @@ window.ForkMeshDashboard.registerPage("crm", ({
     return key && key !== own && !(known && crmFollowBack.followed.has(key)) ? key : "";
   }
 
+  function crmFollowingBadge(contact) {
+    const key = crmMastodonKey(contact?.mastodon).toLowerCase();
+    const follower = crmFollowAccount();
+    if (!key || key === follower.account || crmFollowBack.organization !== state.crmView.organization || !crmFollowBack.followed.has(key)) return "";
+    const account = follower.account ? `@${follower.account}` : follower.plugin ? "Your Mastodon plugin account" : "The organization's account";
+    return `<span data-crm-following="${escapeHtml(key)}" title="${escapeHtml(`${account} already follows @${key}.`)}" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-muted-foreground">Following</span>`;
+  }
+
   function crmFollowBackButton(contact) {
     const key = crmFollowBackKey(contact);
-    if (!key) return "";
+    if (!key) return crmFollowingBadge(contact);
     const follower = crmFollowAccount();
     const connected = follower.connected;
     const back = connected && crmFollowBack.organization === state.crmView.organization && crmFollowBack.handles.has(key);

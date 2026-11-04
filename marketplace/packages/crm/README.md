@@ -1319,7 +1319,8 @@ raising, so the caller can keep the lead.
   organization's saved Mastodon account (Settings → Mastodon toots) does not
   follow yet gets a button first in its Actions strip: **Follow back** when the
   contact follows the account, **Follow** otherwise. Contacts the account
-  already follows, and the account itself, get none. Opening the tab calls
+  already follows show a muted, unclickable **Following** in its place
+  ([below](#following-state)); the account itself gets nothing. Opening the tab calls
   `GET /mastodon/follow-back` at most once per 15 minutes per organization
   (again at once when the saved account changes); the worker reads the
   account's followers and following lists with the saved token (up to 25 pages
@@ -1347,6 +1348,14 @@ raising, so the caller can keep the lead.
   the button's width is kept clear of the handle text (`kRowButtonRole` holds
   that room). Code: `mastodonFollowButton`, `mastodonColumnShown` (desktop);
   `crmContactControl`, `crmMastodonFollowShown` (web).
+
+  <a id="following-state"></a>**Following** (2026-11-04): where the button
+  would be, a contact the account already follows (its following list, or a
+  follow just sent from the CRM) shows **Following**, a disabled ghost button
+  on the desktop and a muted badge on the web, whose tooltip names the account
+  that follows. A follow that is still only "requested" shows it too until the
+  next reload. Code: `mastodonFollowButton` (desktop); `crmFollowingBadge`
+  (web).
 
   <a id="mastodon-login-warning"></a>Before Follow can work the organization
   must be logged in to Mastodon, that is have an account and access token
