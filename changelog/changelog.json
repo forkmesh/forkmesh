@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-04", "area": "Market", "text": "Internet Archive is now a plugin: it backs up public repositories to archive.org and, when a repository's source is offline, shows which mirrors still match the archived copy."},
   {"date": "2026-11-04", "area": "Android", "text": "An inbox item shows only its back button at the top, a ping has one back button instead of two, and the Agents tools each sit in their own small glass square."},
   {"date": "2026-11-04", "area": "iPhone", "text": "An inbox item shows only its back button at the top, a ping has one back button instead of two, and the Agents tools each sit in their own small glass square under the title."},
   {"date": "2026-11-04", "area": "Desktop", "text": "Text you copy anywhere in the desktop now pastes with its line breaks, paragraph spacing, list markers and table columns."},

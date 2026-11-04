@@ -72,6 +72,7 @@
     { "id": "eye-control", "version": "1.0.0", "manifest": "packages/eye-control/manifest.json" },
     { "id": "silent-speech", "version": "1.0.0", "manifest": "packages/silent-speech/manifest.json" },
     { "id": "status-page", "version": "2.1.0", "manifest": "packages/status-page/manifest.json" },
+    { "id": "internet-archive", "version": "1.0.0", "manifest": "packages/internet-archive/manifest.json" },
     { "id": "logs", "version": "1.0.0", "manifest": "packages/logs/manifest.json" },
     { "id": "diagnostics", "version": "1.0.0", "manifest": "packages/diagnostics/manifest.json" },
     { "id": "logs-app", "version": "1.0.0", "manifest": "packages/logs-app/manifest.json" },

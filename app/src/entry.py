@@ -155,11 +155,6 @@ provider_mirror_push_config = _repository_provider_mirror.export(
 provider_mirror_record_push = _repository_provider_mirror.export(
     "record_push")
 PROVIDER_MIRROR_CRON_DELIVERIES = 10
-_repository_archive_sync = _LazyModule("repository_archive_sync")
-repo_archive_sync_handler = _repository_archive_sync.export(
-    "repo_archive_sync_handler")
-archive_sync_config = _repository_archive_sync.export("sync_config")
-archive_sync_record = _repository_archive_sync.export("record_sync")
 _apps_runtime = _LazyModule("apps_runtime")
 apps_handler = _apps_runtime.export("apps_handler")
 apps_oauth_token_handler = _apps_runtime.export("oauth_token_handler")
@@ -939,6 +934,8 @@ PLUGIN_MEMBER_EMAILS_PERMISSION = "organization.members.email"
 PLUGIN_MEMBER_EMAILS_LIMIT = 50
 PLUGIN_DISCORD_CONNECTOR_PERMISSION = "organization.discord.read"
 PLUGIN_DISCORD_MESSAGES_PERMISSION = "organization.discord.messages.read"
+PLUGIN_REPOSITORY_ARCHIVE_PERMISSION = "repository.archive.upload"
+PLUGIN_REPOSITORY_MIRRORS_PERMISSION = "repository.mirrors.read"
 PLUGIN_MEMBER_ROLES = {"pro_member": "pro", "supporting_member": "supporter"}
 # The ping kind notify_pending_inbox raises for the event that CREATES an item,
 # keyed by the inbox source (issue #714).
@@ -1222,7 +1219,7 @@ _URL_EXPORT_NAMES = (
     "AP_USER_SUB_RE", "AP_REPO_RE", "AP_REPO_SUB_RE", "AP_OBJECT_RE",
     "AP_OBJECT_MEDIA_RE", "REPO_FEDI_COMMENTS_RE", "REPO_AP_PUBLISH_RE",
     "REPO_AP_DIGEST_RE", "REPO_AP_POSTS_RE", "REPO_WEBHOOKS_RE",
-    "REPO_PROVIDER_MIRROR_RE", "REPO_ARCHIVE_SYNC_RE", "REPO_FORUM_RE",
+    "REPO_PROVIDER_MIRROR_RE", "REPO_FORUM_RE",
     "REPO_CARD_RE",
     "REPO_MEDIA_RE", "REPO_STAR_RE", "REPO_REACTIONS_RE", "REPO_VIEW_RE",
     "REPO_VIEWS_RE", "REPO_ISSUE_VIEW_RE", "REPO_ISSUE_VIEWS_RE",
@@ -12328,6 +12325,14 @@ async def _plugin_ai_json(env, account_bi, system_prompt, user_prompt, schema,
     return {"ok": False, "error": "provider_error" if last_error else "unusable_response"}
 
 
+class _PluginInternalGet:
+    method = "GET"
+
+    def __init__(self, url):
+        self.url = url
+        self.headers = {}
+
+
 class _PluginApiRuntime(_WorldCommunityRuntime):
     """Least-privilege adapter for a package-owned Worker API."""
 
@@ -12466,6 +12471,51 @@ class _PluginApiRuntime(_WorldCommunityRuntime):
         except RuntimeError:
             return None
         return await decrypt_row(self.env, value, key=key)
+
+    def _may(self, permission):
+        return permission in plugin_data.permissions(self._plugin)
+
+    async def repository_facts(self, owner, repo):
+        if not self._may(PLUGIN_REPOSITORY_ARCHIVE_PERMISSION):
+            return {"exists": False, "private": True, "hosted": False}
+        _repo_bi, row = await _security_scan_repository_row(
+            self.env, owner, repo)
+        private = bool(await _repo_is_private(self.env, owner, repo))
+        try:
+            hosted = bool(await d1_first(
+                self.env, "SELECT id FROM hosted_repos WHERE key_bi=? AND"
+                " deleted_at=0", await blind_index(
+                    self.env, str(owner).lower() + "/" + str(repo))))
+        except Exception:
+            hosted = False
+        return {"exists": bool(row) or hosted, "private": private,
+                "hosted": hosted}
+
+    async def repository_administrator(self, owner, repo, data=None):
+        if (not self._may(PLUGIN_REPOSITORY_ARCHIVE_PERMISSION)
+                or self.request is None):
+            return ""
+        actor = await _authed_account_name(
+            self.env, self.request, data if isinstance(data, dict) else {})
+        if actor and await _repo_admin_allowed(self.env, actor, owner, repo):
+            return actor
+        return ""
+
+    async def repository_mirrors(self, owner, repo):
+        if (not self._may(PLUGIN_REPOSITORY_MIRRORS_PERMISSION)
+                or await _repo_is_private(self.env, owner, repo)):
+            return None
+        request = _PluginInternalGet(
+            "https://forkmesh.internal/api/repo/%s/%s/mirrors"
+            % (quote(str(owner)), quote(str(repo))))
+        try:
+            response = await repo_mirrors_handler(
+                self.env, request, owner, repo)
+        except Exception:
+            return None
+        if int(getattr(response, "status", 0) or 0) != 200:
+            return None
+        return await _response_json(response)
 
     async def account_exists(self, name):
         """True when ``name`` is an active user account a package may share
@@ -12944,6 +12994,29 @@ async def plugin_api_handler(env, request, path, plugin):
         return json_response({"error": "not_found"}, status=404)
     return await module.handle(_PluginApiRuntime(
         env, request, module, plugin_data.outbound_origins(plugin), plugin), path)
+
+
+def _plugin_host_runtime(env, plugin):
+    return _PluginApiRuntime(
+        env, None, plugin_data.api_module(plugin),
+        plugin_data.outbound_origins(plugin), plugin)
+
+
+async def plugin_archive_upload_keys(env):
+    return await plugin_data.archive_upload_keys(
+        lambda plugin: _plugin_host_runtime(env, plugin))
+
+
+async def plugin_archive_upload_config(env, owner, name, aliases, keys):
+    return await plugin_data.archive_upload_config(
+        lambda plugin: _plugin_host_runtime(env, plugin),
+        owner, name, aliases, keys)
+
+
+async def plugin_record_archive_upload(env, owner, name, aliases, report):
+    return await plugin_data.record_archive_upload(
+        lambda plugin: _plugin_host_runtime(env, plugin),
+        owner, name, aliases, report)
 
 
 async def plugin_lifecycle_handler(env, request, path):

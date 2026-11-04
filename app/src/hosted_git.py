@@ -1174,23 +1174,17 @@ class _ReplicaRuntime:
 
     async def archive_sync_keys(self):
         try:
-            rows = await d1_all(
-                self.env,
-                "SELECT repo_bi FROM repo_archive_syncs WHERE active=1")
+            return await plugin_archive_upload_keys(self.env)
         except Exception:
             return set()
-        return {str(row.get("repo_bi") or "") for row in rows or []}
 
     async def archive_sync(self, owner, name, aliases, keys):
-        for candidate in [owner] + list(aliases or []):
-            key = await blind_index(self.env, candidate.lower() + "/" + name)
-            if key in keys:
-                return await archive_sync_config(self.env, candidate, name)
-        return None
+        return await plugin_archive_upload_config(
+            self.env, owner, name, aliases, keys)
 
     async def record_archive_sync(self, owner, name, aliases, report):
-        return await archive_sync_record(
-            self.env, owner, name, report, tuple(aliases or ()))
+        return await plugin_record_archive_upload(
+            self.env, owner, name, aliases, report)
 
     async def d1_all(self, sql, *args):
         return await d1_all(self.env, sql, *args)
