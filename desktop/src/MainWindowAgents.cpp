@@ -1086,11 +1086,19 @@ QStringList MainWindow::testAgentOwnedDiffPaths(const QString &gitDir,
 
 QWidget *MainWindow::buildAgentsTab()
 {
-    auto *page = new QWidget;
+    auto *page = new QWidget(m_repoDetailStack);
     m_agentsPage = page;
     page->setObjectName(QStringLiteral("agentsPage"));
+    auto *layout = new QVBoxLayout(page);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
+    m_agentPageStack = new QStackedWidget(page);
+    m_agentPageStack->setObjectName(QStringLiteral("agentPageStack"));
+    layout->addWidget(m_agentPageStack, 1);
+    auto *splitter = new QSplitter(Qt::Horizontal, m_agentPageStack);
+    m_agentPageStack->addWidget(splitter);
 
-    auto *listPane = new QWidget;
+    auto *listPane = new QWidget(splitter);
     listPane->setObjectName(QStringLiteral("agentsListPane"));
     listPane->setMinimumWidth(260);
 
@@ -1192,7 +1200,7 @@ QWidget *MainWindow::buildAgentsTab()
     m_agentSearchEmpty = createSearchEmptyNotice();
     listLayout->addWidget(m_agentSearchEmpty, 1);
 
-    auto *detailPane = new QWidget;
+    auto *detailPane = new QWidget(splitter);
     detailPane->setObjectName(QStringLiteral("agentsDetailPane"));
     m_agentTitle = new WrappedTitleLabel(QStringLiteral("Select a session"));
     m_agentTitle->setObjectName("agentPromptTitle");
@@ -1368,7 +1376,11 @@ QWidget *MainWindow::buildAgentsTab()
     codeLayout->addWidget(filesDiffSplit, 1);
     m_agentCodePage->hide();
 
-    m_agentCodeSplit = new QSplitter(Qt::Horizontal);
+    auto *agentOutputPage = new QWidget(detailPane);
+    auto *agentOutputLayout = new QVBoxLayout(agentOutputPage);
+    agentOutputLayout->setContentsMargins(0, 8, 0, 0);
+    agentOutputLayout->setSpacing(6);
+    m_agentCodeSplit = new QSplitter(Qt::Horizontal, agentOutputPage);
     m_agentCodeSplit->setObjectName(QStringLiteral("agentCodeSplit"));
     m_agentCodeSplit->setChildrenCollapsible(false);
     m_agentCodeSplit->addWidget(m_agentOutputStack);
@@ -1392,19 +1404,14 @@ QWidget *MainWindow::buildAgentsTab()
         refreshAgentFilesPanel(sid);
     });
 
-    auto *filesChangedPage = new QWidget;
+    auto *filesChangedPage = new QWidget(detailPane);
     auto *filesChangedLayout = new QVBoxLayout(filesChangedPage);
     filesChangedLayout->setContentsMargins(0, 8, 0, 0);
     filesChangedLayout->setSpacing(6);
     filesChangedLayout->addLayout(filesActionBar);
 
-    auto *agentOutputPage = new QWidget;
-    auto *agentOutputLayout = new QVBoxLayout(agentOutputPage);
-    agentOutputLayout->setContentsMargins(0, 8, 0, 0);
-    agentOutputLayout->setSpacing(6);
     agentOutputLayout->addWidget(m_agentCodeSplit, 1);
 
-    filesChangedPage->setParent(detailPane);
     filesChangedPage->hide();
 
     auto *outputContainer = agentOutputPage;
@@ -1453,7 +1460,6 @@ QWidget *MainWindow::buildAgentsTab()
     detailPane->installEventFilter(this);
     detailPane->hide();
 
-    auto *splitter = new QSplitter(Qt::Horizontal);
     splitter->setChildrenCollapsible(true);
     splitter->setOpaqueResize(false);
     splitter->addWidget(listPane);
@@ -1474,18 +1480,10 @@ QWidget *MainWindow::buildAgentsTab()
     // each board and the board's header returns. Zero margins keep the
     // list pane flush with the page bottom so the docked composer maths
     // stays unchanged.
-    m_agentPageStack = new QStackedWidget;
-    m_agentPageStack->setObjectName(QStringLiteral("agentPageStack"));
-    m_agentPageStack->addWidget(splitter);
-    m_agentEfficiencyPlaceholder = new QWidget;
+    m_agentEfficiencyPlaceholder = new QWidget(m_agentPageStack);
     m_agentPageStack->addWidget(m_agentEfficiencyPlaceholder);
     m_agentPageStack->addWidget(buildAgentGuardrailPage());
     m_agentPageStack->addWidget(buildAgentModelsPage());
-
-    auto *layout = new QVBoxLayout(page);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(0);
-    layout->addWidget(m_agentPageStack, 1);
 
     m_agentTable->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(m_agentTable, &QWidget::customContextMenuRequested, this,
