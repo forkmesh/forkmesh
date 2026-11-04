@@ -96,9 +96,25 @@ Clicking an image in Live or Pages selects it (`selectNoteImage` in
 resizes it, and a toolbar under it with **Edit** (the Image options panel), the
 text wrapping menu (In line, Wrap text, Break text, Behind text, In front of
 text), **Comment** and **React** (anchored to the image's line, like a
-selection). An image behind or in front of the text can be dragged on the
-page in Pages. Delete or Backspace removes the selected image and its options
-line; Escape lets go of it.
+selection) and a bin that deletes it. An image behind or in front of the text
+can be dragged on the page in Pages. Delete or Backspace removes the selected
+image and its options line; Escape lets go of it. An image added with
+**Image** or **Background** is selected as soon as it shows.
+
+In Pages the text window sits above a Behind text image, so a click anywhere
+over that image (outside a link) picks it through the text. A drag starts
+after 3 px, so a click only selects; it moves the image with `translate`
+once per frame and writes x and y once, on release. A change that only moves,
+sizes or restyles a Behind or In front image restyles the copies already on
+the pages instead of laying the note out again, so a drag or a slider never
+reloads the page frame.
+
+Ctrl+Z (Cmd+Z) undoes the last image change (insert, move, resize, wrapping,
+options, alt text, delete) and Ctrl+Shift+Z or Ctrl+Y redoes it, while focus
+is not in a text field. The browser's own undo cannot do this, because these
+changes write the Markdown with a script. The 50-step history is kept per
+note and is dropped when the Markdown has changed some other way since, such
+as typing or a collaborator's edit, so an undo never throws away text.
 
 The Image options panel follows Google Docs: Size & rotation (width and
 height in inches, or centimetres on A4, their scale against the image's
@@ -260,7 +276,9 @@ Every client's tests cover at least these:
 - `app/browser_tests/tests/dashboard-notes-live.spec.js`: Pages with page
   numbers, the image toolbar, wrap menu and options panel placing an image
   behind every page, recoloured, with alt text, the PDF frame laid out the
-  same way, and resizing and wrapping an image in Live.
+  same way, resizing and wrapping an image in Live, and a Background added in
+  Pages being selected, moved, picked through the text, deleted, undone and
+  redone.
 - `app/tests/test_notes_documents.py`: the web page's layout parsing and
   writing, figure detection and size cap, page break detection, the print
   document and file name, the published page's figures, and the right

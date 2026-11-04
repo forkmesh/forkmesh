@@ -453,3 +453,51 @@ test("an image in Live can be resized and wrapped beside the text", async ({ pag
   await page.keyboard.press("Escape");
   await expect(page.locator("[data-note-image-toolbar]")).toBeHidden();
 });
+
+test("a background added in Pages is selected, moves, is picked through the text, deletes and undoes", async ({ page }) => {
+  await openNotes(page, { mode: "pages", markdown: PAGED });
+  const frame = page.frameLocator("[data-note-pages-frame]");
+  const area = page.locator("[data-note-markdown]");
+  await expect(frame.locator(".np-page").first()).toBeVisible();
+  const chooser = page.waitForEvent("filechooser");
+  await page.locator("[data-note-insert-image=\"background\"]").click();
+  await (await chooser).setFiles({ name: "paper.png", mimeType: "image/png", buffer: Buffer.from(IMAGE.split(",")[1], "base64") });
+  await expect(area).toHaveValue(/<!-- image: wrap=behind; width=210; height=297; pages=all -->\n!\[background\]\(data:image\/png/);
+  await expect(page.locator("[data-note-image-toolbar]")).toBeVisible();
+  await expect(frame.locator(".np-select")).toHaveCount(1);
+  const inserted = await area.inputValue();
+
+  await page.keyboard.press("Escape");
+  await expect(page.locator("[data-note-image-toolbar]")).toBeHidden();
+  const text = frame.locator(".np-page").first().locator(".np-win p", { hasText: "Paragraph 3 of" });
+  await text.click();
+  await expect(page.locator("[data-note-image-toolbar]")).toBeVisible();
+
+  const box = await text.boundingBox();
+  const x = box.x + 20, y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + 40, y + 30, { steps: 6 });
+  await page.mouse.up();
+  await expect(area).toHaveValue(/<!-- image: wrap=behind; width=210; height=297; x=\d+(\.\d)?; y=\d+(\.\d)?; pages=all -->/);
+  const movedLeft = await frame.locator(".np-page").first().locator(".np-layer-behind img").evaluate((node) => node.style.left);
+  expect(movedLeft).not.toBe("0mm");
+
+  await page.keyboard.press("Control+z");
+  await expect(area).toHaveValue(inserted);
+  await expect(page.locator("[data-note-image-toolbar]")).toBeVisible();
+
+  await page.keyboard.press("Delete");
+  await expect(area).not.toHaveValue(/!\[background\]/);
+  await expect(page.locator("[data-note-image-toolbar]")).toBeHidden();
+  await page.keyboard.press("Control+z");
+  await expect(area).toHaveValue(inserted);
+  await expect(page.locator("[data-note-image-toolbar]")).toBeVisible();
+  await page.keyboard.press("Control+Shift+z");
+  await expect(area).not.toHaveValue(/!\[background\]/);
+
+  await page.keyboard.press("Control+z");
+  await expect(page.locator("[data-note-image-toolbar]")).toBeVisible();
+  await page.locator("[data-note-image-delete]").click();
+  await expect(area).not.toHaveValue(/!\[background\]/);
+});
