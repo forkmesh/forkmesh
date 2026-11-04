@@ -1287,7 +1287,7 @@ void NextAccess::installWorkspace(MainWindow &window)
     QObject::connect(chrome->panelClose, &QPushButton::clicked, chrome,
                      command(CmdClosePanel));
 
-    auto *stack = new QStackedWidget;
+    auto *stack = new QStackedWidget(window.m_workspaceTerminalDock);
     stack->setObjectName(QStringLiteral("workspacePanelStack"));
     chrome->hosts[TabTerminal] = paneHost(QStringLiteral("workspaceTerminalHost"));
     chrome->hosts[TabChanges] = paneHost(QStringLiteral("workspaceChangesHost"));
@@ -1296,9 +1296,9 @@ void NextAccess::installWorkspace(MainWindow &window)
     stack->addWidget(chrome->hosts[TabChanges]);
     stack->addWidget(chrome->hosts[TabBrowser]);
     chrome->hosts[TabDetails] = paneHost(QStringLiteral("workspaceDetailsHost"));
-    chrome->details = new SessionSidePanels;
-    chrome->hosts[TabDetails]->layout()->addWidget(chrome->details);
     stack->addWidget(chrome->hosts[TabDetails]);
+    chrome->details = new SessionSidePanels(chrome->hosts[TabDetails]);
+    chrome->hosts[TabDetails]->layout()->addWidget(chrome->details);
     dockLayout->removeWidget(window.m_workspaceTerminal);
     window.m_workspaceTerminal->setParent(chrome->hosts[TabTerminal]);
     chrome->hosts[TabTerminal]->layout()->addWidget(window.m_workspaceTerminal);

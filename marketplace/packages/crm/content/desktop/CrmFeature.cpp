@@ -77,6 +77,7 @@
 #include <QTextBrowser>
 #include <QTextDocumentFragment>
 #include <QThreadPool>
+#include <QTimeZone>
 #include <QTimer>
 #include <QToolButton>
 #include <QUrl>
@@ -439,6 +440,71 @@ QIcon octicon(const QString &name, const QColor &color, int side = 20)
         icon.addPixmap(pixmap);
     }
     return icon;
+}
+
+constexpr int kMastodonTootLimit = 500;
+constexpr int kMastodonLinkLength = 23;
+constexpr int kMastodonDailyTarget = 25;
+constexpr int kMastodonSubjectLength = 180;
+constexpr int kLeaderboardDays = 7;
+constexpr int kLeaderboardTop = 3;
+
+class ClickableLabel final : public QLabel
+{
+public:
+    using QLabel::QLabel;
+    std::function<void()> clicked;
+
+protected:
+    void mouseReleaseEvent(QMouseEvent *event) override
+    {
+        QLabel::mouseReleaseEvent(event);
+        if (event->button() == Qt::LeftButton && rect().contains(event->position().toPoint()) &&
+            clicked)
+            clicked();
+    }
+};
+
+QString outreachField(const QJsonObject &item, const char *key)
+{
+    const QString direct = text(item, key);
+    return direct.isEmpty() ? text(item.value(QStringLiteral("fields")).toObject(), key) : direct;
+}
+
+QString outreachHandle(const QJsonObject &item)
+{
+    const QString handle = text(item, "handle");
+    return handle.isEmpty() ? outreachField(item, "mastodon") : handle;
+}
+
+QJsonObject withOutreachFields(QJsonObject item, const QJsonObject &fields)
+{
+    QJsonObject stored = item.value(QStringLiteral("fields")).toObject();
+    for (auto field = fields.constBegin(); field != fields.constEnd(); ++field) {
+        item.insert(field.key(), field.value());
+        stored.insert(field.key(), field.value());
+    }
+    item.insert(QStringLiteral("fields"), stored);
+    return item;
+}
+
+int outreachCount(const QJsonValue &value, std::initializer_list<const char *> keys)
+{
+    if (value.isDouble())
+        return value.toInt();
+    const QJsonObject object = value.toObject();
+    for (const char *key : keys) {
+        if (object.contains(QLatin1String(key)))
+            return object.value(QLatin1String(key)).toInt();
+    }
+    return 0;
+}
+
+QString outreachLabel(const QString &value)
+{
+    QString label = value;
+    label.replace(QLatin1Char('-'), QLatin1Char(' '));
+    return label;
 }
 
 class HeaderMenuButton final : public QToolButton
@@ -1853,7 +1919,8 @@ CrmFeature::CrmFeature(const forkmesh::market::NativePackageHost &host,
       m_accountSessionToken(host.accountSessionToken),
       m_signProof(host.signProof),
       m_openWebPage(host.openWebPage),
-      m_mastodonSignIn(host.mastodonSignIn)
+      m_mastodonSignIn(host.mastodonSignIn),
+      m_windowCommand(host.windowCommand)
 {
     setObjectName(QStringLiteral("crmSection"));
     auto *outer = new QVBoxLayout(this);
@@ -1933,6 +2000,24 @@ CrmFeature::CrmFeature(const forkmesh::market::NativePackageHost &host,
     m_organization->setAccessibleName(QStringLiteral("CRM organization"));
     heading->addWidget(m_organization);
     outer->addLayout(heading);
+    auto *leaderStrip = new ClickableLabel;
+    m_leaderStrip = leaderStrip;
+    m_leaderStrip->setObjectName(QStringLiteral("mutedLabel"));
+    m_leaderStrip->setProperty("crmRole", QStringLiteral("leaderStrip"));
+    m_leaderStrip->setAccessibleName(QStringLiteral("Team leaderboard, last 7 days"));
+    m_leaderStrip->setToolTip(QStringLiteral("Emails, outreach and toots over the last 7 days. "
+                                             "Click for the Team leaderboard."));
+    m_leaderStrip->setTextFormat(Qt::PlainText);
+    m_leaderStrip->setCursor(Qt::PointingHandCursor);
+    QFont leaderFont = m_leaderStrip->font();
+    leaderFont.setPointSizeF(leaderFont.pointSizeF() * 0.9);
+    m_leaderStrip->setFont(leaderFont);
+    m_leaderStrip->hide();
+    leaderStrip->clicked = [this] {
+        if (m_teamPage && m_tabs->indexOf(m_teamPage) >= 0)
+            m_tabs->setCurrentWidget(m_teamPage);
+    };
+    outer->addWidget(m_leaderStrip);
     tintToolbar();
 
     m_zohoBar = new QWidget;
@@ -2434,6 +2519,81 @@ CrmFeature::CrmFeature(const forkmesh::market::NativePackageHost &host,
     });
     teamPage->setProperty("crmPageIcon", QStringLiteral("graph"));
     tabs->addTab(teamPage, QStringLiteral("Team leaderboard"));
+    m_teamPage = teamPage;
+
+    auto *mastodonPage = new QWidget;
+    m_mastodonPage = mastodonPage;
+    mastodonPage->setObjectName(QStringLiteral("crmMastodonPage"));
+    auto *mastodonLayout = new QVBoxLayout(mastodonPage);
+    mastodonLayout->setContentsMargins(8, 10, 8, 8);
+    mastodonLayout->setSpacing(8);
+    if (Theme::isNext()) {
+        mastodonLayout->setContentsMargins(20, 16, 12, 8);
+        mastodonLayout->setSpacing(10);
+    }
+    auto *mastodonHead = new QHBoxLayout;
+    mastodonHead->setSpacing(6);
+    m_mastodonHeader = new QLabel(QStringLiteral("Mastodon outreach"));
+    m_mastodonHeader->setTextFormat(Qt::PlainText);
+    m_mastodonHeader->setWordWrap(true);
+    QFont mastodonHeadFont = m_mastodonHeader->font();
+    mastodonHeadFont.setWeight(QFont::DemiBold);
+    m_mastodonHeader->setFont(mastodonHeadFont);
+    mastodonHead->addWidget(m_mastodonHeader, 1);
+    m_mastodonReplies = new QPushButton(QStringLiteral("Check replies"));
+    m_mastodonReplies->setProperty("crmVariant", QStringLiteral("outline"));
+    m_mastodonReplies->setCursor(Qt::PointingHandCursor);
+    m_mastodonReplies->setToolTip(QStringLiteral(
+        "Read the signed-in Mastodon account's mentions and log each reply from a contact "
+        "we wrote to, so the contact moves on"));
+    mastodonHead->addWidget(m_mastodonReplies);
+    m_mastodonPrepare = new QPushButton(QStringLiteral("Prepare more"));
+    m_mastodonPrepare->setObjectName(QStringLiteral("primaryButton"));
+    m_mastodonPrepare->setCursor(Qt::PointingHandCursor);
+    m_mastodonPrepare->setToolTip(QStringLiteral(
+        "Start an agent session that researches people and writes personal toots into "
+        "this queue"));
+    m_mastodonPrepare->setEnabled(false);
+    mastodonHead->addWidget(m_mastodonPrepare);
+    mastodonLayout->addLayout(mastodonHead);
+    m_mastodonNote = new QLabel;
+    m_mastodonNote->setObjectName(QStringLiteral("mutedLabel"));
+    m_mastodonNote->setWordWrap(true);
+    m_mastodonNote->hide();
+    mastodonLayout->addWidget(m_mastodonNote);
+    auto *mastodonScroll = new QScrollArea;
+    mastodonScroll->setObjectName(QStringLiteral("crmMastodonScroll"));
+    mastodonScroll->setFrameShape(QFrame::NoFrame);
+    mastodonScroll->setWidgetResizable(true);
+    mastodonScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_mastodonCardList = new QWidget;
+    m_mastodonCardList->setObjectName(QStringLiteral("crmMastodonQueue"));
+    auto *mastodonQueueLayout = new QVBoxLayout(m_mastodonCardList);
+    mastodonQueueLayout->setContentsMargins(0, 0, 4, 0);
+    mastodonQueueLayout->setSpacing(10);
+    mastodonQueueLayout->addStretch(1);
+    mastodonScroll->setWidget(m_mastodonCardList);
+    mastodonLayout->addWidget(mastodonScroll, 3);
+    auto *strategyTitle = new QLabel(QStringLiteral("Strategy"));
+    strategyTitle->setFont(mastodonHeadFont);
+    mastodonLayout->addWidget(strategyTitle);
+    m_mastodonStrategy = new QTableWidget(0, 6);
+    m_mastodonStrategy->setObjectName(QStringLiteral("crmMastodonStrategy"));
+    m_mastodonStrategy->setAccessibleName(QStringLiteral("Mastodon strategy"));
+    m_mastodonStrategy->setHorizontalHeaderLabels(
+        {QStringLiteral("By"), QStringLiteral("Group"), QStringLiteral("Prepared"),
+         QStringLiteral("Sent"), QStringLiteral("Replied"), QStringLiteral("Reply rate")});
+    m_mastodonStrategy->verticalHeader()->hide();
+    m_mastodonStrategy->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
+    m_mastodonStrategy->setSelectionMode(QAbstractItemView::NoSelection);
+    m_mastodonStrategy->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_mastodonStrategy->setAlternatingRowColors(true);
+    mastodonLayout->addWidget(m_mastodonStrategy, 2);
+    connect(m_mastodonPrepare, &QPushButton::clicked, this, [this] { prepareMoreMastodon(); });
+    connect(m_mastodonReplies, &QPushButton::clicked, this,
+            [this] { checkMastodonReplies(false); });
+    mastodonPage->setProperty("crmPageIcon", QStringLiteral("broadcast"));
+    tabs->addTab(mastodonPage, QStringLiteral("Mastodon"));
 
     auto *mailPage = new QWidget;
     auto *mailLayout = new QVBoxLayout(mailPage);
@@ -2760,6 +2920,8 @@ CrmFeature::CrmFeature(const forkmesh::market::NativePackageHost &host,
         syncSheetList();
         if (m_tabs->currentWidget() == m_peoplePage)
             renderPeople();
+        if (m_tabs->currentWidget() == m_mastodonPage)
+            loadMastodonOutreach(true);
         noteSheetViewed();
     });
     connect(m_sheetList, &QListWidget::currentItemChanged, this,
@@ -3008,6 +3170,7 @@ void CrmFeature::applyInstallState()
     }
     updateZohoBar();
     updateUsersImportAction();
+    renderLeaderboardStrip();
     m_installButton->setVisible(canManage);
     m_installNote->setText(canManage
         ? QStringLiteral(
@@ -3496,6 +3659,7 @@ void CrmFeature::applyOrganization(const QJsonObject &payload)
     rebuildVirtualSheets();
     renderActivity();
     renderTeam();
+    renderLeaderboardStrip();
     renderMail();
     updateActions();
     // The tabs, their counts and the rows follow once the snapshot is built.
@@ -6383,10 +6547,35 @@ void CrmFeature::applyNextStyle()
         "QWidget#firewallBanner QPushButton:disabled { color: @fgSubtle; border-color: @border; }"
         "QLabel#crmListsHeading { color: @fgSubtle; font-size: 11px; font-weight: 500; background: transparent; }"
         "QWidget#crmListsColumn { background: transparent; }"
-        "QFrame#crmDetailPanel { background-color: @surface; border: 1px solid @border; border-radius: 12px; }"))
+        "QFrame#crmDetailPanel { background-color: @surface; border: 1px solid @border; border-radius: 12px; }"
+        "QLabel[crmRole=\"leaderStrip\"] { color: @fgMuted; font-size: 11px; background: transparent; }"
+        "QLabel[crmRole=\"leaderStrip\"]:hover { color: @fg; }"
+        "QScrollArea#crmMastodonScroll, QWidget#crmMastodonQueue { background: transparent; border: none; }"
+        "QFrame#crmMastodonCard { background-color: @surface; border: 1px solid @border; border-radius: 12px; }"
+        "QFrame#crmMastodonCard QLabel { background: transparent; }"
+        "QFrame#crmMastodonCard QLabel[crmRole=\"why\"] { color: @fgSecondary; font-size: 13px; }"
+        "QLabel#crmMastodonChip { color: @fgMuted; background-color: @surfaceActive;"
+        " border-radius: 5px; padding: 1px 6px; font-size: 11px; font-weight: 500; }"
+        "QLabel#crmMastodonCount { color: @fgMuted; font-size: 11px; }"
+        "QWidget#crmMastodonPage QPushButton { min-height: 26px; max-height: 28px; padding: 0px 10px;"
+        " border-radius: 6px; font-size: 12px; font-weight: 500; }"
+        "QWidget#crmMastodonPage QPushButton[crmVariant=\"outline\"] { background-color: @surface;"
+        " border: 1px solid @borderStrong; color: @fg; }"
+        "QWidget#crmMastodonPage QPushButton[crmVariant=\"outline\"]:hover { background-color: @surfaceRaised; }"
+        "QWidget#crmMastodonPage QPushButton[crmVariant=\"ghost\"] { background: transparent;"
+        " border: 1px solid transparent; color: @fgMuted; }"
+        "QWidget#crmMastodonPage QPushButton[crmVariant=\"ghost\"]:hover { background-color: @surfaceRaised; color: @fg; }"))
         : QString();
     if (styleSheet() != sheet)
         setStyleSheet(sheet);
+    if (m_mastodonPage) {
+        const QString classic = next ? QString() : QStringLiteral(
+            "QFrame#crmMastodonCard { border: 1px solid palette(mid); border-radius: 8px; }"
+            "QLabel#crmMastodonChip { border: 1px solid palette(mid); border-radius: 5px;"
+            " padding: 0px 6px; }");
+        if (m_mastodonPage->styleSheet() != classic)
+            m_mastodonPage->setStyleSheet(classic);
+    }
     if (auto *icon = findChild<QLabel *>(QStringLiteral("crmNoticeIcon"))) {
         icon->setPixmap(octicon(QStringLiteral("alert"), Theme::color(Theme::Role::Warning), 16)
                             .pixmap(QSize(16, 16), devicePixelRatioF()));
@@ -7055,7 +7244,7 @@ void CrmFeature::showSheetTabMenu(const QString &id, const QPoint &globalPositio
             ->setEnabled(!importBusy());
     if (!flowId.isEmpty() && flowIconId(flowId) == QLatin1String("grants") &&
         flowContactCount(flowId) == 0) {
-        QAction *grants = menu.addAction(QStringLiteral("Load the 100 ranked grants"), this,
+        QAction *grants = menu.addAction(QStringLiteral("Load the ranked grants"), this,
                                          [this, id] { loadRankedGrants(id); });
         grants->setEnabled(m_canManageSettings && !importBusy());
         grants->setToolTip(m_canManageSettings
@@ -10112,6 +10301,13 @@ void CrmFeature::finishMastodonFollow(const QString &key, bool ok, const QJsonOb
             updateMastodonBar();
         }
         rebuildFollowBackRows(key);
+        if (m_mastodonFollowCards.contains(key))
+            setMastodonCardState(m_mastodonFollowCards.take(key),
+                                 QStringLiteral("Could not follow: %1")
+                                     .arg(mastodonFollower().plugin
+                                              ? pluginMastodonErrorText(code, error)
+                                              : mastodonErrorText(code, error)),
+                                 false);
         setStatus(QStringLiteral("Could not follow @%1: %2")
                       .arg(key, mastodonFollower().plugin
                                     ? pluginMastodonErrorText(code, error)
@@ -10122,6 +10318,21 @@ void CrmFeature::finishMastodonFollow(const QString &key, bool ok, const QJsonOb
     m_mastodonFollowBack.remove(key);
     m_mastodonFollowed.insert(key);
     rebuildFollowBackRows(key);
+    if (m_mastodonFollowCards.contains(key)) {
+        const QString contactId = m_mastodonFollowCards.take(key);
+        saveMastodonFields(contactId,
+                           QJsonObject{{QStringLiteral("mastodon_status"),
+                                        QStringLiteral("follow-requested")}},
+                           [this, contactId](bool ok, const QString &error) {
+            if (ok)
+                m_mastodonCardErrors.remove(contactId);
+            else
+                m_mastodonCardErrors.insert(
+                    contactId,
+                    QStringLiteral("Followed, but the CRM was not updated: %1").arg(error));
+            renderMastodonOutreach();
+        });
+    }
     setStatus(payload.value(QStringLiteral("following")).toBool() ||
                       !payload.value(QStringLiteral("requested")).toBool()
                   ? QStringLiteral("Now following @%1.").arg(key)
@@ -10154,13 +10365,18 @@ CrmFeature::MastodonFollower CrmFeature::mastodonFollower() const
 }
 
 void CrmFeature::mastodonSignedCall(const QByteArray &verb, const QUrl &url, const QString &token,
-                                    MastodonReplyHandler done)
+                                    MastodonReplyHandler done, const QByteArray &body,
+                                    const QByteArray &idempotencyKey)
 {
     QNetworkRequest call = instanceRequest(url);
     call.setRawHeader(QByteArrayLiteral("Authorization"), "Bearer " + token.toUtf8());
-    for (int status : {401, 403, 404, 429})
+    if (!body.isEmpty())
+        call.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    if (!idempotencyKey.isEmpty())
+        call.setRawHeader(QByteArrayLiteral("Idempotency-Key"), idempotencyKey);
+    for (int status : {401, 403, 404, 422, 429})
         forkmesh::markExpectedHttpStatus(call, status);
-    QNetworkReply *reply = m_network->sendCustomRequest(call, verb);
+    QNetworkReply *reply = m_network->sendCustomRequest(call, verb, body);
     connect(reply, &QNetworkReply::finished, this, [reply, url, done] {
         reply->deleteLater();
         const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
@@ -10419,6 +10635,775 @@ void CrmFeature::rebuildFollowBackRows(const QString &key)
     const int actions = columnIndexById(QLatin1String(kActionsColumnId));
     if (actions >= 0)
         m_contactsTable->resizeColumnToContents(actions);
+}
+
+int CrmFeature::mastodonLength(const QString &value)
+{
+    static const QRegularExpression links(
+        QStringLiteral("https?://[^\\s<>\"]*[^\\s<>\".,:;!?)\\]']"),
+        QRegularExpression::CaseInsensitiveOption);
+    static const QRegularExpression mentions(
+        QStringLiteral("(^|[^/\\w])@(\\w+)@[a-z0-9.\\-]+[a-z0-9]+"),
+        QRegularExpression::CaseInsensitiveOption);
+    QString countable = value;
+    countable.replace(links, QString(kMastodonLinkLength, QLatin1Char('x')));
+    countable.replace(mentions, QStringLiteral("\\1@\\2"));
+    return int(countable.toUcs4().size());
+}
+
+QString CrmFeature::leaderboardLine(const QJsonObject &activity)
+{
+    const int days = int(activity.value(QStringLiteral("days")).toArray().size());
+    QList<QPair<int, QString>> ranked;
+    for (const QJsonValue &value : activity.value(QStringLiteral("members")).toArray()) {
+        const QJsonObject member = value.toObject();
+        int total = 0;
+        for (const char *kind : {"emails", "outreach", "toots"}) {
+            const QJsonArray counts = member.value(QLatin1String(kind)).toArray();
+            const int length = days > 0 ? days : int(counts.size());
+            const int last = qMin(length, int(counts.size()));
+            for (int index = qMax(0, length - kLeaderboardDays); index < last; ++index)
+                total += counts.at(index).toInt();
+        }
+        const QString name = text(member, "name");
+        if (total > 0 && !name.isEmpty())
+            ranked.append({total, name});
+    }
+    if (ranked.isEmpty())
+        return {};
+    std::stable_sort(ranked.begin(), ranked.end(),
+                     [](const QPair<int, QString> &a, const QPair<int, QString> &b) {
+                         if (a.first != b.first)
+                             return a.first > b.first;
+                         return a.second.localeAwareCompare(b.second) < 0;
+                     });
+    QStringList parts{QStringLiteral("%1 days").arg(kLeaderboardDays)};
+    for (int index = 0; index < qMin(kLeaderboardTop, int(ranked.size())); ++index)
+        parts << QStringLiteral("%1 %2").arg(ranked.at(index).second).arg(ranked.at(index).first);
+    return parts.join(QString::fromUtf8(" \xC2\xB7 "));
+}
+
+QString CrmFeature::mastodonShareUrl(const QString &account, const QString &value)
+{
+    const QString key = mastodonHandleKey(account);
+    const QString host = key.contains(QLatin1Char('@')) ? key.section(QLatin1Char('@'), -1)
+                                                        : QStringLiteral("mastodon.social");
+    return QStringLiteral("https://%1/share?text=%2")
+        .arg(host, QString::fromLatin1(QUrl::toPercentEncoding(value)));
+}
+
+void CrmFeature::renderLeaderboardStrip()
+{
+    if (!m_leaderStrip)
+        return;
+    const QString line = m_installed ? leaderboardLine(m_activity) : QString();
+    m_leaderStrip->setText(line);
+    m_leaderStrip->setVisible(!line.isEmpty());
+}
+
+void CrmFeature::loadMastodonOutreach(bool checkReplies)
+{
+    const QString org = m_organization->currentData().toString();
+    if (org.isEmpty() || !m_installed)
+        return;
+    if (org != m_mastodonOutreachOrg) {
+        m_mastodonOutreach = QJsonObject();
+        m_mastodonOutreachState.clear();
+        m_mastodonDrafts.clear();
+        m_mastodonCardErrors.clear();
+        m_mastodonFollowCards.clear();
+        m_mastodonOutreachOrg = org;
+        renderMastodonOutreach();
+    }
+    if (m_mastodonOutreachLoading)
+        return;
+    m_mastodonOutreachLoading = true;
+    QString path = organizationPath(QStringLiteral("/mastodon"));
+    const QString zone = QString::fromUtf8(QTimeZone::systemTimeZoneId());
+    if (!zone.isEmpty())
+        path += QStringLiteral("?tz=") + QString::fromLatin1(QUrl::toPercentEncoding(zone));
+    request(QByteArrayLiteral("GET"), path, QJsonObject{},
+            [this, org, checkReplies](bool ok, const QJsonObject &payload, const QString &error) {
+        m_mastodonOutreachLoading = false;
+        if (org != m_organization->currentData().toString())
+            return;
+        if (ok) {
+            m_mastodonOutreach = payload;
+            m_mastodonOutreachState = QStringLiteral("ready");
+        } else {
+            const QString code = text(payload, "error");
+            const bool missing = code == QLatin1String("not_found") ||
+                                 code == QLatin1String("method_not_allowed") ||
+                                 error.contains(QLatin1String("HTTP 404")) ||
+                                 error.contains(QLatin1String("HTTP 405"));
+            m_mastodonOutreach = QJsonObject();
+            m_mastodonOutreachState = missing
+                ? QStringLiteral("unavailable")
+                : QStringLiteral("The Mastodon queue could not load: %1")
+                      .arg(mastodonErrorText(code, error));
+        }
+        renderMastodonOutreach();
+        if (checkReplies)
+            checkMastodonReplies(true);
+    });
+}
+
+void CrmFeature::renderMastodonOutreach()
+{
+    if (!m_mastodonCardList)
+        return;
+    auto *queueLayout = qobject_cast<QVBoxLayout *>(m_mastodonCardList->layout());
+    while (queueLayout && queueLayout->count() > 1) {
+        QLayoutItem *item = queueLayout->takeAt(0);
+        if (QWidget *widget = item->widget())
+            widget->deleteLater();
+        delete item;
+    }
+    m_mastodonCards.clear();
+    const bool ready = m_mastodonOutreachState == QLatin1String("ready");
+    const QJsonObject stats = m_mastodonOutreach.value(QStringLiteral("stats")).toObject();
+    const int target = m_mastodonOutreach.value(QStringLiteral("dailyTarget"))
+                           .toInt(kMastodonDailyTarget);
+    const int today = outreachCount(stats.value(QStringLiteral("today")),
+                                    {"sent", "outbound", "toots"});
+    const int replies = outreachCount(stats.value(QStringLiteral("week")),
+                                      {"replied", "replies", "inbound"});
+    m_mastodonHeader->setText(
+        ready ? QString::fromUtf8("Today %1 of %2 sent \xC2\xB7 %3 %4 this week")
+                    .arg(today)
+                    .arg(target)
+                    .arg(replies)
+                    .arg(replies == 1 ? QStringLiteral("reply") : QStringLiteral("replies"))
+              : QStringLiteral("Mastodon outreach"));
+    m_mastodonPrepare->setEnabled(ready && bool(m_windowCommand) &&
+                                  !text(m_mastodonOutreach, "prompt").isEmpty());
+    m_mastodonReplies->setEnabled(!m_mastodonRepliesChecking);
+    const QJsonArray queue = m_mastodonOutreach.value(QStringLiteral("queue")).toArray();
+    QString note;
+    if (m_mastodonOutreachState.isEmpty())
+        note = QString::fromUtf8("Loading the Mastodon queue\xE2\x80\xA6");
+    else if (m_mastodonOutreachState == QLatin1String("unavailable"))
+        note = QStringLiteral("Not available yet: this organization's CRM does not serve the "
+                              "Mastodon queue. It shows here once the CRM is updated.");
+    else if (!ready)
+        note = m_mastodonOutreachState;
+    else if (queue.isEmpty())
+        note = QStringLiteral("No prepared toots. Prepare more starts an agent session that "
+                              "writes them.");
+    m_mastodonNote->setText(note);
+    m_mastodonNote->setVisible(!note.isEmpty());
+    for (const QJsonValue &value : queue) {
+        const QJsonObject item = value.toObject();
+        if (!text(item, "id").isEmpty() && queueLayout)
+            queueLayout->insertWidget(queueLayout->count() - 1, mastodonOutreachCard(item));
+    }
+
+    m_mastodonStrategy->setRowCount(0);
+    const auto cell = [](const QString &value, bool number) {
+        auto *item = new QTableWidgetItem(value);
+        if (number)
+            item->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        return item;
+    };
+    for (const auto &[label, key] : {std::pair<const char *, const char *>{"Segment", "segments"},
+                                     std::pair<const char *, const char *>{"Ask", "asks"}}) {
+        for (const QJsonValue &value : stats.value(QLatin1String(key)).toArray()) {
+            const QJsonObject group = value.toObject();
+            const int sent = group.value(QStringLiteral("sent")).toInt();
+            const int replied = group.value(QStringLiteral("replied")).toInt();
+            const int row = m_mastodonStrategy->rowCount();
+            m_mastodonStrategy->insertRow(row);
+            m_mastodonStrategy->setItem(row, 0, cell(QLatin1String(label), false));
+            m_mastodonStrategy->setItem(row, 1, cell(outreachLabel(text(group, "key")), false));
+            m_mastodonStrategy->setItem(
+                row, 2, cell(QString::number(group.value(QStringLiteral("prepared")).toInt()), true));
+            m_mastodonStrategy->setItem(row, 3, cell(QString::number(sent), true));
+            m_mastodonStrategy->setItem(row, 4, cell(QString::number(replied), true));
+            m_mastodonStrategy->setItem(
+                row, 5,
+                cell(sent > 0 ? QStringLiteral("%1%").arg(qRound(100.0 * replied / sent))
+                              : QString::fromUtf8("\xE2\x80\x94"),
+                     true));
+        }
+    }
+    m_mastodonStrategy->resizeColumnToContents(0);
+}
+
+QFrame *CrmFeature::mastodonOutreachCard(const QJsonObject &item)
+{
+    const QString contactId = text(item, "id");
+    const QString handle = outreachHandle(item);
+    const QString key = mastodonHandleKey(handle);
+    const QString status = outreachField(item, "mastodon_status");
+    const QString name = text(item, "name").isEmpty()
+        ? (key.isEmpty() ? QStringLiteral("Unnamed contact") : QLatin1Char('@') + key)
+        : text(item, "name");
+    const bool next = Theme::isNext();
+    auto *card = new QFrame;
+    card->setObjectName(QStringLiteral("crmMastodonCard"));
+    card->setAccessibleName(QStringLiteral("Prepared toot for %1").arg(name));
+    auto *layout = new QVBoxLayout(card);
+    layout->setContentsMargins(next ? QMargins(16, 12, 16, 12) : QMargins(12, 10, 12, 10));
+    layout->setSpacing(6);
+
+    auto *top = new QHBoxLayout;
+    top->setSpacing(8);
+    auto *title = new QLabel(name);
+    title->setTextFormat(Qt::PlainText);
+    QFont titleFont = title->font();
+    titleFont.setWeight(QFont::DemiBold);
+    title->setFont(titleFont);
+    top->addWidget(title);
+    if (!key.isEmpty()) {
+        auto *link = new QLabel(QStringLiteral("<a href=\"%1\">@%2</a>")
+                                    .arg(mastodonProfileUrl(handle).toString().toHtmlEscaped(),
+                                         key.toHtmlEscaped()));
+        link->setTextFormat(Qt::RichText);
+        link->setOpenExternalLinks(true);
+        link->setTextInteractionFlags(Qt::TextBrowserInteraction);
+        link->setToolTip(QStringLiteral("Open @%1 on its instance").arg(key));
+        top->addWidget(link);
+    }
+    QStringList chips{outreachField(item, "mastodon_segment"), outreachField(item, "mastodon_ask")};
+    if (status != QLatin1String("ready"))
+        chips << status;
+    for (const QString &value : std::as_const(chips)) {
+        if (value.isEmpty())
+            continue;
+        auto *chip = new QLabel(outreachLabel(value));
+        chip->setObjectName(QStringLiteral("crmMastodonChip"));
+        chip->setTextFormat(Qt::PlainText);
+        top->addWidget(chip);
+    }
+    top->addStretch(1);
+    const QString prepared = outreachField(item, "mastodon_prepared");
+    if (!prepared.isEmpty()) {
+        auto *when = new QLabel(prepared);
+        when->setObjectName(QStringLiteral("mutedLabel"));
+        when->setTextFormat(Qt::PlainText);
+        when->setToolTip(QStringLiteral("Prepared on this day by this member or agent"));
+        top->addWidget(when);
+    }
+    layout->addLayout(top);
+
+    const QString why = outreachField(item, "mastodon_why");
+    if (!why.isEmpty()) {
+        auto *hook = new QLabel(why);
+        hook->setTextFormat(Qt::PlainText);
+        hook->setWordWrap(true);
+        hook->setProperty("crmRole", QStringLiteral("why"));
+        layout->addWidget(hook);
+    }
+
+    auto *draft = new QPlainTextEdit;
+    draft->setObjectName(QStringLiteral("crmMastodonDraft"));
+    draft->setAccessibleName(QStringLiteral("Toot to %1").arg(name));
+    draft->setTabChangesFocus(true);
+    draft->setPlainText(m_mastodonDrafts.value(contactId, outreachField(item, "mastodon_draft")));
+    draft->setFixedHeight(draft->fontMetrics().lineSpacing() * 5 + 14);
+    layout->addWidget(draft);
+
+    auto *actions = new QHBoxLayout;
+    actions->setSpacing(6);
+    auto *count = new QLabel;
+    count->setObjectName(QStringLiteral("crmMastodonCount"));
+    count->setToolTip(QStringLiteral("Characters as Mastodon counts them: a link is 23 and a "
+                                     "mention counts only its user part"));
+    const QString danger = Theme::color(Theme::Role::Danger).name();
+    const auto recount = [count, draft, danger] {
+        const int used = mastodonLength(draft->toPlainText());
+        count->setText(QStringLiteral("%1 / %2").arg(used).arg(kMastodonTootLimit));
+        count->setStyleSheet(used > kMastodonTootLimit
+                                 ? QStringLiteral("color: %1; font-weight: 600;").arg(danger)
+                                 : QString());
+    };
+    recount();
+    connect(draft, &QPlainTextEdit::textChanged, card, [this, contactId, draft, recount] {
+        m_mastodonDrafts.insert(contactId, draft->toPlainText());
+        recount();
+    });
+    actions->addWidget(count);
+    actions->addStretch(1);
+    const auto button = [actions](const QString &label, const QString &action,
+                                  const QString &tip) {
+        auto *push = new QPushButton(label);
+        push->setProperty("crmAction", action);
+        push->setCursor(Qt::PointingHandCursor);
+        push->setToolTip(tip);
+        actions->addWidget(push);
+        return push;
+    };
+    QPushButton *skip = button(QStringLiteral("Skip"), QStringLiteral("skip"),
+                               QStringLiteral("Take them off the queue without a toot"));
+    skip->setProperty("crmVariant", QStringLiteral("ghost"));
+    connect(skip, &QPushButton::clicked, this, [this, contactId] { skipMastodonDraft(contactId); });
+    const MastodonFollower follower = mastodonFollower();
+    if (status == QLatin1String("follow-first")) {
+        QPushButton *follow = button(
+            QStringLiteral("Follow"), QStringLiteral("follow"),
+            QStringLiteral("The account is locked and we don't follow it: follow first, and "
+                           "send once they accept"));
+        follow->setObjectName(QStringLiteral("primaryButton"));
+        connect(follow, &QPushButton::clicked, this,
+                [this, contactId] { followMastodonDraft(contactId); });
+    } else {
+        QPushButton *send = button(
+            QStringLiteral("Send"), QStringLiteral("send"),
+            follower.plugin
+                ? QStringLiteral("Send as a direct toot from @%1").arg(follower.account)
+                : QStringLiteral("Open Mastodon's share page with this toot; sign in in the "
+                                 "Mastodon package to send from here"));
+        send->setObjectName(QStringLiteral("primaryButton"));
+        connect(send, &QPushButton::clicked, this,
+                [this, contactId] { sendMastodonDraft(contactId); });
+    }
+    layout->addLayout(actions);
+    auto *error = new QLabel;
+    error->setObjectName(QStringLiteral("crmMastodonError"));
+    error->setWordWrap(true);
+    error->setTextFormat(Qt::PlainText);
+    error->setStyleSheet(QStringLiteral("color: %1;").arg(danger));
+    error->hide();
+    layout->addWidget(error);
+    m_mastodonCards.insert(contactId, card);
+    setMastodonCardState(contactId, m_mastodonCardErrors.value(contactId),
+                         m_mastodonSending.contains(contactId) ||
+                             m_mastodonFollowCards.values().contains(contactId));
+    return card;
+}
+
+QJsonObject CrmFeature::mastodonOutreachItem(const QString &contactId) const
+{
+    for (const QJsonValue &value : m_mastodonOutreach.value(QStringLiteral("queue")).toArray()) {
+        if (text(value.toObject(), "id") == contactId)
+            return value.toObject();
+    }
+    return {};
+}
+
+void CrmFeature::replaceMastodonOutreachItem(const QJsonObject &item)
+{
+    QJsonArray queue = m_mastodonOutreach.value(QStringLiteral("queue")).toArray();
+    for (qsizetype index = 0; index < queue.size(); ++index) {
+        if (text(queue.at(index).toObject(), "id") == text(item, "id")) {
+            queue.replace(index, item);
+            m_mastodonOutreach.insert(QStringLiteral("queue"), queue);
+            return;
+        }
+    }
+}
+
+void CrmFeature::dropMastodonOutreachItem(const QString &contactId)
+{
+    QJsonArray queue = m_mastodonOutreach.value(QStringLiteral("queue")).toArray();
+    for (qsizetype index = queue.size() - 1; index >= 0; --index) {
+        if (text(queue.at(index).toObject(), "id") == contactId)
+            queue.removeAt(index);
+    }
+    m_mastodonOutreach.insert(QStringLiteral("queue"), queue);
+    m_mastodonDrafts.remove(contactId);
+    m_mastodonCardErrors.remove(contactId);
+    renderMastodonOutreach();
+}
+
+void CrmFeature::setMastodonCardState(const QString &contactId, const QString &error, bool busy)
+{
+    if (error.isEmpty())
+        m_mastodonCardErrors.remove(contactId);
+    else
+        m_mastodonCardErrors.insert(contactId, error);
+    QFrame *card = m_mastodonCards.value(contactId);
+    if (!card)
+        return;
+    if (auto *label = card->findChild<QLabel *>(QStringLiteral("crmMastodonError"))) {
+        label->setText(error);
+        label->setVisible(!error.isEmpty());
+    }
+    for (QPushButton *push : card->findChildren<QPushButton *>()) {
+        const QString action = push->property("crmAction").toString();
+        push->setEnabled(!busy);
+        if (action == QLatin1String("send"))
+            push->setText(busy ? QString::fromUtf8("Sending\xE2\x80\xA6") : QStringLiteral("Send"));
+        else if (action == QLatin1String("follow"))
+            push->setText(busy ? QString::fromUtf8("Following\xE2\x80\xA6")
+                               : QStringLiteral("Follow"));
+    }
+}
+
+void CrmFeature::prepareMoreMastodon()
+{
+    const QString prompt = text(m_mastodonOutreach, "prompt");
+    if (prompt.isEmpty())
+        return;
+    if (m_windowCommand &&
+        m_windowCommand(QStringLiteral("agent.start"), QJsonObject{{QStringLiteral("text"), prompt}})) {
+        setStatus(QStringLiteral("Started an agent session to prepare more toots."));
+        return;
+    }
+    setStatus(QStringLiteral("The prompt is in the agent composer: pick a repository there and "
+                             "start the session."),
+              true);
+}
+
+void CrmFeature::sendMastodonDraft(const QString &contactId)
+{
+    if (m_mastodonSending.contains(contactId))
+        return;
+    const QJsonObject item = mastodonOutreachItem(contactId);
+    if (item.isEmpty())
+        return;
+    const QString draft =
+        m_mastodonDrafts.value(contactId, outreachField(item, "mastodon_draft")).trimmed();
+    if (draft.isEmpty()) {
+        setMastodonCardState(contactId, QStringLiteral("Write the toot first."), false);
+        return;
+    }
+    const int used = mastodonLength(draft);
+    if (used > kMastodonTootLimit) {
+        setMastodonCardState(contactId,
+                             QStringLiteral("Mastodon allows %1 characters; this toot has %2.")
+                                 .arg(kMastodonTootLimit)
+                                 .arg(used),
+                             false);
+        return;
+    }
+    const MastodonFollower follower = mastodonFollower();
+    if (!follower.plugin) {
+        const QString account = follower.account.isEmpty()
+            ? text(m_settings.value(QStringLiteral("mastodon")).toObject(), "account")
+            : follower.account;
+        QDesktopServices::openUrl(QUrl::fromEncoded(mastodonShareUrl(account, draft).toUtf8()));
+        setMastodonCardState(contactId, QString(), false);
+        setStatus(QStringLiteral("Mastodon's share page is open with the toot. The browser "
+                                 "extension logs it once it is posted."));
+        return;
+    }
+    const QString key = mastodonHandleKey(outreachHandle(item));
+    if (key.isEmpty()) {
+        setMastodonCardState(contactId, QStringLiteral("This contact has no Mastodon handle."),
+                             false);
+        return;
+    }
+    m_mastodonSending.insert(contactId);
+    setMastodonCardState(contactId, QString(), true);
+    const auto fail = [this, contactId](const QString &message) {
+        m_mastodonSending.remove(contactId);
+        setMastodonCardState(contactId, message, false);
+    };
+    const auto statusError = [](int status) {
+        return status == 401 || status == 403
+            ? pluginMastodonErrorText(QStringLiteral("mastodon_token_rejected"), QString())
+            : status == 429 ? QStringLiteral("Mastodon is limiting requests; try again in a few "
+                                             "minutes")
+                            : mastodonErrorText(QStringLiteral("mastodon_unavailable"), QString());
+    };
+    QUrl lookup(follower.instance + QStringLiteral("/api/v1/accounts/lookup"));
+    QUrlQuery lookupQuery;
+    lookupQuery.addQueryItem(QStringLiteral("acct"), key);
+    lookup.setQuery(lookupQuery);
+    mastodonSignedCall(QByteArrayLiteral("GET"), lookup, follower.token,
+                       [this, contactId, follower, draft, key, fail, statusError](
+                           int status, const QJsonDocument &body, const QUrl &) {
+        const QJsonObject account = body.object();
+        const QString id = text(account, "id");
+        if (status == 404 || (status >= 200 && status < 300 && id.isEmpty())) {
+            fail(QStringLiteral("Mastodon does not know @%1.").arg(key));
+            return;
+        }
+        if (status < 200 || status >= 300) {
+            fail(statusError(status));
+            return;
+        }
+        const bool locked = account.value(QStringLiteral("locked")).toBool();
+        QUrl relation(follower.instance + QStringLiteral("/api/v1/accounts/relationships"));
+        QUrlQuery relationQuery;
+        relationQuery.addQueryItem(QStringLiteral("id[]"), id);
+        relation.setQuery(relationQuery);
+        mastodonSignedCall(QByteArrayLiteral("GET"), relation, follower.token,
+                           [this, contactId, follower, draft, locked, fail, statusError](
+                               int status, const QJsonDocument &body, const QUrl &) {
+            if (status < 200 || status >= 300) {
+                fail(statusError(status));
+                return;
+            }
+            const bool following =
+                body.array().at(0).toObject().value(QStringLiteral("following")).toBool();
+            if (locked && !following) {
+                m_mastodonSending.remove(contactId);
+                saveMastodonFields(contactId,
+                                   QJsonObject{{QStringLiteral("mastodon_status"),
+                                                QStringLiteral("follow-first")}},
+                                   [this, contactId](bool ok, const QString &error) {
+                    m_mastodonCardErrors.insert(
+                        contactId,
+                        ok ? QStringLiteral("The account is locked and we don't follow it: "
+                                            "follow first, then send once they accept.")
+                           : QStringLiteral("The account is locked; the CRM was not updated: %1")
+                                 .arg(error));
+                    renderMastodonOutreach();
+                });
+                return;
+            }
+            postMastodonDraft(contactId, follower, draft);
+        });
+    });
+}
+
+void CrmFeature::postMastodonDraft(const QString &contactId, const MastodonFollower &follower,
+                                   const QString &draft)
+{
+    const QByteArray body =
+        QJsonDocument(QJsonObject{{QStringLiteral("status"), draft},
+                                  {QStringLiteral("visibility"), QStringLiteral("direct")}})
+            .toJson(QJsonDocument::Compact);
+    const QByteArray idempotency =
+        QCryptographicHash::hash((contactId + QLatin1Char('\n') + draft).toUtf8(),
+                                 QCryptographicHash::Sha256)
+            .toHex();
+    mastodonSignedCall(
+        QByteArrayLiteral("POST"), QUrl(follower.instance + QStringLiteral("/api/v1/statuses")),
+        follower.token,
+        [this, contactId, draft](int status, const QJsonDocument &reply, const QUrl &) {
+        const QJsonObject posted = reply.object();
+        if (status < 200 || status >= 300) {
+            m_mastodonSending.remove(contactId);
+            setMastodonCardState(
+                contactId,
+                status == 401 || status == 403
+                    ? QStringLiteral("Mastodon refused the toot: sign in again in the Mastodon "
+                                     "package so it may post")
+                : status == 422 && !text(posted, "error").isEmpty()
+                    ? QStringLiteral("Mastodon refused the toot: %1").arg(text(posted, "error"))
+                : status == 429
+                    ? QStringLiteral("Mastodon is limiting posts; try again in a few minutes")
+                    : mastodonErrorText(QStringLiteral("mastodon_unavailable"), QString()),
+                false);
+            return;
+        }
+        const QString url = text(posted, "url").isEmpty() ? text(posted, "uri")
+                                                          : text(posted, "url");
+        logMastodonDraft(contactId, url, draft);
+    },
+        body, idempotency);
+}
+
+void CrmFeature::logMastodonDraft(const QString &contactId, const QString &url,
+                                  const QString &draft)
+{
+    request(QByteArrayLiteral("POST"), organizationPath(QStringLiteral("/emails/toot")),
+            QJsonObject{{QStringLiteral("url"), url},
+                        {QStringLiteral("contactId"), contactId},
+                        {QStringLiteral("direction"), QStringLiteral("outbound")},
+                        {QStringLiteral("subject"), draft.left(kMastodonSubjectLength)}},
+            [this, contactId, url, draft](bool ok, const QJsonObject &payload,
+                                          const QString &error) {
+        if (!ok) {
+            m_mastodonSending.remove(contactId);
+            setMastodonCardState(contactId,
+                                 QStringLiteral("Sent on Mastodon, but not logged in the CRM: %1. "
+                                                "Log it with Log toot: %2")
+                                     .arg(mastodonErrorText(text(payload, "error"), error), url),
+                                 true);
+            return;
+        }
+        saveMastodonFields(contactId,
+                           QJsonObject{{QStringLiteral("mastodon_status"), QStringLiteral("sent")},
+                                       {QStringLiteral("mastodon_draft"), draft}},
+                           [this, contactId](bool saved, const QString &problem) {
+            m_mastodonSending.remove(contactId);
+            if (!saved) {
+                setMastodonCardState(contactId,
+                                     QStringLiteral("Sent and logged, but the status was not "
+                                                    "saved: %1")
+                                         .arg(problem),
+                                     true);
+                return;
+            }
+            const QString name = contactLabel(contactById(contactId));
+            dropMastodonOutreachItem(contactId);
+            setStatus(QStringLiteral("Toot sent to %1.").arg(name));
+            loadMastodonOutreach(false);
+        });
+    });
+}
+
+void CrmFeature::saveMastodonFields(const QString &contactId, const QJsonObject &fields,
+                                    std::function<void(bool, const QString &)> done)
+{
+    request(QByteArrayLiteral("PATCH"), organizationPath(QStringLiteral("/contacts/") + contactId),
+            QJsonObject{{QStringLiteral("fields"), fields}},
+            [this, contactId, fields, done = std::move(done)](bool ok, const QJsonObject &,
+                                                               const QString &error) {
+        if (ok) {
+            const QJsonObject item = mastodonOutreachItem(contactId);
+            if (!item.isEmpty())
+                replaceMastodonOutreachItem(withOutreachFields(item, fields));
+            for (qsizetype at = 0; at < m_contacts.size(); ++at) {
+                QJsonObject contact = m_contacts.at(at).toObject();
+                if (text(contact, "id") != contactId)
+                    continue;
+                QJsonObject stored = contact.value(QStringLiteral("fields")).toObject();
+                for (auto field = fields.constBegin(); field != fields.constEnd(); ++field)
+                    stored.insert(field.key(), field.value());
+                contact.insert(QStringLiteral("fields"), stored);
+                m_contacts.replace(at, contact);
+                break;
+            }
+        }
+        if (done)
+            done(ok, error);
+    });
+}
+
+void CrmFeature::skipMastodonDraft(const QString &contactId)
+{
+    if (m_mastodonSending.contains(contactId))
+        return;
+    setMastodonCardState(contactId, QString(), true);
+    saveMastodonFields(contactId,
+                       QJsonObject{{QStringLiteral("mastodon_status"), QStringLiteral("skipped")}},
+                       [this, contactId](bool ok, const QString &error) {
+        if (!ok) {
+            setMastodonCardState(contactId, QStringLiteral("Not skipped: %1").arg(error), false);
+            return;
+        }
+        dropMastodonOutreachItem(contactId);
+    });
+}
+
+void CrmFeature::followMastodonDraft(const QString &contactId)
+{
+    const QString key = mastodonHandleKey(outreachHandle(mastodonOutreachItem(contactId)));
+    if (key.isEmpty()) {
+        setMastodonCardState(contactId, QStringLiteral("This contact has no Mastodon handle."),
+                             false);
+        return;
+    }
+    if (mastodonFollower().account.isEmpty()) {
+        setMastodonCardState(contactId,
+                             QStringLiteral("Log in to Mastodon first: sign in in the Mastodon "
+                                            "package."),
+                             false);
+        return;
+    }
+    m_mastodonFollowCards.insert(key, contactId);
+    setMastodonCardState(contactId, QString(), true);
+    followMastodonBack(key);
+}
+
+void CrmFeature::checkMastodonReplies(bool automatic)
+{
+    if (m_mastodonRepliesChecking)
+        return;
+    const MastodonFollower follower = mastodonFollower();
+    if (!follower.plugin) {
+        if (!automatic)
+            setStatus(QStringLiteral("Sign in in the Mastodon package to check replies here."),
+                      true);
+        return;
+    }
+    QHash<QString, QStringList> waiting;
+    for (const QJsonValue &value : std::as_const(m_contacts)) {
+        const QJsonObject contact = value.toObject();
+        if (text(contact.value(QStringLiteral("fields")).toObject(), "mastodon_status") !=
+            QLatin1String("sent"))
+            continue;
+        const QString key = mastodonHandleKey(text(contact, "mastodon"));
+        if (!key.isEmpty())
+            waiting[key].append(text(contact, "id"));
+    }
+    if (waiting.isEmpty()) {
+        if (!automatic)
+            setStatus(QStringLiteral("No contact is waiting for a reply to a toot."));
+        return;
+    }
+    m_mastodonRepliesChecking = true;
+    m_mastodonReplies->setEnabled(false);
+    if (!automatic)
+        setStatus(QString::fromUtf8("Checking Mastodon mentions\xE2\x80\xA6"));
+    const QString path = organizationPath(QStringLiteral("/emails/toot"));
+    const QString org = m_organization->currentData().toString();
+    QUrl url(follower.instance + QStringLiteral("/api/v1/notifications"));
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("types[]"), QStringLiteral("mention"));
+    query.addQueryItem(QStringLiteral("limit"), QStringLiteral("40"));
+    url.setQuery(query);
+    const auto finish = [this, automatic, org](int logged, const QString &error) {
+        m_mastodonRepliesChecking = false;
+        m_mastodonReplies->setEnabled(true);
+        if (!error.isEmpty()) {
+            if (!automatic)
+                setStatus(QStringLiteral("Replies were not checked: %1").arg(error), true);
+            return;
+        }
+        if (logged > 0) {
+            setStatus(QStringLiteral("Logged %1 %2 from contacts.")
+                          .arg(logged)
+                          .arg(logged == 1 ? QStringLiteral("reply") : QStringLiteral("replies")));
+            if (org == m_organization->currentData().toString()) {
+                loadOrganization();
+                loadMastodonOutreach(false);
+            }
+        } else if (!automatic) {
+            setStatus(QStringLiteral("No new replies from contacts we wrote to."));
+        }
+    };
+    mastodonSignedCall(QByteArrayLiteral("GET"), url, follower.token,
+                       [this, follower, waiting, path, finish](
+                           int status, const QJsonDocument &body, const QUrl &) {
+        if (status < 200 || status >= 300) {
+            finish(0, status == 401 || status == 403
+                          ? pluginMastodonErrorText(QStringLiteral("mastodon_token_rejected"),
+                                                    QString())
+                          : mastodonErrorText(QStringLiteral("mastodon_unavailable"), QString()));
+            return;
+        }
+        const QString home = QUrl(follower.instance).host();
+        QList<QPair<QString, QString>> found;
+        QSet<QString> seen;
+        for (const QJsonValue &value : body.array()) {
+            const QJsonObject note = value.toObject();
+            if (text(note, "type") != QLatin1String("mention"))
+                continue;
+            const QString acct = text(note.value(QStringLiteral("account")).toObject(), "acct");
+            const QString key = mastodonHandleKey(
+                acct.contains(QLatin1Char('@')) ? acct : acct + QLatin1Char('@') + home);
+            const QJsonObject mention = note.value(QStringLiteral("status")).toObject();
+            const QString link = text(mention, "url").isEmpty() ? text(mention, "uri")
+                                                                : text(mention, "url");
+            if (key.isEmpty() || link.isEmpty() || !waiting.contains(key))
+                continue;
+            for (const QString &contactId : waiting.value(key)) {
+                bool linked = false;
+                for (const QJsonObject &toot : m_contactToots.value(contactId))
+                    linked = linked || text(toot, "providerUrl") == link ||
+                             text(toot, "url") == link;
+                if (linked || seen.contains(contactId + QLatin1Char('\n') + link))
+                    continue;
+                seen.insert(contactId + QLatin1Char('\n') + link);
+                found.append({contactId, link});
+            }
+        }
+        if (found.isEmpty()) {
+            finish(0, QString());
+            return;
+        }
+        auto remaining = std::make_shared<int>(int(found.size()));
+        auto logged = std::make_shared<int>(0);
+        for (const auto &[contactId, link] : std::as_const(found)) {
+            request(QByteArrayLiteral("POST"), path,
+                    QJsonObject{{QStringLiteral("url"), link},
+                                {QStringLiteral("contactId"), contactId},
+                                {QStringLiteral("direction"), QStringLiteral("inbound")}},
+                    [remaining, logged, finish](bool ok, const QJsonObject &payload,
+                                                const QString &) {
+                if (ok && !payload.value(QStringLiteral("relinked")).toBool())
+                    ++*logged;
+                if (--*remaining == 0)
+                    finish(*logged, QString());
+            });
+        }
+    });
 }
 
 void CrmFeature::refreshMastodonNow(const QString &key)

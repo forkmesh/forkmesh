@@ -124,6 +124,7 @@ namespace forkmesh::ui { struct GitCaptureResult; }
 namespace MarkdownRender { struct RepoLink; }
 namespace forkmesh::ui { class ChannelGroupTree; }
 namespace forkmesh::ui { class OnboardingTour; }
+namespace forkmesh::ui { class CompactCelebrationOverlay; }
 namespace forkmesh::ui { struct OnboardingStep; }
 namespace forkmesh::ui { enum class OnboardingTrack; }
 namespace forkmesh::ui { class WindowBackdrop; }
@@ -14276,6 +14277,8 @@ private:
     QTimer *m_notificationJournalTimer = nullptr; // debounced journal write
     QSet<QString> m_flashedWebAlertIds;
     QSet<QString> m_celebratedWebAlertIds;
+    QPointer<forkmesh::ui::CompactCelebrationOverlay> m_compactCelebration;
+    QStringList m_compactCelebrationTitles;
     bool m_webAlertsBaselineLoaded = false;
     QPushButton *m_notificationButton = nullptr;
     QTableWidget *m_notificationsTable = nullptr; // sortable Notifications page
@@ -14560,7 +14563,7 @@ private:
     QLineEdit *m_agentComposePrompt = nullptr;
     QComboBox *m_agentComposeProvider = nullptr;
     QPushButton *m_agentComposeButton = nullptr;
-    void startAgentFromComposer();
+    bool startAgentFromComposer();
     QWidget *m_agentDetail = nullptr; // collapsible detail panel (hidden until a row is picked)
     // The detail pane's own bottom padding, kept so the docked composer's
     // reserved band can be added to it and taken back off again.
