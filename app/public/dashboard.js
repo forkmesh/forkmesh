@@ -6388,7 +6388,7 @@
       && Boolean(pullRevisionSource(values));
   }
 
-  async function submitWebPullRevision(repo, number, values, branch) {
+  async function submitWebPullRevision(repo, number, values, branch, description) {
     const source = pullRevisionSource(values);
     if (!source || !branch) throw new Error("revision_unsupported");
     const sourceRepo = source.owner ? { owner: source.owner, name: repo.name } : repo;
@@ -6406,12 +6406,14 @@
     const validOid = (value) => /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(value);
     if (!validOid(baseOid) || !validOid(headOid)) throw new Error("invalid_comparison");
     if (!patch.trim()) throw new Error("no_changes");
+    const descriptionChanged = typeof description === "string";
     if (headOid === String(values.creationHeadOid || "").toLowerCase()
-      && baseOid === String(values.creationBaseOid || "").toLowerCase()) throw new Error("no_new_commits");
+      && baseOid === String(values.creationBaseOid || "").toLowerCase()
+      && !descriptionChanged) throw new Error("no_new_commits");
     const signedHead = source.owner ? `${source.owner}:${branch}` : branch;
     const revision = await signWebPullContent(
-      repo, String(values.title || ""), "", base, signedHead, patch, commits);
-    delete revision.description;
+      repo, String(values.title || ""), descriptionChanged ? description : "", base, signedHead, patch, commits);
+    if (!descriptionChanged) delete revision.description;
     revision.creationBaseOid = baseOid;
     revision.creationHeadOid = headOid;
     const { privateKey } = await getWebIssueKey();
@@ -6452,6 +6454,76 @@
         <span data-repo-pull-revision-hint class="w-full text-[11px] text-muted-foreground"></span>
       </form>`;
   }
+
+  async function handleWebPullDescriptionSubmit(form) {
+    const detail = state.repoRecordDetail;
+    if (!detail?.repo || detail.kind !== "pulls" || !pullRevisionAllowed(detail.parsed)) return;
+    const values = detail.parsed?.values || {};
+    const source = pullRevisionSource(values);
+    const input = form.querySelector("[data-repo-pull-description-input]");
+    const submit = form.querySelector("[data-repo-pull-description-submit]");
+    const hint = form.querySelector("[data-repo-pull-description-hint]");
+    const body = String(input?.value || "").replace(/[\r\n]+$/, "");
+    const setHint = (text, bad = false) => {
+      if (!hint) return;
+      hint.className = `text-[11px] ${bad ? "text-destructive" : "text-muted-foreground"}`;
+      hint.textContent = text;
+    };
+    if (!body.trim()) {
+      setHint("Write a description before updating.", true);
+      input?.focus();
+      return;
+    }
+    if (!source || body === String(detail.parsed?.body || "").replace(/[\r\n]+$/, "")) {
+      renderCurrentWebPullDetail();
+      return;
+    }
+    if (submit) submit.disabled = true;
+    setHint("Comparing, signing and sending…");
+    try {
+      await submitWebPullRevision(detail.repo, detail.number, values, source.branch, body);
+      if (state.repoRecordDetail !== detail) return;
+      detail.parsed.body = body;
+      renderCurrentWebPullDetail();
+    } catch (error) {
+      setHint(pullRevisionError(error?.code || error?.message), true);
+    } finally {
+      if (submit?.isConnected) submit.disabled = false;
+    }
+  }
+
+  function renderCurrentWebPullDetail() {
+    const detail = state.repoRecordDetail;
+    if (!detail?.repo || detail.kind !== "pulls") return;
+    const container = $("[data-repo-pulls]");
+    if (!container) return;
+    container.innerHTML = renderRepoRecordDetail(detail.repo, "pulls", detail.number, detail.parsed);
+    mountRecordStickyHeader(container);
+    window.lucide?.createIcons();
+  }
+
+  document.addEventListener("click", (event) => {
+    const edit = event.target?.closest?.("[data-repo-pull-description-edit]");
+    if (!edit) return;
+    const section = edit.closest("[data-repo-record-description]");
+    section?.querySelector("[data-repo-record-body]")?.classList.add("hidden");
+    edit.classList.add("hidden");
+    const form = section?.querySelector("[data-repo-pull-description-form]");
+    form?.classList.remove("hidden");
+    form?.querySelector("[data-repo-pull-description-input]")?.focus();
+  });
+
+  document.addEventListener("click", (event) => {
+    if (!event.target?.closest?.("[data-repo-pull-description-cancel]")) return;
+    renderCurrentWebPullDetail();
+  });
+
+  document.addEventListener("submit", (event) => {
+    const form = event.target?.closest?.("[data-repo-pull-description-form]");
+    if (!form) return;
+    event.preventDefault();
+    void handleWebPullDescriptionSubmit(form);
+  });
 
   document.addEventListener("submit", async (event) => {
     const form = event.target?.closest?.("[data-repo-pull-revision-form]");
@@ -29852,9 +29924,17 @@
     // keep a slim "opened" line because their hero spends that row naming the
     // merge refs instead.
     const isOwner = String(repo.owner || "").toLowerCase() === String(values.author || author).toLowerCase();
+    const canEditPullDescription = isPulls && pullRevisionAllowed(parsed);
+    const pullDescriptionForm = canEditPullDescription ? `
+                      <form data-repo-pull-description-form class="hidden grid gap-2 border-t border-border p-4">
+                        <textarea data-repo-pull-description-input data-mention-input="record" rows="10" aria-label="Pull request description" class="rounded-md border border-border bg-background px-3 py-2 text-[14px] text-foreground outline-none focus:border-[var(--dashboard-link)]">${escapeHtml(body)}</textarea>
+                        <div class="flex flex-wrap items-center justify-between gap-2"><span data-repo-pull-description-hint class="text-[11px] text-muted-foreground"></span><span class="flex gap-2"><button type="button" data-repo-pull-description-cancel class="h-8 rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground">Cancel</button><button type="submit" data-repo-pull-description-submit class="h-8 rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground">Update description</button></span></div>
+                      </form>` : "";
     const openingBody = hasBody
-      ? `<div data-repo-record-body class="px-4 py-4 ${MD_BODY_CLASS}">${renderRecordMarkdown(displayBody, repo)}</div>`
-      : `<p class="px-4 py-4 text-[14px] italic text-muted-foreground">No description provided.</p>`;
+      ? `<div data-repo-record-body class="px-4 py-4 ${MD_BODY_CLASS}">${renderRecordMarkdown(displayBody, repo)}</div>${pullDescriptionForm}`
+      : canEditPullDescription
+        ? `<div class="px-4 py-2"><button type="button" data-repo-pull-description-edit class="inline-flex h-7 items-center gap-1.5 rounded-md px-1 text-[14px] text-muted-foreground hover:text-[var(--dashboard-link)]"><i data-lucide="plus" class="h-4 w-4"></i>Add a description</button></div>${pullDescriptionForm}`
+        : `<p class="px-4 py-4 text-[14px] italic text-muted-foreground">No description provided.</p>`;
     const openingBlock = `
                 <div data-repo-record-description="${hasBody ? "body" : "empty"}" class="grid min-w-0 gap-4 sm:grid-cols-[40px_minmax(0,1fr)]">
                   <span class="hidden sm:block">${issueActorAvatarHtml(author, values.author, "h-10 w-10")}</span>
@@ -29864,6 +29944,7 @@
                       <span class="ml-auto flex shrink-0 items-center gap-1">
                         <span class="rounded-full border border-border px-2 text-[12px] font-medium leading-5">${isOwner ? "Owner" : "Contributor"}</span>
                         <span class="rounded-full border border-border px-2 text-[12px] font-medium leading-5">Author</span>
+                        ${canEditPullDescription && hasBody ? `<button type="button" data-repo-pull-description-edit aria-label="Edit description" title="Edit description" class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="pencil" class="h-4 w-4"></i></button>` : ""}
                       </span>
                     </div>
                     ${openingBody}

@@ -10427,9 +10427,17 @@
     // keep a slim "opened" line because their hero spends that row naming the
     // merge refs instead.
     const isOwner = String(repo.owner || "").toLowerCase() === String(values.author || author).toLowerCase();
+    const canEditPullDescription = isPulls && pullRevisionAllowed(parsed);
+    const pullDescriptionForm = canEditPullDescription ? `
+                      <form data-repo-pull-description-form class="hidden grid gap-2 border-t border-border p-4">
+                        <textarea data-repo-pull-description-input data-mention-input="record" rows="10" aria-label="Pull request description" class="rounded-md border border-border bg-background px-3 py-2 text-[14px] text-foreground outline-none focus:border-[var(--dashboard-link)]">${escapeHtml(body)}</textarea>
+                        <div class="flex flex-wrap items-center justify-between gap-2"><span data-repo-pull-description-hint class="text-[11px] text-muted-foreground"></span><span class="flex gap-2"><button type="button" data-repo-pull-description-cancel class="h-8 rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground">Cancel</button><button type="submit" data-repo-pull-description-submit class="h-8 rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground">Update description</button></span></div>
+                      </form>` : "";
     const openingBody = hasBody
-      ? `<div data-repo-record-body class="px-4 py-4 ${MD_BODY_CLASS}">${renderRecordMarkdown(displayBody, repo)}</div>`
-      : `<p class="px-4 py-4 text-[14px] italic text-muted-foreground">No description provided.</p>`;
+      ? `<div data-repo-record-body class="px-4 py-4 ${MD_BODY_CLASS}">${renderRecordMarkdown(displayBody, repo)}</div>${pullDescriptionForm}`
+      : canEditPullDescription
+        ? `<div class="px-4 py-2"><button type="button" data-repo-pull-description-edit class="inline-flex h-7 items-center gap-1.5 rounded-md px-1 text-[14px] text-muted-foreground hover:text-[var(--dashboard-link)]"><i data-lucide="plus" class="h-4 w-4"></i>Add a description</button></div>${pullDescriptionForm}`
+        : `<p class="px-4 py-4 text-[14px] italic text-muted-foreground">No description provided.</p>`;
     const openingBlock = `
                 <div data-repo-record-description="${hasBody ? "body" : "empty"}" class="grid min-w-0 gap-4 sm:grid-cols-[40px_minmax(0,1fr)]">
                   <span class="hidden sm:block">${issueActorAvatarHtml(author, values.author, "h-10 w-10")}</span>
@@ -10439,6 +10447,7 @@
                       <span class="ml-auto flex shrink-0 items-center gap-1">
                         <span class="rounded-full border border-border px-2 text-[12px] font-medium leading-5">${isOwner ? "Owner" : "Contributor"}</span>
                         <span class="rounded-full border border-border px-2 text-[12px] font-medium leading-5">Author</span>
+                        ${canEditPullDescription && hasBody ? `<button type="button" data-repo-pull-description-edit aria-label="Edit description" title="Edit description" class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="pencil" class="h-4 w-4"></i></button>` : ""}
                       </span>
                     </div>
                     ${openingBody}

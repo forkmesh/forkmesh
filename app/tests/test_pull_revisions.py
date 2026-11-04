@@ -72,7 +72,10 @@ def test_web_signs_the_same_binding_and_offers_the_update_only_to_the_author():
     assert 'webEventSigningPrefix("pull-revision", repo)' in DASHBOARD_JS
     assert "webSessionAuthored({ author: values.author, authorName: values.authorName })" in DASHBOARD_JS
     assert '${renderPullRevisionPanel(number, parsed)}' in DASHBOARD_JS
-    assert 'if (headOid === String(values.creationHeadOid || "").toLowerCase()\n      && baseOid === String(values.creationBaseOid || "").toLowerCase()) throw new Error("no_new_commits");' in DASHBOARD_JS
+    assert "const descriptionChanged = typeof description === \"string\";" in DASHBOARD_JS
+    assert "&& !descriptionChanged) throw new Error(\"no_new_commits\");" in DASHBOARD_JS
+    assert 'data-repo-pull-description-edit' in DASHBOARD_JS
+    assert 'data-repo-pull-description-form' in DASHBOARD_JS
 
 
 def test_desktop_drains_a_revision_before_treating_the_item_as_an_event():
@@ -160,6 +163,24 @@ const values = { head: "carol:fix", base: "main", title: "Fix", creationHeadOid:
 """)
     result = subprocess.run(["node"], input=script, capture_output=True, text=True, check=True)
     assert json.loads(result.stdout) == ["no_new_commits", "sent"]
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_a_description_edit_is_a_signed_revision_without_new_commits():
+    script = _revision_harness("""
+const repo = { owner: "alice", name: "project" };
+(async () => {
+  await submitWebPullRevision(repo, 12, {
+    head: "carol:fix", base: "main", title: "Fix",
+    creationBaseOid: "a".repeat(40), creationHeadOid: "b".repeat(40),
+  }, "fix", "Clarify the change.");
+  process.stdout.write(JSON.stringify(sent));
+})();
+""")
+    result = subprocess.run(["node"], input=script, capture_output=True, text=True, check=True)
+    sent = json.loads(result.stdout)
+    assert sent["revision"]["description"] == "Clarify the change."
+    assert _run(EV["verify_pull_revision"](12, sent["revision"], KEYS, False)) is True
 
 
 def _fork_revision_compare(branches_js, compare_js):
