@@ -26,6 +26,9 @@ or off (Chat, Issues, Agents, the repository tabs, see
 [core-plugins.md](core-plugins.md)). There are 38. Switches are part of the
 core catalog in every build, because the code they gate is core code.
 
+Administrators see every package of a build, its installs, tables and logs
+on the web dashboard's Plugins page ([plugin-console.md](plugin-console.md)).
+
 ## The plugin list
 
 `marketplace/plugins.json` lists the plugins a ForkMesh build adds to the core.

@@ -20,6 +20,7 @@ developer home for how the pieces fit.
 | `marketplace/tools/marketctl.py` | CLI: `validate`, `pack`, `sync`, `install`, `uninstall`. |
 | `marketplace/tools/plugin_sockets.py` | Discovers `contributions` per socket. |
 | `marketplace/plugins.json` | The plugins a build adds to the core; see [plugins.md](plugins.md). |
+| `/dashboard/plugins` | The web admin console for every package: installs, places, tables, logs, export; see [plugin-console.md](plugin-console.md). |
 | `marketplace/tools/generate_desktop_packages.py` | Desktop: turns the listed plugins' `content/desktop/build.json` descriptors into `marketplace.qrc`, one `plugins/<id>.qrc` per module plugin, `packages.cmake` and the build's own `catalog.json`, `packs.json` and `guides.json` under the build dir. Run by `desktop/CMakeLists.txt` at configure time with `FORKMESH_PLUGINS`. |
 | `marketplace/tools/generate_world_packages.py` | World: writes `world/public/world/world-marketplace-packages.js`. |
 | `app/tools/build_app_plugins.py` | App: stages the listed plugins' `dashboard.page` contributions into `app/dist` and their Worker modules into `app/src_build/plugins` (both ignored). Called from `app/tools/build_site_assets.py` and `app/tools/build_worker_python.py`. |

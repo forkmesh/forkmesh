@@ -206,6 +206,7 @@ LAZY_MODULES = {
     # The generated registry is imported by that same deferred module (and by
     # static_routes.py, which is itself deferred).
     "plugin_data.py",
+    "plugin_console.py",
     "plugin_registry.py",
     # Self-serve plan usage/trial policy, reached through entry.py's
     # plan_services proxy on the /api/plans/* routes only.

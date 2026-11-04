@@ -1,0 +1,106 @@
+          <section data-view="plugins" class="view active h-full overflow-y-auto">
+          <style>
+            [data-view="plugins"] { --pc-border: rgb(var(--dashboard-border-rgb)); --pc-hover: rgb(var(--dashboard-foreground-rgb) / .05); --pc-muted: rgb(var(--dashboard-muted-foreground-rgb)); --pc-accent: rgb(var(--dashboard-accent-rgb)); --pc-primary: rgb(var(--dashboard-primary-rgb)); --pc-danger: rgb(var(--dashboard-destructive-rgb)); --pc-card: rgb(var(--dashboard-card-rgb)); --pc-bg: rgb(var(--dashboard-background-rgb)); --pc-fg: rgb(var(--dashboard-foreground-rgb)); --pc-subtle: rgb(var(--dashboard-subtle-rgb)); }
+            [data-view="plugins"] [hidden] { display: none !important; }
+            [data-view="plugins"] svg.lucide { width: .875rem; height: .875rem; flex: none; }
+            .pc-page { max-width: 72rem; margin: 0 auto; padding: 1.25rem 1rem 6rem; font-size: var(--dashboard-control-font); color: var(--pc-fg); }
+            .pc-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: .75rem 1rem; }
+            .pc-head h1 { margin: 0; font-size: 1.25rem; font-weight: 600; }
+            .pc-head p { margin: .25rem 0 0; color: var(--pc-muted); }
+            .pc-tools { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-top: 1rem; }
+            .pc-input, .pc-select { height: var(--dashboard-control-height); border: 1px solid var(--pc-border); border-radius: var(--dashboard-control-radius); background: var(--pc-bg); padding: 0 .6rem; font-size: var(--dashboard-control-font); color: var(--pc-fg); outline: none; }
+            .pc-input { width: 16rem; max-width: 100%; }
+            .pc-input:focus, .pc-select:focus { border-color: var(--pc-primary); box-shadow: inset 0 0 0 1px var(--pc-primary); }
+            .pc-summary { margin-left: auto; color: var(--pc-muted); font-variant-numeric: tabular-nums; }
+            .pc-notice { margin-top: .75rem; }
+            .pc-box { margin-top: .75rem; border: 1px solid var(--pc-border); border-radius: .5rem; background: var(--pc-card); overflow: hidden; }
+            .pc-box + .pc-box { margin-top: 1rem; }
+            .pc-box-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; padding: .55rem .85rem; border-bottom: 1px solid var(--pc-border); background: var(--pc-subtle); font-weight: 600; }
+            .pc-box-head span { font-weight: 400; color: var(--pc-muted); }
+            .pc-row { display: grid; grid-template-columns: minmax(12rem, 1.4fr) minmax(10rem, 1.2fr) minmax(7rem, .7fr) minmax(7rem, .6fr); gap: .75rem; align-items: center; width: 100%; padding: .55rem .85rem; border: 0; border-top: 1px solid var(--pc-border); background: transparent; text-align: left; color: inherit; cursor: pointer; }
+            .pc-row:first-child { border-top: 0; }
+            .pc-row:hover { background: var(--pc-hover); }
+            .pc-row:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--pc-primary); }
+            .pc-row-head { cursor: default; background: var(--pc-subtle); color: var(--pc-muted); font-size: 12px; }
+            .pc-row-head:hover { background: var(--pc-subtle); }
+            .pc-name { min-width: 0; }
+            .pc-name strong { font-weight: 600; }
+            .pc-id { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--pc-muted); }
+            .pc-chips { display: flex; flex-wrap: wrap; gap: .25rem; }
+            .pc-muted { color: var(--pc-muted); }
+            .pc-num { font-variant-numeric: tabular-nums; }
+            .pc-back { display: inline-flex; align-items: center; gap: .35rem; color: var(--pc-accent); text-decoration: none; }
+            .pc-back:hover { text-decoration: underline; }
+            .pc-detail-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: .75rem 1rem; margin-top: .75rem; }
+            .pc-detail-head h2 { margin: 0; font-size: 1.15rem; font-weight: 600; }
+            .pc-detail-head p { margin: .25rem 0 0; max-width: 44rem; color: var(--pc-muted); }
+            .pc-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+            .pc-tabs { display: flex; gap: 0; margin-top: 1rem; border-bottom: 1px solid var(--pc-border); overflow-x: auto; }
+            .pc-tabs button { height: var(--dashboard-control-height); padding: 0 .85rem; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--pc-muted); font-size: var(--dashboard-control-font); white-space: nowrap; cursor: pointer; }
+            .pc-tabs button:hover { color: var(--pc-fg); }
+            .pc-tabs button[aria-selected="true"] { color: var(--pc-fg); font-weight: 600; border-bottom-color: var(--pc-primary); }
+            .pc-tabs button:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--pc-primary); }
+            .pc-facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); }
+            .pc-fact { padding: .5rem .85rem; border-top: 1px solid var(--pc-border); min-width: 0; overflow-wrap: anywhere; }
+            .pc-fact dt { font-size: 12px; color: var(--pc-muted); }
+            .pc-fact dd { margin: .1rem 0 0; }
+            .pc-fact a, .pc-link { color: var(--pc-accent); text-decoration: none; }
+            .pc-fact a:hover, .pc-link:hover { text-decoration: underline; }
+            .pc-table-wrap { overflow-x: auto; }
+            .pc-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+            .pc-table th, .pc-table td { padding: .4rem .85rem; border-top: 1px solid var(--pc-border); text-align: left; vertical-align: top; }
+            .pc-table th { color: var(--pc-muted); font-weight: 500; white-space: nowrap; background: var(--pc-subtle); border-top: 0; }
+            .pc-table td { max-width: 28rem; overflow-wrap: anywhere; }
+            .pc-table td.pc-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+            .pc-table tr[aria-selected="true"] td { background: rgb(var(--dashboard-primary-rgb) / .1); }
+            .pc-empty { padding: 1rem .85rem; color: var(--pc-muted); }
+            .pc-places { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; padding: .6rem .85rem; border-top: 1px solid var(--pc-border); }
+            .pc-places label { display: inline-flex; align-items: center; gap: .35rem; cursor: pointer; }
+            .pc-places input { accent-color: var(--pc-primary); }
+            .pc-pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; padding: .5rem .85rem; border-top: 1px solid var(--pc-border); color: var(--pc-muted); }
+            .pc-org { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; padding: .6rem .85rem; border-top: 1px solid var(--pc-border); }
+            .pc-org:first-child { border-top: 0; }
+            @media (max-width: 760px) {
+              .pc-row { grid-template-columns: 1fr; gap: .3rem; }
+              .pc-row-head { display: none; }
+              .pc-summary { margin-left: 0; width: 100%; }
+            }
+          </style>
+          <div class="pc-page">
+            <div data-plugins-list-view>
+              <header class="pc-head">
+                <div class="min-w-0">
+                  <h1>Plugins</h1>
+                  <p>Every Market plugin and switch this instance knows: what it ships, where it is installed, the data it keeps and its logs.</p>
+                </div>
+                <button data-plugins-refresh type="button" class="fm-btn fm-btn-sm"><i data-lucide="refresh-cw"></i>Refresh</button>
+              </header>
+              <div class="pc-tools">
+                <input data-plugins-filter class="pc-input" type="search" placeholder="Filter by name or id" aria-label="Filter plugins by name or id" autocomplete="off" />
+                <select data-plugins-kind class="pc-select" aria-label="Show">
+                  <option value="">All packages</option>
+                  <option value="plugin">Plugins</option>
+                  <option value="switch">Switches</option>
+                  <option value="mine">Installed for me</option>
+                  <option value="worker">With a Worker module</option>
+                  <option value="data">Keeping server data</option>
+                </select>
+                <span data-plugins-summary class="pc-summary"></span>
+              </div>
+              <div data-plugins-notice class="pc-notice" role="status" aria-live="polite" hidden></div>
+              <div class="pc-box">
+                <div class="pc-row pc-row-head" aria-hidden="true">
+                  <span>Package</span><span>Ships</span><span>Places</span><span>Installs</span>
+                </div>
+                <div data-plugins-list>
+                  <p class="pc-empty"><span class="fm-spinner" aria-hidden="true"></span>Loading packages...</p>
+                </div>
+              </div>
+            </div>
+            <div data-plugins-detail-view hidden>
+              <a data-plugins-back class="pc-back" href="/dashboard/plugins"><i data-lucide="arrow-left"></i>All plugins</a>
+              <div data-plugins-detail-notice class="pc-notice" role="status" aria-live="polite" hidden></div>
+              <div data-plugins-detail></div>
+            </div>
+          </div>
+          </section>

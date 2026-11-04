@@ -132,6 +132,8 @@ run_worker_first = [
   "!/dashboard/runners/",
   "!/dashboard/docs",
   "!/dashboard/docs/",
+  "!/dashboard/plugins",
+  "!/dashboard/plugins/",
   "!/dashboard/apps",
   "!/dashboard/apps/",
   "!/dashboard/apps/build",

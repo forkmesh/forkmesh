@@ -38,6 +38,7 @@ MAX_BODY_BYTES = 64 * 1024
 MANAGER_ROLES = frozenset({"owner", "admin"})
 ORG_RE = re.compile(r"^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 ACCOUNT_PATH = PREFIX + "/@account"
+CONSOLE_PATH = PREFIX + "/@console"
 ACCOUNT_ACTIONS = ("install", "uninstall", "settings", "places")
 PLACES = ("mobile", "desktop", "web")
 ACCOUNT_SCHEMA_UP = (
@@ -580,7 +581,8 @@ async def _account_install(runtime, account_bi, actor, plugin, created_at, place
         await _store_account_row(
             runtime, account_bi, target, True, row.get("settings") or {}, chosen)
     after, after_own = await _account_state(runtime, account_bi, created_at)
-    await runtime.audit(actor, "plugin.install", "account_plugin", actor + ":" + plugin)
+    await runtime.audit(actor, "plugin.install", "account_plugin", actor + ":" + plugin,
+                        details={"package": plugin})
     return _response(runtime, _account_payload(
         after, after_own, _changed(before_own, after_own)))
 
@@ -614,7 +616,8 @@ async def _account_uninstall(runtime, account_bi, actor, plugin, created_at):
     for target in [plugin] + dependents:
         await _purge_account_package(runtime, account_bi, actor, target)
     after, after_own = await _account_state(runtime, account_bi, created_at)
-    await runtime.audit(actor, "plugin.uninstall", "account_plugin", actor + ":" + plugin)
+    await runtime.audit(actor, "plugin.uninstall", "account_plugin", actor + ":" + plugin,
+                        details={"package": plugin})
     return _response(runtime, _account_payload(
         after, after_own, _changed(before_own, after_own)))
 
@@ -635,7 +638,8 @@ async def _account_save_settings(runtime, account_bi, actor, plugin, data, creat
     await _store_account_row(
         runtime, account_bi, plugin, bool(own.get(plugin)), current,
         (rows.get(plugin) or {}).get("places"))
-    await runtime.audit(actor, "plugin.settings", "account_plugin", actor + ":" + plugin)
+    await runtime.audit(actor, "plugin.settings", "account_plugin", actor + ":" + plugin,
+                        details={"package": plugin})
     return _response(runtime, _account_payload(
         *await _account_state(runtime, account_bi, created_at)))
 
@@ -646,7 +650,8 @@ async def _account_save_places(runtime, account_bi, actor, plugin, places, creat
         return _response(runtime, {"error": "plugin_not_installed"}, 409)
     row = rows.get(plugin) or {}
     await _store_account_row(runtime, account_bi, plugin, True, row.get("settings") or {}, places)
-    await runtime.audit(actor, "plugin.places", "account_plugin", actor + ":" + plugin)
+    await runtime.audit(actor, "plugin.places", "account_plugin", actor + ":" + plugin,
+                        details={"package": plugin})
     return _response(runtime, _account_payload(
         *await _account_state(runtime, account_bi, created_at)))
 
@@ -795,7 +800,8 @@ async def _install(runtime, org_bi, org_name, account_bi, actor, role, plugin):
         org_bi, plugin, org_name, account_bi, actor, runtime.now(),
     )
     await runtime.audit(
-        actor, "plugin.install", "organization_plugin", org_name + ":" + plugin)
+        actor, "plugin.install", "organization_plugin", org_name + ":" + plugin,
+        details={"package": plugin})
     return await _state(runtime, org_bi, org_name, role)
 
 
@@ -816,7 +822,7 @@ async def _uninstall(runtime, org_bi, org_name, actor, plugin):
     dropped = await _drop_schema_when_unused(runtime, plugin, module)
     await runtime.audit(
         actor, "plugin.uninstall", "organization_plugin",
-        org_name + ":" + plugin)
+        org_name + ":" + plugin, details={"package": plugin})
     return _response(runtime, {
         "ok": True,
         "uninstalled": True,
@@ -869,6 +875,9 @@ async def handle(runtime, path):
     clean = str(path or "").rstrip("/")
     if clean == ACCOUNT_PATH or clean.startswith(ACCOUNT_PATH + "/"):
         return await _handle_account(runtime, path)
+    if clean == CONSOLE_PATH or clean.startswith(CONSOLE_PATH + "/"):
+        import plugin_console
+        return await plugin_console.handle(runtime, path)
     if str(path or "").rstrip("/") == PREFIX:
         if runtime.method() != "GET":
             return _response(

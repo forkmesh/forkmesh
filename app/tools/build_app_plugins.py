@@ -629,6 +629,8 @@ def registry_source(catalog_path: Path = CATALOG) -> str:
             "settings": tuple(market_packages.settings_rows(manifest)),
             "files": content_files(
                 manifest, (catalog.root / entry.manifest).parent),
+            "facts": market_packages.package_facts(
+                manifest, (catalog.root / entry.manifest).parent),
         }
     return '''"""Generated in app/src_build from Marketplace socket contributions."""
 
