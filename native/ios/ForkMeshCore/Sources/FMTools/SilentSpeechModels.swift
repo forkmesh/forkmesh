@@ -412,6 +412,14 @@ public enum SilentEvaluator {
     public static let permutations: Int = 500
     public static let seed: UInt64 = 0x5EED_5EED
     public static let minimumTakes: Int = 2
+    public static let manyTakes: Int = 10
+    public static let manyNeighbors: Int = 3
+
+    public static func neighbors(for dataset: SilentDataset) -> Int {
+        let counts: [Int] = dataset.words.map { dataset.count($0.word) }.filter { $0 > 0 }
+        guard counts.count >= 2, let fewest = counts.min() else { return 1 }
+        return fewest >= manyTakes ? manyNeighbors : 1
+    }
 
     public static func requirement(_ dataset: SilentDataset) -> String? {
         let ready: Int = dataset.words.filter { dataset.count($0.word) >= minimumTakes }.count
@@ -440,11 +448,11 @@ public enum SilentEvaluator {
         var near: [[Double]] = Array(repeating: [], count: wordCount)
         for i in labels.indices where counts[labels[i]] >= minimumTakes {
             for w in 0..<wordCount { near[w].removeAll(keepingCapacity: true) }
-            for j in labels.indices where j != i { near[labels[j]].append(d[i][j]) }
+            for j in labels.indices where j != i { keep(&near[labels[j]], d[i][j], k) }
             var guess: Int = -1
             var score: Double = .infinity
             for w in 0..<wordCount where !near[w].isEmpty {
-                let value: Double = k == 1 ? (near[w].min() ?? .infinity) : mean(near[w].sorted().prefix(k))
+                let value: Double = k == 1 ? near[w][0] : mean(near[w][...])
                 if value < score {
                     score = value
                     guess = w
@@ -453,6 +461,23 @@ public enum SilentEvaluator {
             if guess >= 0 { out.append((labels[i], guess, score)) }
         }
         return out
+    }
+
+    static func keep(_ best: inout [Double], _ value: Double, _ k: Int) {
+        var i: Int
+        if best.count < k {
+            best.append(value)
+            i = best.count - 1
+        } else if value < best[k - 1] {
+            best[k - 1] = value
+            i = k - 1
+        } else {
+            return
+        }
+        while i > 0 && best[i - 1] > best[i] {
+            best.swapAt(i - 1, i)
+            i -= 1
+        }
     }
 
     static func mean(_ values: ArraySlice<Double>) -> Double {
@@ -585,6 +610,89 @@ public struct SilentSegmenter: Sendable {
     }
 }
 
+public struct SilentReading: Equatable, Sendable {
+    public static let duration: Double = 300
+    public static let scriptLength: Int = 100
+
+    public let sentences: [[String]]
+    public let duration: Double
+    public private(set) var index: Int = 0
+    public private(set) var heard: [[SilentSample]] = []
+    public private(set) var started: Double?
+    public private(set) var elapsed: Double = 0
+    public private(set) var sentencesRead: Int = 0
+    public private(set) var collected: Int = 0
+
+    public init(words: [String], seed: UInt64, duration: Double = SilentReading.duration) {
+        sentences = SilentReading.script(words, seed: seed)
+        self.duration = duration
+    }
+
+    public static func length(_ wordCount: Int) -> Int { min(6, max(4, wordCount)) }
+
+    public static func script(_ words: [String], seed: UInt64, count: Int = SilentReading.scriptLength) -> [[String]] {
+        guard !words.isEmpty else { return [] }
+        let length: Int = length(words.count)
+        var random: SilentRandom = SilentRandom(seed: seed)
+        var pool: [Int] = []
+        while pool.count < count * length {
+            var order: [Int] = Array(words.indices)
+            random.shuffle(&order)
+            if let last = pool.last, order.count > 1, order[0] == last { order.swapAt(0, 1) }
+            pool.append(contentsOf: order)
+        }
+        return (0..<count).map { (s: Int) -> [String] in pool[(s * length)..<((s + 1) * length)].map { words[$0] } }
+    }
+
+    public var sentence: [String] { sentences.isEmpty ? [] : sentences[index % sentences.count] }
+    public var position: Int { heard.count }
+    public var timeUp: Bool { elapsed >= duration }
+    public var done: Bool { timeUp && heard.isEmpty }
+
+    public var clock: String { "\(SilentReading.minutes(elapsed)) of \(SilentReading.minutes(duration))" }
+
+    public var summary: String {
+        let takes: String = collected == 1 ? "1 take" : "\(collected) takes"
+        let read: String = sentencesRead == 1 ? "1 sentence" : "\(sentencesRead) sentences"
+        return "Saved \(takes) from \(read)."
+    }
+
+    static func minutes(_ seconds: Double) -> String {
+        let whole: Int = max(0, Int(seconds.rounded(.down)))
+        return String(format: "%d:%02d", whole / 60, whole % 60)
+    }
+
+    public mutating func tick(_ t: Double) {
+        if started == nil { started = t }
+        elapsed = max(0, t - (started ?? t))
+    }
+
+    public mutating func hear(_ segment: [SilentSample]) -> [(word: String, samples: [SilentSample])] {
+        guard !segment.isEmpty, !sentence.isEmpty else { return [] }
+        heard.append(segment)
+        guard heard.count >= sentence.count else { return [] }
+        let labelled: [(word: String, samples: [SilentSample])] = zip(sentence, heard).map { ($0, $1) }
+        heard.removeAll()
+        index += 1
+        sentencesRead += 1
+        collected += labelled.count
+        return labelled
+    }
+
+    public mutating func again() { heard.removeAll() }
+
+    public mutating func skip() {
+        heard.removeAll()
+        index += 1
+    }
+
+    public mutating func forget(_ takes: Int) {
+        guard takes > 0, sentencesRead > 0 else { return }
+        sentencesRead -= 1
+        collected = max(0, collected - takes)
+    }
+}
+
 public struct SilentDataset: Equatable, Sendable {
     public var words: [SilentWord]
     public var takes: [SilentTake]
@@ -628,6 +736,10 @@ public struct SilentDataset: Equatable, Sendable {
     public mutating func removeLastTake(_ word: String) {
         guard let i = takes.lastIndex(where: { $0.word == word }) else { return }
         takes.remove(at: i)
+    }
+
+    public mutating func removeTakes(_ ids: Set<String>) {
+        takes.removeAll { ids.contains($0.id) }
     }
 
     public func phrase(_ word: String) -> String { words.first { $0.word == word }?.spoken ?? word }

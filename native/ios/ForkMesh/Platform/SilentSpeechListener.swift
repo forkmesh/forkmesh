@@ -34,6 +34,9 @@ final class SilentSpeechListener: NSObject, CMHeadphoneMotionManagerDelegate {
     private(set) var noise: SilentNoiseFloor?
     private(set) var calibrating: Bool = false
     private(set) var detecting: Bool = false
+    private(set) var reading: SilentReading?
+    private(set) var readingSummary: String?
+    private(set) var lastSentence: [String] = []
     let hasAcceleration: Bool = true
     var selectedWord: String? = nil
     var channels: Set<SilentChannel> = SilentChannel.defaults {
@@ -127,6 +130,7 @@ final class SilentSpeechListener: NSObject, CMHeadphoneMotionManagerDelegate {
         held.removeAll()
         recent.removeAll()
         rateWindow.removeAll()
+        if reading != nil { finishReading() }
         segmenter?.reset()
         calibrating = false
         detecting = false
@@ -180,15 +184,70 @@ final class SilentSpeechListener: NSObject, CMHeadphoneMotionManagerDelegate {
             if let start = calibrationStart, sample.t - start >= Self.calibrationSeconds { finishCalibration() }
             return
         }
-        guard autoDetect, var segmenter else { return }
+        guard autoDetect || reading != nil, var segmenter else { return }
         let segment: [SilentSample]? = segmenter.push(sample)
         detecting = segmenter.active
         self.segmenter = segmenter
-        if let segment { decode(segment) }
+        if reading != nil {
+            read(sample.t, segment)
+        } else if let segment {
+            decode(segment)
+        }
+    }
+
+    func startReading() {
+        guard listening, reading == nil, hold == nil, dataset.words.count >= 2 else { return }
+        reading = SilentReading(words: dataset.words.map(\.word), seed: UInt64(Date().timeIntervalSince1970 * 1000))
+        readingSummary = nil
+        lastSentence = []
+        segmenter?.reset()
+        calibrate()
+    }
+
+    private func read(_ t: Double, _ segment: [SilentSample]?) {
+        guard var current = reading else { return }
+        current.tick(t)
+        if let segment {
+            let takes: [SilentTake] = current.hear(segment).map { SilentTake(id: UUID().uuidString, word: $0.word, samples: $0.samples) }
+            if !takes.isEmpty {
+                takes.forEach { dataset.addTake($0) }
+                lastSentence = takes.map(\.id)
+                changed()
+            }
+        }
+        reading = current
+        if current.done { finishReading() }
+    }
+
+    func readAgain() {
+        reading?.again()
+        segmenter?.reset()
+    }
+
+    func skipSentence() {
+        reading?.skip()
+        segmenter?.reset()
+    }
+
+    func dropLastSentence() {
+        guard !lastSentence.isEmpty else { return }
+        dataset.removeTakes(Set(lastSentence))
+        reading?.forget(lastSentence.count)
+        lastSentence = []
+        changed()
+    }
+
+    func finishReading() {
+        guard let current = reading else { return }
+        reading = nil
+        readingSummary = current.summary
+        lastSentence = []
+        segmenter?.reset()
+        detecting = false
     }
 
     func beginHold(_ kind: Hold) {
-        guard listening, hold == nil else { return }
+        guard listening, hold == nil, reading == nil else { return }
         if case .train(let word) = kind, !dataset.words.contains(where: { $0.word == word }) { return }
         let now: Double = recent.last?.t ?? 0
         held = recent.filter { $0.t >= now - Self.holdPreRoll }
@@ -227,7 +286,7 @@ final class SilentSpeechListener: NSObject, CMHeadphoneMotionManagerDelegate {
     }
 
     private func decode(_ samples: [SilentSample]) {
-        if model == nil { model = SilentModel(takes: dataset.takes, channels: channels) }
+        if model == nil { model = SilentModel(takes: dataset.takes, channels: channels, neighbors: SilentEvaluator.neighbors(for: dataset)) }
         guard let model, let match = model.match(samples, maxDistance: maxDistance, minMargin: minMargin) else {
             lastMatch = nil
             return
@@ -249,7 +308,7 @@ final class SilentSpeechListener: NSObject, CMHeadphoneMotionManagerDelegate {
         let snapshot: SilentDataset = dataset
         let channels: Set<SilentChannel> = channels
         Task.detached(priority: .userInitiated) {
-            let result: SilentEvaluation? = SilentEvaluator.evaluate(snapshot, channels: channels)
+            let result: SilentEvaluation? = SilentEvaluator.evaluate(snapshot, channels: channels, neighbors: SilentEvaluator.neighbors(for: snapshot))
             await MainActor.run {
                 self.evaluation = result
                 self.evaluating = false
