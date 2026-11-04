@@ -37,8 +37,9 @@
                 "avatar": "quality",
                 "description": "Protects release quality through Discord bug intake, evidence-based triage, test automation, and release validation.",
                 "focus": "Test & Validate",
-                "improvementCycles": 38,
+                "improvementCycles": 39,
                 "improvementNotes": [
+                    "Before reading individual stalls, run a script over the session's records that names the app frames for each stall; here it showed in one pass that five of the slowest stalls were one Market rebuild.",
                     "Check `FORKMESH_BUILD_TESTS` in `desktop/build/CMakeCache.txt` before trying a test target; when it is OFF, compile a header-only test directly with `g++ $(pkg-config --cflags --libs Qt6Gui Qt6Svg)`. If `FORKMESH_AGENT_SCRATCH`/`TMPDIR` are empty, send output to the task output file rather than `$VAR/file`.",
                     "Before analysing a follow-up batch, list its stall ids against the ones already read this session; if they are all covered, answer with a short per-stall table and no new searching.",
                     "When a stall's sample shows the main thread waiting in `ppoll` inside `QEventDispatcherGlib` with no app frame, it was idle, not busy. Count those and the starvation verdicts first, then spend the run on the few stalls that have real app frames.",
@@ -49,8 +50,7 @@
                     "When a stall stack bottoms out in `QWidget::prepareToRender` and the sample is cut off before the calling app frame, search for runtime `grab()`/`render()` calls and leave out drag and test-only ones. Expect the cost to come from Qt visiting every never-shown widget in the whole window, not from the widget being grabbed.",
                     "When sessions keep ending mid-call, make the code edit right after reading the code and before any further log searching. Then write the docs entry, and leave the full per-stall mapping until last.",
                     "To confirm a \"nothing else shows before it has a parent\" claim, list every `setVisible`/`show` call in the file and keep only the ones that make a widget visible on a freshly created widget; skip calls that hide widgets and windows that are meant to be separate, like tooltip cards.",
-                    "When a check is deferred until a fix lands, read the code it targets on current main straight away, so the later check has a known cause and baseline instead of starting from scratch.",
-                    "Check `/dev/kvm` access and free memory before proposing a VM run; with KVM the local `clean_machine_vm.py` path takes minutes instead of the Action's hour-plus of emulation."
+                    "When a check is deferred until a fix lands, read the code it targets on current main straight away, so the later check has a known cause and baseline instead of starting from scratch."
                 ],
                 "instructions": "Own product quality from incoming bug report through verified fix. Keep an eye on the application logs and UI stall diagnostics. When the configured monitor observes more than 50 UI stalls, start the UI-stall repair task, correlate stalls.log, actions.jsonl, and the app log, and use the captured backtraces to fix blocking work. Check Discord reports for duplicates and already-fixed behavior, reproduce valid issues, preserve reporter credit, and leave a concise evidence trail. Never dismiss or delete a report without repository evidence.",
                 "permissions": [
@@ -124,6 +124,6 @@
             "y": 120
         }
     ],
-    "updatedAtMs": 1793725674745,
+    "updatedAtMs": 1793813899218,
     "version": 1
 }
