@@ -237,3 +237,85 @@ test("the right column shows activity and history live beside the chat", async (
   await expect(column).toBeVisible();
   await expect(page.locator("[data-note-panel=\"history\"]")).toBeVisible();
 });
+
+const SECTIONS = ["Alpha", "Beta", "Gamma", "Delta", "Epsilon"];
+const SECTIONED = SECTIONS.map((name) => `## ${name}\n\n${Array.from({ length: 14 }, (_, index) => `${name} paragraph ${index + 1}.`).join("\n\n")}`).join("\n\n");
+
+function headingOffsetInPane(page, name) {
+  return page.evaluate((text) => {
+    const pane = document.querySelector("[data-note-preview-pane]");
+    const heading = [...pane.querySelectorAll("[data-note-preview] h2")].find((node) => node.textContent === text);
+    return heading.getBoundingClientRect().top - pane.getBoundingClientRect().top;
+  }, name);
+}
+
+test("split mode keeps the preview level with the Markdown and the outline jumps to a section", async ({ page }) => {
+  await openNotes(page, { mode: "split", markdown: SECTIONED });
+  const outline = page.locator("[data-note-outline]");
+  await expect(outline).toBeHidden();
+  await page.locator("[data-note-outline-toggle]").click();
+  await expect(outline).toBeVisible();
+  await expect(outline.locator("[data-note-outline-entry]")).toHaveText(SECTIONS);
+
+  await outline.locator("[data-note-outline-entry]", { hasText: "Delta" }).click();
+  await expect.poll(() => headingOffsetInPane(page, "Delta")).toBeLessThan(40);
+  expect(await headingOffsetInPane(page, "Delta")).toBeGreaterThan(-40);
+  await expect(outline.locator("[aria-current=\"true\"]")).toHaveText("Delta");
+  const area = page.locator("[data-note-markdown]");
+  expect(await area.evaluate((node) => node.value.slice(node.selectionStart).startsWith("## Delta"))).toBe(true);
+
+  await area.evaluate((node) => { node.dispatchEvent(new Event("mouseenter")); node.scrollTop = 0; });
+  await expect.poll(() => page.evaluate(() => document.querySelector("[data-note-preview-pane]").scrollTop)).toBeLessThan(2);
+  await expect(outline.locator("[aria-current=\"true\"]")).toHaveCount(0);
+
+  const pane = page.locator("[data-note-preview-pane]");
+  await pane.hover();
+  await page.mouse.wheel(0, 900);
+  await expect.poll(() => area.evaluate((node) => node.scrollTop)).toBeGreaterThan(300);
+  await expect(page.locator("[data-note-outline-entry][aria-current=\"true\"]")).toHaveCount(1);
+
+  await page.reload();
+  await expect(page.locator("[data-note-outline]")).toBeVisible();
+});
+
+async function pasteImage(page, width, height, text = "") {
+  await page.evaluate(async ({ width, height, text }) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = width; canvas.height = height;
+    const context = canvas.getContext("2d");
+    const gradient = context.createLinearGradient(0, 0, width, height);
+    gradient.addColorStop(0, "#2f81f7"); gradient.addColorStop(1, "#bf4b8a");
+    context.fillStyle = gradient; context.fillRect(0, 0, width, height);
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+    const data = new DataTransfer();
+    data.items.add(new File([blob], "image.png", { type: "image/png" }));
+    if (text) data.setData("text/plain", text);
+    const area = document.querySelector("[data-note-markdown]");
+    area.focus();
+    area.setSelectionRange(area.value.length, area.value.length);
+    area.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+  }, { width, height, text });
+}
+
+test("pasting an image from the clipboard puts it in the note, made smaller when it is wide", async ({ page }) => {
+  const calls = [];
+  await openNotes(page, { calls, mode: "split" });
+  const area = page.locator("[data-note-markdown]");
+
+  await pasteImage(page, 40, 20);
+  await expect(area).toHaveValue(/Last words\.\n!\[image\]\(data:image\/png;base64,[A-Za-z0-9+/=]+\)$/);
+  await expect(page.locator("[data-note-preview] img")).toHaveCount(1);
+
+  await pasteImage(page, 3200, 1200);
+  await expect(page.locator("[data-note-preview] img")).toHaveCount(2);
+  const wide = page.locator("[data-note-preview] img").nth(1);
+  await expect.poll(() => wide.evaluate((node) => node.naturalWidth)).toBe(1600);
+  expect((await area.inputValue()).length).toBeLessThan(512 * 1024);
+  await expect.poll(() => calls.filter((call) => call.method === "PATCH").length).toBeGreaterThan(0);
+  expect(calls.filter((call) => call.method === "PATCH").pop().body.markdown).toContain("![image](data:image/");
+
+  const before = await area.inputValue();
+  await pasteImage(page, 40, 20, "copied cell");
+  await expect(page.locator("[data-note-preview] img")).toHaveCount(2);
+  expect(await area.inputValue()).toBe(before);
+});

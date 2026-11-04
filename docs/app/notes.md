@@ -276,6 +276,37 @@ blocks around the one you are in. Selecting text in a rendered block or in the
 block you are editing offers Comment as in the other modes
 ([notes comments](notes-comments.md)).
 
+## Split mode, the outline and pasted images
+
+In Split the Markdown and the preview scroll together. The pane you last
+pointed at, scrolled or typed in leads and the other follows, so the follower's
+own scroll events, and a re-render clamping the preview, never pull the leader
+back. Headings are the anchors: `noteOutlineHeadings` finds the `#` lines
+outside fenced code (the renderer's rules), their places in the textarea come
+from one hidden mirror of it, and `noteOutlineTargets` pairs them with the
+preview's `h1`-`h6` by text. Between two anchors the position is
+interpolated, so a note without headings scrolls in proportion. The anchors
+are measured once and dropped when the preview re-renders, a pane resizes or a
+preview image loads. Following a collaborator turns the sync off, since
+following places both panes itself.
+
+The list button in the editor bar shows the outline: the note's headings,
+indented by level, beside the editor (remembered in `forkmesh.notes.outline`;
+hidden on phone-width screens). Clicking one puts the caret on that heading
+and scrolls the Markdown to it, or scrolls the preview in Preview and Live;
+the section you are reading is highlighted as you scroll.
+
+Pasting an image (a screenshot, or an image copied from another app) into the
+Markdown or a Live block inserts `![image](data:image/...;base64,...)` on its
+own line, the inline form [note documents](notes-documents.md) already
+render. A note holds at most 512 KB of Markdown (`MAX_MARKDOWN` in
+`app/src/notes.py`, which cuts anything longer), so an image keeps its own
+bytes only if it is at most 1600 px wide and fits in 360 KB and the note's
+remaining room; otherwise it is redrawn 1600, 1200, 900 or 600 px wide as
+PNG, WebP and JPEG and the smallest that fits is used. When none fits the
+note says so and inserts nothing. A paste that also carries text (a
+spreadsheet cell, a web page) pastes the text, as before.
+
 ## The same features on every platform
 
 The web page, the desktop ([desktop notes](../desktop/notes.md)), iOS and
@@ -301,7 +332,8 @@ Known differences:
   desktop Live styles the Markdown in place and shows the marks only on the
   caret's line ([desktop notes](../desktop/notes.md#live-mode)).
 - The desktop editor has Write and Preview tabs but no split view; phones
-  have no room for one.
+  have no room for one. The outline beside the editor and pasting images
+  from the clipboard are on the web only for now.
 - The desktop autosaves Cloud-only notes. Local and Local + cloud notes save
   with the Save button, because each local save adds an on-disk snapshot.
 - On iOS the format bar adds text at the end of the note: the text editor
@@ -332,3 +364,7 @@ Known differences:
   picking, already-shared principals left out, the access link row and copy,
   opening `?note=<id>`, body search, the task body with the published link,
   and the issue dialog (bad repository, then a filed issue).
+- `app/browser_tests/tests/dashboard-notes-live.spec.js` also covers the
+  outline (jumping to a section, the highlighted section, remembered open),
+  Split's scroll sync in both directions, and pasting a small image, a wide
+  one made 1600 px wide, and a paste with text that leaves the image out.
