@@ -43,7 +43,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -52,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import com.forkmesh.nativeapp.feature.market.ErrorLine
 import com.forkmesh.nativeapp.feature.market.MarketFeature
 import com.forkmesh.nativeapp.feature.market.PageActivityCard
+import com.forkmesh.nativeapp.feature.meeting.openMeeting
 import com.forkmesh.nativeapp.feature.navigation.NavigationFeature
 import com.forkmesh.nativeapp.feature.rssreader.shareText
 import com.forkmesh.nativeapp.feature.tools.ToolsAppBar
@@ -421,10 +421,10 @@ private fun BookingRow(
             }
             val join = booking.joinUrl()
             if (join.isNotEmpty()) {
-                val uriHandler = LocalUriHandler.current
+                val context = LocalContext.current
                 Text(
                     "Join video call",
-                    Modifier.clickable { runCatching { uriHandler.openUri(join) } },
+                    Modifier.clickable { openMeeting(context, join) },
                     style = Fm.text.bodySmall.copy(fontWeight = FontWeight.SemiBold),
                     color = Fm.colors.accent,
                 )

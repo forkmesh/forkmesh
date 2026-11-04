@@ -21,6 +21,7 @@ link instead of over a chat room.
 | `app/src/entry.py` (`plugin_call_ticket`, `_PluginApiRuntime.call_ticket`) | Call-server tickets for a package's room. |
 | `marketplace/packages/booking/content/worker/booking.py` (`_room_*`) | Room records, the open window, tickets and the sealed relay. |
 | `app/tests/test_call_meeting_room.py` | Crypto, transcription and a two-engine key exchange in node. |
+| `server/rtc/sfu/meeting_browser_test.go` | Two headless Chromiums hold a real meeting on `/call` through the SFU: each decodes the other's encrypted video and hears its audio, both show the same code, and no relayed box is readable. |
 
 ## The link
 
@@ -112,8 +113,27 @@ it never falls back to a cloud recognizer.
 - Starting one sets `tr` on your frames, so everyone sees "Transcribing on
   their device" on your tile and a notice.
 
+## Phones
+
+Both apps open a meeting in their own **Meeting** screen (route `meeting`,
+`.meeting(room, key)` / `Route.Meeting`): a booking's **Join video call**, a
+`https://app.forkmesh.com/call?…#…` link, or `forkmesh://call?…#…`. The
+screen shows this page in a web view, so the call, effects, meeting code and
+transcript are the web's. The web view loads `/call` only from the active
+project's server: any other navigation opens in the browser. Camera and
+microphone are granted only to that server, after the app asks the system for
+them. The screen stays awake and tears the page down when you leave it, which
+stops the camera. Like every route on a tab's path, an open meeting (key
+included) is kept in the app's saved navigation state on the device.
+
+A web view cannot save the transcript's download, so the page hands it to the
+app when it can: `FmMeetingBridge.saveText(name, text)` on Android and the
+`fmMeetingSave` message handler on iPhone. Each opens the share sheet.
+`MeetingLink` (Kotlin; Swift in `FMApi/Navigation`) parses links and builds
+the page URL; its tests are `MeetingLinkTest.kt` and `MeetingRouteTests.swift`.
+
 ## Not done yet
 
-- Phones join in their browser; the apps have no native meeting screen.
+- The phones show the web page; there is no native call screen for meetings.
 - No screen sharing, recording or waiting room.
 - The meeting code is not tied to who is in the call; it proves the same link.

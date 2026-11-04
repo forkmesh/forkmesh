@@ -814,11 +814,22 @@ function transcriptBody() {
 }
 
 function downloadTranscript() {
+  const name = transcriptFileName(state.info?.title || "meeting");
+  const android = globalThis.FmMeetingBridge;
+  const ios = globalThis.webkit?.messageHandlers?.fmMeetingSave;
+  if (typeof android?.saveText === "function") {
+    android.saveText(name, transcriptBody());
+    return;
+  }
+  if (typeof ios?.postMessage === "function") {
+    ios.postMessage({ name, text: transcriptBody() });
+    return;
+  }
   const blob = new Blob([transcriptBody()], { type: "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = transcriptFileName(state.info?.title || "meeting");
+  anchor.download = name;
   document.body.append(anchor);
   anchor.click();
   anchor.remove();

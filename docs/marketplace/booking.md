@@ -240,8 +240,9 @@ browser.
 
 A booking with a ForkMesh room reads "ForkMesh video call, end-to-end
 encrypted" with a **Join video call** link (`joinURL` on iPhone, `joinUrl()`
-on Android), hidden once it is cancelled. The video location's hint says to
-leave it empty for a private room.
+on Android), hidden once it is cancelled; it opens the in-app Meeting screen
+([meeting rooms](../app/meeting-rooms.md#phones)). The video location's hint
+says to leave it empty for a private room.
 
 The settings screen edits weekly hours as text times (`HH:MM`); an end of
 `24:00` shows as `23:59` and is saved back as `24:00`, as on the web.

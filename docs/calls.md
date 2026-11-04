@@ -96,6 +96,9 @@ no account. The room opens 30 minutes before the meeting.
    speech model. Everyone sees that you are transcribing. Copy or download
    the text before you close the page.
 
+On a phone with the ForkMesh app, the link and the booking's **Join video
+call** open the meeting inside the app.
+
 The key is the part of the link after `#`. Browsers never send it to a server,
 so ForkMesh's call server cannot see or hear the meeting. Treat the link like a
 key. How it works: [meeting rooms](app/meeting-rooms.md).

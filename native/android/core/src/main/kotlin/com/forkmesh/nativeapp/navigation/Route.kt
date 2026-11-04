@@ -139,6 +139,7 @@ sealed class Route {
     data class Thread(val channel: String, val id: String) : Route() { override val kind get() = Kind.Thread }
     data class Dm(val user: String) : Route() { override val kind get() = Kind.Dm }
     data class Discord(val guild: String, val channel: String?) : Route() { override val kind get() = Kind.Discord }
+    data class Meeting(val room: String, val key: String) : Route() { override val kind get() = Kind.Meeting }
     data class Profile(val name: String) : Route() { override val kind get() = Kind.Profile }
     data object People : Route() { override val kind get() = Kind.People }
     data object Docs : Route() { override val kind get() = Kind.Docs }
@@ -233,7 +234,7 @@ sealed class Route {
         Project("project", "WS15"), Milestones("milestones", "WS15"), RepoSettings("repoSettings", "WS11"),
         LocalRepos("localRepos", "WS5"), LocalRepo("localRepo", "WS5"), QuickEdit("quickEdit", "WS5"),
         Chat("chat", "WS13"), Channel("channel", "WS13"), Thread("thread", "WS13"), Dm("dm", "WS13"),
-        Discord("discord", "WS13"),
+        Discord("discord", "WS13"), Meeting("meeting", "WS13"),
         Profile("profile", "WS18"), People("people", "WS18"), Docs("docs", "existing"), Search("search", "WS8"),
         Notes("notes", "WS15"), Note("note", "WS15"), NotePage("notePage", "WS15"), Tasks("tasks", "WS15"), Task("task", "WS15"),
         Calendar("calendar", "WS15"), Event("event", "WS15"), Booking("booking", "WS15"), Timers("timers", "WS15"),

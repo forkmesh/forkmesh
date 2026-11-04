@@ -11,6 +11,8 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-04", "area": "Android", "text": "Booking's Join video call and meeting links open a Meeting screen in the app, with every effect, the meeting code and the offline transcript."},
+  {"date": "2026-11-04", "area": "iPhone", "text": "Join video call on a booking, and meeting links, now open the meeting right in the app, with effects, the meeting code and the offline transcript."},
   {"date": "2026-11-04", "area": "Calls", "text": "Meeting rooms are end-to-end encrypted with the key in the link, have every face, background and voice effect, show a meeting code to read aloud, and can keep an offline transcript on your device."},
   {"date": "2026-11-04", "area": "Market", "text": "Booking Page: a video meeting without its own link now gets a private ForkMesh video room, with a Join button in both emails, on the calendar and in the apps."},
   {"date": "2026-11-04", "area": "Android", "text": "An inbox item shows only its back button at the top, a ping has one back button instead of two, and the Agents tools each sit in their own small glass square."},
