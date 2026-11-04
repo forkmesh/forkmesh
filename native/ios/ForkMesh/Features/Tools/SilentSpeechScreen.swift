@@ -43,6 +43,11 @@ struct SilentSpeechScreen: View {
                         .accessibilityIdentifier("silent-speech-sentence")
                     Text(listener.calibrating ? "Keep still for two seconds…" : readingDetail(reading))
                         .fmText(.bodySmall, color: fm.textSecondary)
+                    if let notice = reading.notice {
+                        Text(notice)
+                            .fmText(.bodySmall, color: fm.warning)
+                            .accessibilityIdentifier("silent-speech-reading-notice")
+                    }
                     HStack(spacing: FmSpace.x2) {
                         FmToneButton(label: "Again", icon: "refresh", onPressed: reading.position == 0 ? nil : { listener.readAgain() })
                         FmToneButton(label: "Skip", icon: "skip_next", onPressed: { listener.skipSentence() })
@@ -60,7 +65,7 @@ struct SilentSpeechScreen: View {
             HStack(spacing: FmSpace.x3) {
                 FmToneButton(label: "Read sentences · 5 min", icon: "play_arrow", tone: .accent, filled: true, height: 40, onPressed: listener.connected ? { listener.startReading() } : nil)
                     .accessibilityIdentifier("silent-speech-read")
-                Text(listener.readingSummary ?? "Mouth each word, short stop between words.")
+                Text(listener.readingSummary ?? "Short stop between words, a longer pause after each sentence.")
                     .fmText(.bodySmall, color: fm.textSecondary)
                     .lineLimit(2)
             }
@@ -77,7 +82,7 @@ struct SilentSpeechScreen: View {
 
     private func readingDetail(_ reading: SilentReading) -> String {
         let saved: String = reading.collected == 1 ? "1 take" : "\(reading.collected) takes"
-        return "Sentence \(reading.sentencesRead + 1) · \(reading.clock) · \(saved)"
+        return "Sentence \(reading.sentencesRead + 1) · \(reading.clock) · \(saved) · pause to finish it"
     }
 
     private var wordsSection: some View {
@@ -145,7 +150,7 @@ struct SilentSpeechScreen: View {
                     .accessibilityIdentifier("silent-speech-channel-\(channel.rawValue)")
                 }
                 Spacer(minLength: 0)
-                FmToneButton(label: listener.evaluating ? "Checking…" : "Check", icon: "check_circle", busy: listener.evaluating, onPressed: SilentEvaluator.requirement(listener.dataset) == nil ? { listener.evaluate() } : nil)
+                FmToneButton(label: listener.diagnosing ? "Diagnosing…" : "Diagnose", icon: "tune", busy: listener.diagnosing, onPressed: { listener.diagnose() })
                     .accessibilityIdentifier("silent-speech-evaluate")
             }
             if let result = listener.evaluation {
@@ -156,13 +161,32 @@ struct SilentSpeechScreen: View {
                         Text(result.headline).fmText(.labelMedium, color: fm.textPrimary)
                         Text(result.verdict).fmText(.bodySmall, color: result.significant ? fm.success : fm.textSecondary)
                             .accessibilityIdentifier("silent-speech-verdict")
-                        ForEach(Array(result.mixups().enumerated()), id: \.offset) { (item: (offset: Int, element: (word: String, guess: String, count: Int))) in
-                            Text("\(item.element.word) → \(item.element.guess) ×\(item.element.count)").fmText(.bodySmall, color: fm.textSecondary)
-                        }
                     }
                 }
             }
+            if let diagnosis = listener.diagnosis {
+                ForEach(Array(diagnosis.findings.enumerated()), id: \.offset) { (item: (offset: Int, element: SilentFinding)) in
+                    findingRow(item.element)
+                }
+            }
         }
+    }
+
+    private func findingRow(_ finding: SilentFinding) -> some View {
+        HStack(alignment: .top, spacing: FmSpace.x2) {
+            FmIcon(SilentFindingStyle.icon(finding.level), size: 18, color: SilentFindingStyle.color(finding.level, fm))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(finding.title).fmText(.labelMedium, color: fm.textPrimary)
+                Text(finding.detail).fmText(.bodySmall, color: fm.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+            if let fix = finding.fix {
+                FmToneButton(label: fix.label, onPressed: { listener.applyFix(finding) })
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("silent-speech-finding")
     }
 
     private func toggle(_ channel: SilentChannel) {
@@ -351,8 +375,29 @@ struct SilentMotionCard: View {
     private var statusDetail: String {
         guard listener.supported else { return "Head tracking is not available on this device" }
         guard listener.connected else { return "AirPods or Beats with head tracking, playing from this phone" }
-        if let rate = listener.rate { return "\(Int(rate.rounded())) Hz · last \(Int(SilentScope.window)) seconds" }
+        if let rate = listener.rate {
+            let heart: String = listener.pulse.map { " · heartbeat \($0.label)" } ?? ""
+            return "\(Int(rate.rounded())) Hz · last \(Int(SilentScope.window)) seconds\(heart)"
+        }
         return "Waiting for motion"
+    }
+}
+
+enum SilentFindingStyle {
+    static func icon(_ level: SilentFinding.Level) -> String {
+        switch level {
+        case .problem: return "error_outline"
+        case .tip: return "lightbulb"
+        case .good: return "check_circle_outline"
+        }
+    }
+
+    static func color(_ level: SilentFinding.Level, _ fm: FmPalette) -> Color {
+        switch level {
+        case .problem: return fm.warning
+        case .tip: return fm.textSecondary
+        case .good: return fm.success
+        }
     }
 }
 

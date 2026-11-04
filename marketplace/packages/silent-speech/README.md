@@ -18,20 +18,29 @@ asked whether AirPods head motion can tell mouthed words apart.
 - **Watch.** The top of the page draws the last six seconds of head motion:
   turning speed, head angle and (iPhone) movement on all three axes, the
   motion energy with each heard word shaded and named, and the frequency
-  spectrum with its peak. Tap ↻ to zero the head angle.
+  spectrum with its peak. Tap ↻ to zero the head angle. Sit still for ten
+  seconds and it may show your heartbeat, felt as the tiny nod each beat
+  gives your head (experimental).
 - **Teach.** Tap **Read sentences · 5 min**: it shows short everyday
   sentences and highlights the next word to mouth. Mouth each word with a
-  short stop between words; every word becomes a take. Each session picks
+  short stop between words, and pause at the end of the sentence. When it
+  heard as many words as the sentence has, every word becomes a take; when
+  the count is off (a nod, two words run together) it says so and asks for
+  the sentence again, so no word is saved under the wrong name. Each session picks
   the 8 sentences whose words have the fewest takes, so a few sessions cover
   more than a hundred words. Add your own sentence or word in **Words**
   (type `thirsty: Could I have some water, please?` to have a word say a
   phrase), or pick a word there, hold the button, mouth it and let go.
   Takes are kept on the phone.
-- **Check.** Tests every take against all the others, then against 500
+- **Diagnose.** Tests every take against all the others, then against 500
   shuffles of the labels, and says whether your head motion really tells the
-  words apart better than chance, with a mix-up map and the words most often
-  taken for others.
-- **Speak silently.** Hold the button and mouth a word, or turn on
+  words apart better than chance, with a mix-up map. Below it, a list of
+  what to fix, most serious first, each with a button that fixes it: takes
+  that barely moved, ran too long or look like another word (dropped in one
+  tap), words with too few takes, a better choice of channels, a better
+  setting for close calls, a stale **Skip far-off** limit, too much movement
+  between words, and slow earbuds.
+- **Speak silently.** Hold the button and mouth a word or several, or turn on
   **Hands-free**: it measures how still you are for two seconds, then picks
   out words by themselves. It also guesses which word is likely to come next
   from the sentences, to settle close calls. Recognised words build a

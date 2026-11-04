@@ -71,7 +71,8 @@ import androidx.compose.ui.unit.sp
 import com.forkmesh.nativeapp.feature.tools.ToolsAppBar
 import com.forkmesh.nativeapp.silentspeech.SilentChannel
 import com.forkmesh.nativeapp.silentspeech.SilentEvaluation
-import com.forkmesh.nativeapp.silentspeech.SilentEvaluator
+import com.forkmesh.nativeapp.silentspeech.SilentFinding
+import com.forkmesh.nativeapp.silentspeech.SilentLevel
 import com.forkmesh.nativeapp.silentspeech.SilentMark
 import com.forkmesh.nativeapp.silentspeech.SilentNoiseFloor
 import com.forkmesh.nativeapp.silentspeech.SilentReading
@@ -143,7 +144,7 @@ class SilentSpeechScreen : Screen() {
                     height = 40.dp,
                 )
                 Text(
-                    listener.readingSummary ?: "Mouth each word, short stop between words.",
+                    listener.readingSummary ?: "Short stop between words, a longer pause after each sentence.",
                     style = Fm.text.bodySmall,
                     color = Fm.colors.textSecondary,
                     maxLines = 2,
@@ -156,6 +157,7 @@ class SilentSpeechScreen : Screen() {
             Column(verticalArrangement = Arrangement.spacedBy(FmSpace.x2)) {
                 Text(sentenceText(reading), style = Fm.text.titleLarge, color = Fm.colors.textPrimary, modifier = Modifier.fillMaxWidth())
                 Text(if (listener.calibrating) "Keep still for two seconds…" else readingDetail(reading), style = Fm.text.bodySmall, color = Fm.colors.textSecondary)
+                reading.notice?.let { Text(it, style = Fm.text.bodySmall, color = Fm.colors.warning) }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(FmSpace.x2)) {
                     FmToneButton("Again", if (reading.position > 0) { { listener.readAgain() } } else null, icon = "refresh")
                     FmToneButton("Skip", { listener.skipSentence() }, icon = "skip_next")
@@ -182,7 +184,7 @@ class SilentSpeechScreen : Screen() {
 
     private fun readingDetail(reading: SilentReading): String {
         val saved = if (reading.collected == 1) "1 take" else "${reading.collected} takes"
-        return "Sentence ${reading.sentencesRead + 1} · ${reading.clock} · $saved"
+        return "Sentence ${reading.sentencesRead + 1} · ${reading.clock} · $saved · pause to finish it"
     }
 
     @OptIn(ExperimentalLayoutApi::class)
@@ -254,10 +256,10 @@ class SilentSpeechScreen : Screen() {
                 }
                 Spacer(Modifier.weight(1f))
                 FmToneButton(
-                    if (listener.evaluating) "Checking…" else "Check",
-                    if (SilentEvaluator.requirement(listener.dataset) == null) { { listener.evaluate() } } else null,
-                    icon = "check_circle",
-                    busy = listener.evaluating,
+                    if (listener.diagnosing) "Diagnosing…" else "Diagnose",
+                    { listener.diagnose() },
+                    icon = "tune",
+                    busy = listener.diagnosing,
                 )
             }
             listener.evaluation?.let { result ->
@@ -266,12 +268,27 @@ class SilentSpeechScreen : Screen() {
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(result.headline, style = Fm.text.labelMedium, color = Fm.colors.textPrimary)
                         Text(result.verdict, style = Fm.text.bodySmall, color = if (result.significant) Fm.colors.success else Fm.colors.textSecondary)
-                        for ((word, guess, count) in result.mixups()) {
-                            Text("$word → $guess ×$count", style = Fm.text.bodySmall, color = Fm.colors.textSecondary)
-                        }
                     }
                 }
             }
+            listener.diagnosis?.findings?.forEach { FindingRow(it) }
+        }
+    }
+
+    @Composable
+    private fun FindingRow(finding: SilentFinding) {
+        val (icon, tint) = when (finding.level) {
+            SilentLevel.PROBLEM -> "error_outline" to Fm.colors.warning
+            SilentLevel.TIP -> "lightbulb" to Fm.colors.textSecondary
+            SilentLevel.GOOD -> "check_circle_outline" to Fm.colors.success
+        }
+        Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(FmSpace.x2)) {
+            FmIcon(icon, size = 18.dp, tint = tint)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                Text(finding.title, style = Fm.text.labelMedium, color = Fm.colors.textPrimary)
+                Text(finding.detail, style = Fm.text.bodySmall, color = Fm.colors.textSecondary)
+            }
+            finding.fix?.let { fix -> FmToneButton(fix.label, { SilentSpeechListener.applyFix(finding) }) }
         }
     }
 
@@ -474,7 +491,8 @@ private fun statusDetail(): String {
     val listener = SilentSpeechListener
     if (!listener.supported) return "Head tracking needs Android 13 or later"
     if (!listener.connected) return "Earbuds with head tracking, connected to this phone"
-    return listener.rate?.let { "${it.roundToInt()} Hz · last ${SilentScope.WINDOW.toInt()} seconds" } ?: "Waiting for motion"
+    val heart = listener.pulse?.let { " · heartbeat ${it.label}" }.orEmpty()
+    return listener.rate?.let { "${it.roundToInt()} Hz · last ${SilentScope.WINDOW.toInt()} seconds$heart" } ?: "Waiting for motion"
 }
 
 @Composable

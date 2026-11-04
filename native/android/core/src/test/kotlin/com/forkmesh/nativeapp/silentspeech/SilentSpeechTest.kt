@@ -4,6 +4,8 @@ import com.forkmesh.nativeapp.testing.assertEq
 import com.forkmesh.nativeapp.testing.expect
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.exp
+import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
@@ -46,7 +48,25 @@ object SilentSynth {
         }
         return dataset
     }
+
+    fun shifted(samples: List<SilentSample>, offset: Double): List<SilentSample> = samples.map { it.copy(t = it.t + offset) }
+
+    fun heartbeat(bpm: Double, seconds: Double, amplitude: Double, rate: Double = 25.0): List<SilentSample> {
+        val random = SilentRandom(12)
+        val period = 60 / bpm
+        return List((seconds * rate).toInt()) { k ->
+            val t = k / rate
+            val phase = (t % period) / period
+            val beat = amplitude * (exp(-((phase - 0.2) / 0.05).pow(2)) - 0.6 * exp(-((phase - 0.3) / 0.06).pow(2)))
+            val breath = 0.003 * sin(2 * PI * 0.25 * t)
+            val jitter = SilentVector(0.002 * (random.unit() - 0.5), 0.002 * (random.unit() - 0.5), 0.002 * (random.unit() - 0.5))
+            SilentSample(t, SilentVector(beat + breath + jitter.x, 0.5 * beat + jitter.y, jitter.z), SilentQuaternion.IDENTITY, SilentVector(0.3 * beat, jitter.y, jitter.z))
+        }
+    }
 }
+
+private const val PULSE_BPM = 72.160817782816
+private const val PULSE_STRENGTH = 0.530359723840
 
 class SilentSpeechTest {
     private fun near(expected: Double, actual: Double, accuracy: Double = 1e-9) =
@@ -357,24 +377,30 @@ class SilentSpeechTest {
         assertEq(null, SilentScope.spectrum(List(64) { SilentVector(1.0, 1.0, 1.0) }).peakHz)
     }
 
-    fun testReadingLabelsEachHeardWordInOrder() {
-        var reading = SilentReading.start(listOf(listOf("yes", "no", "help", "stop")), 3, duration = 10.0)
+    fun testReadingLabelsEachHeardWordInOrderAfterAPause() {
+        var reading = SilentReading.start(listOf(listOf("yes", "no", "help", "stop")), 3, duration = 100.0)
         val first = reading.sentence
         val random = SilentRandom(4)
-        var labelled = emptyList<Pair<String, List<SilentSample>>>()
+        var t = 0.0
         for (word in first) {
-            expect(labelled.isEmpty(), "labelled only at the end of the sentence")
-            val (next, out) = reading.hear(SilentSynth.take(word, random))
-            reading = next
-            labelled = out
+            reading = reading.hear(SilentSynth.shifted(SilentSynth.take(word, random), t))
+            t += 2
+            val (early, none) = reading.tick(t - 1.2)
+            expect(none.isEmpty(), "not before the pause")
+            val (busy, held) = early.tick(t + 5, busy = true)
+            expect(held.isEmpty(), "not while a word is being heard")
+            reading = busy
         }
+        assertEq(4, reading.position)
+        val (next, labelled) = reading.tick(t + 5)
+        reading = next
         assertEq(first, labelled.map { it.first })
         assertEq(1, reading.sentencesRead)
         assertEq(4, reading.collected)
         assertEq(1, reading.index)
         assertEq(0, reading.position)
         assertEq("Saved 4 takes from 1 sentence.", reading.summary)
-        reading = reading.hear(SilentSynth.take("yes", random)).first
+        reading = reading.hear(SilentSynth.take("yes", random))
         assertEq(1, reading.position)
         reading = reading.again()
         assertEq(0, reading.position)
@@ -386,15 +412,110 @@ class SilentSpeechTest {
         assertEq(0, reading.sentencesRead)
     }
 
+    fun testReadingDropsASentenceWhenTheWordCountIsOff() {
+        var reading = SilentReading.start(listOf(listOf("yes", "no", "help")), 3, duration = 100.0)
+        val random = SilentRandom(5)
+        reading = reading.hear(SilentSynth.take("yes", random)).hear(SilentSynth.shifted(SilentSynth.take("no", random), 1.5))
+        val (missed, none) = reading.tick(10.0)
+        reading = missed
+        expect(none.isEmpty(), "two of three words are not saved")
+        assertEq(0, reading.index)
+        assertEq(0, reading.position)
+        assertEq(1, reading.missed)
+        assertEq("Heard 2 of 3 words, so it was not saved. Read it again.", reading.notice)
+        for (k in 0 until 4) reading = reading.hear(SilentSynth.shifted(SilentSynth.take("yes", random), 20 + k * 1.5))
+        val (extra, alsoNone) = reading.tick(40.0)
+        reading = extra
+        expect(alsoNone.isEmpty(), "four of three words are not saved")
+        assertEq(2, reading.missed)
+        for (k in 0 until 3) reading = reading.hear(SilentSynth.shifted(SilentSynth.take("yes", random), 50 + k * 1.5))
+        assertEq(null, reading.notice)
+        val (done, saved) = reading.tick(60.0)
+        assertEq(3, saved.size)
+        assertEq("Saved 3 takes from 1 sentence. 2 not saved: the word count was off.", done.summary)
+    }
+
     fun testReadingRunsForItsDuration() {
         var reading = SilentReading.start(listOf(listOf("yes", "no")), 1, duration = 300.0)
-        reading = reading.tick(1000.0).tick(1072.6)
+        reading = reading.tick(1000.0).first.tick(1072.6).first
         assertEq("1:12 of 5:00", reading.clock)
         expect(!reading.timeUp, "not yet")
-        reading = reading.tick(1300.0)
+        reading = reading.tick(1300.0).first
         expect(reading.done, "done after five minutes")
-        reading = reading.hear(listOf(SilentSample(0.0, SilentVector.ZERO, SilentQuaternion.IDENTITY))).first
+        reading = reading.hear(listOf(SilentSample(1300.0, SilentVector.ZERO, SilentQuaternion.IDENTITY)))
         expect(!reading.done, "finishes the sentence first")
+        reading = reading.tick(1302.0).first
+        expect(reading.done, "done once the sentence closes")
+    }
+
+    fun testSegmenterSplitsAHoldIntoWords() {
+        val random = SilentRandom(6)
+        val words = listOf(SilentSynth.take("yes", random), SilentSynth.shifted(SilentSynth.take("no", random), 1.6), SilentSynth.shifted(SilentSynth.take("help", random), 3.2))
+        val joined = words.flatten().sortedBy { it.t }
+        assertEq(3, SilentSegmenter.split(joined, SilentNoiseFloor(0.03, 0.01)).size)
+        assertEq(1, SilentSegmenter.split(joined.takeWhile { it.t < 0.9 }, SilentNoiseFloor(0.03, 0.01)).size)
+    }
+
+    fun testPulseFindsAHeartbeatWhenStill() {
+        val still = SilentSynth.heartbeat(72.0, 12.0, 0.01)
+        val pulse = SilentPulse.estimate(still) ?: error("no pulse")
+        near(72.0, pulse.bpm, 2.0)
+        expect(pulse.strength > SilentPulse.MINIMUM_STRENGTH, "strong")
+        near(55.0, (SilentPulse.estimate(SilentSynth.heartbeat(55.0, 12.0, 0.01)) ?: error("no pulse")).bpm, 2.0)
+        assertEq(null, SilentPulse.estimate(still.take(100)))
+        assertEq(null, SilentPulse.estimate(SilentSynth.heartbeat(72.0, 12.0, 0.5)))
+        assertEq(null, SilentPulse.estimate(SilentSynth.heartbeat(72.0, 12.0, 0.0)))
+    }
+
+    fun testPulseMatchesTheIPhone() {
+        val pulse = SilentPulse.estimate(SilentSynth.heartbeat(72.0, 12.0, 0.01)) ?: error("no pulse")
+        near(PULSE_BPM, pulse.bpm, 1e-6)
+        near(PULSE_STRENGTH, pulse.strength, 1e-6)
+    }
+
+    fun testDoctorFindsMislabelledTakesAndAStaleLimit() {
+        var dataset = SilentSynth.dataset(listOf("yes", "no", "help"), 6, 7)
+        val random = SilentRandom(8)
+        dataset = dataset.addTake(SilentTake("wrong", "yes", SilentSynth.take("no", random)))
+        dataset = dataset.addTake(SilentTake("flat", "help", SilentSynth.take("help", random, noise = 0.0).map { SilentSample(it.t, SilentVector.ZERO, SilentQuaternion.IDENTITY, SilentVector.ZERO) }))
+        val all = SilentChannel.DEFAULTS
+        val diagnosis = SilentDoctor.diagnose(SilentDoctorInput(dataset, all, all, 0.08, 0.001, 15.0, SilentNoiseFloor(0.03, 0.01), SilentPulse(64.0, 0.5)))
+        val titles = diagnosis.findings.map { it.title }
+        val drop = diagnosis.findings.first { it.title.endsWith("look wrong") }.fix as SilentFix.DropTakes
+        expect("wrong" in drop.ids, "finds the mislabelled take")
+        expect("flat" in drop.ids, "finds the take that barely moved")
+        expect(drop.ids.size <= 4, "drops only a few: ${drop.ids}")
+        expect("Earbuds send 15 readings a second" in titles, "slow earbuds")
+        expect("Earbuds feel your heartbeat, 64 bpm" in titles, "heartbeat")
+        assertEq(SilentFix.ClearLimit, diagnosis.findings.first { it.title.startsWith("Skip far-off") }.fix)
+        expect((diagnosis.accuracy ?: 0.0) > 0.8, "accuracy ${diagnosis.accuracy}")
+        assertEq(diagnosis.findings.map { it.level }.sorted(), diagnosis.findings.map { it.level })
+        val clean = SilentDoctor.diagnose(SilentDoctorInput(SilentSynth.dataset(listOf("yes", "no"), 4, 9), all, all, 0.08, noise = SilentNoiseFloor(0.03, 0.01)))
+        expect(clean.findings.none { it.level == SilentLevel.PROBLEM }, "no problems: ${clean.findings}")
+        assertEq(listOf(SilentFix.Read, SilentFix.Calibrate), SilentDoctor.diagnose(SilentDoctorInput(SilentDataset.STARTER, all, all, 0.08)).findings.map { it.fix })
+    }
+
+    fun testDoctorSuggestsTheChannelThatSeparatesWords() {
+        val random = SilentRandom(10)
+        var dataset = SilentDataset(listOf("yes", "no").map { SilentWord(it) })
+        for (n in 0 until 6) for (word in listOf("yes", "no")) {
+            val base = SilentSynth.take("yes", random)
+            val samples = base.map { s ->
+                val a = if (word == "yes") SilentVector(0.4, 0.0, 0.0) else SilentVector(0.0, 0.4, 0.0)
+                val wobble = SilentVector(random.unit() - 0.5, random.unit() - 0.5, random.unit() - 0.5)
+                SilentSample(s.t, s.rotationRate, s.attitude, if (s.t > 0.4 && s.t < 0.9) a else SilentVector(wobble.x * 0.01, wobble.y * 0.01, wobble.z * 0.01))
+            }
+            dataset = dataset.addTake(SilentTake("$word-$n", word, samples))
+        }
+        val diagnosis = SilentDoctor.diagnose(SilentDoctorInput(dataset, setOf(SilentChannel.ROTATION), SilentChannel.DEFAULTS, 0.08, noise = SilentNoiseFloor(0.03, 0.01)))
+        val fix = diagnosis.findings.mapNotNull { it.fix as? SilentFix.Channels }.first()
+        expect(SilentChannel.ACCELERATION in fix.channels, "suggests movement: ${fix.channels}")
+    }
+
+    fun testModelKeepsTheNewestTakesOfEachWord() {
+        val dataset = SilentSynth.dataset(listOf("yes", "no"), 5, 11)
+        assertEq(6, SilentModel(dataset.takes, SilentChannel.DEFAULTS, perWord = 3).templates.size)
+        assertEq(10, SilentModel(dataset.takes, SilentChannel.DEFAULTS).templates.size)
     }
 
     fun testManyTakesMatchOnThreeNeighbours() {

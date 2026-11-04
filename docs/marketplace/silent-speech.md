@@ -56,8 +56,11 @@ Linux and the host JVM with the same synthetic data and expected numbers
    divided by `n + m`. A word's score is its best template, or the mean of
    its best three once every word has at least 10 takes
    (`SilentEvaluator.neighbors`), so one mislabelled take cannot win alone.
+   The live model keeps the newest 30 takes of each word
+   (`SilentModel.maxPerWord`), so it follows the current seating of the
+   earbuds and its cost stays bounded as reading sessions add takes.
    A match is rejected when it is above the max distance or less than 8% ahead
-   of the runner-up.
+   of the runner-up (both can be changed from **Diagnose**).
 5. **Next-word guess** (`SilentLanguage`, `SilentScores.ranked`). With a
    large vocabulary many words sit close together, so the decoder adds a
    bigram model of the reading sentences (built-in and the user's own):
@@ -68,7 +71,7 @@ Linux and the host JVM with the same synthetic data and expected numbers
    and never outweighs a clearly closer word. The previous word is the
    transcript's last; an empty transcript uses the sentence-start context.
    The 8% margin is measured on these scores.
-6. **Check** (`SilentEvaluator.evaluate`). Words with at least two takes are
+6. **Check** (`SilentEvaluator.evaluate`, run by **Diagnose**). Words with at least two takes are
    compared. Leave-one-out accuracy on the distance matrix, then 500 label
    shuffles of the same matrix; `p < 0.05` is reported as better than chance.
    To stay within seconds on a phone with a big vocabulary, it uses the
@@ -78,12 +81,19 @@ Linux and the host JVM with the same synthetic data and expected numbers
    600 takes get 111. With at least 100 shuffles the smallest p is 0.0099,
    still well under 0.05. An 840-take, 70-word set took 7 s on a desktop JVM
    with 800 takes and 500 shuffles before these limits, about 1 s after.
+   It no longer turns **Skip far-off** on by itself: the limit is measured on
+   one set of takes and goes stale as soon as more are read, and a stale limit
+   rejects right words.
 7. **Listening without holding** (`SilentSegmenter`). Two seconds of
    stillness set the floor (median) and spread (1.4826 × MAD). A word starts
    after two samples above `floor + max(4·spread, 0.05)`, with 0.2 s of
    pre-roll, and ends after 0.35 s below `floor + max(2·spread, 0.025)`;
    anything under 0.3 s from onset is dropped, and 3 s is the longest word.
-   On the page this is the **Hands-free** chip.
+   On the page this is the **Hands-free** chip. Holding the button runs the
+   same segmenter over the held motion (`SilentSegmenter.split`, which also
+   flushes a word still open when the button is let go), so a hold with
+   several words gives several matches instead of one long take that matches
+   nothing; without a stillness measurement the hold is matched whole.
 
 ## Reading session
 
@@ -111,12 +121,57 @@ mouthed one after another with a short stop between them.
   sentence twice in a row.
 - **Labelling.** The session first measures stillness (two seconds, as in
   step 7), then feeds `SilentSegmenter` output to `hear`. The highlighted
-  word moves on with each segment; when a sentence has as many segments as
-  words, they are labelled in order and saved as takes. **Again** drops a
-  half-read sentence when the count slips (a nod, two words run together),
+  word moves on with each segment. A sentence closes on a pause: 1.5 s after
+  its last segment ended with no word in progress (`SilentReading.tick`,
+  `sentencePause`). Only then are the segments labelled in order and saved,
+  and only when there are exactly as many as words; otherwise the sentence is
+  dropped, counted in `missed`, and shown again with "Heard 4 of 5 words".
+  The first version labelled the moment the count was reached, so one extra
+  nod or split word shifted every later label and carried into the next
+  sentence: words were trained on other words' motion, which is why reading
+  did not seem to teach anything. **Again** drops a half-read sentence,
   **Drop last** removes a finished one, **Skip** moves on.
 - **Length.** Five minutes of motion-clock time; the session ends after the
   sentence in progress, or on **Finish** or leaving the page.
+
+## Diagnose
+
+**Diagnose** (`SilentDoctor.diagnose`, in the background) runs the check
+above and lists findings, problems first, then tips, then what is fine. Each
+finding can carry a fix (`SilentFix`) that the page applies in one tap:
+
+| Finding | Test | Fix |
+| --- | --- | --- |
+| Slow earbuds | rate under 20 Hz | none (advice) |
+| Stillness not measured, or too much movement | no noise floor, or on-threshold above 0.4 | measure stillness |
+| Not enough taught; words with fewer than 3 takes | take counts | start a reading session |
+| Takes that look wrong | peak energy under 0.06 (barely moved), longer than 2.5 s (two words), or nearest same-word take more than twice the word's median and farther than the nearest other word (`SilentDoctor.outliers`, labelled out of step) | drop those takes |
+| Accuracy | leave-one-out on the newest 8 takes a word, at most 240; problem when under twice chance | reading session |
+| Most mixed-up pairs | leave-one-out mistakes, top three | none |
+| Close-call margin | among 2, 4, 6, 8, 12% and the current one, the margin that keeps the most right words minus wrong ones, when it beats the current by at least 1 or 5% of takes | set it |
+| Stale **Skip far-off** | it would reject more than 25% of right leave-one-out matches | turn it off |
+| Channels | leave-one-out accuracy of every channel subset; suggested when 5 points better | use them |
+| Heartbeat | a pulse was found (below) | none: the sensor is sensitive |
+
+Dropping takes or changing channels re-runs the diagnosis; dropping takes
+also clears **Skip far-off**.
+
+## Heartbeat
+
+Each heartbeat moves the head very slightly (ballistocardiography), so
+earbud motion carries the pulse when the wearer is still. `SilentPulse`
+takes the last 12 s (at least 8), only when every frame's energy is under
+`max(on threshold, 0.15)`. Each rotation axis (and, on iPhone, each
+acceleration axis) is high-passed by subtracting a 1 s centred moving
+average, smoothed over 3 frames and scaled to unit variance; their mean
+autocorrelation is searched for the highest peak between 40 and 180 bpm
+(lags 8 to 38 frames), a peak at half that lag within 85% of it wins (the
+true beat rather than every second one), the peak must reach 0.3, and a
+parabola through the three points around it refines the lag. It is checked
+once a second and shown in the motion card ("heartbeat 64 bpm"). It is
+tested on synthetic beats only (identical numbers on both phones); real
+earbuds at 15–25 Hz may well be too coarse or filtered, so it is labelled
+experimental.
 
 ## Motion view
 
@@ -146,11 +201,23 @@ the legend names each axis, so colour is never the only cue.
 One phone screen: the motion card, then the reading button (or the sentence
 being read), a collapsed **Words** row (taught and total words, takes;
 opens to chips with take counts, hold-to-teach for the selected word and
-the add field), the channel chips with **Check** (a mix-up map, the verdict
-and the three worst mix-ups), and **Speak silently** (hold button,
+the add field), the channel chips with **Diagnose** (a mix-up map, the
+verdict and the findings with their fixes), and **Speak silently** (hold button,
 **Hands-free**, **Speak** and **Skip far-off** chips, last match, the
 transcript with icon actions). The long explanations and per-channel notes
 went; the README is the user guide.
+
+## Performance
+
+Motion arrives 15–25 times a second. The listeners keep the live scope,
+reading session and sample windows out of observed state and publish the
+scope at most 15 times a second, the reading only when something shown
+changes (clock second, word, notice), and the rate rounded, so the page no
+longer redraws on every sample (on iPhone, setting `connected` on every
+sample redrew the whole page). The spectrum uses a precomputed sine and
+cosine table. The model is rebuilt in the background after each change
+(not during a reading session), and the dataset is encoded and written on a
+serial background queue instead of the main thread after every sentence.
 
 ## Storage and privacy
 
