@@ -96,6 +96,7 @@ FIRST_PARTY_PACKAGES = {
     "sentry": "Sentry",
     "shortcuts": "Shortcuts",
     "sign-in": "Sign in",
+    "silent-speech": "Silent Speech",
     "sleep": "Sleep",
     "special-agents": "Special Agents",
     "spider-room": "Spider Room",

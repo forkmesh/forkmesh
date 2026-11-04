@@ -12,8 +12,10 @@ It is bundled, off by default and account-synced, with
 `install.installedBefore: "2026-10-19"` so existing accounts get it
 ([core-plugins.md](core-plugins.md)). The phones show a **Files** Home tile
 (route `files`, web path `/dashboard/files`). On the desktop the rail's
-**Files** button and Files section, which were never gated, are the shortcut;
-the explorer and editor gained a **Network** source there.
+**Files** button and Files section are the shortcut and follow the package
+like every other switch (removing it hides the button and leaves an open
+Files page for the Market); the explorer and editor gained a **Network**
+source there.
 
 ## Network shares (SMB)
 

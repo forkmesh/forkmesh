@@ -4599,6 +4599,7 @@ void MainWindow::syncPackageSurfaces()
          on(QStringLiteral("network")) || on(QStringLiteral("hosts"))},
         {m_teamNavButton, on(QStringLiteral("special-agents"))},
         {m_statsNavButton, on(QStringLiteral("stats"))},
+        {m_filesNavButton, on(QStringLiteral("files"))},
         {m_repoIssuesTab, on(QStringLiteral("issues"))},
         {m_repoPullsTab, on(QStringLiteral("pull-requests"))},
         {m_repoDiscussionsTab, on(QStringLiteral("discussions"))},
@@ -4668,6 +4669,7 @@ void MainWindow::syncPackageSurfaces()
             {3, QStringLiteral("inbox")},
             {kTeamSectionIndex, QStringLiteral("special-agents")},
             {kStatsSectionIndex, QStringLiteral("stats")},
+            {kFilesSectionIndex, QStringLiteral("files")},
         };
         const bool networkGone =
             section == kNetworkDiagnosticsSectionIndex &&
@@ -4793,6 +4795,7 @@ forkmesh::market::NativePackageHost MainWindow::nativePackageHost(
     host.accountName = [this] {
         return AccountCapability::normalizedAccount(m_accountName);
     };
+    host.accountSignedIn = [this] { return hasActiveAccountSession(); };
     host.openDirectMessage = [this](const QString &account) {
         const QString name = account.trimmed().toLower();
         if (forkmesh::ui::isValidNodeName(name))
@@ -4839,6 +4842,8 @@ forkmesh::market::NativePackageHost MainWindow::nativePackageHost(
         openNetworkShareLocation(url, guest);
     };
     host.openWebPage = [this](const QString &path) {
+        if (openNativePackageWebPage(path))
+            return;
         const QUrl url = forkmesh::market::nativePackageWebPageUrl(
             catalogApiUrl(), path);
         if (!url.isValid()) {
@@ -4886,6 +4891,40 @@ forkmesh::market::NativePackageHost MainWindow::nativePackageHost(
                 done({false, false, QStringLiteral("No password manager is installed."), {}});
         };
     }
+    if (permissionIds.contains(QStringLiteral("social.mastodon.signin")))
+        host.mastodonSignIn = [this] {
+            const QString mastodon = QStringLiteral("mastodon");
+            if (!m_packageRegistry || !m_packageRegistry->isInstalledHere(mastodon))
+                return QJsonObject();
+            const QJsonArray accounts =
+                QJsonDocument::fromJson(m_packageRegistry
+                                            ->packageSetting(mastodon, QStringLiteral("accounts"))
+                                            .toString()
+                                            .toUtf8())
+                    .array();
+            const QString active =
+                m_packageRegistry->packageSetting(mastodon, QStringLiteral("active")).toString();
+            QJsonObject chosen;
+            for (const QJsonValue &value : accounts) {
+                const QJsonObject account = value.toObject();
+                const QString instance = account.value(QStringLiteral("instance")).toString();
+                const QString id = account.value(QStringLiteral("id")).toString();
+                const QString acct = account.value(QStringLiteral("acct")).toString();
+                if (instance.isEmpty() || acct.isEmpty() ||
+                    account.value(QStringLiteral("token")).toString().isEmpty())
+                    continue;
+                const bool isActive =
+                    instance + QLatin1Char('|') + (id.isEmpty() ? acct : id) == active;
+                if (chosen.isEmpty() || isActive)
+                    chosen = QJsonObject{
+                        {QStringLiteral("instance"), instance},
+                        {QStringLiteral("token"), account.value(QStringLiteral("token"))},
+                        {QStringLiteral("acct"), acct}};
+                if (isActive)
+                    break;
+            }
+            return chosen;
+        };
     if (permissionIds.contains(QStringLiteral("repository.read")) ||
         permissionIds.contains(QStringLiteral("repository.activity.read"))) {
         host.repositories = [this] { return nativePackageRepositories(); };
@@ -4954,8 +4993,15 @@ forkmesh::market::NativePackageHost MainWindow::nativePackageHost(
             if (url.scheme() != base.scheme() || url.host() != base.host() ||
                 url.port() != base.port())
                 return QString();
-            return accountSessionTokenForUrl(url);
+            const QString token = accountSessionTokenForUrl(url);
+            if (token.isEmpty() && hasActiveAccountSession())
+                QTimer::singleShot(0, this, [this] { ensureAccountSession(); });
+            return token;
         };
+        host.requestAccountSession =
+            [this](std::function<void(const QString &)> done) {
+                ensureAccountSession(std::move(done));
+            };
         host.signProof = [this, contributionCopy](
                              const QString &proof, const QString &resource,
                              QString *signer, QString *ts, QString *sig) {
@@ -5277,6 +5323,22 @@ void MainWindow::openNativePackageLink(const QString &id)
         return;
     }
     QDesktopServices::openUrl(url);
+}
+
+bool MainWindow::openNativePackageWebPage(const QString &path)
+{
+    const QString command = QStringLiteral("webPage.open");
+    const QJsonObject args{{QStringLiteral("path"), path}};
+    QList<QPointer<forkmesh::market::NativePackageWidget>> widgets;
+    for (const NativePackagePage &page : std::as_const(m_nativePackagePages))
+        widgets.append(page.widget);
+    for (const QPointer<forkmesh::market::NativePackageWidget> &widget :
+         std::as_const(widgets)) {
+        if (widget && widget->acceptsHostCommand(command) &&
+            widget->hostCommand(command, args))
+            return true;
+    }
+    return false;
 }
 
 // The top search box answers from each package's loaded records, and a page

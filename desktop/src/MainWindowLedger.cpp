@@ -4105,6 +4105,10 @@ void MainWindow::remindLedgerRecipient(const QString &recordId)
 {
     if (!m_ledgerRemindingRecordId.isEmpty())
         return;
+    if (waitForAccountSession(
+            rewardPoolWorkerEndpoint(QStringLiteral("/api/rewards/wallet-reminder")),
+            [this, recordId] { remindLedgerRecipient(recordId); }))
+        return;
     m_ledgerRemindingRecordId = recordId;
     // This page answers one action at a time: the reminder's own outcome
     // replaces whatever the last payment left on the status line.

@@ -11,7 +11,7 @@
   },
   "type": "extension.native",
   "category": "Productivity",
-  "version": "1.51.0",
+  "version": "1.54.0",
   "summary": "Run customizable relationship flows, open a contact for every detail and their accounts' latest posts, send founders outreach, share the investor deck through a tracked link, link Gmail, Zoho Mail and Mastodon threads, and share sheets.",
   "screenshots": [
     {
@@ -101,8 +101,13 @@
     },
     {
       "id": "social.mastodon.toots",
-      "label": "Use the organization's Mastodon token to log toots it sent that mention a contact",
+      "label": "Use the organization's Mastodon token to log toots mentioning a contact, follow contacts and follow back its followers",
       "risk": "sensitive"
+    },
+    {
+      "id": "social.mastodon.signin",
+      "label": "Follow contacts from the account signed in to the Mastodon package when the organization has no Mastodon token",
+      "risk": "high"
     },
     {
       "id": "organization.members.email",

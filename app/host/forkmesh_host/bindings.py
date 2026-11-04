@@ -371,7 +371,9 @@ class StaticAssets:
         drop-trailing-slash redirects.
         """
         path = urllib.parse.unquote(path or "/")
-        if "\0" in path:
+        if ("\0" in path or "\\" in path or "%" in path
+                or path.startswith("//")
+                or ".." in path.split("/")):
             return None, None
         if not redirects:
             exact = self._file(path)

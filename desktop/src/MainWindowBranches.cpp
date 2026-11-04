@@ -697,10 +697,12 @@ static void applyDiffHealthMetric(QLabel *label,
                           "&nbsp;<span style='color:%1;font-weight:700'>%4</span>")
             .arg(accent, foreground, metric.label.toHtmlEscaped())
             .arg(metric.score));
-    label->setStyleSheet(Theme::remapSheet(
+    const QString sheet = Theme::remapSheet(
         QStringLiteral("QLabel{background:%1;border:1px solid %2;"
                        "border-radius:8px;padding:1px 6px;}")
-            .arg(background, border)));
+            .arg(background, border));
+    if (label->styleSheet() != sheet)
+        label->setStyleSheet(sheet);
     label->setProperty("metricKey", metric.key);
     label->setProperty("healthScore", metric.score);
     label->setProperty("healthTone", tone);
@@ -4906,12 +4908,13 @@ void MainWindow::resolveWorktreeConflicts()
 }
 
 void MainWindow::commitWorktreeChanges(const QString &worktreePath,
-                                       const QString &branch)
+                                       const QString &branch,
+                                       std::function<void(bool)> onDone)
 {
     if (worktreePath.isEmpty() || branch.isEmpty())
         return;
     if (!QDir(worktreePath).exists()) {
-        setRepoDetailNotice("That worktree's folder is gone.", true);
+        noticeForRepo(!onDone, QStringLiteral("That worktree's folder is gone."), true);
         loadWorktreesPanel();
         return;
     }
@@ -4928,16 +4931,18 @@ void MainWindow::commitWorktreeChanges(const QString &worktreePath,
                                  nullptr) &&
                    QString::fromUtf8(st).trimmed().isEmpty();
         },
-        [this, dir, worktreePath, branch](bool clean) {
+        [this, dir, worktreePath, branch, onDone](bool clean) {
             if (clean) {
                 m_worktreeGitBusy.remove(worktreePath);
-                noticeForRepo(repoGitDir() == dir,
+                noticeForRepo(repoGitDir() == dir && !onDone,
                               QStringLiteral("Worktree %1 has no changes to commit.")
                                   .arg(branch),
                               false);
+                if (onDone)
+                    onDone(false);
                 return;
             }
-            if (repoGitDir() != dir) {
+            if (repoGitDir() != dir && !onDone) {
                 m_worktreeGitBusy.remove(worktreePath);
                 return;
             }
@@ -4952,7 +4957,7 @@ void MainWindow::commitWorktreeChanges(const QString &worktreePath,
             }
             if (message.isEmpty()) {
                 m_worktreeGitBusy.remove(worktreePath);
-                setRepoDetailNotice("A commit message is required.", true);
+                noticeForRepo(!onDone, QStringLiteral("A commit message is required."), true);
                 return;
             }
             runOffThread<QPair<bool, QString>>(
@@ -4964,9 +4969,9 @@ void MainWindow::commitWorktreeChanges(const QString &worktreePath,
                                       &err);
                     return qMakePair(committed, err);
                 },
-                [this, dir, worktreePath, branch](QPair<bool, QString> result) {
+                [this, dir, worktreePath, branch, onDone](QPair<bool, QString> result) {
                     m_worktreeGitBusy.remove(worktreePath);
-                    const bool here = repoGitDir() == dir;
+                    const bool here = repoGitDir() == dir && !onDone;
                     if (result.first)
                         noticeForRepo(here,
                                       QStringLiteral("Committed changes in %1.")
@@ -4977,8 +4982,10 @@ void MainWindow::commitWorktreeChanges(const QString &worktreePath,
                                       QStringLiteral("Couldn't commit changes in %1: %2")
                                           .arg(branch, result.second.trimmed()),
                                       true);
-                    if (here)
+                    if (repoGitDir() == dir)
                         loadWorktreesPanel();
+                    if (onDone)
+                        onDone(result.first);
                 });
         });
 }

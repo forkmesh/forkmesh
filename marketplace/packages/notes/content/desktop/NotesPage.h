@@ -2,6 +2,7 @@
 
 #include "NativePackageExtension.h"
 #include "NoteComments.h"
+#include "NoteTools.h"
 
 #include <QJsonArray>
 #include <QJsonObject>
@@ -114,6 +115,10 @@ private:
     void hideNotePresence();
     void updateCommentControls();
     void setCommentsPanelOpen(bool open);
+    void toggleSidePanel(bool chat);
+    void setNoteFollow(const QString &name);
+    void followNotePeer(const NotePeer &peer);
+    void noteCaretMoved();
     void startNoteComment();
     CommentQuote noteSelectionQuote(bool *previewMiss = nullptr) const;
     void showCommentPassage(const CommentThread *thread);
@@ -142,7 +147,11 @@ private:
     void openReferenceLink(const QString &href);
     void searchIndexChanged();
     bool noteAiEditAvailable() const;
+    bool startNoteAiEdit(const QString &instruction,
+                         forkmesh::notes::NoteTextRange range);
     void applyNoteAiEdit(const QString &reply, const QString &error);
+    forkmesh::notes::NoteTextRange aiSelectionRange() const;
+    void aiSelectionChanged();
     void stopNoteAiEdit();
     void promptTargetChanged();
 
@@ -180,6 +189,16 @@ private:
     NoteCommentsPanel *m_commentsPanel = nullptr;
     QPushButton *m_commentsButton = nullptr;
     QPushButton *m_commentButton = nullptr;
+    QPushButton *m_chatButton = nullptr;
+    QPushButton *m_followStop = nullptr;
+    QList<NotePeer> m_peers;
+    QString m_followName;
+    int m_followLine = 0;
+    int m_followColumn = 0;
+    int m_presenceSentLine = 0;
+    QJsonValue m_chatKey;
+    bool m_preferLive = false;
+    bool m_openingNoteView = false;
     QWidget *m_presenceBox = nullptr;
     NotePresenceFaces *m_presenceFaces = nullptr;
     QLabel *m_presenceLine = nullptr;
@@ -211,6 +230,8 @@ private:
     QString m_aiEditNoteId;
     QString m_aiEditBase;
     QString m_aiEditBaseTitle;
+    forkmesh::notes::NoteTextRange m_aiEditRange;
+    bool m_aiPromptSelection = false;
     int m_aiEditSequence = 0;
 };
 

@@ -249,6 +249,7 @@ struct MergeAgentIntent: AppIntent {
 struct StopAgentIntent: AppIntent {
     static let title: LocalizedStringResource = "Stop agent"
     static let description = IntentDescription("Stops a running ForkMesh agent.")
+    static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
     @Parameter(title: "Agent", requestValueDialog: "Which agent should I stop?")
     var run: AgentRunEntity
@@ -283,6 +284,7 @@ struct StopAgentIntent: AppIntent {
 struct StopAllAgentsIntent: AppIntent {
     static let title: LocalizedStringResource = "Stop all agents"
     static let description = IntentDescription("Stops every running ForkMesh agent.")
+    static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
     init() {}
 
@@ -314,6 +316,7 @@ struct StopAllAgentsIntent: AppIntent {
 struct ContinueAgentIntent: AppIntent {
     static let title: LocalizedStringResource = "Continue agent"
     static let description = IntentDescription("Tells a finished desktop agent to keep going.")
+    static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
     @Parameter(title: "Agent", requestValueDialog: "Which agent should continue?")
     var run: AgentRunEntity
@@ -340,6 +343,7 @@ struct ContinueAgentIntent: AppIntent {
 struct TellAgentIntent: AppIntent {
     static let title: LocalizedStringResource = "Tell an agent"
     static let description = IntentDescription("Sends a message to a ForkMesh agent.")
+    static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
     @Parameter(title: "Agent", requestValueDialog: "Which agent?")
     var run: AgentRunEntity

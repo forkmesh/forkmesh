@@ -277,11 +277,14 @@ export function createWorldOfficeMeeting({
       button.className = "world-office-room-card";
       button.setAttribute("aria-label", `Join #${room.name}`);
       const copy = document.createElement("span");
-      copy.innerHTML = `<strong>#${room.name}</strong><small>${
+      const strong = document.createElement("strong");
+      strong.textContent = `#${room.name}`;
+      const small = document.createElement("small");
+      small.textContent =
         room.kind === "general"
           ? "Public World room"
-          : `${room.visibility === "private" ? "Private" : "Public"} channel`
-      }</small>`;
+          : `${room.visibility === "private" ? "Private" : "Public"} channel`;
+      copy.append(strong, small);
       const action = document.createElement("span");
       action.textContent = "Join";
       action.setAttribute("aria-hidden", "true");

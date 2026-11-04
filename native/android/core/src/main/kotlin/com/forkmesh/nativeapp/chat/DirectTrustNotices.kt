@@ -51,6 +51,20 @@ object DirectTrustText {
 
     fun safetyExplainer(name: String): String =
         "Compare these numbers with $name, or scan the code on their phone. If they match, nobody is in the middle of this chat."
+
+    fun decideFailed(approve: Boolean): String =
+        "${if (approve) "Approving" else "Blocking"} did not finish. Try again, or reopen the chat if it keeps failing."
+}
+
+object DirectTrustDecision {
+    fun run(kids: List<String>, decide: (String) -> Boolean): Boolean =
+        try {
+            kids.all(decide)
+        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            false
+        }
 }
 
 data class DirectTrustNotice(val id: String, val conversation: String, val kids: List<String>, val own: Boolean, val text: String, val timestamp: Long) {

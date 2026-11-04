@@ -811,6 +811,8 @@ set(FORKMESH_APP_SOURCES
     src/PingSyncState.cpp
     src/DesktopPingForward.h
     src/DesktopPingForward.cpp
+    src/CompactCelebration.h
+    src/CompactCelebration.cpp
     src/AgentCliTasks.h
     src/AgentCliTasks.cpp
     src/DesktopPowerAlert.h
@@ -1112,6 +1114,8 @@ set(FORKMESH_APP_SOURCES
     src/HiddenUnicode.cpp
     src/HiddenUnicodeGuard.h
     src/HiddenUnicodeGuard.cpp
+    src/CopyFormatting.h
+    src/CopyFormatting.cpp
     src/AdBannerWidget.h
     src/AdBannerWidget.cpp
     src/SecretDiffBanner.h
@@ -1153,6 +1157,8 @@ set(FORKMESH_APP_SOURCES
     src/MessageRow.h
     src/MessageRow.cpp
     src/MarkdownEditor.cpp
+    src/MarkdownLiveHighlighter.h
+    src/MarkdownLiveHighlighter.cpp
     src/KebabHeaderView.h
     src/KebabHeaderView.cpp
     src/SettingsSectionsView.h
@@ -3734,6 +3740,17 @@ forkmesh_link_opengl(forkmesh-window-tests)
         set_target_properties(forkmesh-hidden-unicode-tests PROPERTIES MACOSX_BUNDLE FALSE)
     endif()
 
+    qt_add_executable(forkmesh-copy-formatting-tests
+        tests/test_copy_formatting.cpp
+        src/CopyFormatting.h
+        src/CopyFormatting.cpp
+    )
+    target_link_libraries(forkmesh-copy-formatting-tests PRIVATE Qt6::Widgets)
+    target_include_directories(forkmesh-copy-formatting-tests PRIVATE src)
+    if(APPLE)
+        set_target_properties(forkmesh-copy-formatting-tests PROPERTIES MACOSX_BUNDLE FALSE)
+    endif()
+
     qt_add_executable(forkmesh-genie-vitals-tests
         tests/test_genie_vitals.cpp
         src/GenieVitals.h
@@ -3896,6 +3913,22 @@ forkmesh_link_opengl(forkmesh-window-tests)
     target_include_directories(forkmesh-prompt-spellcheck-tests PRIVATE src)
     if(APPLE)
         set_target_properties(forkmesh-prompt-spellcheck-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
+    qt_add_executable(forkmesh-markdown-live-tests
+        tests/test_markdown_live.cpp
+        src/MarkdownLiveHighlighter.h
+        src/MarkdownLiveHighlighter.cpp
+        src/Theme.h
+        src/DesignTokens.h
+        src/DesignTokens.cpp
+        ${FORKMESH_THEME_QRC}
+    )
+    target_link_libraries(forkmesh-markdown-live-tests PRIVATE Qt6::Widgets)
+    target_include_directories(forkmesh-markdown-live-tests PRIVATE src)
+    if(APPLE)
+        set_target_properties(forkmesh-markdown-live-tests PROPERTIES
             MACOSX_BUNDLE FALSE)
     endif()
 
@@ -4421,6 +4454,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-stall-watchdog-tests
         forkmesh-qt-runtime-diagnostics-tests
         forkmesh-prompt-spellcheck-tests
+        forkmesh-markdown-live-tests
         PROPERTIES EXCLUDE_FROM_ALL TRUE)
 
     # Register all suites with CTest so they run independently of the app:
@@ -4507,6 +4541,8 @@ forkmesh_link_opengl(forkmesh-perf-tests)
              COMMAND forkmesh-ad-banner-model-tests)
     add_test(NAME forkmesh-hidden-unicode-tests
              COMMAND forkmesh-hidden-unicode-tests)
+    add_test(NAME forkmesh-copy-formatting-tests
+             COMMAND forkmesh-copy-formatting-tests)
     add_test(NAME forkmesh-genie-vitals-tests
              COMMAND forkmesh-genie-vitals-tests)
     add_test(NAME forkmesh-genie-landmarks-tests
@@ -4531,6 +4567,10 @@ forkmesh_link_opengl(forkmesh-perf-tests)
     add_test(NAME forkmesh-deploy-log-tests COMMAND forkmesh-deploy-log-tests)
     add_test(NAME forkmesh-prompt-spellcheck-tests
              COMMAND forkmesh-prompt-spellcheck-tests)
+    add_test(NAME forkmesh-markdown-live-tests
+             COMMAND forkmesh-markdown-live-tests)
+    set_tests_properties(forkmesh-markdown-live-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_test(NAME forkmesh-crash-scan-tests COMMAND forkmesh-crash-scan-tests)
     add_test(NAME forkmesh-diagnostics-report-tests COMMAND forkmesh-diagnostics-report-tests)
     add_test(NAME forkmesh-claude-session-scan-tests
@@ -4891,9 +4931,11 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-window-fade-tests
         forkmesh-message-box-clicks-tests
         forkmesh-hidden-unicode-tests
+        forkmesh-copy-formatting-tests
         forkmesh-tests forkmesh-window-tests
         forkmesh-qt-runtime-diagnostics-tests
         forkmesh-prompt-spellcheck-tests
+        forkmesh-markdown-live-tests
         forkmesh-startup-splash-tests
         forkmesh-teammates-window-tests
         forkmesh-mirror-fleet-window-tests forkmesh-diff-stream-window-tests
@@ -5027,6 +5069,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-issue-mention-tests
         forkmesh-ledger-tests
         forkmesh-prompt-spellcheck-tests
+        forkmesh-markdown-live-tests
         ${FORKMESH_MARKETPLACE_TEST_TARGETS}
         forkmesh-crash-scan-tests forkmesh-system-pressure-tests
         forkmesh-diagnostics-report-tests
@@ -5086,6 +5129,23 @@ forkmesh_link_opengl(forkmesh-perf-tests)
     endif()
     add_test(NAME forkmesh-desktop-ping-forward-tests
         COMMAND forkmesh-desktop-ping-forward-tests)
+
+    qt_add_executable(forkmesh-compact-celebration-tests
+        tests/test_compact_celebration.cpp
+        src/CompactCelebration.h
+        src/CompactCelebration.cpp
+    )
+    target_include_directories(forkmesh-compact-celebration-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-compact-celebration-tests PRIVATE Qt6::Widgets)
+    if(APPLE)
+        set_target_properties(forkmesh-compact-celebration-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+    add_test(NAME forkmesh-compact-celebration-tests
+        COMMAND forkmesh-compact-celebration-tests)
+    set_tests_properties(forkmesh-compact-celebration-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
     qt_add_executable(forkmesh-agent-cli-tasks-tests
         tests/test_agent_cli_tasks.cpp

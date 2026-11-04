@@ -6,7 +6,7 @@ Part of [the App docs](README.md). The web Notes page
 `marketplace/packages/notes/content/web/view.html`) offers the same Notes
 features as the desktop ([desktop notes](../desktop/notes.md)) and the phone
 apps ([native notes](../native/notes.md)). This page covers sharing and the
-access link, the activity log, turning a note into a task or an issue, body
+access link, Live mode, the activity log, turning a note into a task or an issue, body
 search, and the differences between platforms.
 
 ## Sharing with people
@@ -256,13 +256,31 @@ plain listing, without Markdown). A query over 200 characters is
 "Searching notes…" when there are none. Native clients can use the same
 parameter.
 
+## Live mode
+
+Write, Split, Preview and Live sit in the editor's layout switch (remembered
+in `forkmesh.notes.mode`; people who can only view always get Preview). Live
+is the preview you can edit: the note is cut into blocks at blank lines
+(a fenced code block stays whole), each rendered on its own, and clicking a
+block turns it into a box holding that block's Markdown, with the caret near
+where you clicked. Typing writes the block back into the note, which autosaves
+and sends drafts as in Write. Escape, or clicking elsewhere, renders it again;
+Up at the start or Down at the end of a block moves to the one before or
+after; Ctrl/⌘+B and +I format the selection; clicking below the last block
+starts a new paragraph, and an empty block is dropped when you leave it. The
+title is editable in place. Unchanged blocks keep their rendered elements, so
+images do not reload while you type, and edits from others re-render the
+blocks around the one you are in. Selecting text in a rendered block or in the
+block you are editing offers Comment as in the other modes
+([notes comments](notes-comments.md)).
+
 ## The same features on every platform
 
 The web page, the desktop ([desktop notes](../desktop/notes.md)), iOS and
 Android ([native notes](../native/notes.md)) offer the same Notes features:
 filters with counts and title-and-body search (`GET /api/notes?query=`,
 [above](#search-covers-the-body)),
-autosave, write and preview with a format bar, Keep mine / Take theirs on a
+autosave, write, preview and Live with a format bar, Keep mine / Take theirs on a
 save conflict, the share panel with suggestions and role changes, the link for
 people with access, opening `/dashboard/notes?note=<id>`, publishing with a
 copyable public link, version history, linked issues and pull requests,
@@ -273,7 +291,13 @@ Known differences:
 - Live presence and inline comments run everywhere
   ([notes comments](notes-comments.md)). The web and phones use the note's
   socket; the desktop does not link QtWebSockets, so it polls
-  `/api/notes/<id>/presence` every 5 seconds instead.
+  `/api/notes/<id>/presence` every 5 seconds instead (every second while
+  following someone, every 2 while the chat is open).
+- Live mode, following someone and the note chat are on the web and the
+  desktop; the phone apps do not have them yet. On the web Live renders the
+  note block by block and turns the block you click into its Markdown; on the
+  desktop Live styles the Markdown in place and shows the marks only on the
+  caret's line ([desktop notes](../desktop/notes.md#live-mode)).
 - The desktop editor has Write and Preview tabs but no split view; phones
   have no room for one.
 - The desktop autosaves Cloud-only notes. Local and Local + cloud notes save
@@ -281,6 +305,11 @@ Known differences:
 - On iOS the format bar adds text at the end of the note: the text editor
   cannot report the selection before iOS 18.
 - Local (on-disk) notes are a desktop feature.
+- Writing with AI on a selection: the web asks the site's Workers AI through
+  `POST /api/notes/assist` ([notes assist](notes-assist.md)); the desktop asks
+  the default local agent (Claude Code or Codex) through the composer and the
+  editor's right-click menu ([desktop notes](../desktop/notes.md#rewriting-a-selection)),
+  with the same quick actions. The phone apps do not have it yet.
 
 ## Tests
 

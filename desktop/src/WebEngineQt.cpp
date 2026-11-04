@@ -1,10 +1,14 @@
 #include "WebEngine.h"
 
 #include <QDir>
+#include <QFileInfo>
 #include <QJsonObject>
 #include <QList>
+#include <QNetworkCookie>
+#include <QWebEngineCookieStore>
 #include <QWebEngineDownloadRequest>
 #include <QWebEngineHistory>
+#include <QWebEngineNewWindowRequest>
 #include <QWebEnginePage>
 #include <QWebEngineProfile>
 #include <QWebEngineScript>
@@ -13,6 +17,10 @@
 #include <QWebEngineUrlRequestInfo>
 #include <QWebEngineUrlRequestInterceptor>
 #include <QWebEngineView>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+#include <QWebEngineFrame>
+#include <QWebEnginePermission>
+#endif
 
 #include <utility>
 
@@ -46,6 +54,40 @@ public:
     {
         if (m_options.requestAllowed)
             setUrlRequestInterceptor(new Interceptor(m_options.requestAllowed, this));
+        if (m_options.onNewWindow && !m_options.newWindowsInPlace)
+            connect(this, &QWebEnginePage::newWindowRequested, this,
+                    [open = m_options.onNewWindow](QWebEngineNewWindowRequest &request) {
+                        open(request.requestedUrl());
+                    });
+        if (m_options.printPath) {
+            connect(this, &QWebEnginePage::printRequested, this, [this] {
+                const QString path = m_options.printPath();
+                if (!path.isEmpty())
+                    printToPdf(path);
+            });
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+            connect(this, &QWebEnginePage::printRequestedByFrame, this,
+                    [this](QWebEngineFrame frame) {
+                        const QString path = m_options.printPath();
+                        if (!path.isEmpty())
+                            frame.printToPdf(path);
+                    });
+#endif
+        }
+        if (m_options.printFinished)
+            connect(this, &QWebEnginePage::pdfPrintingFinished, this,
+                    [done = m_options.printFinished](const QString &path, bool ok) {
+                        done(path, ok);
+                    });
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+        if (m_options.clipboard)
+            connect(this, &QWebEnginePage::permissionRequested, this,
+                    [](QWebEnginePermission permission) {
+                        if (permission.permissionType() ==
+                            QWebEnginePermission::PermissionType::ClipboardReadWrite)
+                            permission.grant();
+                    });
+#endif
     }
 
     QJsonArray consoleMessages() const
@@ -107,6 +149,11 @@ public:
             settings->setAttribute(QWebEngineSettings::JavascriptCanOpenWindows, false);
             settings->setAttribute(QWebEngineSettings::LocalStorageEnabled, false);
             settings->setAttribute(QWebEngineSettings::PluginsEnabled, false);
+        }
+        if (options.clipboard) {
+            QWebEngineSettings *settings = m_page->settings();
+            settings->setAttribute(QWebEngineSettings::JavascriptCanAccessClipboard, true);
+            settings->setAttribute(QWebEngineSettings::JavascriptCanPaste, true);
         }
         if (!options.documentScript.isEmpty()) {
             QWebEngineScript script;
@@ -199,16 +246,57 @@ QObject *makeProfile(const ProfileOptions &options, QObject *parent)
     if (options.requestAllowed)
         profile->setUrlRequestInterceptor(new Interceptor(options.requestAllowed, profile));
     QObject::connect(profile, &QWebEngineProfile::downloadRequested, profile,
-                     [folderFor = options.downloadDirectory](QWebEngineDownloadRequest *download) {
-                         const QString folder = folderFor ? folderFor() : QString();
-                         if (folder.isEmpty() || !QDir().mkpath(folder)) {
-                             download->cancel();
-                             return;
+                     [folderFor = options.downloadDirectory, pathFor = options.downloadPath,
+                      finished = options.downloadFinished](QWebEngineDownloadRequest *download) {
+                         if (pathFor) {
+                             const QString path = pathFor(download->downloadFileName());
+                             if (path.isEmpty()) {
+                                 download->cancel();
+                                 return;
+                             }
+                             const QFileInfo target(path);
+                             download->setDownloadDirectory(target.absolutePath());
+                             download->setDownloadFileName(target.fileName());
+                         } else {
+                             const QString folder = folderFor ? folderFor() : QString();
+                             if (folder.isEmpty() || !QDir().mkpath(folder)) {
+                                 download->cancel();
+                                 return;
+                             }
+                             download->setDownloadDirectory(folder);
                          }
-                         download->setDownloadDirectory(folder);
+                         if (finished)
+                             QObject::connect(
+                                 download, &QWebEngineDownloadRequest::isFinishedChanged, download,
+                                 [download, finished] {
+                                     if (!download->isFinished())
+                                         return;
+                                     finished(QDir(download->downloadDirectory())
+                                                  .filePath(download->downloadFileName()),
+                                              download->state() ==
+                                                  QWebEngineDownloadRequest::DownloadCompleted);
+                                 });
                          download->accept();
                      });
     return profile;
+}
+
+bool setProfileCookie(QObject *profile, const QUrl &origin, const QString &name,
+                      const QString &value, bool httpOnly)
+{
+    auto *engineProfile = qobject_cast<QWebEngineProfile *>(profile);
+    if (!engineProfile || !origin.isValid() || origin.host().isEmpty() || name.isEmpty())
+        return false;
+    QNetworkCookie cookie(name.toUtf8(), value.toUtf8());
+    cookie.setPath(QStringLiteral("/"));
+    cookie.setHttpOnly(httpOnly);
+    cookie.setSecure(origin.scheme() == QLatin1String("https"));
+    cookie.setSameSitePolicy(QNetworkCookie::SameSite::Strict);
+    if (value.isEmpty())
+        engineProfile->cookieStore()->deleteCookie(cookie, origin);
+    else
+        engineProfile->cookieStore()->setCookie(cookie, origin);
+    return true;
 }
 
 View *makeView(QObject *profile, const PageOptions &options, QWidget *parent)
@@ -219,7 +307,7 @@ View *makeView(QObject *profile, const PageOptions &options, QWidget *parent)
     return new EngineView(engineProfile, options, parent);
 }
 
-[[maybe_unused]] const bool kRegistered = registerEngine(Engine{&makeProfile, &makeView});
+[[maybe_unused]] const bool kRegistered = registerEngine(Engine{&makeProfile, &makeView, &setProfileCookie});
 
 }
 

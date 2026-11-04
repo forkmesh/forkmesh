@@ -51,6 +51,34 @@ and the World. Part of [the App docs](README.md).
   `POST /api/accounts/devices/revoke-all`, `DELETE /api/accounts/devices/<id>`,
   `POST /api/accounts/logout`.
 
+## Desktop sessions from the account key
+
+A desktop signs in on launch with its Ed25519 key, not a password, so it had
+no session, and features that need one (an embedded dashboard page, the user
+status, runners) told a signed-in person to sign in.
+`POST /api/accounts/desktop-session` (`_account_desktop_session`) gives it one:
+
+- Body `nodeName`, `pubkey`, `ts`, `sig`, where `sig` signs
+  `forkmesh-desktop-session-v1\n<account>\n<pubkey>\n<ts>`; `ts` within
+  `LOGIN_MAX_SKEW_MS`.
+- The key must be one of the account's signing keys
+  (`_account_signing_pubkeys`: the primary key or an enabled `owner_sign`
+  device) and not revoked; user accounts only, like signed package requests.
+- An admin or two-factor account needs the primary key, the same bar as
+  signed admin requests (`_admin_authorized`), so a session never reaches
+  further than the key already could.
+- One use per signature: the request is recorded in `sensitive_audit_log`
+  and a replay is refused.
+- The session is tied to the key's `account_devices` row, and the device's
+  earlier sessions are revoked first, so relaunching does not use up the
+  20-session limit or push out browser sessions. Revoking the device revokes
+  it. No cookie is set.
+
+The desktop calls it after a key sign-in (`ensureAccountSession`,
+`desktop/src/MainWindowAccounts.cpp`); see
+[package modules](../desktop/package-modules.md#checking-sign-in). Tests:
+`app/tests/test_desktop_session.py`.
+
 ## Guessing budgets stop correct guesses too
 
 A wrong password charges a source budget and a source+name budget. Once the

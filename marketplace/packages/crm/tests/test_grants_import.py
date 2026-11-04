@@ -16,8 +16,8 @@ def test_the_grants_files_are_built_from_the_json():
                             capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
     grants = json.loads((GRANTS / "grants.json").read_text(encoding="utf-8"))
-    assert len(grants) == 100
-    assert len({grant["id"] for grant in grants}) == 100
+    assert len(grants) == 97
+    assert len({grant["id"] for grant in grants}) == 97
 
 
 def test_every_ranked_grant_has_a_one_click_chatgpt_draft():
@@ -25,7 +25,7 @@ def test_every_ranked_grant_has_a_one_click_chatgpt_draft():
     links = [line.split("(", 1)[1].split(")", 1)[0]
              for line in ranked.splitlines()
              if line.startswith("**[Draft this application in ChatGPT](")]
-    assert len(links) == 100
+    assert len(links) == 97
     for link in links:
         url = urlparse(link)
         assert (url.scheme, url.netloc, url.path) == ("https", "chatgpt.com", "/")
@@ -45,7 +45,7 @@ def test_the_grants_csv_imports_into_a_grants_pipeline_list():
         "fileName": "forkmesh-grants.csv",
         "csv": (GRANTS / "forkmesh-grants.csv").read_text(encoding="utf-8"),
     }), "/api/crm/acme/contacts/import")["data"]
-    assert (imported["created"], imported["skipped"]) == (100, 0)
+    assert (imported["created"], imported["skipped"]) == (97, 0)
     assert imported["view"]["flow"] == "grants"
     data = call(runtime.use("GET"), "/api/crm/acme")["data"]
     assert "grants" in [flow["id"] for flow in data["settings"]["flows"]]
@@ -72,18 +72,18 @@ def test_an_empty_grants_pipeline_loads_the_ranked_grants_once():
     assert denied["status"] == 403
     loaded = call(runtime.use("POST", "alice", {"flow": "grants"}),
                   "/api/crm/acme/contacts/grants")["data"]
-    assert (loaded["created"], loaded["skipped"]) == (100, 0)
+    assert (loaded["created"], loaded["skipped"]) == (97, 0)
     assert loaded["view"]["flow"] == "grants"
     assert loaded["view"]["name"] == "Grants"
     contacts = call(runtime.use("GET"), "/api/crm/acme")["data"]["contacts"]
-    assert len(contacts) == 100
+    assert len(contacts) == 97
     assert {(contact["flow"], contact["stage"]) for contact in contacts} == {
         ("grants", "researching")}
     assert all(loaded["viewId"] in contact["views"] for contact in contacts)
     again = call(runtime.use("POST", "alice", {"flow": "grants"}),
                  "/api/crm/acme/contacts/grants")["data"]
     assert (again["created"], again["viewId"]) == (0, "")
-    assert len(call(runtime.use("GET"), "/api/crm/acme")["data"]["contacts"]) == 100
+    assert len(call(runtime.use("GET"), "/api/crm/acme")["data"]["contacts"]) == 97
 
 
 def test_grants_load_into_a_renamed_grants_type_pipeline_and_its_list():
@@ -96,7 +96,7 @@ def test_grants_load_into_a_renamed_grants_type_pipeline_and_its_list():
                 "/api/crm/acme/views")["data"]["view"]
     loaded = call(runtime.use("POST", "alice", {"flow": "funding", "viewId": view["id"]}),
                   "/api/crm/acme/contacts/grants")["data"]
-    assert (loaded["created"], loaded["viewId"]) == (100, view["id"])
+    assert (loaded["created"], loaded["viewId"]) == (97, view["id"])
     data = call(runtime.use("GET"), "/api/crm/acme")["data"]
     assert [flow["id"] for flow in data["settings"]["flows"]] == ["funding"]
     assert {(contact["flow"], contact["stage"]) for contact in data["contacts"]} == {

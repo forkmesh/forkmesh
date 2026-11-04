@@ -54,6 +54,7 @@ object RouteCodec {
             is Route.Channel -> put("id", route.id)
             is Route.Thread -> { put("channel", route.channel); put("id", route.id) }
             is Route.Dm -> put("user", route.user)
+            is Route.Meeting -> { put("room", route.room); put("key", route.key) }
             is Route.Discord -> { put("guild", route.guild); put("channel", route.channel) }
             is Route.Profile -> put("name", route.name)
             is Route.Search -> { put("q", route.query); put("scope", route.scope.raw) }
@@ -146,6 +147,7 @@ object RouteCodec {
             Route.Kind.Thread -> req("channel")?.let { c -> req("id")?.let { Route.Thread(c, it) } }
             Route.Kind.Dm -> req("user")?.let(Route::Dm)
             Route.Kind.Discord -> req("guild")?.let { Route.Discord(it, s("channel")) }
+            Route.Kind.Meeting -> req("room")?.let { room -> req("key")?.let { MeetingLink.route(room, it) } }
             Route.Kind.Profile -> req("name")?.let(Route::Profile)
             Route.Kind.People -> Route.People
             Route.Kind.Docs -> Route.Docs
@@ -191,6 +193,7 @@ object RouteCodec {
             Route.Kind.Speech -> Route.Speech
             Route.Kind.GlassesAlert -> Route.GlassesAlert
             Route.Kind.PhoneSecurity -> Route.PhoneSecurity
+            Route.Kind.SilentSpeech -> Route.SilentSpeech
             Route.Kind.Ember -> Route.Ember(repo)
             Route.Kind.Strata -> Route.Strata(repo)
             Route.Kind.Synapse -> Route.Synapse(repo)

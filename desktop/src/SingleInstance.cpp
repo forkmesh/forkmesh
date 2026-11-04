@@ -18,6 +18,12 @@
 #include <cstdlib>
 #include <thread>
 
+#if defined(Q_OS_UNIX)
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <unistd.h>
+#endif
+
 namespace forkmesh {
 
 namespace {
@@ -44,11 +50,42 @@ bool g_tookOverFromBackground = false;
 int g_backgroundLockWaitMs = 0;
 std::atomic_bool g_quitRequested{false};
 
+bool peerIsThisUser(const QLocalSocket &socket)
+{
+#if defined(Q_OS_LINUX)
+    struct ucred credentials {};
+    socklen_t length = sizeof(credentials);
+    return getsockopt(int(socket.socketDescriptor()), SOL_SOCKET, SO_PEERCRED,
+                      &credentials, &length) == 0 &&
+           credentials.uid == geteuid();
+#elif defined(Q_OS_UNIX)
+    uid_t uid = 0;
+    gid_t gid = 0;
+    return getpeereid(int(socket.socketDescriptor()), &uid, &gid) == 0 &&
+           uid == geteuid();
+#else
+    Q_UNUSED(socket);
+    return true;
+#endif
+}
+
+bool connectToOwnInstance(QLocalSocket &socket)
+{
+    socket.connectToServer(serverName());
+    if (!socket.waitForConnected(500))
+        return false;
+    if (peerIsThisUser(socket))
+        return true;
+    qWarning().noquote() << "ForkMesh: single-instance socket" << serverName()
+                         << "belongs to another user; ignoring it";
+    socket.abort();
+    return false;
+}
+
 bool askRunningInstance(const QString &activationTarget)
 {
     QLocalSocket socket;
-    socket.connectToServer(serverName());
-    if (!socket.waitForConnected(500))
+    if (!connectToOwnInstance(socket))
         return false;
     const QByteArray target = activationTarget.toUtf8();
     socket.write(target.isEmpty() ? QByteArray("activate")
@@ -65,8 +102,7 @@ bool askRunningInstance(const QString &activationTarget)
 bool askInstance(const QByteArray &message)
 {
     QLocalSocket socket;
-    socket.connectToServer(serverName());
-    if (!socket.waitForConnected(500))
+    if (!connectToOwnInstance(socket))
         return false;
     socket.write(message);
     socket.waitForBytesWritten(500);

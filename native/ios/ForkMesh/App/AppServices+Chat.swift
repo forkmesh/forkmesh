@@ -59,7 +59,8 @@ struct ChatInstaller: AppServicesInstaller {
                 selfId: { relay.selfId }, displayName: { auth?.session?.nodeName ?? "" }, nodeIdentity: relay.nodeIdentity)
             let direct: DirectMessageService = DirectMessageService(
                 api: api, connector: sockets, secureStore: secure, origin: { api.url("/") },
-                selfId: { relay.selfId }, displayName: { auth?.session?.nodeName ?? "" })
+                selfId: { relay.selfId }, displayName: { auth?.session?.nodeName ?? "" },
+                nodeIdentity: relay.nodeIdentity)
             office.nodeOwners = owners
             direct.onConversations = { (records: [DirectConversation]) in
                 verifiedNames.rememberDirect(records.map { (conversation: $0.conversation, account: $0.otherUser) })
@@ -288,6 +289,10 @@ struct ChatInstaller: AppServicesInstaller {
         services.routes.register(.discord, by: "WS13") { route in
             guard case let .discord(guild, channel) = route else { return AnyView(RoutePlaceholderView(route: route)) }
             return AnyView(DiscordRouteScreen(guild: guild, channel: channel))
+        }
+        services.routes.register(.meeting, by: "WS13") { route in
+            guard case let .meeting(room, key) = route else { return AnyView(RoutePlaceholderView(route: route)) }
+            return AnyView(MeetingScreen(room: room, key: key))
         }
     }
 }

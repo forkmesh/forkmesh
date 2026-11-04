@@ -39,7 +39,8 @@ service extension: the extension replaces the title with the one
 app build.
 
 Desktop pings use the ping's `meta.category`: one icon for a finished agent
-run, one for a failed run, one for other desktop pings. A kind missing from the
+run, one for a failed agent run, ❌ for a failed CI run, one for other desktop
+pings. A kind missing from the
 table falls back to a bell. `with_icon` never adds the icon twice.
 
 ### Adding a ping kind
@@ -63,6 +64,34 @@ An unread row has an accent wash, a coloured icon tile, an accent time, a bold
 title and a trailing dot. A read row has a neutral tile, a regular title in the
 secondary text colour and no dot. VoiceOver and TalkBack begin each row with
 "Unread" or "Read".
+
+### Good news is green with a check
+
+`operational_alert` carries outages and failures, but also their recoveries
+("Mainnode recovered", "GitHub Actions: … passes again") and other good news
+(a finished self-deploy, cores or runners rolled, a core caught up, the deploy
+agent updated, a desktop installed). Every sender of such a ping sets
+`meta.state` to `"up"`; an outage sets `"down"`. A ping is good news when its
+kind is `operational_alert` and `meta.state` is `"up"` (`pingIsGoodNews` in
+both `NotificationsLogic` files and in `08-repo-detail-network.js`,
+`webPingIsRecovery` on the desktop):
+
+- phones: a green `check_circle_outline` and the label "Good news" in the
+  Inbox, Pings and ping detail (`ForkNotification.typeLabel` keeps "Alert" for
+  the ping-settings text);
+- push banners: ✅ instead of 📟;
+- web Pings and Home feed: a green `circle-check`; the World: ✓;
+- desktop Pings: a green check and "Good news".
+
+The self-deploy agent's good-news keys (`node-rolled:`, `runners-rolled:`,
+`agent-updated:`, `core-caught-up:`) are listed in `OPERATOR_ALERT_GOOD_KEYS`
+(`app/src/operator_alerts.py`); a new success notice in
+`tools/next_autodeploy.py` adds its key prefix there.
+
+The Inbox row also colours other kinds by outcome: a failed run
+(`action_failed`, a desktop `ci-failed` or `agent-failed` ping) is red, checks
+waiting for approval and a security advisory are amber, and a finished desktop
+agent run is green. Android colours the row icon the same way as iOS.
 
 ## No banner for what is already on screen
 

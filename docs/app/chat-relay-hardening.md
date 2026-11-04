@@ -33,7 +33,10 @@ forkmesh-chat-e2ee-node-v1\n<room>\n<kid>\n<idk>\n<acct>
 A receiver drops a bundle in an open room unless `node` decodes to exactly 32
 bytes and `nsig` verifies under it. A `kid` already stored keeps its `node`, so
 a second device cannot claim it. Strict (direct-message) rooms keep the v3
-rules: the server only admits the two participants' devices.
+rules: the server only admits the two participants' devices. Their bundles
+carry `nsig` too, but only so an updated app keeps its trust
+([same-node successor](chat-protocol-v3.md#same-node-successor)); a DM bundle
+without it is still accepted.
 
 Vectors: [`conformance/chat/v3/node-binding.json`](../../conformance/chat/v3/node-binding.json)
 (seed, inputs, message, `nsig`, and three bundles that must be rejected).

@@ -1394,6 +1394,7 @@ def test_ping_board_uses_related_icons_for_every_notification_kind():
         assert f"{kind}:" in icon_map
     assert "const WORLD_NOTIFICATION_KIND_ICONS = Object.freeze({" in APP
     assert "function worldNotificationIcon(item) {" in APP
+    assert 'if (item.state === "up") return "✓";' in APP
     assert "const icon = worldNotificationIcon(item);" in APP
     assert "world-notification-detail-icon" in APP
     assert ".world-notification-detail-icon" in CSS

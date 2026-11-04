@@ -3,7 +3,8 @@
 Part of [Marketplace](README.md). Package: `marketplace/packages/spreadsheets`
 ([README](../../marketplace/packages/spreadsheets/README.md)). An account
 installs it for itself; it works on the web dashboard (`/dashboard/spreadsheets`)
-and the desktop rail button **Spreadsheets** opens that page on the active host.
+and on the desktop, where the rail button **Spreadsheets** opens the same editor
+inside the window ([On the desktop](#on-the-desktop)).
 
 ## Why it is built this way
 
@@ -144,6 +145,56 @@ The diff and conflict rules are pure functions in `FMSheets.crm` and are
 checked by `tests/crm_link_checks.js`; the worker side is
 `marketplace/packages/crm/tests/test_spreadsheet_sync.py`.
 
+## On the desktop
+
+The rail button opens a desktop page (`SpreadsheetsPage`) that runs the web
+editor in an embedded [Qt WebEngine view](../desktop/browser.md), signed in
+as the desktop's account. It used to open the dashboard in the system
+browser; people wanted the editor to stay in the app.
+
+- **One editor.** The page loads `/dashboard/spreadsheets` from the active
+  host, so the desktop gets every feature and fix of the web editor without a
+  second implementation. A document script hides the dashboard's header and
+  sidebar (`[data-app-header]`, `[data-dashboard-sidebar]`), so only the
+  editor shows.
+- **It stays.** The view is built the first time the page is shown and kept
+  while you switch to other pages, so an open workbook, its selection and
+  undo history are still there when you come back. It can also be popped out
+  into its own window like other package pages.
+- **Signed in as the desktop.** The page asks `accountSignedIn` whether the
+  desktop is signed in, then gets the account session through
+  `accountSessionToken`, which is why the contribution declares the
+  `/api/spreadsheets` boundary. A desktop signed in by its key gets that
+  session through `requestAccountSession`
+  ([checking sign-in](../desktop/package-modules.md#checking-sign-in)); an empty
+  token alone no longer shows "Sign in". The token goes into a memory-only profile as
+  the `forkmesh_account` cookie and the `forkmesh.session` marker
+  ([sessions](../app/auth-sessions.md)), both limited to the host's origin;
+  nothing is written to disk. When the account, the token or the host
+  changes, the view and its profile are thrown away and built again on the
+  next show; signed out, the page says so.
+- **Only the editor loads in the view.** Main-frame navigation is allowed
+  only to `/dashboard/spreadsheets` on the host (`SpreadsheetsWeb.cpp`,
+  `navigation`). Clicked links and `window.open` go to the system browser;
+  other dashboard pages go through `openWebPage`; a redirect away (sign-out,
+  `/login`) shows a message with **Reload**. `file:` URLs are refused.
+- **Desktop file handling.** Downloads (`.xlsx`, `.xls`, `.ods`, CSV, JSON,
+  Markdown, HTML) ask where to save with the system dialog, starting in the
+  last folder used (package setting `saveFolder`); PDF export (the page's
+  print) saves a PDF the same way. Opening a file uses the system file
+  chooser. Copy and paste reach the system clipboard, including the menu's
+  Paste.
+- **Other packages open it here.** `openWebPage` first offers a path to the
+  installed package pages (`webPage.open` host command); Spreadsheets takes
+  `/dashboard/spreadsheets` paths, so the CRM's **Open in spreadsheet** opens
+  the linked list in the desktop page.
+- **Without Qt WebEngine** (a build without it) the page explains that and
+  offers **Open in your browser**; `webPage.open` then declines, so links fall
+  back to the browser.
+
+Unsaved edits are saved by the editor 1.5 seconds after the last change;
+quitting the desktop within that time can lose the last edit.
+
 ## Code map
 
 | Path | What |
@@ -151,7 +202,9 @@ checked by `tests/crm_link_checks.js`; the worker side is
 | `content/web/page.js` | Engine (`FMSheets`: formats, parser, `Calc`, functions, model, readers, writers, AI helpers, `crm` link rules) and the editor page |
 | `content/web/view.html` | Page markup and styles, using the [dashboard theme roles](../app/dashboard-colors.md) |
 | `content/worker/spreadsheets.py` | `/api/spreadsheets`: install, list, create, open, save, delete, export, uninstall, AI |
-| `content/desktop/SpreadsheetsLink.cpp` | Desktop rail link to `/dashboard/spreadsheets` |
+| `content/desktop/SpreadsheetsPage.*` | Desktop page: embedded editor, session, downloads, PDF, links |
+| `content/desktop/SpreadsheetsWeb.*` | Navigation rules and the session and theme scripts for the desktop page |
+| `content/desktop/tests/test_spreadsheets_desktop.cpp` | `forkmesh-spreadsheets-tests`: navigation and script checks |
 | `tests/engine_checks.js`, `tests/fixtures/` | Formula, format and round-trip checks, including `.xls` and `.xlsx` files written by LibreOffice |
 | `tests/crm_link_checks.js` | Linked CRM list checks: reading rows, diff, conflicts, refresh, sync results |
 | `tests/test_spreadsheets.py` | Server tests; runs the engine and CRM link checks with Node |

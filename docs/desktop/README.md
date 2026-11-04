@@ -35,6 +35,7 @@ an attacker can do with the desktop's keys is in the
 | [side-rail-and-terminals.md](side-rail-and-terminals.md) | The right-hand side rail, its browser, terminal tabs and the MCP terminal tools for agents |
 | [busy-ring.md](busy-ring.md) | The spinning ring around a working button or rail icon, on desktop, web and phones |
 | [markdown-preview.md](markdown-preview.md) | One render path for every Markdown preview and its GitHub-style styling |
+| [copy-formatting.md](copy-formatting.md) | Copied text keeps its line breaks, blank lines, list markers and table columns |
 | [browser.md](browser.md) | The embedded ungoogled Chromium browser, its switches, blocked hosts and profile |
 | [agents-ui.md](agents-ui.md) | The Agents page: list, detail pane, Claude Code session control, transcript, composer, cloud rows, Models board |
 | [sessions-page.md](sessions-page.md) | The Sessions page and its side panels |
@@ -86,6 +87,7 @@ Everything is in `desktop/`.
 | `src/CodeHealth.*`, `src/ComponentHealthBoard.*`, `src/StatsDashboard.*`, `src/HomeBoard.*` | Health, Stats and Home pages |
 | `src/NativePackageExtension.*`, `src/ForkMeshPackageRegistry.*`, `src/*HostFeed.*` | Market packages hosted in the desktop and the host sockets they use |
 | `src/MarkdownRender.h`, `src/MarkdownDocument.h`, `src/MarkdownPreviewStyle.h` | Markdown rendering shared by README views, file previews, composers and packages ([markdown-preview](markdown-preview.md)) |
+| `src/CopyFormatting.*` | Plain text for a copy that keeps the layout on screen ([copy-formatting](copy-formatting.md)) |
 | `src/Tooltips.h` | The app-drawn tooltip window |
 | `tests/` | Qt Test programs (`test_*.cpp`) and Python source validators (`validate_*.py`) |
 
@@ -250,14 +252,19 @@ Everything is in `desktop/`.
 - **Notices.** There are no floating toasts. A message is shown inline on the
   page it was raised on, or in the open dialog's status line; unsolicited
   events are filed on the Pings page ([diagnostics.md](diagnostics.md)).
-  A fresh celebrating ping plays `CelebrationOverlay` (confetti with a
-  headline card); the card word-wraps its title and body onto as many lines
-  as they need instead of eliding them, so "Email tracked in the CRM" and the
-  email subject are read in full. The confetti stays click-through, so a ✕
-  button (a sibling of the overlay, since a click-through widget passes clicks
-  past its children too) sits on the card's top-right corner, or the window's
-  when there is no card, and ends the show at once. It appears once the card
-  has popped in and leaves when the fade-out starts.
+  A fresh celebrating ping (a tracked email or toot) plays
+  `CompactCelebrationOverlay` (`CompactCelebration.h`): a small card in the
+  middle of the window, 14 pt bold headline and 11 pt detail whatever the
+  window width, at most 420 px wide and 24 px clear of each edge, a few
+  sparkles around it and no full-window confetti, gone after 3.5 s. Its
+  height comes from the wrapped lines, so nothing is clipped; only a line that
+  could never fit in four is elided. It is click-through and never takes
+  focus. Pings that arrive while it is up update the same card
+  (`celebrationHeadline`: "🎉 3 Mastodon posts tracked in the CRM") and
+  restart its timer instead of stacking cards; the full-window confetti grew
+  with the window and hid the page behind it. A new member joining still
+  plays the full `CelebrationOverlay` (confetti with a headline card and a ✕
+  button, a sibling of the click-through overlay, that ends the show).
 - **Git work off the GUI thread.** Git runs through helpers in
   `MainWindowInternal.h` (`waitForGit`, `runOffThread`); a GUI-thread wait pumps
   the event loop, and Git on the GUI thread shows up in the stall log.

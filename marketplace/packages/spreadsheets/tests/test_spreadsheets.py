@@ -261,8 +261,11 @@ def test_manifest_catalog_and_plugin_list_agree():
     assert "spreadsheets" in json.loads((REPO / "marketplace" / "plugins.json").read_text())["plugins"]
     assert manifest["worker"]["api"] == spreadsheets.PREFIX
     assert manifest["install"]["places"] == ["desktop", "web"]
-    link = (PACKAGE / "content" / "desktop" / "SpreadsheetsLink.cpp").read_text()
-    assert '"/dashboard/spreadsheets"' in link and "builtin:spreadsheets" in link
+    page = (PACKAGE / "content" / "desktop" / "SpreadsheetsPage.cpp").read_text()
+    web = (PACKAGE / "content" / "desktop" / "SpreadsheetsWeb.h").read_text()
+    assert "builtin:spreadsheets" in page and '"/api/spreadsheets"' in page
+    assert "contribution.gpuSurface = true" in page
+    assert '"/dashboard/spreadsheets"' in web
     assert (REPO / "desktop" / "resources" / "icons" / "octicons" / "table.svg").is_file()
 
 

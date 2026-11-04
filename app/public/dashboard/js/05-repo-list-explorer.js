@@ -1680,7 +1680,7 @@
     ].filter(Boolean).join(" · ");
     return `
       <${tag}${hrefAttr} data-home-feed-kind="activity" class="fm-home-row">
-        <span class="fm-home-row-icon"><i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="text-muted-foreground"></i></span>
+        <span class="fm-home-row-icon"><i data-notification-kind-icon data-lucide="${notificationItemIcon(item)}" class="${notificationItemIconTone(item) || "text-muted-foreground"}"></i></span>
         <span class="min-w-0 flex-1">
           <span class="fm-home-row-title">${escapeHtml(repoPublicText(item.title) || `${platformName()} activity`)}</span>
           ${item.body ? `<span class="fm-home-row-meta line-clamp-2">${escapeHtml(repoPublicText(item.body))}</span>` : ""}
@@ -3570,7 +3570,6 @@
       loadRepoDigestPreview(state.selectedRepo);
       void loadRepoWebhooks(state.selectedRepo);
       void loadRepoProviderMirror(state.selectedRepo);
-      void loadRepoArchiveSync(state.selectedRepo);
       void loadRepoPullRulesSettings(state.selectedRepo);
       mountActionsSecrets($("[data-actions-secrets]"));
     }

@@ -13,6 +13,8 @@ class QLabel;
 class QPlainTextEdit;
 class QPushButton;
 class QScrollArea;
+class QShowEvent;
+class QStackedWidget;
 class QTimer;
 class QVBoxLayout;
 
@@ -33,6 +35,7 @@ public:
         std::function<void()> countChanged;
         std::function<void()> newComment;
         std::function<void()> closed;
+        std::function<void()> chatChanged;
     };
 
     explicit NoteCommentsPanel(Hooks hooks, QWidget *parent = nullptr);
@@ -46,8 +49,23 @@ public:
     void clearActive();
     int openCount() const { return m_openCount; }
     bool loaded() const { return m_loaded; }
+    void showTab(bool chat);
+    bool chatShown() const { return m_chatTab; }
+    int chatUnread() const { return m_chatUnread; }
+    void reloadChat();
+    void focusChat();
+
+protected:
+    void showEvent(QShowEvent *event) override;
 
 private:
+    void applyChat(const QJsonObject &payload);
+    void renderChat();
+    void sendChat();
+    void deleteChat(const QString &messageId);
+    void markChatSeen();
+    void setChatStatus(const QString &text);
+    QString chatPath(const QString &messageId = QString()) const;
     void apply(const QJsonObject &payload);
     void render();
     QWidget *threadCard(const CommentThread &thread);
@@ -99,6 +117,24 @@ private:
     QTimer *m_anchorTimer = nullptr;
     QHash<QString, QWidget *> m_cards;
     QHash<QString, QPlainTextEdit *> m_boxes;
+
+    QList<NoteChatMessage> m_chat;
+    bool m_chatTab = false;
+    bool m_chatLoaded = false;
+    bool m_chatModerate = false;
+    bool m_chatBusy = false;
+    int m_chatSequence = 0;
+    int m_chatUnread = 0;
+    QPushButton *m_commentsTabButton = nullptr;
+    QPushButton *m_chatTabButton = nullptr;
+    QPushButton *m_newButton = nullptr;
+    QStackedWidget *m_pages = nullptr;
+    QLabel *m_chatStatus = nullptr;
+    QScrollArea *m_chatScroll = nullptr;
+    QWidget *m_chatList = nullptr;
+    QVBoxLayout *m_chatListLayout = nullptr;
+    QPlainTextEdit *m_chatBox = nullptr;
+    QPushButton *m_chatSend = nullptr;
 };
 
 }

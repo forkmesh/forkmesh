@@ -18,6 +18,8 @@ OPERATOR_ALERT_KEY_RE = re.compile(r"^[A-Za-z0-9:._-]{1,80}$")
 OPERATOR_ALERT_TITLE_MAX = 120
 OPERATOR_ALERT_BODY_MAX = 2000
 OPERATOR_ALERT_ADMIN_LIMIT = 50
+OPERATOR_ALERT_GOOD_KEYS = (
+    "node-rolled:", "runners-rolled:", "agent-updated:", "core-caught-up:")
 
 
 def operator_alert_canonical(node, ts, severity, key, title, body):
@@ -43,6 +45,13 @@ def _operator_alert_fields(data):
     if not isinstance(body, str) or len(body) > OPERATOR_ALERT_BODY_MAX:
         return None
     return severity, key, title, body
+
+
+def operator_alert_meta(node, severity, key):
+    meta = {"key": key, "from": node, "severity": severity}
+    if key.startswith(OPERATOR_ALERT_GOOD_KEYS):
+        meta["state"] = "up"
+    return meta
 
 
 async def _operator_alert_admins(env):
@@ -96,8 +105,7 @@ async def operator_alert_handler(env, request):
         if await enqueue_notification(
                 env, admin, OPERATOR_ALERT_KIND, title, body=body,
                 href="/status", source="operator", dedupe="operator:" + key,
-                ts=now, meta={"key": key, "from": node,
-                              "severity": severity}):
+                ts=now, meta=operator_alert_meta(node, severity, key)):
             pings += 1
     emails = 0
     if severity == "email":

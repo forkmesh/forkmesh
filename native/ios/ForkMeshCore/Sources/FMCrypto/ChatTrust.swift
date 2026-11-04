@@ -125,7 +125,7 @@ public final class ChatTrustStore: @unchecked Sendable {
 
     func accept(
         kid: String, idk: String, acct: String, node: String, spk: ChatPrekey, policy: ChatTrustPolicy, ownKid: String,
-        now: Int64
+        now: Int64, nodeBound: Bool = false
     ) -> ChatBundleResult? {
         locked {
             if let index = records.firstIndex(where: { $0.kid == kid }) {
@@ -136,10 +136,33 @@ public final class ChatTrustStore: @unchecked Sendable {
                 if spk.ts > known.spk.ts {
                     records[index].spk = spk
                     updated = true
-                    persist()
                 }
+                if kid == ownKid && retirePredecessors(of: kid, acct: acct, node: node, ownKid: ownKid) != nil {
+                    updated = true
+                    noteApprovedSetChangedQuietly()
+                    changeCount += 1
+                }
+                if updated { persist() }
                 return ChatBundleResult(
                     kid: kid, acct: acct, node: node, state: known.state, isNew: false, updated: updated)
+            }
+            let successor = kid != ownKid && policy == .strict && nodeBound
+            if successor && records.contains(where: { $0.acct == acct && $0.node == node && $0.spk.ts >= spk.ts }) {
+                return nil
+            }
+            if kid == ownKid || successor {
+                let predecessor = retirePredecessors(of: kid, acct: acct, node: node, ownKid: ownKid)
+                if let predecessor {
+                    let state = kid == ownKid ? ChatTrustState.approved : predecessor.state
+                    records.append(
+                        ChatTrustRecord(
+                            kid: kid, idk: idk, acct: acct, node: node, spk: spk, state: state,
+                            firstSeen: now, verified: predecessor.verified, lastSeen: now))
+                    noteApprovedSetChangedQuietly()
+                    changeCount += 1
+                    persist()
+                    return ChatBundleResult(kid: kid, acct: acct, node: node, state: state, isNew: true, updated: true)
+                }
             }
             var state = ChatTrustState.approved
             if policy == .strict && kid != ownKid
@@ -221,6 +244,22 @@ public final class ChatTrustStore: @unchecked Sendable {
     }
 
     public var safetyNumberChanged: Bool { locked { safetyChanged } }
+
+    private func retirePredecessors(of kid: String, acct: String, node: String, ownKid: String) -> ChatTrustRecord? {
+        let predecessors = records.filter { $0.kid != kid && $0.kid != ownKid && $0.acct == acct && $0.node == node }
+        guard let newest = predecessors.max(by: { ($0.lastSeen, $0.firstSeen) < ($1.lastSeen, $1.firstSeen) }) else {
+            return nil
+        }
+        let retired = Set(predecessors.map(\.kid))
+        records.removeAll { retired.contains($0.kid) }
+        return newest
+    }
+
+    private func noteApprovedSetChangedQuietly() {
+        let approved = records.filter { $0.state == .approved }
+        lastSafety = ChatSafetyNumber.compute(scope: scope, identityKeys: approved.map(\.identityKey)).qr
+        lastSafetyAccts = Set(approved.map(\.acct)).count
+    }
 
     private func noteApprovedSetChanged() {
         let approved = records.filter { $0.state == .approved }

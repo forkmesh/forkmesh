@@ -27,6 +27,7 @@ struct Background {
     QString label;
     QString kind;
     QString status;
+    qint64 startedMs = 0;
     quint64 touched = 0;
 
     bool running() const { return status == QLatin1String("running"); }
@@ -115,6 +116,7 @@ private:
     QHash<QString, QString> m_shells;
     ContextUse m_context;
     quint64 m_clock = 0;
+    qint64 m_eventMs = 0;
     int m_calls = 0;
     int m_errors = 0;
 };
@@ -122,6 +124,8 @@ private:
 QString fileName(const QString &path);
 QString hostOf(const QString &url);
 
+qint64 eventTimeMs(const QJsonObject &event);
+QString elapsedText(qint64 ms);
 qint64 estimateTokens(qint64 chars);
 qint64 contextWindowFor(qint64 used, qint64 configured, const QString &model);
 ContextSplit splitContext(const ContextUse &use, qint64 used, qint64 window, qint64 memory);

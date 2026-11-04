@@ -183,6 +183,31 @@ version). The answer is dropped when another note was opened, the note was
 deleted, or its text or title changed meanwhile (a reload from the relay), and
 the notice says why.
 
+### Rewriting a selection
+
+Selecting text in Write (or Live) narrows the composer to the selection: the
+placeholder becomes "rewrite the selected text with AI…" and the action
+"Rewrite the selection with Claude Code" (`aiSelectionRange()`, refreshed on
+every selection change by `aiSelectionChanged()`). The selection drops the
+whitespace at its ends (`noteTrimmedRange()`). A selection in Preview does not
+count, because its rendered text has no exact place in the source.
+
+The editor's right-click menu adds **Ask AI** with the quick actions from
+`noteAiSelectionActions()` in `NoteTools.h`: Clean up, Check grammar, Make
+clearer, Make shorter, Make longer, Professional tone, Friendly tone, Bullet
+list and Summarize. They are the web's actions with the same wording
+([notes assist](../app/notes-assist.md)); the menu is disabled without a
+selection or while AI is working.
+
+Both go through `startNoteAiEdit()` with the range, which sends
+`noteAiSelectionPrompt()`: the instruction, the title, up to 600 characters on
+each side as context, and the selection, asking for one JSON object
+`{"text"}` with only the replacement. `parseNoteAiSelection()` reads it like
+`parseNoteAiEdit()` and refuses a missing or empty `text`. The same checks and
+read-only state apply as for a whole-note edit (the save label reads "AI is
+rewriting the selection…"). The reply replaces the range in one undo step and
+is left selected; the note then saves the usual way.
+
 ## Sharing
 
 Share (owner only) opens a people panel: User / Organization, name, Can edit /
@@ -224,7 +249,13 @@ caption under it in small muted text in the same paragraph; or a dashed rule
 labelled "Page break". `href`s that do not start with `data:` or `#` are
 removed from the SVG before it is drawn, so a shared diagram cannot read a
 file on this computer. When the preview gets narrower or wider the images are
-redrawn in place (80 ms after the last resize). Comment anchoring is
+redrawn in place (80 ms after the last resize). A figure not yet in the
+page's `NoteRenderCache` is drawn on a worker (`NoteRenderCache::defer`,
+`QtConcurrent`): the preview shows the empty card at its final size, and the
+same 80 ms timer swaps the diagram in when it is ready, so opening a note
+with large diagrams no longer blocks the window (a 1.4 s stall in
+`paintSvgFigure()` under `NotesPage::selectNote()`). PDF export and the tests
+leave `defer` unset and draw synchronously. Comment anchoring is
 unchanged: an image is one object character, and the caption is text that is
 also in the Markdown.
 
@@ -301,7 +332,38 @@ account picture), then "+N", a pencil badge on editors, a tooltip "<name> ·
 viewing|editing" on each, and a line such as "ana is editing…", "Live · ana is
 viewing" or "Live · 3 others here". Clicking the faces lists everyone with
 their state; picking one opens the profile. When the answer's `commentsKey`
-moves, the comments reload.
+moves, the comments reload; when its `chatKey` moves, the chat reloads.
+
+Each poll also sends the caret's `line` (1-based block number) and `column`,
+and moving the caret to another line polls within a second, so people
+following you see where you are.
+
+### Following someone
+
+The faces menu offers "Follow <name>" for everyone here. While you follow
+someone the line reads "Following <name>" with a Stop following button, the
+poll runs every second, and each time their line moves the editor scrolls to
+it and marks the line: in Write and Live the block itself, in Preview the
+rendered text of that line (or the nearest line above with text). Typing in
+the note, choosing Stop following or the person leaving ends it.
+
+## Live mode
+
+The editor has Write, Preview and Live tabs. Live is the Markdown source
+styled as it will look (`MarkdownLiveHighlighter` in
+`desktop/src/MarkdownEditor.cpp`): headings sized, bold, italic, struck and
+code text formatted, links coloured, list markers in the accent colour, and
+the Markdown marks hidden on every line but the one with the caret. It edits
+the same text as Write, so comments, the caret line sent to followers and
+saving work unchanged; it only swaps the spell-check highlighter for the live
+one. The last tab you picked between Live and the others is remembered
+(`notes/liveMode`), and notes you can edit open in Live when it was Live.
+
+Restyling a line changes only formats, but Qt still reports it as a text
+change (`textChanged`, and the document's revision moves). So
+`MarkdownEditor::sourceEdited` fires only when the text itself differs from
+the last text seen, and the Notes page listens to that for autosave, typing
+presence and ending a follow; moving the caret in Live does none of those.
 
 ## Comments
 
@@ -330,6 +392,17 @@ Preview the quote (or its longest line without Markdown marks) is marked
 there, and Write opens when the rendered text cannot be found.
 `/dashboard/notes?note=<id>&comment=<cid>` opens the note with that thread
 shown, the thread of a reply included (`trustedNoteLink()`).
+
+## Chat
+
+The side panel has Comments and Chat tabs; the Chat button in the heading row
+opens it on Chat and counts messages from others you have not seen
+("Chat (2)"). The tab lists the note's chat
+([notes-comments.md](../app/notes-comments.md#chat)) oldest first; Enter
+sends, Shift+Enter adds a line, `@` offers names as in comments, and your own
+messages (anyone's when you own the note) have Delete. The newest message time
+you have seen is kept per note in `notes/chatSeen/<id>`. While Chat is open the
+presence poll runs every 2 s so new messages arrive quickly.
 
 ## Versions
 
@@ -378,8 +451,9 @@ dashboard and World open it from their own origin; the desktop does not use it
   link parsing and host check, comment links, built links, linked-issue
   references, export names, share query rules, filters, search, conflict
   detection, and the list row: last-edit stamps and tooltip, badges, share
-  avatars and "+N", unread rules and the local clear, kept fields on save, and
-  the row menu's access header.
+  avatars and "+N", unread rules and the local clear, kept fields on save, the
+  row menu's access header, and the AI selection prompt, its quick actions,
+  trimmed ranges and answer parsing.
 - `desktop/tests/test_note_pages.cpp` (`forkmesh-note-pages-tests`): the emoji
   rule (skin tones, flags, ZWJ, keycaps, letters, whitespace, the code point
   and byte limits, every picker emoji), outline depth, indent, outdent, move,
@@ -388,8 +462,14 @@ dashboard and World open it from their own origin; the desktop does not use it
 - `desktop/tests/test_note_comments.cpp` (`forkmesh-note-comments-tests`): the
   anchor scoring (prefix, suffix, distance, overlaps, UTF-16 offsets), quote
   capture, the Preview search text, thread grouping and order, resolve rights,
-  mention spans and suggestions, error and time wording, and the presence
-  peers, labels, line, "+N", editing state, initials and colour hash.
+  mention spans and suggestions, error and time wording, the presence
+  peers, labels, line, "+N", editing state, initials and colour hash, the
+  followed peer and cursor lines, chat messages and unread counts, and the
+  poll interval while following or chatting.
+- `desktop/tests/test_markdown_live.cpp` (`forkmesh-markdown-live-tests`):
+  Live styling of headings, bold, italic, code, links, lists, rules, quotes
+  and fenced code; marks shown only on the caret's line; the text left
+  untouched; and the styling removed when Live is left.
 - `desktop/tests/test_note_document.cpp` (`forkmesh-note-document-tests`):
   every row of the shared cases in
   [notes-documents.md](../app/notes-documents.md#shared-cases), figure sizes and

@@ -16,12 +16,15 @@ holds none of them unless a build explicitly adds it.
 A package is a **plugin** when it has a `content/` folder: code or material
 that some host builds or ships (desktop sources from `content/desktop/build.json`,
 a server module, dashboard or `www` pages, World modules, themes, agent
-descriptors, Workflows packs). There are 96.
+descriptors, Workflows packs). There are 99.
 
 A package without `content/` is a **switch**: it only turns a core feature on
 or off (Chat, Issues, Agents, the repository tabs, see
 [core-plugins.md](core-plugins.md)). There are 38. Switches are part of the
 core catalog in every build, because the code they gate is core code.
+
+Administrators see every package of a build, its installs, tables and logs
+on the web dashboard's Plugins page ([plugin-console.md](plugin-console.md)).
 
 ## The plugin list
 

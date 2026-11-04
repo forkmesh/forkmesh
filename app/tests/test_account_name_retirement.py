@@ -172,15 +172,17 @@ def test_a_reset_revokes_other_keys_but_keeps_the_primary_and_node_keys():
 
 def test_weak_ed25519_keys_never_verify():
     import base64
+    import re
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
     source = (ENTRY.parent / "events.py").read_text(encoding="utf-8")
     tree = ast.parse(source)
     wanted = [node for node in tree.body
-              if (isinstance(node, ast.Assign) and getattr(node.targets[0], "id", "") == "ED25519_WEAK_KEYS")
+              if (isinstance(node, ast.Assign)
+                  and getattr(node.targets[0], "id", "") in ("ED25519_WEAK_KEYS", "_B64URL_UNPADDED"))
               or (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-                  and node.name in ("b64url_decode", "ed25519_verify"))]
-    names = {"base64": base64}
+                  and node.name in ("_b64url_decode_lenient", "b64url_decode", "ed25519_verify"))]
+    names = {"base64": base64, "re": re}
     exec(compile(ast.Module(wanted, []), "events.py", "exec"), names)
     identity = bytes.fromhex("01" + "00" * 31)
     forged = identity + b"\x00" * 32

@@ -3,7 +3,7 @@
 Part of [iOS core modules](README.md).
 Activity, telemetry and the in-app log, notes, tasks, the health and wellbeing tools (Calorie
 Counter, Pedometer, Water, Sleep, Sugar Break, Stretch Break, Food Guide, heart rate by tapping),
-Glasses Alert, Eye Control's maths, the Speech Playground, the Docs library, bug reports, and the developer performance
+Glasses Alert, Eye Control's maths, Silent Speech's recogniser, the Speech Playground, the Docs library, bug reports, and the developer performance
 overlay's text. `import FMTools` (re-import `FMBase` for `JSONObject`, `FMAccount` for
 `PerformanceMonitorService`). Every view model is `@MainActor @Observable`; the SwiftUI views are
 in `ForkMesh/Features/Tools`. The Password Vault's logic is FMVault's ([FMVault](FMVault.md)); only
@@ -199,6 +199,24 @@ The phone checkup; the check table and severity choices are in
 - `PhoneSecurityScreen` (app) shows the headline, filters with counts, a category menu, search and
   a detail sheet whose fix opens ForkMesh's Settings page or its notification settings, or lists
   steps for system settings iOS cannot link to.
+
+### Silent Speech (`SilentSpeechModels.swift`, package `silent-speech`)
+
+Recognises mouthed words from headphone motion; design and thresholds are in
+[`docs/marketplace/silent-speech.md`](../../marketplace/silent-speech.md).
+
+- `SilentFeatures.frames` resamples a take to 25 Hz, trims quiet edges and builds centred
+  per-channel frames; `SilentNormalizer` scales them, `SilentDTW` compares two takes.
+- `SilentModel.match` scores each word by its nearest takes and applies the distance and
+  margin gates; `SilentEvaluator.evaluate` runs leave-one-out and the permutation test on one
+  distance matrix. `SilentSegmenter` and `SilentNoiseFloor` pick words out of live motion.
+- `SilentText` holds the reading sentences and splits text into words, `SilentReading.plan`
+  picks a session's sentences and `SilentLanguage` is the bigram next-word guess that
+  `SilentScores.ranked` folds into the match. `SilentScope` keeps the last six seconds of
+  motion for the page's charts and its spectrum.
+- `SilentDataset` is the on-phone JSON shared with Android's core `silentspeech/`.
+  `SilentSpeechListener` (`ForkMesh/Platform`) drives `CMHeadphoneMotionManager`; the view is
+  `SilentSpeechScreen`.
 
 ### Eye Control (`EyeControlModels.swift`, `EyeControlTargets.swift`, package `eye-control`)
 

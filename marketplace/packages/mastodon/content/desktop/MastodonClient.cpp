@@ -86,12 +86,14 @@ void Client::cancelAll()
     m_retired.append(old);
     old->deleteLater();
     const QList<QPointer<QNetworkReply>> replies = std::exchange(m_replies, {});
-    for (const QPointer<QNetworkReply> &reply : replies) {
-        if (!reply)
-            continue;
-        reply->disconnect();
-        reply->abort();
-        reply->deleteLater();
+    if (m_network) {
+        for (const QPointer<QNetworkReply> &reply : replies) {
+            if (!reply)
+                continue;
+            QObject::disconnect(reply, nullptr, old, nullptr);
+            reply->abort();
+            reply->deleteLater();
+        }
     }
     m_imageWaiters.clear();
 }

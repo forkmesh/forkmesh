@@ -63,6 +63,19 @@ class BookingTest {
         assertEq("example.org/meet?", missing.prefix)
     }
 
+    fun testForkMeshRoomsShowAJoinLink() {
+        val link = "https://app.forkmesh.com/call?" + "a".repeat(32) + "#" + "b".repeat(64)
+        val room = mapOf("location" to mapOf("kind" to "video", "detail" to link, "room" to true))
+        val booking = BookingItem.fromJson(bookingJson(extra = room))!!
+        expect(booking.location.room)
+        assertEq(link, booking.joinUrl())
+        assertEq("ForkMesh video call, end-to-end encrypted", booking.where())
+        assertEq(mapOf<String, Any?>("kind" to "video", "detail" to link), booking.location.body())
+        assertEq("", BookingItem.fromJson(bookingJson())!!.joinUrl())
+        assertEq("", BookingItem.fromJson(bookingJson(extra = room + mapOf("status" to "cancelled")))!!.joinUrl())
+        assertEq("Leave empty for a private ForkMesh video room", Booking.LOCATION_HINTS["video"])
+    }
+
     fun testLabels() {
         assertEq("15 min", Booking.minutesLabel(15))
         assertEq("1 h", Booking.minutesLabel(60))

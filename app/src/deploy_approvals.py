@@ -150,6 +150,14 @@ def announcement(row):
             message or "The cores did not deploy this merge.")
 
 
+def announcement_meta(row):
+    meta = {"approval": int(row["id"]), "status": row["status"]}
+    state = {"deployed": "up", "failed": "down"}.get(str(row["status"]))
+    if state:
+        meta["state"] = state
+    return meta
+
+
 async def announce(env):
     await ensure_schema(env)
     rows = await d1_all(
@@ -170,7 +178,7 @@ async def announce(env):
                 env, recipient, "operational_alert", title, body=body,
                 href="/dashboard", source="self-deploy",
                 dedupe="self-deploy:%d" % int(row["id"]),
-                meta={"approval": int(row["id"]), "status": row["status"]})
+                meta=announcement_meta(row))
         await d1_run(
             env, "UPDATE deploy_approvals SET announced=1 WHERE id=?",
             row["id"])

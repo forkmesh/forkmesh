@@ -97,14 +97,19 @@ ClaudeImportBatch convertLines(const QList<QJsonObject> &lines, const QString &s
             const QJsonValue content = message.value(QStringLiteral("content"));
             QStringList texts;
             QJsonArray results;
+            const auto addText = [&texts](const QString &raw) {
+                const QString body = peerBody(raw).trimmed();
+                if (!hiddenPrompt(body))
+                    texts << body;
+            };
             if (content.isString()) {
-                texts << content.toString();
+                addText(content.toString());
             } else {
                 for (const QJsonValue &value : content.toArray()) {
                     QJsonObject block = value.toObject();
                     const QString blockType = block.value(QStringLiteral("type")).toString();
                     if (blockType == QLatin1String("text")) {
-                        texts << block.value(QStringLiteral("text")).toString();
+                        addText(block.value(QStringLiteral("text")).toString());
                     } else if (blockType == QLatin1String("image")) {
                         texts << QStringLiteral("[image]");
                     } else if (blockType == QLatin1String("tool_result")) {
@@ -114,8 +119,8 @@ ClaudeImportBatch convertLines(const QList<QJsonObject> &lines, const QString &s
                     }
                 }
             }
-            const QString text = peerBody(texts.join(QStringLiteral("\n\n")).trimmed());
-            if (!hiddenPrompt(text)) {
+            const QString text = texts.join(QStringLiteral("\n\n")).trimmed();
+            if (!text.isEmpty()) {
                 QJsonObject ev{{QStringLiteral("type"), QStringLiteral("_local_user")},
                                {QStringLiteral("text"), text}};
                 if (ms > 0)
@@ -170,6 +175,45 @@ ClaudeImportBatch convertLines(const QList<QJsonObject> &lines, const QString &s
                  QStringLiteral("Claude Code compacted the conversation here.")}});
         }
     }
+    return batch;
+}
+
+QList<QJsonObject> foreignLines(const QList<QJsonObject> &lines, bool ownSeen)
+{
+    QList<QJsonObject> out;
+    for (const QJsonObject &o : lines) {
+        const QString entrypoint = o.value(QStringLiteral("entrypoint")).toString();
+        if (entrypoint.isEmpty())
+            continue;
+        if (entrypoint.startsWith(QLatin1String("sdk-"))) {
+            ownSeen = true;
+            continue;
+        }
+        if (ownSeen)
+            out.append(o);
+    }
+    return out;
+}
+
+ClaudeImportBatch convertForeign(const QString &path, qint64 fromOffset,
+                                 const QString &sessionId)
+{
+    qint64 newOffset = fromOffset;
+    const QList<QJsonObject> lines =
+        foreignLines(ClaudeSessionScan::readEvents(path, fromOffset, &newOffset), fromOffset > 0);
+    ClaudeImportBatch batch = convertLines(lines, sessionId);
+    batch.newOffset = newOffset;
+    if (batch.events.isEmpty() || batch.events.first().value(QStringLiteral("type")).toString() !=
+                                      QLatin1String("_local_user"))
+        return batch;
+    const QString where =
+        lines.first().value(QStringLiteral("entrypoint")).toString() ==
+                QLatin1String("claude-desktop")
+            ? QStringLiteral("Continued in the Claude app.")
+            : QStringLiteral("Continued in Claude Code outside ForkMesh.");
+    batch.events.prepend(QJsonObject{{QStringLiteral("type"), QStringLiteral("_local_notice")},
+                                     {QStringLiteral("text"), where}});
+    batch.log.prepend(QStringLiteral("\n[") + where + QStringLiteral("]\n"));
     return batch;
 }
 

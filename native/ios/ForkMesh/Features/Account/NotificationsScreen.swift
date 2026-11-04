@@ -281,6 +281,7 @@ private struct NotificationRow: View {
     let onSendToAgent: () -> Void
 
     private var tone: Color {
+        if notification.isGoodNews { return fm.success }
         return notification.isUnread ? fm.accent : fm.textTertiary
     }
 
@@ -312,7 +313,7 @@ private struct NotificationRow: View {
     var body: some View {
         Button(action: onTap) {
             HStack(alignment: .top, spacing: FmSpace.x3) {
-                FmIcon(notificationIconForKind(notification.kind), size: 24, color: tone)
+                FmIcon(notificationIcon(kind: notification.kind, meta: notification.meta), size: 24, color: tone)
                     .frame(width: 52, height: 52)
                     .background(notification.isUnread ? fm.accentSubtle : fm.bgRaised)
                     .clipShape(Circle())

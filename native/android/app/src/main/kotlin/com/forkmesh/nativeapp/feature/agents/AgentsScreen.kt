@@ -255,23 +255,23 @@ internal class AgentsScreen : Screen() {
         Column(Modifier.fillMaxWidth().padding(FmSpace.x4)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Agents", Modifier.weight(1f).semantics { heading() }, style = Fm.text.displaySmall.copy(color = c.textPrimary))
-                if (stoppingAll || stopTargets.isNotEmpty()) {
-                    FmIconButton("stop_circle_outlined", "Stop all agents", onPressed = if (stoppingAll) null else ({
-                        stopCount = stopTargets.size
-                        confirmStopAll = true
-                    }), color = c.danger)
-                }
                 val watch = AgentWatchEntry.openAll
                 val desktopTools = AgentsFeature.control.hub.desktop != null
                 var more by remember { mutableStateOf(false) }
                 Row(
-                    Modifier.fmGlass(RoundedCornerShape(50), shadow = false).padding(horizontal = FmSpace.x1),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    val tool = Modifier.size(40.dp)
-                    FmIconButton("add", "Start an agent", onPressed = { headerScope.launch { showAgentQuickStartSheet(headerMessenger, navigator, onStarted = { reload() }) } }, modifier = tool, color = c.accent, iconSize = 22.dp)
+                    val tool = Modifier.size(36.dp).fmGlass(RoundedCornerShape(FmRadius.md), shadow = false)
+                    if (stoppingAll || stopTargets.isNotEmpty()) {
+                        FmIconButton("stop_circle_outlined", "Stop all agents", onPressed = if (stoppingAll) null else ({
+                            stopCount = stopTargets.size
+                            confirmStopAll = true
+                        }), modifier = tool, color = c.danger, iconSize = 20.dp)
+                    }
+                    FmIconButton("add", "Start an agent", onPressed = { headerScope.launch { showAgentQuickStartSheet(headerMessenger, navigator, onStarted = { reload() }) } }, modifier = tool, color = c.accent, iconSize = 20.dp)
                     if (watch != null && (shown.any { it.sessions.isNotEmpty() } || AgentsFeature.control.rows.isNotEmpty())) {
-                        FmIconButton("graphic_eq", "Watch, hear and feel agents", onPressed = { watch(navigator, shown) }, modifier = tool, iconSize = 22.dp)
+                        FmIconButton("graphic_eq", "Watch, hear and feel agents", onPressed = { watch(navigator, shown) }, modifier = tool, iconSize = 20.dp)
                     }
                     FmIconButton(
                         when (listView) {
@@ -283,10 +283,10 @@ internal class AgentsScreen : Screen() {
                         "Agent list view: ${listView.caption}",
                         onPressed = onNextView,
                         modifier = tool,
-                        iconSize = 22.dp,
+                        iconSize = 20.dp,
                     )
                     Box {
-                        FmIconButton("more_horiz", "More agent actions", onPressed = { more = true }, modifier = tool, iconSize = 22.dp)
+                        FmIconButton("more_horiz", "More agent actions", onPressed = { more = true }, modifier = tool, iconSize = 20.dp)
                         FmDropdownMenu(expanded = more, onDismissRequest = { more = false }) {
                             FmDropdownMenuItem("All agents", icon = "devices_outlined", onClick = {
                                 more = false

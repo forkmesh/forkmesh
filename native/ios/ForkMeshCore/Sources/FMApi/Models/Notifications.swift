@@ -90,7 +90,11 @@ public struct ForkNotification: Equatable, Hashable, Sendable, Identifiable {
 
     public var isUnread: Bool { readAt <= 0 }
 
-    public var kindLabel: String {
+    public var isGoodNews: Bool { pingIsGoodNews(kind: kind, meta: meta) }
+
+    public var kindLabel: String { isGoodNews ? "Good news" : typeLabel }
+
+    public var typeLabel: String {
         switch kind {
         case "mention": return "Mention"
         case "subscribed": return "Subscribed"

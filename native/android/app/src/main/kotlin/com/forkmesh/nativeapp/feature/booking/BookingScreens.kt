@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import com.forkmesh.nativeapp.feature.market.ErrorLine
 import com.forkmesh.nativeapp.feature.market.MarketFeature
 import com.forkmesh.nativeapp.feature.market.PageActivityCard
+import com.forkmesh.nativeapp.feature.meeting.openMeeting
 import com.forkmesh.nativeapp.feature.navigation.NavigationFeature
 import com.forkmesh.nativeapp.feature.rssreader.shareText
 import com.forkmesh.nativeapp.feature.tools.ToolsAppBar
@@ -417,6 +418,16 @@ private fun BookingRow(
             }
             listOf(booking.guest.phone, booking.where()).filter { it.isNotEmpty() }.distinct().forEach {
                 Text(it, style = Fm.text.bodySmall, color = Fm.colors.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            val join = booking.joinUrl()
+            if (join.isNotEmpty()) {
+                val context = LocalContext.current
+                Text(
+                    "Join video call",
+                    Modifier.clickable { openMeeting(context, join) },
+                    style = Fm.text.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = Fm.colors.accent,
+                )
             }
             if (booking.guest.timezone.isNotEmpty() && booking.guest.timezone != settings.timezone) {
                 Text("Their time zone: " + booking.guest.timezone.replace('_', ' '), style = Fm.text.labelSmall, color = Fm.colors.textTertiary)

@@ -195,6 +195,7 @@ class CrmModel(private val client: PackagesClient, var organization: String = ""
         }
 
     private fun exists(tab: CrmTab, data: CrmOrganizationData): Boolean = when {
+        tab is CrmTab.Network -> CrmNetwork.named(tab.networkId) != null
         tab.isContacts -> data.contactTabs.any { it.tab == tab }
         tab == CrmTab.Shared -> data.sharedViews.isNotEmpty()
         else -> true
@@ -205,7 +206,8 @@ class CrmModel(private val client: PackagesClient, var organization: String = ""
     val activeView: CrmView? get() = data?.viewFor(activeTab)
 
     val activeTitle: String
-        get() = data?.let { data -> (data.contactTabs + data.workspaceTabs).firstOrNull { it.tab == activeTab }?.title } ?: "CRM"
+        get() = (activeTab as? CrmTab.Network)?.let { CrmNetwork.named(it.networkId)?.name }
+            ?: data?.let { data -> (data.contactTabs + data.workspaceTabs).firstOrNull { it.tab == activeTab }?.title } ?: "CRM"
 
     val tabContacts: List<CrmContact> get() = data?.contactsFor(activeTab).orEmpty()
 

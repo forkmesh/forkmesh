@@ -15,6 +15,7 @@ documentation; the package format, lifecycle and publishing rules are in
 | [package-system.md](package-system.md) | Code map, host sockets, desktop page contract, server module runtime, manifest fields, build, test, release, security and traps |
 | [plugins.md](plugins.md) | Plugins versus switches, and which plugins a build adds to the core (`marketplace/plugins.json`) |
 | [core-plugins.md](core-plugins.md) | Built-in features as account-synced switches, off by default in new projects |
+| [plugin-console.md](plugin-console.md) | The web admin Plugins page: every package's installs, tables, logs, export, and instance-wide places |
 | [market.md](market.md) | Packs and guides, sorting, Install all, share links, public package pages, the plugin page menu, preview images |
 | [ratings.md](ratings.md) | Star ratings, required improvement reviews, maintainer replies and moderation |
 
@@ -46,12 +47,14 @@ documentation; the package format, lifecycle and publishing rules are in
 | [rss-reader.md](rss-reader.md) | `rss-reader`: a local-only feed reader |
 | [instance-feed.md](instance-feed.md) | `instance-feed` (Feed): one instance's timeline; `feed` (Network Feed) |
 | [mastodon.md](mastodon.md) | `mastodon`: the Mastodon client on the web, phones and desktop |
+| [internet-archive.md](internet-archive.md) | `internet-archive`: archive.org backups of public repositories, and every mirror checked against them |
 | [discourse-mirror.md](discourse-mirror.md) | `discourse-mirror`: a read-only copy of a public Discourse forum in a Git repository |
 | [poker.md](poker.md) | `poker`: Texas Hold'em for virtual chips |
 | [video-mix-dj-studio.md](video-mix-dj-studio.md) | `video-mix-dj-studio`: the DJ studio on web, desktop and iOS (user guide: [DJ Studio jams](../dj-studio.md)) |
 | [video-mix-dj-studio-performance.md](video-mix-dj-studio-performance.md) | The DJ studio's iOS performance checks, read by its diagnostics agent |
 | [face-changer-desktop.md](face-changer-desktop.md) | `face-changer`: the desktop virtual camera |
 | [eye-control.md](eye-control.md) | `eye-control`: gaze cursor and blink to tap on the iPhone |
+| [silent-speech.md](silent-speech.md) | `silent-speech`: words mouthed without a sound, read from earbud head motion on both phones |
 | [tour.md](tour.md) | `tour`: the first-run welcome and guided tour |
 | [people.md](people.md) | `people`: members seated around a campfire |
 | [aquarium.md](aquarium.md) | `aquarium`: agents as fish over the desktop and iPhone |

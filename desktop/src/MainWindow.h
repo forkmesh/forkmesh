@@ -124,6 +124,7 @@ namespace forkmesh::ui { struct GitCaptureResult; }
 namespace MarkdownRender { struct RepoLink; }
 namespace forkmesh::ui { class ChannelGroupTree; }
 namespace forkmesh::ui { class OnboardingTour; }
+namespace forkmesh::ui { class CompactCelebrationOverlay; }
 namespace forkmesh::ui { struct OnboardingStep; }
 namespace forkmesh::ui { enum class OnboardingTrack; }
 namespace forkmesh::ui { class WindowBackdrop; }
@@ -3949,6 +3950,10 @@ private:
                                 bool ownsDesktopKey,
                                 const QString &instanceUrl);
     void cacheActiveAccountSession(const QString &instanceUrl);
+    void ensureAccountSession(std::function<void(const QString &)> done = {});
+    void finishAccountSessionRequest(const QString &error);
+    bool waitForAccountSession(const QUrl &url, std::function<void()> retry,
+                               std::function<void(const QString &)> fail = {});
     bool restoreCachedAccountSession(const QString &accountName,
                                      const QString &instanceUrl);
     QStringList accountDesktopKeysForSession(
@@ -4448,6 +4453,7 @@ private:
     void finishNativePackagePages();
     void showNativePackage(const QString &id);
     void openNativePackageLink(const QString &id);
+    bool openNativePackageWebPage(const QString &path);
     QUrl nativePackageLinkUrl(const QString &id) const;
     forkmesh::market::NativePackageWidget *nativeLoginStore(QString *name) const;
     forkmesh::market::NativePackageWidget *quickAddPackagePromptTarget() const;
@@ -8348,7 +8354,8 @@ private:
     };
     QSet<QString> m_worktreeGitBusy;
     void resolveWorktreeConflicts();
-    void commitWorktreeChanges(const QString &worktreePath, const QString &branch);
+    void commitWorktreeChanges(const QString &worktreePath, const QString &branch,
+                               std::function<void(bool)> onDone = {});
     void removeWorktree(const QString &worktreePath, const QString &branch,
                         bool confirm, bool alsoDeleteBranch = true,
                         std::function<void()> onDone = {});
@@ -10856,6 +10863,9 @@ private:
     void refreshDirectFocus();
     void refreshDirectRoute();
     void refreshDevicePendingBanner();
+    QStringList pendingDirectDevices(const QString &conversation) const;
+    void decideDirectDevices(const QString conversation, const QStringList kids,
+                             bool approve);
     void noteDirectDevicePending(const QString &conversation, const QString &kid);
     void noteDirectSafetyChanged(const QString &conversation);
     void addChatSecurityLine(const QString &conversation, const QString &text);
@@ -11770,7 +11780,9 @@ private:
     QLabel *m_directRouteLabel = nullptr;
     QWidget *m_devicePendingBanner = nullptr;
     QLabel *m_devicePendingLabel = nullptr;
-    QString m_devicePendingKid;
+    QPushButton *m_devicePendingApprove = nullptr;
+    QPushButton *m_devicePendingBlock = nullptr;
+    QStringList m_devicePendingKids;
     bool m_directMeshWired = false;
     bool m_directFocusHooked = false;
     QHash<QString, int> m_directServerCopies;
@@ -14265,6 +14277,8 @@ private:
     QTimer *m_notificationJournalTimer = nullptr; // debounced journal write
     QSet<QString> m_flashedWebAlertIds;
     QSet<QString> m_celebratedWebAlertIds;
+    QPointer<forkmesh::ui::CompactCelebrationOverlay> m_compactCelebration;
+    QStringList m_compactCelebrationTitles;
     bool m_webAlertsBaselineLoaded = false;
     QPushButton *m_notificationButton = nullptr;
     QTableWidget *m_notificationsTable = nullptr; // sortable Notifications page
@@ -14549,7 +14563,7 @@ private:
     QLineEdit *m_agentComposePrompt = nullptr;
     QComboBox *m_agentComposeProvider = nullptr;
     QPushButton *m_agentComposeButton = nullptr;
-    void startAgentFromComposer();
+    bool startAgentFromComposer();
     QWidget *m_agentDetail = nullptr; // collapsible detail panel (hidden until a row is picked)
     // The detail pane's own bottom padding, kept so the docked composer's
     // reserved band can be added to it and taken back off again.
@@ -14595,6 +14609,8 @@ private:
     QHash<QString, int> m_claudeDesktopLinkOwners;
     QTimer *m_claudeDesktopLinkTimer = nullptr;
     bool m_claudeDesktopBackfillRunning = false;
+    bool m_claudeAppSyncInFlight = false;
+    QSet<int> m_claudeAppTranscriptMissing;
     QPlainTextEdit *m_agentLog = nullptr;
     QStackedWidget *m_agentOutputStack = nullptr; // log (0) | embedded terminal (1)
     TerminalWidget *m_agentTerminal = nullptr;  // Claude Code runs here
@@ -15191,6 +15207,7 @@ private:
     void backfillClaudeDesktopSessions();
     void queueClaudeDesktopLink(const QString &cliSessionId, bool front);
     void pumpClaudeDesktopLinks();
+    void syncClaudeAppSessions();
     void finishAgentCloudHandoff(int sessionId, const QString &branch,
                                  const QJsonObject &payload);
     void showAgentListContextMenu(const QPoint &viewportPos);
@@ -15374,6 +15391,7 @@ private:
                                   const ClaudeImportBatch &batch);
     void appendImportedClaudeEvents(int sessionId, const ClaudeImportBatch &batch,
                                     const QString &title);
+    void appendClaudeTranscriptEvents(int sessionId, const ClaudeImportBatch &batch);
     void syncImportedClaudeSessions();
     QHash<QString, int> importedClaudeSessionAgents() const;
     void scanExternalClaudeSessions();
@@ -16116,6 +16134,9 @@ private:
     QString m_accountSessionToken;
     QString m_accountSessionInstanceUrl;
     forkmesh::accounts::SessionCache m_accountSessionCache;
+    QPointer<QNetworkReply> m_accountSessionReply;
+    QList<std::function<void(const QString &)>> m_accountSessionWaiters;
+    qint64 m_accountSessionFailedAtMs = 0;
     bool m_accountSolanaVerified = false;
     bool m_accountDesktopCapable = false;
     QString m_accountTier = QStringLiteral("free");

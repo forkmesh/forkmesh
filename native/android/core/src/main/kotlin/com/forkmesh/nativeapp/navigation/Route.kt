@@ -139,6 +139,7 @@ sealed class Route {
     data class Thread(val channel: String, val id: String) : Route() { override val kind get() = Kind.Thread }
     data class Dm(val user: String) : Route() { override val kind get() = Kind.Dm }
     data class Discord(val guild: String, val channel: String?) : Route() { override val kind get() = Kind.Discord }
+    data class Meeting(val room: String, val key: String) : Route() { override val kind get() = Kind.Meeting }
     data class Profile(val name: String) : Route() { override val kind get() = Kind.Profile }
     data object People : Route() { override val kind get() = Kind.People }
     data object Docs : Route() { override val kind get() = Kind.Docs }
@@ -184,6 +185,7 @@ sealed class Route {
     data object Speech : Route() { override val kind get() = Kind.Speech }
     data object GlassesAlert : Route() { override val kind get() = Kind.GlassesAlert }
     data object PhoneSecurity : Route() { override val kind get() = Kind.PhoneSecurity }
+    data object SilentSpeech : Route() { override val kind get() = Kind.SilentSpeech }
     data class Ember(val repo: RepoRef?) : Route() { override val kind get() = Kind.Ember }
     data class Strata(val repo: RepoRef?) : Route() { override val kind get() = Kind.Strata }
     data class Synapse(val repo: RepoRef?) : Route() { override val kind get() = Kind.Synapse }
@@ -232,7 +234,7 @@ sealed class Route {
         Project("project", "WS15"), Milestones("milestones", "WS15"), RepoSettings("repoSettings", "WS11"),
         LocalRepos("localRepos", "WS5"), LocalRepo("localRepo", "WS5"), QuickEdit("quickEdit", "WS5"),
         Chat("chat", "WS13"), Channel("channel", "WS13"), Thread("thread", "WS13"), Dm("dm", "WS13"),
-        Discord("discord", "WS13"),
+        Discord("discord", "WS13"), Meeting("meeting", "WS13"),
         Profile("profile", "WS18"), People("people", "WS18"), Docs("docs", "existing"), Search("search", "WS8"),
         Notes("notes", "WS15"), Note("note", "WS15"), NotePage("notePage", "WS15"), Tasks("tasks", "WS15"), Task("task", "WS15"),
         Calendar("calendar", "WS15"), Event("event", "WS15"), Booking("booking", "WS15"), Timers("timers", "WS15"),
@@ -244,7 +246,7 @@ sealed class Route {
         Vault("vault", "WS21"), Coves("coves", "WS21"), Cove("cove", "WS21"), Calories("calories", "existing"),
         Steps("steps", "existing"), Water("water", "existing"), Sleep("sleep", "existing"), SugarBreak("sugarBreak", "existing"),
         Stretch("stretch", "existing"), FoodGuide("foodGuide", "existing"), Speech("speech", "existing"),
-        GlassesAlert("glassesAlert", "existing"), PhoneSecurity("phoneSecurity", "existing"), Ember("ember", "existing"), Strata("strata", "existing"), Synapse("synapse", "existing"), OpenWrtRouter("openWrtRouter", "existing"), FaceChanger("faceChanger", "existing"), AppStoreStatus("appStoreStatus", "WS20"), Runners("runners", "WS7"), VideoMixDjStudio("videoMixDjStudio", "S045"), Poker("poker", "S046"), Usage("usage", "WS10"), RssReader("rssReader", "WS20"), InstanceFeed("instanceFeed", "WS20"), Mastodon("mastodon", "WS20"), SecureDrive("secureDrive", "WS23"), Files("files", "existing"), Nexus("nexus", "existing"), Workflows("workflows", "existing"),
+        GlassesAlert("glassesAlert", "existing"), PhoneSecurity("phoneSecurity", "existing"), SilentSpeech("silentSpeech", "existing"), Ember("ember", "existing"), Strata("strata", "existing"), Synapse("synapse", "existing"), OpenWrtRouter("openWrtRouter", "existing"), FaceChanger("faceChanger", "existing"), AppStoreStatus("appStoreStatus", "WS20"), Runners("runners", "WS7"), VideoMixDjStudio("videoMixDjStudio", "S045"), Poker("poker", "S046"), Usage("usage", "WS10"), RssReader("rssReader", "WS20"), InstanceFeed("instanceFeed", "WS20"), Mastodon("mastodon", "WS20"), SecureDrive("secureDrive", "WS23"), Files("files", "existing"), Nexus("nexus", "existing"), Workflows("workflows", "existing"),
         LocalAI("localAI", "existing"), Activity("activity", "WS20"), Logs("logs", "WS20"), Diagnostics("diagnostics", "WS20"),
         Stats("stats", "WS20"), Status("status", "WS20"), Admin("admin", "WS20"),
         Settings("settings", "WS18"), Orgs("orgs", "existing"), Org("org", "existing"), InstalledApps("installedApps", "WS22"),

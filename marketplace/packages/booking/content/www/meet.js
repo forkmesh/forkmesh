@@ -433,7 +433,7 @@
         h("dd", {}, h("strong", { text: `${clock(booking.startAt, tz)} – ${clock(booking.endAt, tz)}` }), h("span", { text: longDay(booking.startAt, tz) }))),
       h("div", {}, h("dt", {}, icon("clock", "bk-icon bk-icon-sm"), "What"), h("dd", { text: `${booking.typeTitle}, ${minutesLabel(booking.minutes)}` })),
       booking.location?.text ? h("div", {}, h("dt", {}, icon(locationIcon(booking.location.kind), "bk-icon bk-icon-sm"), "Where"),
-        h("dd", {}, booking.location.url ? h("a", { href: booking.location.url, rel: "noopener noreferrer", target: "_blank", text: booking.location.url }) : booking.location.text)) : null,
+        h("dd", {}, booking.location.url ? h("a", { href: booking.location.url, rel: "noopener noreferrer", target: "_blank", text: booking.location.room ? "Join the video call (end-to-end encrypted)" : booking.location.url }) : booking.location.text)) : null,
       h("div", {}, h("dt", {}, icon("globe", "bk-icon bk-icon-sm"), "Time zone"), h("dd", { text: zoneLabel(tz) })));
   }
 

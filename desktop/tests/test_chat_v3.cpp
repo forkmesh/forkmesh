@@ -613,8 +613,8 @@ void testNodeBinding()
     RoomSeal strict(QStringLiteral("chat-direct:x:v1"), QStringLiteral("direct:x"),
                     Policy::Strict, acct, peerNode, peerDevice);
     strict.setNodeSigner([nodeSeed](const QByteArray &m) { return ed25519Sign(nodeSeed, m); });
-    check(!strict.keyFrame().contains(QStringLiteral("nsig")),
-          "a strict room keeps the v3 bundle without a node signature");
+    check(verifyNodeBinding(strict.keyFrame(), QStringLiteral("chat-direct:x:v1")),
+          "a strict room signs its bundle with the node key so an updated app keeps its trust");
 }
 
 void testCountersPersist()
@@ -821,6 +821,84 @@ void testStoredStateKeysHaveTheirOwnFiles()
 
 } // namespace
 
+void testDeviceSuccessor()
+{
+    nowMs = 1800000000000ll;
+    const QString dmRoom = QStringLiteral("chat-direct:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee:v1");
+    const QString dmScope = QStringLiteral("direct:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee");
+    const QByteArray bobNodeSeed(32, 'N');
+    const QByteArray otherNodeSeed(32, 'O');
+    const QString bobNode = b64u(ed25519Public(bobNodeSeed));
+    const auto signerFor = [](const QByteArray &seed) {
+        return [seed](const QByteArray &message) { return ed25519Sign(seed, message); };
+    };
+    const auto device = [] {
+        auto made = ChatDevice::inMemory(randomBytes(32));
+        made->setClock([] { return nowMs; });
+        return made;
+    };
+    const auto bobSeal = [&](const std::shared_ptr<ChatDevice> &bob, const QString &node,
+                             const QByteArray &signerSeed) {
+        RoomSeal seal(dmRoom, dmScope, Policy::Strict, QStringLiteral("bob"), node, bob);
+        seal.setParticipants({QStringLiteral("alice"), QStringLiteral("bob")});
+        if (!signerSeed.isEmpty())
+            seal.setNodeSigner(signerFor(signerSeed));
+        return seal;
+    };
+    auto alice = device();
+    RoomSeal aliceSeal(dmRoom, dmScope, Policy::Strict, QStringLiteral("alice"),
+                       QStringLiteral("alice-desk"), alice);
+    aliceSeal.setParticipants({QStringLiteral("alice"), QStringLiteral("bob")});
+    auto bobOld = device();
+    RoomSeal oldSeal = bobSeal(bobOld, bobNode, bobNodeSeed);
+    check(oldSeal.keyFrame().contains(QStringLiteral("nsig")) &&
+              verifyNodeBinding(oldSeal.keyFrame(), dmRoom),
+          "a DM bundle carries the node signature when the node id is its key");
+    check(aliceSeal.acceptKeyFrame(oldSeal.keyFrame()) == RoomSeal::BundleResult::Approved,
+          "the first device of the other person is approved");
+    aliceSeal.markVerified();
+    const QString before = aliceSeal.safetyNumber().digits;
+    int pending = 0;
+    int safetyChanges = 0;
+    const int token = alice->subscribe(
+        [&](ChatDevice::Event event, const QString &, const QString &) {
+            pending += event == ChatDevice::Event::DevicePending;
+            safetyChanges += event == ChatDevice::Event::SafetyNumberChanged;
+        });
+
+    nowMs += 60000;
+    auto bobNew = device();
+    RoomSeal newSeal = bobSeal(bobNew, bobNode, bobNodeSeed);
+    check(aliceSeal.acceptKeyFrame(newSeal.keyFrame()) == RoomSeal::BundleResult::Approved,
+          "an updated app signed by the same node key is approved");
+    QStringList kids;
+    for (const TrustRecord &record : aliceSeal.records())
+        kids.append(record.kid);
+    check(pending == 0 && safetyChanges == 0 && aliceSeal.isVerified() &&
+              aliceSeal.safetyNumber().digits != before &&
+              kids.contains(bobNew->kid()) && !kids.contains(bobOld->kid()),
+          "the new key takes over the old one: no approval, no change notice, still verified");
+
+    RoomSeal unsignedSeal = bobSeal(device(), bobNode, QByteArray());
+    check(!unsignedSeal.keyFrame().contains(QStringLiteral("nsig")) &&
+              aliceSeal.acceptKeyFrame(unsignedSeal.keyFrame()) ==
+                  RoomSeal::BundleResult::Pending,
+          "a new key without a node signature still waits for approval");
+    RoomSeal wrongNode = bobSeal(device(), bobNode, otherNodeSeed);
+    check(!wrongNode.keyFrame().contains(QStringLiteral("nsig")) &&
+              aliceSeal.acceptKeyFrame(wrongNode.keyFrame()) == RoomSeal::BundleResult::Pending,
+          "a signature by another node key is not sent and the device waits");
+    RoomSeal otherNode = bobSeal(device(), b64u(ed25519Public(otherNodeSeed)), otherNodeSeed);
+    check(aliceSeal.acceptKeyFrame(otherNode.keyFrame()) == RoomSeal::BundleResult::Pending,
+          "a device from another node of the same account waits for approval");
+    alice->unsubscribe(token);
+
+    check(aliceSeal.acceptKeyFrame(oldSeal.keyFrame()) == RoomSeal::BundleResult::Rejected,
+          "a replayed bundle of the replaced key is dropped");
+    check(newSeal.acceptKeyFrame(oldSeal.keyFrame()) == RoomSeal::BundleResult::Rejected,
+          "the updated app ignores its own older key");
+}
+
 int main(int argc, char **argv)
 {
     QStandardPaths::setTestModeEnabled(true);
@@ -851,6 +929,7 @@ int main(int argc, char **argv)
     testLink();
     testRoundTrips();
     testNodeBinding();
+    testDeviceSuccessor();
     testCountersPersist();
     testHeldBudget();
     testStoredStateLeavesSettingsFile();

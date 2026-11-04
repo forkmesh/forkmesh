@@ -267,7 +267,7 @@ void MainWindow::closeClaudeElicitation(const QString &key)
 
 QWidget *MainWindow::buildAgentTowerPanels()
 {
-    m_agentTowerPanels = new SessionSidePanels;
+    m_agentTowerPanels = new SessionSidePanels(m_agentCodeSplit);
     m_agentTowerPanels->setMinimumWidth(220);
     m_agentTowerPanels->hide();
     m_agentTowerPanelsTimer = new QTimer(this);

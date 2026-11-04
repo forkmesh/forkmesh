@@ -49,6 +49,12 @@ window.ForkMeshDashboard.registerPage("crm", ({
   const CRM_MAX_FLOWS = 12;
   const CRM_PIPELINE_TAB_PREFIX = "pipeline:";
   const CRM_NO_PIPELINE_TAB = "no-pipeline";
+  const CRM_NETWORK_TAB_PREFIX = "network:";
+  const CRM_NETWORKS = [
+    { id: "mastodon", name: "Mastodon" }, { id: "bluesky", name: "Bluesky" },
+    { id: "twitter", name: "X (Twitter)" }, { id: "linkedin", name: "LinkedIn" },
+    { id: "github", name: "GitHub" },
+  ];
   const CRM_STAGE_SHAPE = /^[a-z][a-z0-9-]*$/;
   const CRM_SHARE_SHOWN = 15;
   const CRM_STAGE_PALETTE = ["#58a6ff", "#e3b341", "#bc8cff", "#39c5cf", "#db61a2", "#3fb950", "#db6d28", "#f85149"];
@@ -132,6 +138,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     if (orgLabel) orgLabel.textContent = state.crmView.organization;
     $(`[data-crm-install]`)?.classList.toggle("hidden", !canManage);
     $(`[data-crm-install-denied]`)?.classList.toggle("hidden", canManage);
+    renderCrmLeaderboardStrip();
   }
 
   function downloadCrmJson(exportPayload, filename) {
@@ -739,7 +746,19 @@ window.ForkMeshDashboard.registerPage("crm", ({
   // creates one named after the file, ordered like the file.
 
   function crmActiveView() {
-    return crmTabViews().find((view) => view.id === state.crmView.activeView) || null;
+    return crmNetworkView(state.crmView.activeView)
+      || crmTabViews().find((view) => view.id === state.crmView.activeView) || null;
+  }
+
+  function crmNetworkView(id) {
+    const value = String(id || "");
+    if (!value.startsWith(CRM_NETWORK_TAB_PREFIX)) return null;
+    const network = CRM_NETWORKS.find((item) => item.id === value.slice(CRM_NETWORK_TAB_PREFIX.length));
+    return network ? { id: value, name: network.name, network: network.id, virtual: true } : null;
+  }
+
+  function crmOnNetwork(contact, network) {
+    return Boolean(String(contact?.[network] || "").trim());
   }
 
   function crmVirtualViews() {
@@ -758,6 +777,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
   }
 
   function crmContactOnTab(contact, view, pipelines = crmPipelineIds()) {
+    if (view.network) return crmOnNetwork(contact, view.network);
     return view.id === CRM_NO_PIPELINE_TAB
       ? !pipelines.has(String(contact.flow || "")) : crmContactInView(contact, view);
   }
@@ -771,14 +791,14 @@ window.ForkMeshDashboard.registerPage("crm", ({
 
   function crmTabView(id) {
     return id === CRM_NO_PIPELINE_TAB ? crmNoPipelineView()
-      : crmTabViews().find((view) => view.id === id) || null;
+      : crmNetworkView(id) || crmTabViews().find((view) => view.id === id) || null;
   }
 
   function crmSyncActiveTab() {
     if (state.crmView.activeShared || state.crmView.sharedOnly) return;
     const tabs = crmTabViews();
     const previous = state.crmView.activeView;
-    if (!tabs.some((view) => view.id === previous)) {
+    if (!crmNetworkView(previous) && !tabs.some((view) => view.id === previous)) {
       state.crmView.activeView = tabs[0]?.id || "";
       if (previous && new URL(location.href).searchParams.get("list") === previous) crmSetListParam("");
     }
@@ -792,6 +812,11 @@ window.ForkMeshDashboard.registerPage("crm", ({
   function selectCrmFirstStage() {
     const view = crmActiveView();
     if (!view || view.id === state.crmView.stageTab) return;
+    if (view.network) {
+      state.crmView.stageTab = view.id;
+      const stage = $(`[data-crm-stage]`); if (stage) stage.value = "";
+      return;
+    }
     const { stages } = crmStripStages(view, view.flow ? "" : String($(`[data-crm-flow]`)?.value || ""));
     if (!stages.length) return;
     state.crmView.stageTab = view.id;
@@ -2140,9 +2165,11 @@ window.ForkMeshDashboard.registerPage("crm", ({
       const payload = await crmRequest(crmOrganizationPath(`/contacts/${id}`), "PATCH", body);
       replace(payload.contact);
       crmMessage("notice", note);
+      return true;
     } catch (error) {
       crmMessage("error", `${failure}: ${error.message}`);
       await loadCrm();
+      return false;
     }
   }
 
@@ -2925,7 +2952,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
   function openCrmListFromUrl() {
     const id = new URL(location.href).searchParams.get("list") || "";
     if (!id || !state.crmView.installed) return;
-    if (crmTabViews().some((view) => view.id === id)) { selectCrmSheet(id); return; }
+    if (crmNetworkView(id) || crmTabViews().some((view) => view.id === id)) { selectCrmSheet(id); return; }
     if (state.crmView.sharedViews.some((view) => view.id === id)) { void selectCrmSharedSheet(id); return; }
     crmSetListParam("");
     crmMessage("error", `That link points to a list you cannot open in ${state.crmView.organization}. It may be private, deleted, or in an organization you are not in.`);
@@ -3384,7 +3411,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
   }
 
   function crmProviderLabel(email) {
-    return { gmail: "Gmail", zoho: "Zoho Mail", mastodon: "Mastodon" }[email?.provider]
+    return { gmail: "Gmail", zoho: "Zoho Mail", mastodon: "Mastodon", x: "X" }[email?.provider]
       || (email?.transport === "mailtrap" ? "Mailtrap" : "Email");
   }
 
@@ -4250,11 +4277,13 @@ window.ForkMeshDashboard.registerPage("crm", ({
     // A Mastodon handle opens the profile on its own instance: the handle is the
     // link where the cell is read-only, and a link sits beside it where it edits.
     const profile = column.field === "mastodon" ? crmProfileUrl(column.field, contact.mastodon) : "";
+    const follow = profile && !crmActiveShared() ? crmFollowBackButton(contact) : "";
     if (profile && (column.readonly || crmActiveShared())) {
-      return `<a href="${escapeHtml(profile)}" target="_blank" rel="noopener noreferrer" class="crm-link block truncate whitespace-nowrap text-xs" style="max-width:${column.width || "12rem"}" title="${escapeHtml(profile)}">${escapeHtml(contact.mastodon)}</a>`;
+      const link = `<a href="${escapeHtml(profile)}" target="_blank" rel="noopener noreferrer" class="crm-link block min-w-0 truncate whitespace-nowrap text-xs" style="max-width:${column.width || "12rem"}" title="${escapeHtml(profile)}">${escapeHtml(contact.mastodon)}</a>`;
+      return follow ? `<span class="flex items-center gap-1">${link}${follow}</span>` : link;
     }
     if (profile) {
-      return `<span class="flex items-center gap-1">${crmInlineContactField(contact, column, width, line)}<a href="${escapeHtml(profile)}" target="_blank" rel="noopener noreferrer" class="crm-tile" title="Open ${escapeHtml(profile)}" aria-label="Open Mastodon profile">&#8599;</a></span>`;
+      return `<span class="flex items-center gap-1">${crmInlineContactField(contact, column, width, line)}<a href="${escapeHtml(profile)}" target="_blank" rel="noopener noreferrer" class="crm-tile" title="Open ${escapeHtml(profile)}" aria-label="Open Mastodon profile">&#8599;</a>${follow}</span>`;
     }
     if (column.readonly || crmActiveShared()) {
       const value = crmFieldValue(contact, column.field);
@@ -4346,12 +4375,27 @@ window.ForkMeshDashboard.registerPage("crm", ({
         ${state.crmView.sharedOnly ? "" : `<button data-crm-tab-shared-menu="${escapeHtml(view.id)}" type="button" aria-label="Options for ${escapeHtml(view.name)}" class="crm-side-menu">⋯</button>`}
       </div>`;
     };
+    const networkIcon = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M2 8h12M8 2c1.7 1.8 2.5 3.8 2.5 6S9.7 12.2 8 14M8 2C6.3 3.8 5.5 5.8 5.5 8S6.3 12.2 8 14"/></svg>`;
+    const networks = CRM_NETWORKS.map((network) => ({
+      ...network, count: state.crmView.contacts.filter((contact) => crmOnNetwork(contact, network.id)).length,
+    })).filter((network) => network.count);
+    const networkTab = (network) => {
+      const id = `${CRM_NETWORK_TAB_PREFIX}${network.id}`;
+      const active = onContacts && state.crmView.activeView === id;
+      return `<div data-crm-tab-row="${escapeHtml(id)}" class="crm-side-row${active ? " crm-side-current" : ""}">
+        <button data-crm-network-tab="${escapeHtml(id)}" type="button" role="tab" aria-selected="${active}" title="Every contact with a ${escapeHtml(network.name)} profile, from every list and pipeline" class="crm-side-item">${networkIcon}<span class="crm-side-label">${escapeHtml(network.name)}</span><span class="crm-side-count">${network.count}</span></button>
+      </div>`;
+    };
     const shared = state.crmView.sharedViews;
     host.innerHTML = tabs.map((view) =>
       tab(view.id, view.name, counts.get(view.id) || 0, view)).join("")
       + (shared.length
         ? `<p class="crm-side-heading crm-side-heading-more" title="Lists other ForkMesh users shared with you">Shared with me</p>`
           + shared.map(sharedTab).join("")
+        : "")
+      + (networks.length
+        ? `<p class="crm-side-heading crm-side-heading-more" title="Everyone on one social network, across every list">Networks</p>`
+          + networks.map(networkTab).join("")
         : "");
   }
 
@@ -4446,6 +4490,8 @@ window.ForkMeshDashboard.registerPage("crm", ({
     const flowFilter = $(`[data-crm-flow]`); if (flowFilter) flowFilter.hidden = Boolean(crmActiveView()?.flow);
     renderCrmSharedBanner();
     renderCrmNextContact();
+    renderCrmMastodonBanner();
+    void loadCrmFollowBack();
     const board = state.crmView.layout === "board";
     renderCrmTableViews();
     const columnsButton = $(`[data-crm-columns]`);
@@ -4493,9 +4539,11 @@ window.ForkMeshDashboard.registerPage("crm", ({
     const cell = (contact, column) => column.field === "name"
       ? `<div class="flex items-start gap-2">${photo(contact)}<div class="min-w-0 flex-1">${name(contact, column)}${crmNameMeta(contact, columns, personChip(contact))}</div></div>`
       : crmContactControl(contact, column);
+    const followAction = crmActiveView()?.network === "mastodon" && !columns.some((column) => column.field === "mastodon");
+    const follow = (contact) => followAction ? crmFollowBackButton(contact) : "";
     const actions = (contact, compact) => shared ? "" : compact
-      ? `<div class="mt-3 flex justify-end gap-1"><button data-crm-contact-deck="${escapeHtml(contact.id)}" class="rounded border border-border px-2 py-1 text-xs text-foreground">Deck</button><button data-crm-contact-compose="${escapeHtml(contact.id)}" class="rounded border border-border px-2 py-1 text-xs text-foreground">Email</button><button data-crm-contact-prompt="${escapeHtml(contact.id)}" class="rounded border border-border px-2 py-1 text-xs text-foreground">Copy prompt</button><button data-crm-contact-edit="${escapeHtml(contact.id)}" class="rounded border border-border px-2 py-1 text-xs text-foreground">Edit</button><button data-crm-contact-delete-row="${escapeHtml(contact.id)}" class="rounded border border-destructive px-2 py-1 text-xs text-destructive">Delete</button></div>`
-      : `<td class="px-3 py-2 align-top"><div class="crm-row-actions flex justify-end gap-1"><button data-crm-contact-deck="${escapeHtml(contact.id)}" title="Share the investor deck with a private, tracked link" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-background">Deck</button><button data-crm-contact-compose="${escapeHtml(contact.id)}" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-background">Email</button><button data-crm-contact-prompt="${escapeHtml(contact.id)}" title="Copy a prompt for an assistant to write them a toot about ForkMesh" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-background">Copy prompt</button><button data-crm-contact-edit="${escapeHtml(contact.id)}" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-background">Edit</button><button data-crm-contact-delete-row="${escapeHtml(contact.id)}" aria-label="Delete ${escapeHtml(contact.name || contact.email || "contact")}" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-destructive hover:bg-background">Delete</button></div></td><td></td>`;
+      ? `<div class="mt-3 flex justify-end gap-1">${follow(contact)}<button data-crm-contact-deck="${escapeHtml(contact.id)}" class="rounded border border-border px-2 py-1 text-xs text-foreground">Deck</button><button data-crm-contact-compose="${escapeHtml(contact.id)}" class="rounded border border-border px-2 py-1 text-xs text-foreground">Email</button><button data-crm-contact-prompt="${escapeHtml(contact.id)}" class="rounded border border-border px-2 py-1 text-xs text-foreground">Copy prompt</button><button data-crm-contact-edit="${escapeHtml(contact.id)}" class="rounded border border-border px-2 py-1 text-xs text-foreground">Edit</button><button data-crm-contact-delete-row="${escapeHtml(contact.id)}" class="rounded border border-destructive px-2 py-1 text-xs text-destructive">Delete</button></div>`
+      : `<td class="px-3 py-2 align-top"><div class="crm-row-actions flex justify-end gap-1">${follow(contact)}<button data-crm-contact-deck="${escapeHtml(contact.id)}" title="Share the investor deck with a private, tracked link" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-background">Deck</button><button data-crm-contact-compose="${escapeHtml(contact.id)}" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-background">Email</button><button data-crm-contact-prompt="${escapeHtml(contact.id)}" title="Copy a prompt for an assistant to write them a toot about ForkMesh" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-background">Copy prompt</button><button data-crm-contact-edit="${escapeHtml(contact.id)}" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-background">Edit</button><button data-crm-contact-delete-row="${escapeHtml(contact.id)}" aria-label="Delete ${escapeHtml(contact.name || contact.email || "contact")}" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-destructive hover:bg-background">Delete</button></div></td><td></td>`;
     const page = crmRowPageSlice(contacts);
     renderCrmRowPager(contacts.length, page, board || people);
     list.innerHTML = page.rows.map((contact) => `
@@ -4546,9 +4594,9 @@ window.ForkMeshDashboard.registerPage("crm", ({
     const button = $(`[data-crm-grants-load]`);
     button.disabled = !manages || crmGrantsBusy;
     button.title = manages
-      ? `Add the 100 grants, funds and credit programs that best fit ForkMesh to ${crmFlowName(view.flow)}, ranked, with the award, deadline and application details of each`
+      ? `Add the grants, funds and credit programs that best fit ForkMesh to ${crmFlowName(view.flow)}, ranked, with the award, deadline and application details of each`
       : "Only organization owners and admins can load the grants list";
-    $(`[data-crm-grants-load-label]`).textContent = crmGrantsBusy ? "Loading the ranked grants…" : "Load the 100 ranked grants";
+    $(`[data-crm-grants-load-label]`).textContent = crmGrantsBusy ? "Loading the ranked grants…" : "Load the ranked grants";
   }
 
   async function loadCrmGrants() {
@@ -4687,7 +4735,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
   function renderCrmEmails() {
     const list = $(`[data-crm-email-list]`); if (!list) return;
     list.innerHTML = state.crmView.emails.map((email) => {
-      const linked = ["gmail", "zoho", "mastodon"].includes(email.provider);
+      const linked = ["gmail", "zoho", "mastodon", "x"].includes(email.provider);
       const provider = email.providerUrl && String(email.providerUrl).startsWith("https://")
         ? `<a href="${escapeHtml(email.providerUrl)}" target="_blank" rel="noopener noreferrer" class="text-primary hover:underline">${linked ? `Open in ${escapeHtml(crmProviderLabel(email))}` : "Open send"} ↗</a>` : "";
       const contact = crmContactById(email.contactId);
@@ -4743,7 +4791,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     }
     $(`[data-crm-failed-summary]`)?.classList.toggle("text-destructive", Number(summary.failed || 0) > 0);
     renderCrmSections(); renderCrmFlowFilters(); renderCrmContacts(); renderCrmEmails(); renderCrmMail(); renderCrmOutreach();
-    renderCrmTeam(); renderCrmMailLinks(); crmNoteListViewed(); renderCrmZohoBar(); renderCrmMyZoho();
+    renderCrmTeam(); renderCrmLeaderboardStrip(); renderCrmMailLinks(); crmNoteListViewed(); renderCrmZohoBar(); renderCrmMyZoho();
     $(`[data-crm-account-evidence]`)?.classList.toggle("hidden", !state.crmView.canManageSettings);
     renderCrmUsersImport();
     if ($(`[data-crm-lists-dialog]`)?.open) renderCrmListsOverview();
@@ -4760,7 +4808,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
   // Contacts, Inbox (linked email and Zoho boxes) and Outreach are tabs. The
   // open one is in the address as ?section= so it survives a reload or a link.
 
-  const CRM_SECTIONS = ["contacts", "inbox", "outreach", "team", "zoho"];
+  const CRM_SECTIONS = ["contacts", "inbox", "outreach", "mastodon", "team", "cleanup", "zoho"];
 
   function crmSectionFromUrl() {
     const section = new URL(location.href).searchParams.get("section") || "";
@@ -4774,6 +4822,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     if (next === "contacts") url.searchParams.delete("section");
     else url.searchParams.set("section", next);
     history.replaceState(history.state, "", url);
+    if (next === "mastodon") crmMastodon.stale = true;
     renderCrmSections();
     if (focus) $$(`[data-crm-section-tab]`).find((tab) => tab.dataset.crmSectionTab === next)?.focus();
   }
@@ -4807,6 +4856,228 @@ window.ForkMeshDashboard.registerPage("crm", ({
     $$(`[data-crm-section-count]`).forEach((badge) => {
       badge.textContent = Number(counts[badge.dataset.crmSectionCount] || 0).toLocaleString();
     });
+    renderCrmCleanup();
+    const org = state.crmView.organization;
+    if (current === "mastodon" && state.crmView.installed && org
+        && (crmMastodon.stale || crmMastodon.org !== org) && !(crmMastodon.loading && crmMastodon.org === org)) {
+      crmMastodon.stale = false;
+      void loadCrmMastodon();
+    }
+  }
+
+  const CRM_CLEANUP_SHOWN = 500;
+  const CRM_CLEANUP_COLUMNS = [
+    { field: "name", label: "Name" },
+    { field: "email", label: "Email" },
+    { field: "lists", label: "Lists" },
+    { field: "records", label: "Records" },
+    { field: "contacted", label: "Last contacted" },
+    { field: "updated", label: "Last edit" },
+  ];
+  const crmCleanup = { sort: "lists", descending: false, list: "", busy: false };
+
+  function crmCleanupPeople(contacts = state.crmView.contacts, views = state.crmView.views) {
+    const people = crmPersonGroups(contacts);
+    const seen = new Set(); const rows = [];
+    for (const contact of contacts || []) {
+      const person = crmPersonOf(contact, people);
+      if (seen.has(person.id)) continue;
+      seen.add(person.id);
+      const records = person.members.map((one) => ({ contact: one, lists: views.filter((view) => crmContactInView(one, view)) }));
+      const lists = views.filter((view) => records.some((record) => record.lists.includes(view)));
+      const crowded = records.length > 1 ? lists.length > 1
+        : records[0].lists.filter((view) => !view.flow).length > 1;
+      if (!crowded) continue;
+      const newest = [...person.members].sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
+      const lead = newest.find((one) => String(one.name || "").trim()) || newest[0];
+      rows.push({
+        id: person.id, lead, records, lists,
+        name: crmContactLabel(lead),
+        email: String(person.members.map((one) => one.email).find(Boolean) || ""),
+        contacted: Math.max(0, ...person.members.map((one) => Number(one.lastContactedAt || 0))),
+        updated: Math.max(0, ...person.members.map((one) => Number(one.updatedAt || 0))),
+      });
+    }
+    return rows;
+  }
+
+  function crmCleanupSorted(rows, sort = crmCleanup.sort, descending = crmCleanup.descending) {
+    const text = (value) => String(value || "").toLowerCase();
+    const key = {
+      name: (row) => text(row.name),
+      email: (row) => text(row.email),
+      lists: (row) => row.lists.map((view) => text(view.name)).join("\u0000"),
+      records: (row) => row.records.length,
+      contacted: (row) => row.contacted,
+      updated: (row) => row.updated,
+    }[sort] || ((row) => text(row.name));
+    const sign = descending ? -1 : 1;
+    return [...rows].sort((a, b) => {
+      const left = key(a); const right = key(b);
+      if (left < right) return -sign;
+      if (left > right) return sign;
+      return text(a.name) < text(b.name) ? -1 : text(a.name) > text(b.name) ? 1 : 0;
+    });
+  }
+
+  function crmCleanupShown(rows) {
+    const query = String($(`[data-crm-cleanup-search]`)?.value || "").trim().toLowerCase();
+    return crmCleanupSorted(rows.filter((row) =>
+      (!crmCleanup.list || row.lists.some((view) => view.id === crmCleanup.list))
+      && (!query || row.records.some(({ contact }) =>
+        `${contact.name || ""} ${contact.email || ""}`.toLowerCase().includes(query)))));
+  }
+
+  function crmCleanupWhen(at) {
+    return at ? relativeTimeLabel(at) : "never";
+  }
+
+  function crmCleanupRecordsTitle(row) {
+    return row.records.map(({ contact, lists }) =>
+      `${crmMergeLabel(contact)}: ${lists.map((view) => view.name).join(", ") || "no list"}`).join("\n");
+  }
+
+  function renderCrmCleanup() {
+    const body = $(`[data-crm-cleanup-rows]`);
+    if (!body || state.crmView.section !== "cleanup") return;
+    const rows = crmCleanupPeople();
+    if (crmCleanup.list && !state.crmView.views.some((view) => view.id === crmCleanup.list)) crmCleanup.list = "";
+    const counts = new Map();
+    for (const row of rows) for (const view of row.lists) counts.set(view.id, (counts.get(view.id) || 0) + 1);
+    const select = $(`[data-crm-cleanup-list]`);
+    if (select) {
+      select.innerHTML = `<option value="">Every list</option>${state.crmView.views.filter((view) => counts.has(view.id))
+        .map((view) => `<option value="${escapeHtml(view.id)}">${escapeHtml(view.name)} (${counts.get(view.id).toLocaleString()})</option>`).join("")}`;
+      select.value = crmCleanup.list;
+    }
+    const shown = crmCleanupShown(rows);
+    const loading = state.crmView.contactsLoading;
+    const locked = loading || crmCleanup.busy;
+    const head = $(`[data-crm-cleanup-head]`);
+    if (head) {
+      head.innerHTML = `<tr>${CRM_CLEANUP_COLUMNS.map((column) => {
+        const on = crmCleanup.sort === column.field;
+        return `<th${on ? ` aria-sort="${crmCleanup.descending ? "descending" : "ascending"}"` : ""} class="whitespace-nowrap px-2 py-2 font-semibold"><button type="button" data-crm-cleanup-sort="${column.field}" title="Click to sort" class="font-semibold">${escapeHtml(column.label)}${on ? `<span aria-hidden="true" class="ml-1">${crmCleanup.descending ? "▼" : "▲"}</span>` : ""}</button></th>`;
+      }).join("")}</tr>`;
+    }
+    body.innerHTML = shown.slice(0, CRM_CLEANUP_SHOWN).map((row) => `<tr data-crm-cleanup-row="${escapeHtml(row.id)}">`
+      + `<td class="px-2 py-2"><button type="button" data-crm-cleanup-open="${escapeHtml(row.lead.id)}" class="text-left font-medium text-primary hover:underline">${escapeHtml(row.name)}</button></td>`
+      + `<td class="max-w-56 truncate px-2 py-2 text-xs text-muted-foreground">${escapeHtml(row.email)}</td>`
+      + `<td class="px-2 py-2"><div class="flex flex-wrap gap-1">${row.lists.map((view) => `<button type="button" data-crm-cleanup-keep="${escapeHtml(row.id)}" data-crm-cleanup-keep-list="${escapeHtml(view.id)}"${locked ? " disabled" : ""} title="${escapeHtml(`Keep ${row.name} on ${view.name} only`)}" class="rounded-full border border-border px-2 py-0.5 text-xs text-foreground hover:bg-secondary disabled:opacity-50">${escapeHtml(view.name)}${view.flow ? ` <span class="text-muted-foreground">· ${escapeHtml(crmFlowName(view.flow))}</span>` : ""}</button>`).join("")}</div></td>`
+      + `<td class="px-2 py-2 text-xs text-muted-foreground" title="${escapeHtml(crmCleanupRecordsTitle(row))}">${row.records.length.toLocaleString()}</td>`
+      + `<td class="whitespace-nowrap px-2 py-2 text-xs text-muted-foreground">${escapeHtml(crmCleanupWhen(row.contacted))}</td>`
+      + `<td class="whitespace-nowrap px-2 py-2 text-xs text-muted-foreground">${escapeHtml(crmCleanupWhen(row.updated))}</td></tr>`).join("");
+    const empty = $(`[data-crm-cleanup-empty]`);
+    if (empty) {
+      empty.hidden = shown.length > 0 && shown.length <= CRM_CLEANUP_SHOWN && !loading;
+      empty.textContent = [
+        !rows.length ? "Nobody is on more than one list." : !shown.length ? "Nobody here matches." : "",
+        shown.length > CRM_CLEANUP_SHOWN ? `Showing ${CRM_CLEANUP_SHOWN.toLocaleString()} of ${shown.length.toLocaleString()}: search or pick a list to see the rest.` : "",
+        loading ? `Loading contacts, ${state.crmView.contacts.length.toLocaleString()} of ${Number(state.crmView.contactsTotal || 0).toLocaleString()}; moves wait until every contact is here.` : "",
+      ].filter(Boolean).join(" ");
+    }
+    const all = $(`[data-crm-cleanup-keep-all]`);
+    if (all) {
+      const list = state.crmView.views.find((view) => view.id === crmCleanup.list);
+      all.hidden = !list || !shown.length;
+      all.disabled = locked;
+      if (list) all.textContent = `Keep ${Math.min(shown.length, CRM_CLEANUP_SHOWN).toLocaleString()} on ${list.name}`;
+    }
+  }
+
+  function crmCleanupPlan(row, listId) {
+    const list = row.lists.find((view) => view.id === listId);
+    if (!list) return null;
+    const on = row.records.filter((record) => record.lists.includes(list))
+      .sort((a, b) => Number(b.contact.updatedAt || 0) - Number(a.contact.updatedAt || 0));
+    const keep = on[0] || row.records[0];
+    const stay = list.flow ? [] : keep.lists
+      .filter((view) => view.flow && (keep.contact.views || []).includes(view.id)).map((view) => view.id);
+    const edit = { id: keep.contact.id, setViews: [list.id, ...stay] };
+    if (list.flow && keep.contact.flow !== list.flow) {
+      edit.flow = list.flow;
+      edit.stage = String(keep.contact.stage || "");
+    }
+    return {
+      list, keep: keep.contact, edit,
+      merge: row.records.map((record) => record.contact.id).filter((id) => id !== keep.contact.id),
+    };
+  }
+
+  async function crmCleanupApply(plan) {
+    let kept = null;
+    for (const id of plan.merge) {
+      const payload = await crmRequest(crmOrganizationPath("/contacts/merge"), "POST", { from: id, into: plan.keep.id });
+      kept = payload.contact || kept;
+      state.crmView.contacts = state.crmView.contacts.filter((contact) => contact.id !== id);
+    }
+    const payload = await crmRequest(crmOrganizationPath("/contacts/bulk"), "POST", { edits: [plan.edit] });
+    kept = (payload.contacts || []).find((contact) => contact.id === plan.keep.id) || kept;
+    if (kept) state.crmView.contacts = state.crmView.contacts.map((contact) => contact.id === kept.id ? kept : contact);
+  }
+
+  function crmCleanupAsk(plans) {
+    const merged = plans.reduce((total, plan) => total + plan.merge.length, 0);
+    if (plans.length === 1) {
+      const [plan] = plans;
+      const name = `“${crmMergeLabel(plan.keep)}”`;
+      return confirm(`Keep ${name} on “${plan.list.name}” only?\n\n`
+        + (plan.merge.length ? `${plan.merge.length} other record${plan.merge.length === 1 ? " of this person merges" : "s of this person merge"} into ${name}: it keeps what it has and gains their blanks, tags, notes and email history, and they are deleted. ` : "")
+        + `${name} leaves every other list${plan.list.flow ? "" : " but stays in its pipeline"}.`);
+    }
+    return confirm(`Keep ${plans.length} people on “${plans[0].list.name}” only?\n\n`
+      + (merged ? `${merged} extra record${merged === 1 ? " merges" : "s merge"} into the record on “${plans[0].list.name}”, with every field, tag, note and email, and are then deleted. ` : "")
+      + `Each person leaves every other list${plans[0].list.flow ? "" : " but stays in their pipeline"}.`);
+  }
+
+  async function keepCrmPeopleOnList(personIds, listId) {
+    if (crmCleanup.busy || state.crmView.contactsLoading || crmActiveShared()) return;
+    const wanted = new Set(personIds);
+    const plans = crmCleanupPeople().filter((row) => wanted.has(row.id))
+      .map((row) => crmCleanupPlan(row, listId)).filter(Boolean);
+    if (!plans.length || !crmCleanupAsk(plans)) return;
+    const where = `on “${plans[0].list.name}”`;
+    crmCleanup.busy = true; renderCrmCleanup();
+    let done = 0;
+    try {
+      for (const plan of plans) {
+        if (plans.length > 1) crmMessage("notice", `Keeping ${done + 1} of ${plans.length} people ${where}…`);
+        await crmCleanupApply(plan);
+        done += 1;
+      }
+      crmMessage("notice", plans.length === 1 ? `Kept “${crmMergeLabel(plans[0].keep)}” ${where} only.` : `Kept ${done} people ${where} only.`);
+      crmCleanup.busy = false;
+      state.crmView.duplicates = null;
+      renderCrm();
+    } catch (error) {
+      crmMessage("error", `${plans.length === 1 ? "The move" : `Kept ${done} of ${plans.length} people ${where}; the rest`} did not finish: ${error.message}`);
+      crmCleanup.busy = false;
+      await loadCrm();
+    }
+  }
+
+  function wireCrmCleanup() {
+    const section = $(`[data-crm-cleanup]`);
+    if (!section) return;
+    section.addEventListener("click", (event) => {
+      const sort = event.target.closest("[data-crm-cleanup-sort]");
+      if (sort) {
+        const field = sort.dataset.crmCleanupSort;
+        crmCleanup.descending = crmCleanup.sort === field ? !crmCleanup.descending : ["contacted", "updated", "records"].includes(field);
+        crmCleanup.sort = field;
+        renderCrmCleanup();
+        return;
+      }
+      const open = event.target.closest("[data-crm-cleanup-open]");
+      if (open) { openCrmContactDetail(open.dataset.crmCleanupOpen); return; }
+      const keep = event.target.closest("[data-crm-cleanup-keep]");
+      if (keep) { void keepCrmPeopleOnList([keep.dataset.crmCleanupKeep], keep.dataset.crmCleanupKeepList); return; }
+      if (event.target.closest("[data-crm-cleanup-keep-all]") && crmCleanup.list) {
+        void keepCrmPeopleOnList(crmCleanupShown(crmCleanupPeople()).slice(0, CRM_CLEANUP_SHOWN).map((row) => row.id), crmCleanup.list);
+      }
+    });
+    $(`[data-crm-cleanup-search]`)?.addEventListener("input", renderCrmCleanup);
+    $(`[data-crm-cleanup-list]`)?.addEventListener("change", (event) => { crmCleanup.list = event.target.value; renderCrmCleanup(); });
   }
 
   function crmOutreach() {
@@ -4829,7 +5100,8 @@ window.ForkMeshDashboard.registerPage("crm", ({
     return (state.crmView.activity.members || []).map((member) => {
       const row = { name: member.name };
       for (const series of CRM_TEAM_SERIES) row[series.key] = crmTeamSum(member[series.key], from);
-      row.touches = row.emails + row.outreach;
+      row.toots = crmTeamSum(member.toots, from);
+      row.touches = row.emails + row.outreach + row.toots;
       return row;
     }).sort((a, b) => b.touches - a.touches || b.contacts - a.contacts || a.name.localeCompare(b.name));
   }
@@ -4901,7 +5173,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     const ranking = crmTeamRanking();
     if (view.teamMember && !ranking.some((row) => row.name === view.teamMember)) view.teamMember = "";
     const me = crmOutreach()?.name || "";
-    board.innerHTML = ranking.map((row, index) => `<tr data-crm-team-row="${escapeHtml(row.name)}" class="crm-team-row" aria-selected="${row.name === view.teamMember}"><td class="px-2 py-2 text-xs text-muted-foreground">${index + 1}</td><td class="px-2 py-2 font-medium text-foreground">${escapeHtml(row.name)}${row.name === me ? ` <span class="text-xs font-normal text-muted-foreground">(you)</span>` : ""}</td><td class="px-2 py-2 text-right">${row.emails.toLocaleString()}</td><td class="px-2 py-2 text-right">${row.outreach.toLocaleString()}</td><td class="px-2 py-2 text-right">${row.contacts.toLocaleString()}</td><td class="px-2 py-2 text-right font-semibold">${row.touches.toLocaleString()}</td></tr>`).join("");
+    board.innerHTML = ranking.map((row, index) => `<tr data-crm-team-row="${escapeHtml(row.name)}" class="crm-team-row" aria-selected="${row.name === view.teamMember}"><td class="px-2 py-2 text-xs text-muted-foreground">${index + 1}</td><td class="px-2 py-2 font-medium text-foreground">${escapeHtml(row.name)}${row.name === me ? ` <span class="text-xs font-normal text-muted-foreground">(you)</span>` : ""}</td><td class="px-2 py-2 text-right">${row.emails.toLocaleString()}</td><td class="px-2 py-2 text-right">${row.outreach.toLocaleString()}</td><td class="px-2 py-2 text-right">${row.toots.toLocaleString()}</td><td class="px-2 py-2 text-right">${row.contacts.toLocaleString()}</td><td class="px-2 py-2 text-right font-semibold">${row.touches.toLocaleString()}</td></tr>`).join("");
     $(`[data-crm-team-empty]`)?.classList.toggle("hidden", ranking.some((row) => row.touches || row.contacts));
     $$(`[data-crm-team-period-option]`).forEach((button) => button.setAttribute("aria-pressed", String(Number(button.dataset.crmTeamPeriodOption) === view.teamPeriod)));
     const select = $(`[data-crm-team-member]`);
@@ -4936,6 +5208,329 @@ window.ForkMeshDashboard.registerPage("crm", ({
       tip.style.top = `${Math.max(0, event.clientY - rect.top - tip.offsetHeight - 8)}px`;
     };
     host.onmouseleave = () => tip.classList.add("hidden");
+  }
+
+  const CRM_LEADERBOARD_DAYS = 7;
+  const CRM_LEADERBOARD_KINDS = ["emails", "outreach", "toots"];
+
+  function crmLeaderboardTop(activity = state.crmView.activity, limit = 3) {
+    const days = activity?.days || [];
+    const from = Math.max(0, days.length - CRM_LEADERBOARD_DAYS);
+    return (activity?.members || []).map((member) => ({
+      name: String(member.name || ""),
+      total: CRM_LEADERBOARD_KINDS.reduce((sum, kind) => sum + crmTeamSum(member[kind], from), 0),
+    })).filter((row) => row.name && row.total > 0)
+      .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name))
+      .slice(0, limit);
+  }
+
+  function crmLeaderboardLine(activity = state.crmView.activity) {
+    const top = crmLeaderboardTop(activity);
+    return top.length ? [`${CRM_LEADERBOARD_DAYS} days`, ...top.map((row) => `${row.name} ${row.total.toLocaleString()}`)].join(" · ") : "";
+  }
+
+  function renderCrmLeaderboardStrip() {
+    const strip = $(`[data-crm-leaderboard]`); if (!strip) return;
+    const line = state.crmView.installed ? crmLeaderboardLine() : "";
+    strip.textContent = line;
+    strip.hidden = !line;
+  }
+
+  function openCrmLeaderboard() {
+    state.crmView.teamPeriod = CRM_LEADERBOARD_DAYS;
+    state.crmView.teamMember = "";
+    selectCrmSection("team");
+    renderCrmTeam();
+  }
+
+  const CRM_TOOT_LIMIT = 500;
+  const CRM_TOOT_URL_LENGTH = 23;
+  const CRM_MASTODON_SHOWN = 50;
+  const CRM_MASTODON_SHARE = "https://mastodon.social/share";
+  const crmMastodon = {
+    org: "", stale: false, loading: false, data: null, missing: false, error: "", hint: "",
+    shown: CRM_MASTODON_SHOWN, drafts: new Map(), notes: new Map(), busy: new Set(),
+  };
+
+  function crmTootLength(text) {
+    const countable = String(text || "")
+      .replace(/https?:\/\/[^\s<>"]+/gi, (url) => {
+        const tail = url.match(/[.,;:!?'")\]]+$/)?.[0] || "";
+        return "x".repeat(CRM_TOOT_URL_LENGTH) + tail;
+      })
+      .replace(/(^|[^/\w])@([a-z0-9_]+(?:[a-z0-9_.-]+[a-z0-9_]+)?)@[a-z0-9.-]+[a-z0-9]+/gi, "$1@$2");
+    if (typeof Intl !== "undefined" && Intl.Segmenter) {
+      let count = 0;
+      for (const _ of new Intl.Segmenter().segment(countable)) count += 1;
+      return count;
+    }
+    return [...countable].length;
+  }
+
+  function crmMastodonField(item, key) {
+    return String(item?.[key] ?? item?.fields?.[key] ?? "");
+  }
+
+  function crmMastodonQueue() {
+    return crmMastodon.data?.queue || [];
+  }
+
+  function crmMastodonDraft(item) {
+    return crmMastodon.drafts.has(item.id) ? crmMastodon.drafts.get(item.id) : crmMastodonField(item, "mastodon_draft");
+  }
+
+  function crmMastodonHandle(item) {
+    return String(item?.handle || item?.mastodon || "").trim();
+  }
+
+  function crmMastodonRate(row) {
+    const sent = Number(row?.sent || 0);
+    return sent ? `${Math.round(Number(row.replied || 0) * 100 / sent)}%` : "–";
+  }
+
+  function crmMastodonCountHtml(id, text) {
+    const length = crmTootLength(text);
+    const over = length > CRM_TOOT_LIMIT;
+    return `<span data-crm-mastodon-count="${escapeHtml(id)}" title="Characters as Mastodon counts them: a link is ${CRM_TOOT_URL_LENGTH}, a mention counts its user part" class="text-xs ${over ? "font-semibold text-destructive" : "text-muted-foreground"}" style="font-variant-numeric:tabular-nums">${length.toLocaleString()} / ${CRM_TOOT_LIMIT}</span>`;
+  }
+
+  function crmMastodonCardHtml(item, canSend) {
+    const id = escapeHtml(item.id);
+    const handle = crmMastodonHandle(item);
+    const profile = crmMastodonUrl(handle);
+    const status = crmMastodonField(item, "mastodon_status");
+    const locked = status === "follow-first";
+    const segment = crmMastodonField(item, "mastodon_segment");
+    const ask = crmMastodonField(item, "mastodon_ask");
+    const why = crmMastodonField(item, "mastodon_why");
+    const prepared = crmMastodonField(item, "mastodon_prepared");
+    const draft = crmMastodonDraft(item);
+    const length = crmTootLength(draft);
+    const busy = crmMastodon.busy.has(item.id);
+    const note = crmMastodon.notes.get(item.id);
+    const name = escapeHtml(item.name || handle || "Unnamed contact");
+    const title = crmContactById(item.id)
+      ? `<button data-crm-mastodon-open="${id}" type="button" class="truncate text-left text-sm font-semibold text-foreground hover:underline">${name}</button>`
+      : `<span class="truncate text-sm font-semibold text-foreground">${name}</span>`;
+    const link = profile
+      ? `<a data-crm-mastodon-profile href="${escapeHtml(profile)}" target="_blank" rel="noopener noreferrer" class="crm-link truncate font-mono text-xs">${escapeHtml(handle)}</a>`
+      : `<span class="truncate font-mono text-xs text-muted-foreground">${escapeHtml(handle)}</span>`;
+    const chips = [
+      segment && `<span data-crm-mastodon-segment class="fm-label">${escapeHtml(segment)}</span>`,
+      ask && `<span data-crm-mastodon-ask class="fm-label fm-label-accent">${escapeHtml(ask)}</span>`,
+      locked && `<span class="fm-label fm-label-attention">locked</span>`,
+      status === "follow-requested" && `<span class="fm-label fm-label-attention">follow requested</span>`,
+    ].filter(Boolean).join("");
+    const lockedNote = locked
+      ? `<p data-crm-mastodon-locked class="text-xs text-foreground">This account is locked and we don't follow it: open the profile, follow by hand, and send once they accept. The web cannot follow.</p>`
+      : status === "follow-requested" ? `<p class="text-xs text-muted-foreground">Follow requested: send once they accept.</p>` : "";
+    const send = locked ? ""
+      : `<button data-crm-mastodon-send="${id}" type="button" title="${canSend ? "Send as a direct toot from the organization's Mastodon account" : "Opens Mastodon's share page with this text; the browser extension logs the toot"}" class="fm-btn fm-btn-sm"${busy || !draft.trim() || length > CRM_TOOT_LIMIT ? " disabled" : ""}>${busy ? "Sending…" : "Send"}</button>`;
+    const open = (locked || status === "follow-requested") && profile
+      ? `<a data-crm-mastodon-follow href="${escapeHtml(profile)}" target="_blank" rel="noopener noreferrer" class="fm-btn fm-btn-sm">Open profile &#8599;</a>` : "";
+    return `<article data-crm-mastodon-card="${id}" class="grid gap-2 p-3">
+        <div class="flex min-w-0 flex-wrap items-center gap-2">${title}${link}${chips}${prepared ? `<span class="ml-auto text-xs text-muted-foreground">prepared ${escapeHtml(prepared)}</span>` : ""}</div>
+        ${why ? `<p data-crm-mastodon-why class="text-xs text-muted-foreground">${escapeHtml(why)}</p>` : ""}
+        ${lockedNote}
+        <textarea data-crm-mastodon-draft="${id}" rows="3" maxlength="5000" aria-label="Toot to ${name}" class="w-full rounded-md border border-border bg-background px-2 py-1.5 text-control text-foreground outline-none focus:ring-1 focus:ring-ring"${busy ? " disabled" : ""}>${escapeHtml(draft)}</textarea>
+        <div class="flex flex-wrap items-center gap-2">${crmMastodonCountHtml(item.id, draft)}<span data-crm-mastodon-note="${id}" role="status" aria-live="polite" class="min-w-0 flex-1 text-xs ${note?.bad ? "text-destructive" : "text-muted-foreground"}">${escapeHtml(note?.text || "")}</span>${open}${send}<button data-crm-mastodon-skip="${id}" type="button" title="Set this contact's Mastodon status to skipped" class="fm-btn fm-btn-sm fm-btn-invisible"${busy ? " disabled" : ""}>Skip</button></div>
+      </article>`;
+  }
+
+  function crmMastodonStrategyHtml(stats) {
+    const row = (kind, item) => `<tr data-crm-mastodon-strategy-row="${escapeHtml(`${kind}:${item.key}`)}"><td class="px-3 py-1.5 text-foreground">${escapeHtml(item.key)}</td><td class="px-3 py-1.5 text-right">${Number(item.prepared || 0).toLocaleString()}</td><td class="px-3 py-1.5 text-right">${Number(item.sent || 0).toLocaleString()}</td><td class="px-3 py-1.5 text-right">${Number(item.replied || 0).toLocaleString()}</td><td class="px-3 py-1.5 text-right font-semibold">${crmMastodonRate(item)}</td></tr>`;
+    const group = (label, kind, items) => items.length
+      ? `<tr><th colspan="5" class="bg-secondary px-3 py-1 text-left text-[10px] font-semibold uppercase text-muted-foreground">${label}</th></tr>${items.map((item) => row(kind, item)).join("")}` : "";
+    return group("Segments", "segment", stats?.segments || []) + group("Asks", "ask", stats?.asks || []);
+  }
+
+  function renderCrmMastodon() {
+    const section = $(`[data-crm-mastodon]`); if (!section) return;
+    const data = crmMastodon.data;
+    const missing = crmMastodon.missing || Boolean(crmMastodon.error);
+    const unavailable = $(`[data-crm-mastodon-unavailable]`);
+    if (unavailable) {
+      unavailable.hidden = !missing && !(crmMastodon.loading && !data);
+      unavailable.innerHTML = crmMastodon.missing
+        ? "Not available yet: this organization's CRM does not serve the Mastodon queue yet."
+        : crmMastodon.error ? `${escapeHtml(`Could not load the Mastodon queue: ${crmMastodon.error}`)} <button data-crm-mastodon-retry type="button" class="fm-btn fm-btn-sm ml-2">Try again</button>`
+        : "Loading the Mastodon queue…";
+    }
+    const body = $(`[data-crm-mastodon-body]`);
+    if (body) body.hidden = !data;
+    const prepare = $(`[data-crm-mastodon-prepare]`);
+    if (prepare) prepare.disabled = !data?.prompt;
+    const stats = $(`[data-crm-mastodon-stats]`);
+    if (stats) {
+      const today = data?.stats?.today || {}; const week = data?.stats?.week || {};
+      const replies = Number(week.replied || 0);
+      stats.innerHTML = data
+        ? `<span data-crm-mastodon-today class="font-semibold text-foreground">${Number(today.sent || 0).toLocaleString()}</span> / ${Number(data.dailyTarget || 0).toLocaleString()} sent today · <span data-crm-mastodon-replies class="font-semibold text-foreground">${replies.toLocaleString()}</span> ${replies === 1 ? "reply" : "replies"} this week · ${crmMastodonQueue().length.toLocaleString()} in the queue${data.canSend ? "" : " · no organization token: Send opens Mastodon's share page"}`
+        : "Prepared toots to internet-freedom maintainers, sent one at a time.";
+    }
+    const hint = $(`[data-crm-mastodon-hint]`);
+    if (hint) hint.textContent = crmMastodon.hint;
+    const queue = crmMastodonQueue();
+    const list = $(`[data-crm-mastodon-queue]`);
+    if (list) list.innerHTML = queue.slice(0, crmMastodon.shown).map((item) => crmMastodonCardHtml(item, Boolean(data?.canSend))).join("");
+    const empty = $(`[data-crm-mastodon-empty]`);
+    if (empty) empty.hidden = !data || queue.length > 0;
+    const more = $(`[data-crm-mastodon-more]`);
+    if (more) {
+      const rest = queue.length - crmMastodon.shown;
+      more.hidden = rest <= 0;
+      more.textContent = rest > 0 ? `Show ${Math.min(rest, CRM_MASTODON_SHOWN).toLocaleString()} more of ${rest.toLocaleString()}` : "";
+    }
+    const strategy = $(`[data-crm-mastodon-strategy]`);
+    if (strategy) strategy.innerHTML = crmMastodonStrategyHtml(data?.stats);
+    const strategyEmpty = $(`[data-crm-mastodon-strategy-empty]`);
+    if (strategyEmpty) strategyEmpty.hidden = Boolean((data?.stats?.segments || []).length || (data?.stats?.asks || []).length);
+  }
+
+  async function loadCrmMastodon() {
+    const org = state.crmView.organization; if (!org) return;
+    if (crmMastodon.org !== org) {
+      crmMastodon.data = null; crmMastodon.shown = CRM_MASTODON_SHOWN; crmMastodon.hint = "";
+      crmMastodon.drafts.clear(); crmMastodon.notes.clear(); crmMastodon.busy.clear();
+    }
+    crmMastodon.org = org; crmMastodon.loading = true;
+    renderCrmMastodon();
+    try {
+      const query = new URLSearchParams({ tz: String(-new Date().getTimezoneOffset()) });
+      const payload = await crmRequest(crmOrganizationPath(`/mastodon?${query}`));
+      if (crmMastodon.org !== org) return;
+      crmMastodon.data = { ...payload, queue: Array.isArray(payload.queue) ? payload.queue : [] };
+      crmMastodon.missing = false; crmMastodon.error = "";
+    } catch (error) {
+      if (crmMastodon.org !== org) return;
+      crmMastodon.data = null;
+      crmMastodon.missing = error.status === 404;
+      crmMastodon.error = crmMastodon.missing ? "" : String(error.message || "failed");
+    } finally {
+      if (crmMastodon.org === org) { crmMastodon.loading = false; renderCrmMastodon(); }
+    }
+  }
+
+  function crmMastodonNote(id, text, bad = false) {
+    if (text) crmMastodon.notes.set(id, { text, bad }); else crmMastodon.notes.delete(id);
+  }
+
+  function crmMastodonDone(id) {
+    const data = crmMastodon.data; if (!data) return;
+    data.queue = data.queue.filter((entry) => entry.id !== id);
+    crmMastodon.drafts.delete(id); crmMastodon.notes.delete(id); crmMastodon.busy.delete(id);
+  }
+
+  function crmMastodonCountSent(item) {
+    const stats = crmMastodon.data.stats = crmMastodon.data.stats || {};
+    for (const period of ["today", "week"]) {
+      stats[period] = { sent: 0, replied: 0, ...stats[period] };
+      stats[period].sent = Number(stats[period].sent || 0) + 1;
+    }
+    for (const [list, key] of [["segments", "mastodon_segment"], ["asks", "mastodon_ask"]]) {
+      const row = (stats[list] || []).find((entry) => entry.key === crmMastodonField(item, key));
+      if (row) row.sent = Number(row.sent || 0) + 1;
+    }
+  }
+
+  function crmMastodonSetStatus(id, status) {
+    const item = crmMastodonQueue().find((entry) => entry.id === id);
+    if (item) {
+      if (item.fields && typeof item.fields === "object") item.fields.mastodon_status = status;
+      item.mastodon_status = status;
+    }
+    const contact = crmContactById(id);
+    if (contact) contact.fields = { ...(contact.fields || {}), mastodon_status: status };
+  }
+
+  async function sendCrmMastodon(id) {
+    const data = crmMastodon.data;
+    const item = crmMastodonQueue().find((entry) => entry.id === id);
+    if (!data || !item || crmMastodon.busy.has(id)) return;
+    const text = crmMastodonDraft(item);
+    if (!text.trim() || crmTootLength(text) > CRM_TOOT_LIMIT) return;
+    if (!data.canSend) {
+      window.open(`${CRM_MASTODON_SHARE}?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
+      crmMastodonNote(id, "Opened Mastodon's share page in a new tab: post it there and the browser extension logs the toot on this contact.");
+      renderCrmMastodon();
+      return;
+    }
+    crmMastodon.busy.add(id); crmMastodonNote(id, "");
+    renderCrmMastodon();
+    try {
+      await crmRequest(crmOrganizationPath("/mastodon/send"), "POST", { contactId: id, text });
+      crmMastodonSetStatus(id, "sent");
+      crmMastodonCountSent(item);
+      crmMastodonDone(id);
+      crmMessage("notice", `Sent to ${crmMastodonHandle(item) || item.name || "the contact"}.`);
+    } catch (error) {
+      const code = error.payload?.error;
+      if (error.status === 409 && code === "follow_first") {
+        crmMastodonSetStatus(id, "follow-first");
+        crmMastodonNote(id, "Not sent: the account is locked and we don't follow it.", true);
+      } else if (error.status === 429 && code === "mastodon_daily_limit") {
+        crmMastodonNote(id, `Not sent: the organization reached its limit of ${Number(data.dailyLimit || 0).toLocaleString()} toots in 24 hours. Try again later.`, true);
+      } else {
+        crmMastodonNote(id, `Not sent: ${error.message}`, true);
+      }
+    } finally {
+      crmMastodon.busy.delete(id);
+      renderCrmMastodon();
+    }
+  }
+
+  async function skipCrmMastodon(id) {
+    const item = crmMastodonQueue().find((entry) => entry.id === id);
+    if (!item || crmMastodon.busy.has(id)) return;
+    crmMastodon.busy.add(id);
+    renderCrmMastodon();
+    const saved = await crmPatchContact(id, { fields: { mastodon_status: "skipped" } },
+      `Skipped ${item.name || crmMastodonHandle(item) || "the contact"} on Mastodon.`, "Could not skip");
+    crmMastodon.busy.delete(id);
+    if (saved) crmMastodonDone(id);
+    else crmMastodonNote(id, "Could not skip: try again.", true);
+    renderCrmMastodon();
+  }
+
+  async function prepareCrmMastodon() {
+    const prompt = crmMastodon.data?.prompt || "";
+    if (!prompt) return;
+    try {
+      const copied = navigator.clipboard?.writeText(prompt);
+      if (!copied) throw new Error("no clipboard");
+      await copied;
+      crmMastodon.hint = "Prompt copied: paste it into an agent session";
+    } catch { crmMastodon.hint = "Could not copy the prompt: this browser blocked the clipboard."; }
+    renderCrmMastodon();
+  }
+
+  function onCrmMastodonInput(event) {
+    const input = event.target.closest?.("[data-crm-mastodon-draft]"); if (!input) return;
+    const id = input.dataset.crmMastodonDraft;
+    crmMastodon.drafts.set(id, input.value);
+    const count = $(`[data-crm-mastodon-count="${CSS.escape(id)}"]`);
+    if (count) count.outerHTML = crmMastodonCountHtml(id, input.value);
+    const send = $(`[data-crm-mastodon-send="${CSS.escape(id)}"]`);
+    if (send && !crmMastodon.busy.has(id)) send.disabled = !input.value.trim() || crmTootLength(input.value) > CRM_TOOT_LIMIT;
+  }
+
+  function onCrmMastodonClick(event) {
+    const send = event.target.closest("[data-crm-mastodon-send]");
+    if (send) { void sendCrmMastodon(send.dataset.crmMastodonSend); return; }
+    const skip = event.target.closest("[data-crm-mastodon-skip]");
+    if (skip) { void skipCrmMastodon(skip.dataset.crmMastodonSkip); return; }
+    const open = event.target.closest("[data-crm-mastodon-open]");
+    if (open) { openCrmContactDetail(open.dataset.crmMastodonOpen); return; }
+    if (event.target.closest("[data-crm-mastodon-prepare]")) { void prepareCrmMastodon(); return; }
+    if (event.target.closest("[data-crm-mastodon-retry]")) { void loadCrmMastodon(); return; }
+    if (event.target.closest("[data-crm-mastodon-more]")) { crmMastodon.shown += CRM_MASTODON_SHOWN; renderCrmMastodon(); }
+  }
+
+  function wireCrmMastodon() {
+    const section = $(`[data-crm-mastodon]`); if (!section) return;
+    section.addEventListener("click", onCrmMastodonClick);
+    section.addEventListener("input", onCrmMastodonInput);
+    $(`[data-crm-refresh]`)?.addEventListener("click", () => { if (state.crmView.section === "mastodon") void loadCrmMastodon(); });
   }
 
   function crmOutreachHint(message = "", bad = false) {
@@ -6565,6 +7160,23 @@ window.ForkMeshDashboard.registerPage("crm", ({
   const CRM_NEXT_UPCOMING = 5;
   const CRM_NEXT_RENDER_DELAY_MS = 400;
   const crmMastodonLatest = { latest: new Map(), pending: new Set(), queue: [], backoff: new Map(), ids: new Map(), renderTimer: 0 };
+  const crmFollowBack = { organization: "", account: "", pluginAccount: "", handles: new Set(), followed: new Set(), following: new Set(), error: "", loadedAt: 0, loading: false };
+  const CRM_MASTODON_SESSION = "forkmesh.mastodon.session.v1";
+  const CRM_MASTODON_FOLLOW_PAGES = 25;
+  const CRM_MASTODON_PLUGIN_ERRORS = {
+    mastodon_token_rejected: "Mastodon rejected the Mastodon plugin's sign-in; sign in there again",
+    mastodon_follow_not_allowed: "the Mastodon plugin's sign-in cannot follow accounts; sign in there again",
+    mastodon_followers_hidden: "Mastodon did not list the account's followers",
+  };
+  const CRM_MASTODON_FOLLOW_ERRORS = {
+    mastodon_not_connected: "connect the Mastodon account in CRM settings first",
+    mastodon_follow_not_allowed: "the saved Mastodon token cannot follow accounts; save one with the write:follows scope",
+    mastodon_followers_hidden: "the account hides its followers; save a token with the read:accounts scope",
+    mastodon_token_rejected: "Mastodon rejected the access token; save a new one",
+    mastodon_account_not_found: "Mastodon does not know that account",
+    mastodon_unavailable: "Mastodon could not be reached; try again later",
+    invalid_mastodon_handle: "that is not a Mastodon handle",
+  };
   const CRM_NUMERIC_SORT = new Set(["lastContactedAt", "value", "linked-emails", "linked-toots", "mastodon-latest"]);
 
   function crmSessionColumnKeys() {
@@ -6675,6 +7287,207 @@ window.ForkMeshDashboard.registerPage("crm", ({
     crmMastodonLatest.queue.push(key);
     crmPumpMastodonLatest();
     crmRepaintMastodonLatest(key);
+  }
+
+  function crmMastodonFollowError(error) {
+    const code = error?.payload?.error;
+    return (crmMastodonPluginSession() && CRM_MASTODON_PLUGIN_ERRORS[code]) || CRM_MASTODON_FOLLOW_ERRORS[code] || error?.message || "unknown error";
+  }
+
+  function crmMastodonPluginSession() {
+    if (state.crmView.settings?.mastodon?.connected) return null;
+    let session = null;
+    try { session = JSON.parse(sessionStorage.getItem(CRM_MASTODON_SESSION) || "null"); } catch (_) { return null; }
+    let instance = "";
+    try { const url = new URL(String(session?.instance || "")); instance = url.protocol === "https:" && url.pathname === "/" && !url.username ? url.origin : ""; } catch (_) { return null; }
+    return instance && typeof session?.token === "string" && session.token ? { instance, token: session.token } : null;
+  }
+
+  function crmFollowAccount() {
+    const mastodon = state.crmView.settings?.mastodon || {};
+    if (mastodon.connected) return { connected: true, plugin: false, account: crmMastodonKey(mastodon.account).toLowerCase() };
+    const session = crmMastodonPluginSession();
+    const known = session && crmFollowBack.account === `plugin:${session.instance}` ? crmFollowBack.pluginAccount : "";
+    return session ? { connected: true, plugin: true, session, account: known } : { connected: false, plugin: false, account: crmMastodonKey(mastodon.account).toLowerCase() };
+  }
+
+  async function crmMastodonPluginCall(session, url, method = "GET", forbidden = "mastodon_token_rejected") {
+    let response;
+    try {
+      response = await fetch(url, { method, headers: { authorization: `Bearer ${session.token}`, accept: "application/json" } });
+    } catch (_) {
+      throw Object.assign(new Error("Mastodon could not be reached"), { payload: { error: "mastodon_unavailable" } });
+    }
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error = response.status === 401 ? "mastodon_token_rejected" : response.status === 403 ? forbidden : "mastodon_unavailable";
+      throw Object.assign(new Error(`Mastodon returned ${response.status}`), { payload: { error } });
+    }
+    return { payload, next: crmMastodonNext(response.headers.get("link"), new URL(session.instance).host) };
+  }
+
+  function crmMastodonAcctKey(acct, home) {
+    const value = String(acct || "");
+    return value ? crmMastodonKey(value.includes("@") ? value : `${value}@${home}`).toLowerCase() : "";
+  }
+
+  async function crmMastodonPluginHandles(session, url) {
+    const home = new URL(session.instance).host;
+    const found = new Set();
+    for (let page = 0; url && page < CRM_MASTODON_FOLLOW_PAGES; page += 1) {
+      const { payload, next } = await crmMastodonPluginCall(session, url);
+      for (const item of Array.isArray(payload) ? payload : []) {
+        const key = crmMastodonAcctKey(item?.acct, home);
+        if (key) found.add(key);
+      }
+      url = next;
+    }
+    return found;
+  }
+
+  async function crmMastodonPluginFollowBack(session) {
+    const { payload: self } = await crmMastodonPluginCall(session, `${session.instance}/api/v1/accounts/verify_credentials`);
+    const id = String(self?.id || "");
+    const account = crmMastodonAcctKey(self?.acct, new URL(session.instance).host);
+    if (!id || !account) throw Object.assign(new Error("Mastodon did not name the account"), { payload: { error: "mastodon_unavailable" } });
+    const base = `${session.instance}/api/v1/accounts/${encodeURIComponent(id)}`;
+    const followers = await crmMastodonPluginHandles(session, `${base}/followers?limit=80`);
+    const following = await crmMastodonPluginHandles(session, `${base}/following?limit=80`);
+    return {
+      account,
+      handles: [...followers].filter((handle) => handle !== account && !following.has(handle)),
+      following: [...following],
+      warning: !followers.size && Number(self?.followers_count) > 0 ? "mastodon_followers_hidden" : "",
+    };
+  }
+
+  async function crmMastodonPluginFollow(session, key) {
+    const query = new URLSearchParams({ q: `@${key}`, type: "accounts", resolve: "true", limit: "5" });
+    const { payload } = await crmMastodonPluginCall(session, `${session.instance}/api/v2/search?${query}`);
+    const home = new URL(session.instance).host;
+    const target = (payload?.accounts || []).find((item) => crmMastodonAcctKey(item?.acct, home) === key);
+    if (!target?.id) throw Object.assign(new Error("Mastodon does not know that account"), { payload: { error: "mastodon_account_not_found" } });
+    const { payload: relationship } = await crmMastodonPluginCall(session, `${session.instance}/api/v1/accounts/${encodeURIComponent(target.id)}/follow`, "POST", "mastodon_follow_not_allowed");
+    return { following: Boolean(relationship?.following), requested: Boolean(relationship?.requested) };
+  }
+
+  function crmMastodonFollowShown() {
+    if (crmActiveShared() || crmPeople.open) return false;
+    return crmActiveView()?.network === "mastodon" || crmVisibleColumns().some((column) => column.field === "mastodon");
+  }
+
+  function crmFollowBackKey(contact) {
+    const key = crmMastodonKey(contact?.mastodon).toLowerCase();
+    const own = crmFollowAccount().account;
+    const known = crmFollowBack.organization === state.crmView.organization;
+    return key && key !== own && !(known && crmFollowBack.followed.has(key)) ? key : "";
+  }
+
+  function crmFollowingBadge(contact) {
+    const key = crmMastodonKey(contact?.mastodon).toLowerCase();
+    const follower = crmFollowAccount();
+    if (!key || key === follower.account || crmFollowBack.organization !== state.crmView.organization || !crmFollowBack.followed.has(key)) return "";
+    const account = follower.account ? `@${follower.account}` : follower.plugin ? "Your Mastodon plugin account" : "The organization's account";
+    return `<span data-crm-following="${escapeHtml(key)}" title="${escapeHtml(`${account} already follows @${key}.`)}" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-muted-foreground">Following</span>`;
+  }
+
+  function crmFollowBackButton(contact) {
+    const key = crmFollowBackKey(contact);
+    if (!key) return crmFollowingBadge(contact);
+    const follower = crmFollowAccount();
+    const connected = follower.connected;
+    const back = connected && crmFollowBack.organization === state.crmView.organization && crmFollowBack.handles.has(key);
+    const account = follower.account ? `@${follower.account}` : follower.plugin ? "your Mastodon plugin account" : "the organization's account";
+    const title = !connected ? `Log in first: sign in in the Mastodon plugin, or connect the organization's Mastodon account in CRM settings, to follow @${key}.`
+      : back ? `@${key} follows ${account}. Follow them back from ${account}.` : `Follow @${key} from ${account}.`;
+    return `<button data-crm-follow-back="${escapeHtml(key)}" type="button" ${!connected || crmFollowBack.following.has(key) ? "disabled" : ""} title="${escapeHtml(title)}" class="whitespace-nowrap rounded bg-primary px-2 py-1 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-45">${back ? "Follow back" : "Follow"}</button>`;
+  }
+
+  function renderCrmMastodonBanner() {
+    const banner = $(`[data-crm-mastodon-banner]`); if (!banner) return;
+    const follower = crmFollowAccount();
+    const error = crmFollowBack.organization === state.crmView.organization ? crmFollowBack.error : "";
+    const show = crmActiveView()?.network === "mastodon" && (!follower.connected || Boolean(error));
+    banner.hidden = !show;
+    if (!show) return;
+    const manages = Boolean(state.crmView.canManageSettings);
+    const account = follower.account || (follower.plugin ? "your Mastodon plugin account" : "");
+    const retry = follower.connected && !["mastodon_follow_not_allowed", "mastodon_token_rejected", "mastodon_followers_hidden"].includes(error);
+    $(`[data-crm-mastodon-banner-title]`).textContent = !follower.connected ? "Mastodon: not logged in"
+      : error === "mastodon_followers_hidden" ? "Mastodon: followers hidden, so Follow back cannot be shown"
+      : `Mastodon: could not check who ${follower.account ? `@${account}` : account} follows`;
+    $(`[data-crm-mastodon-banner-text]`).textContent = follower.connected
+      ? (follower.plugin && CRM_MASTODON_PLUGIN_ERRORS[error]) || CRM_MASTODON_FOLLOW_ERRORS[error] || error
+      : `Log in to follow people from this list: sign in in the Mastodon plugin, or ${account ? `save an access token for @${account}` : "save the organization's Mastodon account and an access token"} with the read:accounts and write:follows scopes in CRM settings.${manages ? "" : " Only an owner or admin of the organization can change CRM settings."}`;
+    const action = $(`[data-crm-mastodon-banner-action]`);
+    action.dataset.retry = retry ? "1" : "";
+    action.textContent = retry ? "Try again" : follower.connected ? "Open CRM settings" : "Log in to Mastodon";
+    action.hidden = !retry && (!manages || follower.plugin);
+  }
+
+  async function loadCrmFollowBack() {
+    const organization = state.crmView.organization;
+    const follower = crmFollowAccount();
+    const account = follower.plugin ? `plugin:${follower.session.instance}` : follower.connected ? follower.account : "";
+    if (!crmFollowBack.loading && (organization !== crmFollowBack.organization || account !== crmFollowBack.account)) {
+      crmFollowBack.pluginAccount = "";
+      crmFollowBack.handles = new Set();
+      crmFollowBack.followed = new Set();
+      crmFollowBack.error = "";
+      crmFollowBack.loadedAt = 0;
+      crmFollowBack.organization = organization;
+      crmFollowBack.account = account;
+    }
+    if (crmFollowBack.loading || !organization || !crmMastodonFollowShown() || !account) return;
+    if (Date.now() - crmFollowBack.loadedAt < CRM_MASTODON_FRESH_MS) return;
+    crmFollowBack.loading = true;
+    crmFollowBack.loadedAt = Date.now();
+    try {
+      const payload = follower.plugin ? await crmMastodonPluginFollowBack(follower.session)
+        : await crmRequest(crmOrganizationPath("/mastodon/follow-back"));
+      if (organization !== state.crmView.organization || account !== crmFollowBack.account) { crmFollowBack.loadedAt = 0; return; }
+      if (follower.plugin) crmFollowBack.pluginAccount = payload.account;
+      const keys = (list) => new Set((list || []).map((handle) => crmMastodonKey(handle).toLowerCase()).filter(Boolean));
+      crmFollowBack.handles = keys(payload.handles);
+      crmFollowBack.followed = keys(payload.following);
+      crmFollowBack.error = payload.warning || "";
+      renderCrmMastodonBanner();
+      renderCrmContacts();
+    } catch (error) {
+      if (organization === state.crmView.organization) {
+        crmFollowBack.error = error?.payload?.error || error?.message || "unknown error";
+        renderCrmMastodonBanner();
+        crmMessage("error", `Could not check who the Mastodon account follows: ${crmMastodonFollowError(error)}`);
+      }
+    } finally {
+      crmFollowBack.loading = false;
+    }
+  }
+
+  async function crmFollowMastodonBack(key) {
+    if (!key || crmFollowBack.following.has(key)) return;
+    crmFollowBack.following.add(key);
+    renderCrmContacts();
+    crmMessage("notice", `Following @${key}…`);
+    try {
+      const follower = crmFollowAccount();
+      const payload = follower.plugin ? await crmMastodonPluginFollow(follower.session, key)
+        : await crmRequest(crmOrganizationPath("/mastodon/follow"), "POST", { handle: key });
+      crmFollowBack.handles.delete(key);
+      crmFollowBack.followed.add(key);
+      crmMessage("notice", payload.requested && !payload.following
+        ? `Asked to follow @${key}; they approve followers first.` : `Now following @${key}.`);
+    } catch (error) {
+      const code = error?.payload?.error || "";
+      if (["mastodon_follow_not_allowed", "mastodon_token_rejected", "mastodon_not_connected"].includes(code)) {
+        crmFollowBack.error = code;
+        renderCrmMastodonBanner();
+      }
+      crmMessage("error", `Could not follow @${key}: ${crmMastodonFollowError(error)}`);
+    } finally {
+      crmFollowBack.following.delete(key);
+      renderCrmContacts();
+    }
   }
 
   function crmMastodonHostOf(key) {
@@ -7467,6 +8280,8 @@ window.ForkMeshDashboard.registerPage("crm", ({
     if (now) { void crmMarkContacted([now.dataset.crmContactedNow], Date.now()); return; }
     const prompt = event.target.closest("[data-crm-contact-prompt]");
     if (prompt) { void copyCrmOutreachPrompt(crmContactById(prompt.dataset.crmContactPrompt)); return; }
+    const follow = event.target.closest("[data-crm-follow-back]");
+    if (follow) { void crmFollowMastodonBack(follow.dataset.crmFollowBack); return; }
     const refresh = event.target.closest("[data-crm-mastodon-refresh]");
     if (refresh) { refreshCrmMastodonNow(refresh.dataset.crmMastodonRefresh); return; }
     const linked = event.target.closest("[data-crm-linked]");
@@ -7507,6 +8322,11 @@ window.ForkMeshDashboard.registerPage("crm", ({
     for (const selector of ["[data-crm-contact-list]", "[data-crm-contact-cards]", "[data-crm-contact-detail-dialog]"]) {
       $(selector)?.addEventListener("click", handleCrmParityClick);
     }
+    $(`[data-crm-mastodon-banner-action]`)?.addEventListener("click", (event) => {
+      if (!event.currentTarget.dataset.retry) { openCrmSettings(); return; }
+      crmFollowBack.loadedAt = 0;
+      void loadCrmFollowBack();
+    });
     $(`[data-crm-contact-head]`)?.addEventListener("click", (event) => {
       if (event.target.closest("[data-crm-add-column]")) { void addCrmCustomColumn(); return; }
       if (event.target.closest("[data-crm-select-all]")) { handleCrmSelectionClick(event); return; }
@@ -7705,6 +8525,9 @@ window.ForkMeshDashboard.registerPage("crm", ({
     $(`[data-crm-team-table-toggle]`)?.addEventListener("click", () => {
       state.crmView.teamTable = !state.crmView.teamTable; renderCrmTeam();
     });
+    wireCrmCleanup();
+    wireCrmMastodon();
+    $(`[data-crm-leaderboard]`)?.addEventListener("click", openCrmLeaderboard);
     const sections = $(`[data-crm-sections]`);
     sections?.addEventListener("click", (event) => {
       const tab = event.target.closest("[data-crm-section-tab]");
@@ -7893,6 +8716,8 @@ window.ForkMeshDashboard.registerPage("crm", ({
       if (sharedOptions) { openCrmSharedMenu(event, sharedOptions.dataset.crmTabSharedMenu); return; }
       const sharedTab = event.target.closest("[data-crm-tab-shared]");
       if (sharedTab) { void selectCrmSharedSheet(sharedTab.dataset.crmTabShared); return; }
+      const network = event.target.closest("[data-crm-network-tab]");
+      if (network) { selectCrmSheet(network.dataset.crmNetworkTab); return; }
       const options = event.target.closest("[data-crm-tab-menu]");
       if (options) { openCrmSheetMenu(event, options.dataset.crmTabMenu); return; }
       const tab = event.target.closest("[data-crm-tab]");

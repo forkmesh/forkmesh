@@ -708,6 +708,18 @@ func stringValue(value any) string {
 	return text
 }
 
+func sameSignature(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	if a == b {
+		return true
+	}
+	rawA, errA := base64.RawURLEncoding.DecodeString(strings.TrimRight(a, "="))
+	rawB, errB := base64.RawURLEncoding.DecodeString(strings.TrimRight(b, "="))
+	return errA == nil && errB == nil && bytes.Equal(rawA, rawB)
+}
+
 var issueRewardIDPattern = regexp.MustCompile(`^reward-[a-z0-9-]{8,88}$`)
 
 // copyIssueReportReward carries the reward estimate the relay attached to a
@@ -771,7 +783,7 @@ func writeIssueItem(root string, item collaborationItem) (bool, int, error) {
 		events, _ := candidate["events"].([]any)
 		for _, value := range events {
 			existing, _ := value.(map[string]any)
-			if eventType == "open" && ((eventSig != "" && stringValue(existing["sig"]) == eventSig) ||
+			if eventType == "open" && ((eventSig != "" && sameSignature(stringValue(existing["sig"]), eventSig)) ||
 				(eventSig == "" && stringValue(existing["author"]) == eventAuthor &&
 					issueNumber(existing["ts"]) == eventTS && stringValue(existing["title"]) == eventTitle)) {
 				return true, candidateNumber, nil
@@ -780,7 +792,7 @@ func writeIssueItem(root string, item collaborationItem) (bool, int, error) {
 				return true, candidateNumber, nil
 			}
 			if eventType != "open" && eventSig != "" && eventSig != "relay-placeholder" &&
-				stringValue(existing["sig"]) == eventSig {
+				sameSignature(stringValue(existing["sig"]), eventSig) {
 				return true, candidateNumber, nil
 			}
 		}

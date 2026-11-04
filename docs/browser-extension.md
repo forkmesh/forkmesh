@@ -13,7 +13,7 @@ Part of the [ForkMesh apps](apps.md). How it is built and released:
 | | Feature | Works on | Needs | What reaches ForkMesh |
 | --- | --- | --- | --- | --- |
 | 🔑 | [Password Vault](#password-vault) | Any https site, from the toolbar popup | Your vault (per account) | Ciphertext only |
-| 📇 | [CRM](#crm) | Gmail, Zoho Mail, Mastodon | The `crm` package in your organization | Message ids, subject, addresses, date; never the body |
+| 📇 | [CRM](#crm) | Gmail, Zoho Mail, Mastodon, X | The `crm` package in your organization | Message ids, subject, addresses or handles, date; never the body |
 | 📥 | [Zoho Mail inbox tools](#zoho-mail-inbox-tools) | Zoho Mail | Nothing, not even a sign-in | Nothing |
 | 📣 | [Marketing](#marketing) | X, Reddit, Google results, any channel you configure | The `marketing` package in your organization | The counts a channel page shows |
 | 📦 | [Repositories](#repositories) | GitHub, GitLab, Codeberg, Gitea | A ForkMesh account | The repository's address, when you press Mirror |
@@ -78,6 +78,11 @@ the current one. Unzip the new download over the same folder and press
 **Reload** on the extension's card in `chrome://extensions`. Keeping the same
 folder keeps the same extension id, so you stay signed in.
 
+**The popup.** It is 800 px wide with the vault and the CRM side by side and
+the folded sections two to a row; an open section takes the full width. The
+sections you leave open (**X profile stats**, **Reddit desk** and the rest)
+open again the next time.
+
 **Signing out.** **Sign out** in the popup ends the session on the server,
 forgets the token and locks the vault.
 
@@ -113,8 +118,8 @@ Why it is safe to use:
 
 The CRM half links the conversations you have open to contacts in your
 organization's ForkMesh CRM. It works in Gmail (`mail.google.com`), Zoho Mail
-(`mail.zoho.com`, `.eu`, `.in`, `.com.au`, `.jp`, `mail.zohocloud.ca`) and any
-Mastodon instance you add.
+(`mail.zoho.com`, `.eu`, `.in`, `.com.au`, `.jp`, `mail.zohocloud.ca`), any
+Mastodon instance you add, and X (`x.com`, `twitter.com`).
 
 **An email.** A compact **CRM header** above the message names the other party,
 their address and how many other people are on it. With **Look up and link
@@ -161,9 +166,24 @@ send to unknown people.
 **Mastodon.** Add each instance under **Mastodon instances** in the popup, or
 press **Record this toot in the CRM** on one you have not added; Chrome asks
 for that site once. With **Add people I mention on Mastodon** on (the
-default), opening one of your own posts on its permalink links everyone it
-mentions to the CRM, up to ten people, creating contacts for new ones.
-Timelines, profiles and other people's posts send nothing.
+default), every post you send, private mentions included, links everyone it
+mentions to the CRM as soon as Mastodon accepts it, up to ten people, creating
+contacts for new ones. Opening one of your own posts on its permalink does the
+same for posts sent elsewhere. Timelines, profiles and other people's posts
+send nothing.
+
+**X.** Nothing to add: the CRM header sits on every post you open on its own
+page (`x.com/<name>/status/<id>`), above the text, naming the author and the
+people above it in the thread, and links it like a Mastodon conversation. A
+contact is found by the X handle or profile link in its **Twitter** field, and
+a new one gets `@name` there. With **Add people I mention or message on X** on
+(the default), every post or reply you send links the people it replies to and
+mentions, and every direct message you send links the person it went to, as
+soon as X accepts it, up to ten people, creating contacts for new ones; opening
+one of your own posts does the same for posts sent elsewhere. A post counts as
+yours when it comes from the X account you are signed in to or the profile the
+Marketing X widget tracks. Messages you receive are linked from the header, not
+on their own. The encrypted X Chat (`x.com/i/chat`) is not read.
 
 **Save this page to a contact** adds a dated line with the page's title and
 address to a contact's notes.
@@ -204,6 +224,15 @@ Open the popup on any page of a repository on `github.com`, `gitlab.com`,
 `codeberg.org` or `gitea.com`. A card shows its size, stars, forks and open
 issues, its language, licence and default branch, when it last changed, and
 whether it is already on ForkMesh.
+
+**Size map** opens the repository in a new tab as a sunburst of its folders
+and files, sized by bytes: click a folder to zoom in, the centre or **Up** to
+zoom out, and a file to open it on the provider. Beside it are the folder's
+contents, its largest files and its file types. **Code map** shows the same
+tree as ForkMesh's code map, with each file's source drawn in its cell and a
+3D view. Both read the default branch at one commit from the provider's
+public API and need no sign-in; GitLab's API lists no file sizes, so GitLab
+repositories have no map.
 
 **Mirror to my ForkMesh account** lists the repository under your account;
 the mirror nodes copy its Git history on their next pass (about every 30
@@ -246,7 +275,7 @@ and Zoho's API console, each for the feature named above.
 | Feature | Sent to ForkMesh | Never sent |
 | --- | --- | --- |
 | Vault | Encrypted items, wrapped keys, signed shares | Master password, keys, decrypted logins |
-| CRM | Message and thread ids, subject, addresses or handles, direction, date, the details shown in the panel, the chosen list; with open tracking, the address of an unknown recipient, and the recipient's mail app loads the open image from ForkMesh | The email body (read only to prefill the panel) |
+| CRM | Message and thread ids, subject (a post's or message's first line), addresses or handles, direction, date, the details shown in the panel, the chosen list; with open tracking, the address of an unknown recipient, and the recipient's mail app loads the open image from ForkMesh | The email body (read only to prefill the panel) |
 | Marketing | A channel's counts, title, description, image and up to five recent posts; Reddit desk fields; X keys once | Anything to X, Reddit or the channel sites |
 | Repositories | The derived import id when you open the popup; the address when you press Mirror | Your provider sign-in |
 | Zoho Mail tools | Nothing | Everything |

@@ -22,7 +22,11 @@ two looked and behaved differently. The landing's reference sections still use
 the static `tailwind.css` for their inner layout; that file is precompiled, so
 new landing markup uses `dh-*` classes from `docs-page.css`, never new Tailwind
 utilities. The build fills the landing's sidebar through
-`<!-- forkmesh-docs-sidebar -->`.
+`<!-- forkmesh-docs-sidebar -->`, so the checked-in landing holds none of
+its links. The Reference intro therefore links `/docs/contributions` and
+the [business model](../business-model.md) itself, as the old hand-written
+sidebar did; `app/tests/test_docs_frontend.py` and
+`app/tests/test_business_model_contract.py` read those links from the page.
 
 ## Pillars
 
@@ -30,7 +34,7 @@ The landing opens with who ForkMesh is for and six pillars, the questions a
 maintainer of a circumvention, privacy or security tool asks before trusting it
 with a project: mirroring and distribution, the threat model, cryptography,
 self-hosting, testing under blocking, and fitting existing workflows (the
-priorities in the Open Technology Fund concept-note feedback). Each card states
+priorities funders' reviewers ask about). Each card states
 only what its linked pages say; keep them in step when those pages change.
 Below them the six [core pages](../README.md) form a numbered reading path.
 

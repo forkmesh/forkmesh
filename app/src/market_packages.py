@@ -178,6 +178,61 @@ def places(manifest):
     return chosen or list(PLACES)
 
 
+def _contribution_route(manifest, socket, pattern):
+    for item in manifest.get("contributions") or []:
+        if isinstance(item, dict) and item.get("socket") == socket:
+            route = str((item.get("config") or {}).get("route") or "")
+            if pattern.fullmatch(route):
+                return route
+    return ""
+
+
+def _desktop_build(package_dir):
+    try:
+        raw = (Path(package_dir) / "content" / "desktop" / "build.json").read_text(encoding="utf-8")
+    except (OSError, TypeError):
+        return ""
+    try:
+        build = json.loads(raw)
+    except ValueError:
+        build = {}
+    return "core" if isinstance(build, dict) and build.get("coreLinked") is True else "module"
+
+
+def package_facts(manifest, package_dir=None):
+    worker = manifest.get("worker")
+    worker = worker if isinstance(worker, dict) else {}
+    entrypoints = manifest.get("entrypoints")
+    entrypoints = entrypoints if isinstance(entrypoints, dict) else {}
+    content = package_dir is not None and (Path(package_dir) / "content").is_dir()
+    return {
+        "kind": "plugin" if content else "switch",
+        "module": str(worker.get("module") or ""),
+        "dashboard": _contribution_route(manifest, "dashboard.page", ROUTE_RE),
+        "www": _contribution_route(manifest, "www.page", SITE_ROUTE_RE),
+        "desktop": _desktop_build(package_dir) if content else "",
+        "world": "world" in entrypoints,
+    }
+
+
+def catalog_facts(root=ROOT):
+    key = ("facts", str(root))
+    if key in _CACHE:
+        return _CACHE[key]
+    catalog = _read_json(Path(root) / "catalog.json") or {}
+    facts = {}
+    for entry in (catalog.get("packages") or [])[:MAX_PACKAGES]:
+        relative = str((entry or {}).get("manifest") or "") if isinstance(entry, dict) else ""
+        if not relative.endswith("manifest.json") or ".." in relative:
+            continue
+        path = Path(root) / relative
+        manifest = _read_json(path) if _inside(Path(root), path) else None
+        if manifest and ID_RE.fullmatch(str(manifest.get("id") or "")):
+            facts[manifest["id"]] = package_facts(manifest, path.parent)
+    _CACHE[key] = facts
+    return facts
+
+
 def package_row(manifest, root=None, relative=""):
     package_id = str(manifest.get("id") or "")
     if not ID_RE.fullmatch(package_id):

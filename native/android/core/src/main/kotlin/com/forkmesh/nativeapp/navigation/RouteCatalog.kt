@@ -112,6 +112,7 @@ object RouteCatalog {
         Route.Kind.Thread -> "Thread"
         Route.Kind.Dm -> "Direct message"
         Route.Kind.Discord -> "Discord"
+        Route.Kind.Meeting -> "Meeting"
         Route.Kind.Profile -> "Profile"
         Route.Kind.People -> "People"
         Route.Kind.Docs -> "Docs"
@@ -157,6 +158,7 @@ object RouteCatalog {
         Route.Kind.Speech -> "Speech"
         Route.Kind.GlassesAlert -> "Glasses Alert"
         Route.Kind.PhoneSecurity -> "Phone Security"
+        Route.Kind.SilentSpeech -> "Silent Speech"
         Route.Kind.Ember -> "Ember"
         Route.Kind.Strata -> "Strata"
         Route.Kind.Synapse -> "Synapse"
@@ -216,6 +218,7 @@ object RouteCatalog {
         Route.Kind.Chat, Route.Kind.Channel, Route.Kind.Thread -> "chat"
         Route.Kind.Dm -> "mail"
         Route.Kind.Discord -> "sports_esports"
+        Route.Kind.Meeting -> "videocam"
         Route.Kind.Profile -> "account_circle"
         Route.Kind.People -> "groups"
         Route.Kind.Docs -> "library_books"
@@ -249,6 +252,7 @@ object RouteCatalog {
         Route.Kind.Speech -> "volume_up"
         Route.Kind.GlassesAlert -> "visibility"
         Route.Kind.PhoneSecurity -> "security"
+        Route.Kind.SilentSpeech -> "headphones"
         Route.Kind.Ember -> "local_fire_department_rounded"
         Route.Kind.Strata -> "layers"
         Route.Kind.Synapse -> "polyline"
@@ -379,6 +383,7 @@ object HubCatalog {
         HubItem.destination(Route.Speech),
         HubItem.destination(Route.GlassesAlert),
         HubItem.destination(Route.PhoneSecurity),
+        HubItem.destination(Route.SilentSpeech),
         HubItem.destination(Route.OpenWrtRouter),
         HubItem.destination(Route.FaceChanger),
         HubItem.destination(Route.RssReader),

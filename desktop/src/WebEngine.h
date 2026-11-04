@@ -25,6 +25,8 @@ struct ProfileOptions {
     std::function<QString(const QString &defaultAgent)> userAgent;
     std::function<bool(const QUrl &url)> requestAllowed;
     std::function<QString()> downloadDirectory;
+    std::function<QString(const QString &suggestedName)> downloadPath;
+    std::function<void(const QString &path, bool ok)> downloadFinished;
 };
 
 struct PageOptions {
@@ -36,6 +38,10 @@ struct PageOptions {
     bool restricted = false;
     QString documentScriptName;
     QString documentScript;
+    bool clipboard = false;
+    std::function<void(const QUrl &url)> onNewWindow;
+    std::function<QString()> printPath;
+    std::function<void(const QString &path, bool ok)> printFinished;
 };
 
 class View
@@ -64,6 +70,9 @@ public:
 struct Engine {
     std::function<QObject *(const ProfileOptions &options, QObject *parent)> createProfile;
     std::function<View *(QObject *profile, const PageOptions &options, QWidget *parent)> createView;
+    std::function<bool(QObject *profile, const QUrl &origin, const QString &name,
+                       const QString &value, bool httpOnly)>
+        setCookie;
 };
 
 bool registerEngine(const Engine &engine);
@@ -76,5 +85,7 @@ bool loaded();
 QObject *createProfile(const ProfileOptions &options, QObject *parent = nullptr);
 View *createView(QObject *profile, const PageOptions &options, QWidget *parent);
 View *viewOf(QWidget *widget);
+bool setCookie(QObject *profile, const QUrl &origin, const QString &name, const QString &value,
+               bool httpOnly);
 
 }

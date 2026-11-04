@@ -543,6 +543,13 @@ How repositories reach mirrors is in [mirroring.md](../mirroring.md).
   cannot name every private address. It is used only for addresses
   `OpenWrtModel.isLocalHost` accepts
   ([openwrt.md](../marketplace/openwrt.md#phones)).
+- **Silent Speech** (`feature/silentspeech/`, core `silentspeech/`) reads
+  `Sensor.TYPE_HEAD_TRACKER` (Android 13+), found through
+  `getDynamicSensorList` and `registerDynamicSensorCallback` while the page is
+  open, at `SENSOR_DELAY_GAME`. The recogniser is a line-for-line port of the
+  iOS core with the same tests (`./gradlew :core:coreTest -Pfilter=SilentSpeech`);
+  head trackers report no acceleration, so the Movement channel is iPhone only
+  ([silent-speech.md](../marketplace/silent-speech.md)).
 - **Phone Security** (`feature/phonesecurity/`, core `phonesecurity/`) is the
   local checkup in [phone-security.md](../marketplace/phone-security.md).
   `PhoneSecurityProbe` fills `PhoneSecurityFacts` on `Dispatchers.IO` when the
@@ -608,6 +615,9 @@ iOS features Android does not have, because they need an Apple-only API:
   for it on Android; the Android spider is unchanged and Android has no mascot
   choice yet.
 - **Eye Control** (S050): a gaze cursor needs ARKit TrueDepth face tracking.
+- **Silent Speech's Movement channel**: Android head trackers report rotation
+  and turning speed but no acceleration, so only the iPhone (AirPods) offers it
+  and its Movement chart.
 - **Spider Room** (S051): an ARKit and RealityKit scene; ARCore would be a
   new dependency.
 - **App Store update gate** (S052): Android is distributed directly and has
@@ -1083,7 +1093,9 @@ video, Diagnose and call audio are in section 27, "Calls".
   `canUseFullScreenIntent()`. The manifest declares `USE_FULL_SCREEN_INTENT`.
   Everything stops on accept, decline, a stale invite or an active call.
 - **Lock screen.** `CallWindowEffect` sets `setShowWhenLocked` while an invite
-  rings or a call is active and `setTurnScreenOn` only while ringing.
+  rings or a full-screen call is active and `setTurnScreenOn` only while
+  ringing. A minimized call clears both, so Back or minimize on a locked phone
+  returns to the lock screen instead of exposing the rest of the app.
 - **Incoming screen.** Full screen: caller, "Video call" or "Voice call", large
   red Decline and green Accept. It sits above the pre-call layer, which stays
   composed so its preview survives a decline.

@@ -229,6 +229,7 @@ object ChatDepth {
                 selfId = { room.selfId },
                 displayName = { auth?.session?.value?.nodeName ?: room.persona.name },
                 account = { room.persona.ownerUser },
+                nodeKey = { room.nodeKey },
             )
             directService.addListener {
                 bump()

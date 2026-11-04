@@ -356,6 +356,40 @@ void testPreviewObjects()
     check(resized, "a narrower column redraws the figure in place");
 }
 
+void testDeferredPreviewFigure()
+{
+    const QString token = noteObjectToken();
+    const PlaceholderMarkdown placeholders = withObjectPlaceholders(
+        QStringLiteral("```svg\n") + kSvg + QStringLiteral("\n```"), token);
+    QTextDocument doc;
+    doc.setMarkdown(placeholders.markdown);
+    NoteRenderCache cache;
+    QList<QPair<QString, std::function<QImage()>>> deferred;
+    cache.defer = [&deferred](const QString &key, std::function<QImage()> make) {
+        deferred.append({key, std::move(make)});
+    };
+    NotePreviewStyle style;
+    style.columnWidth = 500;
+    applyNotePreviewObjects(&doc, token, placeholders.objects, style, cache);
+    check(deferred.size() == 1, "an uncached figure is handed to the worker");
+    QString name;
+    for (QTextBlock block = doc.begin(); block.isValid(); block = block.next())
+        for (auto it = block.begin(); !it.atEnd(); ++it)
+            if (it.fragment().charFormat().intProperty(NoteObjectKind) == int(NotePartKind::Figure))
+                name = it.fragment().charFormat().toImageFormat().name();
+    const auto centre = [&doc, &name] {
+        const QImage card = doc.resource(QTextDocument::ImageResource, QUrl(name)).value<QImage>();
+        return card.pixelColor(card.width() / 2, card.height() / 2 - 50);
+    };
+    check(!name.isEmpty() && centre() == QColor(Qt::white),
+          "the preview shows the empty card while the figure draws");
+    applyNotePreviewObjects(&doc, token, placeholders.objects, style, cache);
+    check(deferred.size() == 1, "a figure already drawing is not queued twice");
+    cache.store(deferred.first().first, deferred.first().second());
+    applyNotePreviewObjects(&doc, token, placeholders.objects, style, cache);
+    check(centre() == QColor(0x09, 0x69, 0xda), "the drawn figure replaces the empty card");
+}
+
 }
 
 int main(int argc, char **argv)
@@ -369,6 +403,7 @@ int main(int argc, char **argv)
     testHeadings();
     testFileNames();
     testPreviewObjects();
+    testDeferredPreviewFigure();
     testPdf();
     if (failures) {
         std::fprintf(stderr, "%d note document check(s) failed\n", failures);

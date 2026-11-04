@@ -136,6 +136,22 @@ def test_signed_ping_reaches_every_admin_but_not_service_accounts():
     assert calls["emails"] == []
 
 
+def test_good_news_from_the_deploy_agent_is_marked_up():
+    module, calls = _load()
+    good = _body(key="node-rolled:0123456789ab",
+                 title="Cores rolled after 0123456789ab")
+    _post(module, good, {"node": "jett", "ts": "123", "sig": "s"})
+    _post(module, _body(), {"node": "jett", "ts": "124", "sig": "s"})
+    metas = [c[3]["meta"] for c in calls["enqueued"]]
+    assert metas[0] == {"key": "node-rolled:0123456789ab", "from": "jett",
+                        "severity": "ping", "state": "up"}
+    assert "state" not in metas[-1]
+    for key in ("runners-rolled:a", "agent-updated:a", "core-caught-up:n1:a"):
+        assert module.operator_alert_meta("jett", "ping", key)["state"] == "up"
+    assert "state" not in module.operator_alert_meta(
+        "jett", "ping", "node-roll-failed:a")
+
+
 def test_email_severity_also_mails_the_admin_addresses():
     module, calls = _load()
     response = _post(module, _body(severity="email"),

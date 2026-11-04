@@ -21,6 +21,8 @@
 #include <QStandardPaths>
 #include <QUuid>
 
+#include <utility>
+
 using namespace forkmesh::ui;
 
 void MainWindow::onProfileNameChanged(const QString &name)
@@ -625,6 +627,137 @@ bool MainWindow::restoreCachedAccountSession(const QString &accountName,
     return true;
 }
 
+void MainWindow::ensureAccountSession(std::function<void(const QString &)> done)
+{
+    const QString account = AccountCapability::normalizedAccount(m_accountName);
+    auto answer = [&done](const QString &error) {
+        if (done)
+            done(error);
+    };
+    if (!hasActiveAccountSession() || account.isEmpty()) {
+        answer(QStringLiteral("Sign in to your ForkMesh account on this desktop."));
+        return;
+    }
+    if (!accountSessionTokenForUrl(catalogApiUrl()).isEmpty()) {
+        answer(QString());
+        return;
+    }
+    if (!hasOwnerSigningCapability(account)) {
+        answer(QStringLiteral("This desktop's key is not linked to @%1. Log in with "
+                              "your password once to link it.")
+                   .arg(account));
+        return;
+    }
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (!done && !m_accountSessionReply && m_accountSessionFailedAtMs > 0 &&
+        now - m_accountSessionFailedAtMs < 30000)
+        return;
+    if (done)
+        m_accountSessionWaiters.append(std::move(done));
+    if (m_accountSessionReply)
+        return;
+    const QString publicKey = m_profileIdentity.publicKey().trimmed();
+    const QString ts = QString::number(now);
+    const QString sig =
+        publicKey.isEmpty() || !m_networkAccess
+            ? QString()
+            : m_profileIdentity.signData(
+                  QStringLiteral("forkmesh-desktop-session-v1\n%1\n%2\n%3")
+                      .arg(account, publicKey, ts)
+                      .toUtf8());
+    if (sig.isEmpty()) {
+        finishAccountSessionRequest(
+            QStringLiteral("This desktop could not sign in to your account."));
+        return;
+    }
+    const QString instance = accountInstanceUrl(currentAccountInstanceUrl());
+    QNetworkRequest request(
+        accountApiUrlForInstance(instance, QStringLiteral("desktop-session")));
+    request.setHeader(QNetworkRequest::ContentTypeHeader,
+                      QStringLiteral("application/json"));
+    request.setTransferTimeout(15000);
+    const QJsonObject body{{QStringLiteral("nodeName"), account},
+                           {QStringLiteral("pubkey"), publicKey},
+                           {QStringLiteral("ts"), ts},
+                           {QStringLiteral("sig"), sig}};
+    QNetworkReply *reply = m_networkAccess->post(
+        request, QJsonDocument(body).toJson(QJsonDocument::Compact));
+    m_accountSessionReply = reply;
+    connect(reply, &QNetworkReply::finished, this, [this, reply, account, instance] {
+        reply->deleteLater();
+        if (m_accountSessionReply == reply)
+            m_accountSessionReply = nullptr;
+        const int status =
+            reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        const QJsonObject payload = QJsonDocument::fromJson(reply->readAll()).object();
+        const bool sameAccount =
+            AccountCapability::normalizedAccount(m_accountName) == account &&
+            accountInstanceUrl(currentAccountInstanceUrl()) == instance &&
+            hasActiveAccountSession();
+        if (status == 200 && sameAccount &&
+            payload.value(QStringLiteral("ok")).toBool() &&
+            !payload.value(QStringLiteral("sessionToken")).toString().trimmed().isEmpty() &&
+            AccountCapability::loginResponseMatchesRequestedAccount(
+                account, payload.value(QStringLiteral("nodeName")).toString())) {
+            activateAccountSession(payload, account, true, instance);
+            finishAccountSessionRequest(QString());
+            return;
+        }
+        const QString error = payload.value(QStringLiteral("error")).toString();
+        finishAccountSessionRequest(
+            !sameAccount
+                ? QStringLiteral("The account changed while signing in. Try again.")
+            : error == QLatin1String("primary_key_required")
+                ? QStringLiteral("Your account has two-factor sign-in, so only "
+                                 "the desktop that first linked it can sign in "
+                                 "by key. Log in with your password once.")
+            : error == QLatin1String("device_not_bound")
+                ? QStringLiteral("This desktop's key is no longer linked to "
+                                 "@%1. Log in with your password once to link it.")
+                      .arg(account)
+            : status == 0
+                ? QStringLiteral("Could not reach your ForkMesh host. Check the "
+                                 "connection, then try again.")
+                : QStringLiteral("Your ForkMesh host did not open a session for "
+                                 "this desktop (%1).")
+                      .arg(error.isEmpty() ? QString::number(status) : error));
+    });
+}
+
+void MainWindow::finishAccountSessionRequest(const QString &error)
+{
+    m_accountSessionFailedAtMs =
+        error.isEmpty() ? 0 : QDateTime::currentMSecsSinceEpoch();
+    const QList<std::function<void(const QString &)>> waiters =
+        std::exchange(m_accountSessionWaiters, {});
+    for (const std::function<void(const QString &)> &waiter : waiters)
+        waiter(error);
+}
+
+bool MainWindow::waitForAccountSession(const QUrl &url, std::function<void()> retry,
+                                       std::function<void(const QString &)> fail)
+{
+    if (!m_networkAccess || !url.isValid() || !hasActiveAccountSession() ||
+        !accountSessionTokenForUrl(url).isEmpty())
+        return false;
+    ensureAccountSession([this, url, retry = std::move(retry),
+                          fail = std::move(fail)](const QString &error) {
+        if (error.isEmpty() && !accountSessionTokenForUrl(url).isEmpty()) {
+            retry();
+            return;
+        }
+        const QString text =
+            error.isEmpty() ? QStringLiteral("Your ForkMesh host did not open a session "
+                                             "for this desktop.")
+                            : error;
+        if (fail)
+            fail(text);
+        else
+            flashMessage(text, true);
+    });
+    return true;
+}
+
 QStringList MainWindow::accountDesktopKeysForSession(
     const forkmesh::accounts::CachedSession &session)
 {
@@ -960,8 +1093,7 @@ void MainWindow::showUserAccountMenu()
     QAction *awayAction = nullptr;
     QAction *statusAction = nullptr;
     QAction *clearStatusAction = nullptr;
-    if (!accountSessionTokenForUrl(accountsApiUrl(QStringLiteral("user-status")))
-             .isEmpty()) {
+    if (hasActiveAccountSession()) {
         using namespace forkmesh::userstatus;
         const UserStatus own =
             m_ownUserStatusKnown
@@ -1088,8 +1220,7 @@ void MainWindow::showUserAccountMenu()
 void MainWindow::fetchOwnUserStatus()
 {
     // An empty body is a read of the caller's own status.
-    if (accountSessionTokenForUrl(accountsApiUrl(QStringLiteral("user-status")))
-            .isEmpty())
+    if (!hasActiveAccountSession())
         return;
     postOwnUserStatus(QJsonObject());
 }
@@ -1100,6 +1231,20 @@ void MainWindow::postOwnUserStatus(
 {
     const QUrl url = accountsApiUrl(QStringLiteral("user-status"));
     const QString token = accountSessionTokenForUrl(url);
+    if (m_networkAccess && token.isEmpty() && hasActiveAccountSession()) {
+        ensureAccountSession([this, body, done, url](const QString &error) {
+            if (error.isEmpty() && !accountSessionTokenForUrl(url).isEmpty()) {
+                postOwnUserStatus(body, done);
+                return;
+            }
+            if (done)
+                done(false, error.isEmpty()
+                                ? QStringLiteral("Your ForkMesh host did not open a "
+                                                 "session for this desktop.")
+                                : error);
+        });
+        return;
+    }
     if (!m_networkAccess || token.isEmpty()) {
         if (done)
             done(false, QStringLiteral("Sign in to a ForkMesh account to set "
@@ -1190,8 +1335,7 @@ void MainWindow::showSetUserStatusDialog()
         m_userStatusDialog->activateWindow();
         return;
     }
-    if (accountSessionTokenForUrl(accountsApiUrl(QStringLiteral("user-status")))
-            .isEmpty()) {
+    if (!hasActiveAccountSession()) {
         flashMessage(QStringLiteral(
                          "Sign in to a ForkMesh account to set your status."),
                      true);

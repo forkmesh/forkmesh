@@ -94,6 +94,10 @@ apt repository. Operator detail: `docs/release/README.md`, `docs/release/apt.md`
   repository really survives losing its source.
 - The [product promise](product-promise.md) walks through it end to end:
   collaborate, add a mirror, take the source offline, clone again.
+- When the source is offline, the
+  [Internet Archive plugin](marketplace/internet-archive.md) compares each
+  mirror with backups held on archive.org, a record outside ForkMesh that no
+  mirror can rewrite.
 - Withholding of collaboration events by a relay or mirror is not yet
   detectable (TM-008). A mirror can serve stale or wrong bytes, but the refs
   pin keeps clones away from it.

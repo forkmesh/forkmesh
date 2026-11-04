@@ -18,6 +18,13 @@
 #include <openssl/pem.h>
 #include <openssl/rand.h>
 
+#if defined(Q_OS_UNIX)
+#include <cstdio>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
+
 namespace {
 
 constexpr int kPortableSaltBytes = 16;
@@ -33,6 +40,32 @@ QString base64Url(const QByteArray &data)
     return QString::fromLatin1(
         data.toBase64(QByteArray::Base64UrlEncoding |
                       QByteArray::OmitTrailingEquals));
+}
+
+BIO *openOwnerOnlyKeyFile(const QByteArray &path)
+{
+#if defined(Q_OS_UNIX)
+    const int fd = ::open(path.constData(),
+                          O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW | O_CLOEXEC,
+                          S_IRUSR | S_IWUSR);
+    if (fd < 0)
+        return nullptr;
+    if (::fchmod(fd, S_IRUSR | S_IWUSR) != 0) {
+        ::close(fd);
+        return nullptr;
+    }
+    FILE *file = ::fdopen(fd, "w");
+    if (!file) {
+        ::close(fd);
+        return nullptr;
+    }
+    BIO *bio = BIO_new_fp(file, BIO_CLOSE);
+    if (!bio)
+        std::fclose(file);
+    return bio;
+#else
+    return BIO_new_file(path.constData(), "w");
+#endif
 }
 
 QByteArray base64UrlExact(const QString &value, int expectedSize = -1)
@@ -217,7 +250,7 @@ bool ForkMeshIdentity::generate(const QString &keyPath)
     }
 
     const QByteArray pathBytes = QFile::encodeName(keyPath);
-    BIO *bio = BIO_new_file(pathBytes.constData(), "w");
+    BIO *bio = openOwnerOnlyKeyFile(pathBytes);
     if (!bio) {
         EVP_PKEY_free(key);
         m_error = "Could not open the identity key for writing: " + keyPath;
@@ -388,9 +421,7 @@ bool ForkMeshIdentity::verifySignature(const QString &publicKeyB64url,
 {
     const QByteArray rawKey = QByteArray::fromBase64(
         publicKeyB64url.toLatin1(), QByteArray::Base64UrlEncoding);
-    const QByteArray sig = QByteArray::fromBase64(
-        signatureB64url.toLatin1(), QByteArray::Base64UrlEncoding);
-    // Ed25519 keys are 32 bytes, signatures 64 bytes.
+    const QByteArray sig = base64UrlExact(signatureB64url, 64);
     if (rawKey.size() != 32 || sig.size() != 64)
         return false;
 
@@ -544,7 +575,7 @@ bool ForkMeshIdentity::installRawSeed(const QByteArray &seed)
     }
     const QString keyPath = dir + "/ed25519.pem";
     const QByteArray pathBytes = QFile::encodeName(keyPath);
-    BIO *bio = BIO_new_file(pathBytes.constData(), "w");
+    BIO *bio = openOwnerOnlyKeyFile(pathBytes);
     if (!bio) {
         EVP_PKEY_free(key);
         m_error = "Could not open the identity key for writing: " + keyPath;

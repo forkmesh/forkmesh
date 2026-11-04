@@ -4503,7 +4503,7 @@
     const signedHead = parent
       ? `${repoDisplayOwner(repo) || repo.owner}:${head}`
       : head;
-    const pull = withPullAiModel(await signWebPull(repo, targetRepo, title, body, base, head, signedHead), aiModel);
+    const pull = withPullAiModel(await signWebPull(repo, targetRepo, title, body, base, head, signedHead, "", parent ? targetRepo : null), aiModel);
     const payload = { owner: targetRepo.owner, repo: targetRepo.name, pull };
     try {
       const data = await fetchRepoMutation(targetRepo, "pulls", payload);
@@ -4557,7 +4557,27 @@
     return { ...data, pull, remote };
   }
 
-  async function signWebPull(repo, signingRepo, title, body, base, head, signedHead, compareBase = "") {
+  async function pullParentBaseOid(parentRepo, base) {
+    try {
+      const branches = await fetchRepoBranches(parentRepo, { refresh: true });
+      const tip = String(branches.find((branch) => branch.name === base)?.commit || "").toLowerCase();
+      return /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(tip) ? tip : "";
+    } catch (_) {
+      return "";
+    }
+  }
+
+  async function fetchPullComparison(repo, base, head, parentRepo = null) {
+    const parentBase = parentRepo ? await pullParentBaseOid(parentRepo, base) : "";
+    if (parentBase) {
+      try {
+        return await fetchRepoJson(repoLiveUrl(repo, "compare", { base: parentBase, head, ref: "" }));
+      } catch (_) {}
+    }
+    return fetchRepoJson(repoLiveUrl(repo, "compare", { base, head, ref: "" }));
+  }
+
+  async function signWebPull(repo, signingRepo, title, body, base, head, signedHead, compareBase = "", parentRepo = null) {
     // The comparison is the first thing that can fail, and it fails BEFORE
     // anything is signed or sent - a mirror answers 404 for a branch name it
     // cannot resolve yet, which is the common case for a branch that was just
@@ -4567,11 +4587,7 @@
     // which reads as a rejected submission and invites a pointless resend.
     let comparison;
     try {
-      comparison = await fetchRepoJson(repoLiveUrl(repo, "compare", {
-        base: compareBase || base,
-        head,
-        ref: "",
-      }));
+      comparison = await fetchPullComparison(repo, compareBase || base, head, compareBase ? null : parentRepo);
     } catch (cause) {
       const error = new Error("comparison_unavailable");
       error.status = Number(cause?.status) || 0;
@@ -4986,6 +5002,40 @@
     refreshPullConversationProjection();
     refreshRepoPullDiff();
     if (action !== "delete") restoreCommentEditFocus(target, "[data-repo-pull-comment-edit]", "repoPullCommentEdit");
+  }
+
+  async function handleWebPullDescriptionEdit() {
+    const detail = state.repoRecordDetail;
+    const repo = detail?.repo;
+    const number = Number(detail?.number || 0);
+    if (!repo || detail?.kind !== "pulls" || !number) return;
+    if (!state.session?.nodeName) {
+      location.href = "/login?next="
+        + encodeURIComponent(`${location.pathname}${location.search}`);
+      return;
+    }
+    const parsed = detail.parsed || {};
+    const values = parsed.values || {};
+    if (!pullDescriptionEditable(values)) return;
+    const edit = pullDescriptionEdit(values, parsed.pullConversation);
+    const current = String(edit ? edit.body || "" : parsed.body || "");
+    const nextBody = await openIssueCommentEditor(
+      PULL_DESCRIPTION_TARGET, current,
+      "[data-repo-pull-description-edit]", "repoPullDescriptionEdit");
+    if (nextBody === null) return;
+    const trimmed = String(nextBody).replace(/[\r\n]+$/, "");
+    if (trimmed === current.replace(/[\r\n]+$/, "")) return;
+    let result;
+    try {
+      result = await submitWebPullCommentEdit(repo, number, PULL_DESCRIPTION_TARGET, trimmed);
+    } catch (error) {
+      showErrorNotice(webIssueActionError(error, "edit-comment"));
+      return;
+    }
+    if (state.repoRecordDetail !== detail) return;
+    parsed.pullConversation = [...(parsed.pullConversation || []), result.event];
+    paintPullDescription(repo, trimmed);
+    restoreCommentEditFocus(PULL_DESCRIPTION_TARGET, "[data-repo-pull-description-edit]", "repoPullDescriptionEdit");
   }
 
   async function handleWebIssueAction(action, target = "") {
@@ -6379,7 +6429,7 @@
     const base = String(values.base || "");
     let comparison;
     try {
-      comparison = await fetchRepoJson(repoLiveUrl(sourceRepo, "compare", { base, head: branch, ref: "" }));
+      comparison = await fetchPullComparison(sourceRepo, base, branch, source.owner ? repo : null);
     } catch (_) {
       throw new Error("comparison_unavailable");
     }
@@ -6390,7 +6440,8 @@
     const validOid = (value) => /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(value);
     if (!validOid(baseOid) || !validOid(headOid)) throw new Error("invalid_comparison");
     if (!patch.trim()) throw new Error("no_changes");
-    if (headOid === String(values.creationHeadOid || "").toLowerCase()) throw new Error("no_new_commits");
+    if (headOid === String(values.creationHeadOid || "").toLowerCase()
+      && baseOid === String(values.creationBaseOid || "").toLowerCase()) throw new Error("no_new_commits");
     const signedHead = source.owner ? `${source.owner}:${branch}` : branch;
     const revision = await signWebPullContent(
       repo, String(values.title || ""), "", base, signedHead, patch, commits);
@@ -14932,7 +14983,7 @@
     ].filter(Boolean).join(" · ");
     return `
       <${tag}${hrefAttr} data-home-feed-kind="activity" class="fm-home-row">
-        <span class="fm-home-row-icon"><i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="text-muted-foreground"></i></span>
+        <span class="fm-home-row-icon"><i data-notification-kind-icon data-lucide="${notificationItemIcon(item)}" class="${notificationItemIconTone(item) || "text-muted-foreground"}"></i></span>
         <span class="min-w-0 flex-1">
           <span class="fm-home-row-title">${escapeHtml(repoPublicText(item.title) || `${platformName()} activity`)}</span>
           ${item.body ? `<span class="fm-home-row-meta line-clamp-2">${escapeHtml(repoPublicText(item.body))}</span>` : ""}
@@ -16822,7 +16873,6 @@
       loadRepoDigestPreview(state.selectedRepo);
       void loadRepoWebhooks(state.selectedRepo);
       void loadRepoProviderMirror(state.selectedRepo);
-      void loadRepoArchiveSync(state.selectedRepo);
       void loadRepoPullRulesSettings(state.selectedRepo);
       mountActionsSecrets($("[data-actions-secrets]"));
     }
@@ -25859,6 +25909,44 @@
     return Boolean(name) && name === String(target.authorName || "").trim().toLowerCase();
   }
 
+  const PULL_DESCRIPTION_TARGET = "description";
+
+  function pullDescriptionEditApplies(change, values) {
+    if (!change || change.type !== "comment-edit" || String(change.target || "") !== PULL_DESCRIPTION_TARGET) return false;
+    if (change.author && change.author === values?.author) return true;
+    const name = String(change.authorName || "").trim().toLowerCase();
+    return Boolean(name) && name === String(values?.authorName || "").trim().toLowerCase();
+  }
+
+  function pullDescriptionEdit(values, conversation) {
+    let latest = null;
+    for (const ev of Array.isArray(conversation) ? conversation : []) {
+      if (!pullDescriptionEditApplies(ev, values)) continue;
+      if (!latest || pullTimestamp(latest.ts) <= pullTimestamp(ev.ts)) latest = ev;
+    }
+    return latest;
+  }
+
+  function pullDescriptionEditable(values) {
+    if (String(values?.status || "open").trim().toLowerCase() === "deleted") return false;
+    return webSessionAuthored({ author: values?.author, authorName: values?.authorName });
+  }
+
+  function recordOpeningBodyHtml(repo, body) {
+    return String(body || "").trim()
+      ? `<div data-repo-record-body data-repo-record-opening-text class="px-4 py-4 ${MD_BODY_CLASS}">${renderRecordMarkdown(body, repo)}</div>`
+      : `<p data-repo-record-opening-text class="px-4 py-4 text-[14px] italic text-muted-foreground">No description provided.</p>`;
+  }
+
+  function paintPullDescription(repo, body) {
+    const card = document.querySelector("[data-repo-pull-description-card]");
+    const text = card?.querySelector("[data-repo-record-opening-text]");
+    if (!text) return;
+    text.outerHTML = recordOpeningBodyHtml(repo, body);
+    card.dataset.repoRecordDescription = String(body || "").trim() ? "body" : "empty";
+    card.querySelector("[data-repo-pull-description-edited]")?.removeAttribute("hidden");
+  }
+
   function pullReviewKeepsVerdict(target) {
     return target?.type === "review" && (target.state === "approved" || target.state === "changes_requested");
   }
@@ -26850,11 +26938,11 @@
   function openIssueCommentEditor(target, body, selector = "[data-repo-issue-comment-edit]", key = "repoIssueCommentEdit") {
     const button = visibleCommentEditButton(target, selector, key);
     const inline = button?.closest("[data-repo-pull-inline-comment-card]");
-    const card = inline || button?.closest("[data-repo-issue-comment]");
+    const card = inline || button?.closest("[data-repo-issue-comment], [data-repo-pull-description-card]");
     const panel = inline ? inline.querySelector("[data-repo-pull-inline-comment-text]")?.parentElement : card?.querySelector(".rounded-md.border");
     if (!panel) return Promise.resolve(window.prompt("Edit comment", body));
     panel.querySelector("[data-repo-issue-comment-editor]")?.remove();
-    const text = panel.querySelector("[data-repo-issue-comment-text], [data-repo-pull-inline-comment-text]");
+    const text = panel.querySelector("[data-repo-issue-comment-text], [data-repo-pull-inline-comment-text], [data-repo-record-opening-text]");
     const form = document.createElement("form");
     form.dataset.repoIssueCommentEditor = "";
     form.className = "grid gap-2 p-3";
@@ -29802,7 +29890,9 @@
     // An empty description stays empty (issue #651): substituting placeholder
     // copy here guaranteed the opening block always had a padded body to show,
     // so a title-only issue rendered a large card saying nothing.
-    const body = parsed.body || "";
+    const descriptionEdit = kind === "pulls" ? pullDescriptionEdit(values, parsed.pullConversation) : null;
+    const body = descriptionEdit ? String(descriptionEdit.body || "") : parsed.body || "";
+    const canEditDescription = kind === "pulls" && pullDescriptionEditable(values);
     const recordLabel = `#${escapeHtml(number)}`;
     const isPulls = kind === "pulls";
     const isDiscussions = kind === "discussions";
@@ -29835,18 +29925,17 @@
     // keep a slim "opened" line because their hero spends that row naming the
     // merge refs instead.
     const isOwner = String(repo.owner || "").toLowerCase() === String(values.author || author).toLowerCase();
-    const openingBody = hasBody
-      ? `<div data-repo-record-body class="px-4 py-4 ${MD_BODY_CLASS}">${renderRecordMarkdown(displayBody, repo)}</div>`
-      : `<p class="px-4 py-4 text-[14px] italic text-muted-foreground">No description provided.</p>`;
+    const openingBody = recordOpeningBodyHtml(repo, displayBody);
     const openingBlock = `
-                <div data-repo-record-description="${hasBody ? "body" : "empty"}" class="grid min-w-0 gap-4 sm:grid-cols-[40px_minmax(0,1fr)]">
+                <div data-repo-record-description="${hasBody ? "body" : "empty"}"${isPulls ? " data-repo-pull-description-card" : ""} class="grid min-w-0 gap-4 sm:grid-cols-[40px_minmax(0,1fr)]">
                   <span class="hidden sm:block">${issueActorAvatarHtml(author, values.author, "h-10 w-10")}</span>
                   <div class="relative min-w-0 overflow-hidden rounded-md border border-border bg-background">
                     <div class="flex min-w-0 flex-wrap items-center gap-1.5 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] py-1.5 pl-4 pr-2 text-[14px] text-muted-foreground">
-                      <span class="min-w-0 truncate">${issueCardAuthorHtml(author, values.author)} commented <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time></span>
+                      <span class="min-w-0 truncate">${issueCardAuthorHtml(author, values.author)} commented <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time>${isPulls ? `<span data-repo-pull-description-edited${descriptionEdit ? "" : " hidden"}> · edited</span>` : ""}</span>
                       <span class="ml-auto flex shrink-0 items-center gap-1">
                         <span class="rounded-full border border-border px-2 text-[12px] font-medium leading-5">${isOwner ? "Owner" : "Contributor"}</span>
                         <span class="rounded-full border border-border px-2 text-[12px] font-medium leading-5">Author</span>
+                        ${canEditDescription ? `<button type="button" data-repo-pull-description-edit="${PULL_DESCRIPTION_TARGET}" aria-label="Edit description" title="Edit description" class="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="pencil" class="h-4 w-4"></i></button>` : ""}
                       </span>
                     </div>
                     ${openingBody}
@@ -30502,6 +30591,8 @@ Your reply
     const hasBody = Boolean(String(body).trim());
     const canManage = Boolean(parsed.issueMutationAuthorized);
     const events = Array.isArray(parsed.issueEvents) ? parsed.issueEvents : [];
+    const openEvent = events.find((ev) => ev?.type === "open" && String(ev.id || "") === String(parsed.issueOpenEventId || ""));
+    const canEditText = canManage || webSessionAuthored(openEvent || { author: values.author, authorName: values.authorName });
     const commentCount = issueCommentCount(events);
     const participants = issueParticipants(parsed);
     const labels = parseFrontMatterList(values.labels);
@@ -30535,10 +30626,10 @@ Your reply
                       </form>`;
     const description = hasBody
       ? `<div data-repo-record-description="body">
-                      <div data-repo-record-body data-repo-issue-task-list class="px-4 py-4 ${MD_BODY_CLASS}">${renderRecordMarkdown(issueDescriptionWithoutDependencies(body), repo, { issueTasks: true, interactiveTasks: canManage })}</div>
+                      <div data-repo-record-body data-repo-issue-task-list class="px-4 py-4 ${MD_BODY_CLASS}">${renderRecordMarkdown(issueDescriptionWithoutDependencies(body), repo, { issueTasks: true, interactiveTasks: canEditText })}</div>
                       ${reactionRow}
-                    </div>${canManage ? descriptionForm : ""}`
-      : canManage
+                    </div>${canEditText ? descriptionForm : ""}`
+      : canEditText
         ? `<div data-repo-record-description="add" class="px-4 py-2"><button type="button" data-repo-issue-description-edit class="inline-flex h-7 items-center gap-1.5 rounded-md px-1 text-[14px] text-muted-foreground hover:text-[var(--dashboard-link)]"><i data-lucide="plus" class="h-4 w-4"></i>Add a description</button></div>${descriptionForm}`
         : `<p data-repo-record-description="empty" class="px-4 py-2 text-[14px] italic text-muted-foreground">No description provided.</p>`;
 
@@ -30549,7 +30640,7 @@ Your reply
                     <div class="flex min-w-0 items-center gap-1.5 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] py-1.5 pl-4 pr-2 text-[14px] text-muted-foreground">
                       <span class="min-w-0 truncate">${issueCardAuthorHtml(author, values.author)} opened <time datetime="${escapeHtml(opened.iso)}" title="${escapeHtml(opened.label)}">${escapeHtml(formatTimeAgo(openedAt))}</time></span>
                       <span class="ml-auto shrink-0 rounded-full border border-border px-2 text-[12px] font-medium leading-5">${isOwner ? "Owner" : "Contributor"}</span>
-                      ${canManage && hasBody ? `<button type="button" data-repo-issue-description-edit aria-label="Edit description" title="Edit description" class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="pencil" class="h-4 w-4"></i></button>` : ""}
+                      ${canEditText && hasBody ? `<button type="button" data-repo-issue-description-edit aria-label="Edit description" title="Edit description" class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="pencil" class="h-4 w-4"></i></button>` : ""}
                     </div>
                     ${description}
                   </div>
@@ -30648,13 +30739,13 @@ Your reply
         <header data-repo-record-hero class="border-b border-border pb-4">
           <div class="flex flex-wrap items-start justify-between gap-3">
             <h1 data-repo-issue-title-heading class="min-w-0 flex-1 text-[26px] font-normal leading-tight text-foreground [overflow-wrap:anywhere] sm:text-[32px]">${escapeHtml(title)} <span class="font-light text-muted-foreground">${recordLabel}</span></h1>
-            ${canManage ? `<form data-repo-issue-title-form class="hidden min-w-0 basis-full flex-wrap items-center gap-2 sm:flex-1 sm:flex-nowrap">
+            ${canEditText ? `<form data-repo-issue-title-form class="hidden min-w-0 basis-full flex-wrap items-center gap-2 sm:flex-1 sm:flex-nowrap">
               <input data-repo-issue-title-input value="${escapeHtml(title)}" maxlength="240" aria-label="Issue title" class="h-11 min-w-0 basis-full rounded-md border border-border bg-background px-3 text-[20px] text-foreground outline-none focus:border-[var(--dashboard-link)] sm:flex-1" />
               <button type="submit" class="h-8 rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground">Save</button>
               <button type="button" data-repo-issue-title-cancel class="h-8 rounded-md px-3 text-[14px] text-[var(--dashboard-link)] hover:underline">Cancel</button>
             </form>` : ""}
             <div class="flex shrink-0 items-center gap-2 pt-1">
-              ${canManage ? `<button type="button" data-repo-issue-title-edit class="inline-flex h-8 items-center rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground hover:bg-secondary/70">Edit</button>` : ""}
+              ${canEditText ? `<button type="button" data-repo-issue-title-edit class="inline-flex h-8 items-center rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground hover:bg-secondary/70">Edit</button>` : ""}
               ${renderIssueSourceLink(parsed.issueSourceUrl)}<button type="button" data-repo-issue-new class="inline-flex h-8 items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">New issue</button>
               <button type="button" data-dashboard-copy="${escapeHtml(issueUrl)}" aria-label="Copy link to this issue" title="Copy link" class="copy-button inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="link" class="copy-icon h-4 w-4"></i><i data-lucide="check" class="copy-check h-4 w-4"></i></button>
             </div>
@@ -35963,268 +36054,6 @@ Your reply
         : "Mirror saved.", "good");
     } catch (error) {
       setRepoForgeMirrorStatus(repoForgeMirrorErrorText(error), "bad");
-    } finally {
-      if (submit) submit.disabled = false;
-    }
-    return true;
-  }
-
-  function repoArchiveSyncState(repo) {
-    const key = repoKey(repo).toLowerCase();
-    if (!state.repoArchiveSync || state.repoArchiveSync.key !== key) {
-      state.repoArchiveSync = { key, body: null, editing: false };
-    }
-    return state.repoArchiveSync;
-  }
-
-  async function repoArchiveSyncRequest(repo, payload) {
-    const response = await fetch(`${repoApiBase(repo)}/archive-sync`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ownerAccount: state.session?.nodeName || "",
-        sessionToken: state.session?.sessionToken || "",
-        ...payload,
-      }),
-    });
-    const body = await response.json().catch(() => ({}));
-    if (body?.error) {
-      const error = new Error(body.error);
-      error.detail = body.message || "";
-      throw error;
-    }
-    if (!response.ok) throw new Error("archive_request_failed");
-    return body;
-  }
-
-  function repoArchiveSyncErrorText(error) {
-    if (error?.detail) return error.detail;
-    switch (String(error?.message || "")) {
-      case "invalid_identifier":
-        return "Enter an item identifier of 5 to 100 letters, digits, dots, dashes or underscores.";
-      case "invalid_access_key":
-        return "Paste the S3 access key from your archive.org account.";
-      case "invalid_secret":
-        return "The secret key has letters and digits only.";
-      case "secret_required":
-        return "Paste the S3 secret key that goes with this access key.";
-      case "invalid_interval":
-        return "Choose every day, every week or every month.";
-      case "private_repository":
-        return "Only public repositories can be archived: everything on archive.org is public.";
-      case "sync_too_soon":
-        return "A backup was requested a moment ago. Try again in ten minutes.";
-      case "not_authorized":
-        return "Only the repository owner can manage its archive.";
-      case "not_configured":
-        return "This repository is not archived yet.";
-      default:
-        return "The archive settings could not be updated. Try again in a moment.";
-    }
-  }
-
-  function setRepoArchiveSyncStatus(message, tone = "") {
-    const status = $("[data-repo-archive-sync-status]");
-    if (!status) return;
-    status.textContent = message || "";
-    status.className = `text-[11px] ${tone === "bad" ? "text-destructive" : tone === "good" ? "text-success" : "text-muted-foreground"}`;
-  }
-
-  function repoArchiveSyncIntervalLabel(body, key) {
-    const entry = (body?.catalog?.intervals || []).find((item) => item.key === key);
-    return entry?.label || "Every week";
-  }
-
-  function renderRepoArchiveSyncForm(body) {
-    const archive = body?.archive || null;
-    const interval = archive?.interval || body?.catalog?.defaultInterval || "weekly";
-    const options = (body?.catalog?.intervals || []).map((item) =>
-      `<option value="${escapeHtml(item.key)}"${item.key === interval ? " selected" : ""}>${escapeHtml(item.label)}</option>`).join("");
-    const keepsSecret = Boolean(archive?.secretHint);
-    return `<form data-repo-archive-sync-form class="grid gap-4">
-      <div class="grid gap-3 sm:grid-cols-2">
-        <label class="grid gap-1 text-[11px] font-medium text-foreground">Item identifier
-          <span class="flex h-8 min-w-0 items-center rounded-md bg-secondary text-xs">
-            <span class="shrink-0 pl-2 font-mono text-muted-foreground">archive.org/details/</span>
-            <input data-repo-archive-sync-identifier type="text" autocomplete="off" spellcheck="false" required value="${escapeHtml(archive?.identifier || "")}" placeholder="${escapeHtml(state.selectedRepo ? repoKey(state.selectedRepo).replace("/", "-") : "owner-name")}" class="h-8 min-w-0 flex-1 bg-transparent px-1 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground" />
-          </span>
-        </label>
-        <label class="grid gap-1 text-[11px] font-medium text-foreground">How often
-          <select data-repo-archive-sync-interval class="h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none focus:border-accent">${options}</select>
-        </label>
-        <label class="grid gap-1 text-[11px] font-medium text-foreground">S3 access key
-          <input data-repo-archive-sync-access type="text" autocomplete="off" spellcheck="false" required value="${escapeHtml(archive?.accessKey || "")}" class="h-8 w-full rounded-md bg-secondary px-2 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground" />
-        </label>
-        <label class="grid gap-1 text-[11px] font-medium text-foreground">S3 secret key
-          <input data-repo-archive-sync-secret type="password" autocomplete="new-password" spellcheck="false"${keepsSecret ? "" : " required"} placeholder="${keepsSecret ? `Saved (${escapeHtml(archive.secretHint)}). Leave blank to keep it` : ""}" class="h-8 w-full rounded-md bg-secondary px-2 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground" />
-        </label>
-      </div>
-      <p class="text-[11px] leading-5 text-muted-foreground">The item is created on the first upload if it does not exist yet. <a href="${escapeHtml(body?.catalog?.keysUrl || "https://archive.org/account/s3.php")}" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline">Get your S3 keys on archive.org</a>. They are stored encrypted, used only for this backup, and the secret is never shown again.</p>
-      <div class="flex flex-wrap items-center justify-end gap-2">
-        ${archive ? `<button type="button" data-repo-archive-sync-cancel class="inline-flex h-8 items-center rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary">Cancel</button>` : ""}
-        <button type="submit" class="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90"><i data-lucide="archive" class="h-3.5 w-3.5"></i>${archive ? "Save backup" : "Start backing up"}</button>
-      </div>
-    </form>`;
-  }
-
-  function repoArchiveSyncUploadLine(archive, body) {
-    const upload = archive.status?.upload || {};
-    const every = repoArchiveSyncIntervalLabel(body, archive.interval).toLowerCase();
-    if (!body?.codeHosted) return { tone: "", text: `Waiting for this repository to be hosted on ${platformName()}.` };
-    if (!upload.at) return { tone: "", text: "The first upload starts within a few minutes." };
-    if (!upload.ok) return { tone: "bad", text: `Last upload failed ${relativeTimeLabel(upload.at)}: ${upload.error || "unknown error"}` };
-    const size = Number(upload.bytes || 0);
-    const sizeText = size >= 1048576 ? `${(size / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(size / 1024))} KB`;
-    return { tone: "good", text: `Uploaded ${archive.file} (${sizeText}) ${relativeTimeLabel(upload.at)}. Next upload ${every}, once something changes.` };
-  }
-
-  function renderRepoArchiveSyncOverview(body) {
-    const archive = body.archive;
-    const status = archive.status || {};
-    const upload = repoArchiveSyncUploadLine(archive, body);
-    const connectionTone = status.error ? "bad" : status.username ? "good" : "";
-    const history = (archive.history || []).slice(0, 6).map((entry) =>
-      `<li class="flex min-w-0 items-start gap-2">${repoForgeMirrorDot(entry.ok ? "good" : "bad")}<span class="min-w-0 flex-1 break-words">${escapeHtml(entry.message || entry.kind || "")}</span><span class="shrink-0 text-[10px]">${escapeHtml(relativeTimeLabel(entry.at) || "just now")}</span></li>`).join("");
-    return `<div class="grid gap-4">
-      <div class="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
-        <div class="grid min-w-0">
-          <a href="${escapeHtml(archive.itemUrl)}" target="_blank" rel="noopener noreferrer" class="truncate font-mono text-xs font-semibold text-foreground hover:underline">archive.org/details/${escapeHtml(archive.identifier)}</a>
-          <span class="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">${repoForgeMirrorDot(connectionTone)}${status.error ? escapeHtml(status.error) : `As ${escapeHtml(status.username || "unknown")} · ${escapeHtml(repoArchiveSyncIntervalLabel(body, archive.interval))}`}</span>
-        </div>
-        <span class="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">${repoForgeMirrorDot(archive.active ? "good" : "")}${archive.active ? "Backing up" : "Paused"}</span>
-      </div>
-      <p class="flex items-start gap-2 text-[11px] text-muted-foreground">${repoForgeMirrorDot(upload.tone)}<span>${escapeHtml(upload.text)}</span></p>
-      ${body.private ? `<p class="text-[11px] text-destructive">${escapeHtml(repoArchiveSyncErrorText({ message: "private_repository" }))} Nothing is uploaded while it is private.</p>` : ""}
-      <div class="flex flex-wrap items-center gap-2">
-        <button type="button" data-repo-archive-sync-sync class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[11px] font-medium text-foreground hover:bg-secondary"><i data-lucide="upload-cloud" class="h-3.5 w-3.5 text-muted-foreground"></i>Back up now</button>
-        <button type="button" data-repo-archive-sync-edit class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[11px] font-medium text-foreground hover:bg-secondary"><i data-lucide="sliders-horizontal" class="h-3.5 w-3.5 text-muted-foreground"></i>Change settings</button>
-        <button type="button" data-repo-archive-sync-verify class="inline-flex h-7 items-center rounded-md border border-border px-2.5 text-[11px] font-medium text-foreground hover:bg-secondary">Check keys</button>
-        <button type="button" data-repo-archive-sync-toggle data-repo-archive-sync-active="${archive.active ? "1" : "0"}" class="inline-flex h-7 items-center rounded-md border border-border px-2.5 text-[11px] font-medium text-foreground hover:bg-secondary">${archive.active ? "Pause" : "Resume"}</button>
-        <button type="button" data-repo-archive-sync-disconnect class="inline-flex h-7 items-center rounded-md border border-destructive/60 px-2.5 text-[11px] font-semibold text-destructive hover:bg-destructive/10">Stop backing up</button>
-      </div>
-      ${history ? `<div class="grid gap-2"><span class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Recent activity</span><ul class="grid gap-1.5 text-[11px] text-muted-foreground">${history}</ul></div>` : ""}
-    </div>`;
-  }
-
-  function renderRepoArchiveSync() {
-    const holder = $("[data-repo-archive-sync-body]");
-    const archiveState = state.repoArchiveSync;
-    if (!holder || !archiveState?.body) return;
-    const body = archiveState.body;
-    const summary = $("[data-repo-archive-sync-summary]");
-    if (summary) {
-      summary.innerHTML = body.archive
-        ? `${repoForgeMirrorDot(body.archive.status?.error || body.archive.status?.upload?.ok === false ? "bad" : body.archive.active ? "good" : "")}<span>${escapeHtml(body.archive.identifier)}</span>`
-        : "Off";
-    }
-    if (!body.archive && body.private) {
-      holder.innerHTML = `<p class="text-[11px] leading-5 text-muted-foreground">${escapeHtml(repoArchiveSyncErrorText({ message: "private_repository" }))} Make the repository public to back it up there.</p>`;
-      return;
-    }
-    holder.innerHTML = body.archive && !archiveState.editing
-      ? renderRepoArchiveSyncOverview(body)
-      : renderRepoArchiveSyncForm(body);
-    window.lucide?.createIcons();
-  }
-
-  async function loadRepoArchiveSync(repo) {
-    const holder = $("[data-repo-archive-sync-body]");
-    if (!holder || !sessionAdministersRepo(repo)) return;
-    const archiveState = repoArchiveSyncState(repo);
-    try {
-      const body = await repoArchiveSyncRequest(repo, { action: "get" });
-      if (!repoAboutStillCurrent(repo)) return;
-      archiveState.body = body;
-      renderRepoArchiveSync();
-    } catch (error) {
-      if (!repoAboutStillCurrent(repo)) return;
-      holder.innerHTML = `<p class="text-[11px] text-destructive">${escapeHtml(repoArchiveSyncErrorText(error))}</p>`;
-    }
-  }
-
-  async function handleRepoArchiveSyncClick(event) {
-    const card = event.target.closest("[data-repo-archive-sync-card]");
-    const repo = state.selectedRepo;
-    if (!card || !repo || !sessionAdministersRepo(repo)) return false;
-    const archiveState = repoArchiveSyncState(repo);
-    if (event.target.closest("[data-repo-archive-sync-edit]")) {
-      archiveState.editing = true;
-      renderRepoArchiveSync();
-      return true;
-    }
-    if (event.target.closest("[data-repo-archive-sync-cancel]")) {
-      archiveState.editing = false;
-      renderRepoArchiveSync();
-      return true;
-    }
-    const button = event.target.closest("button");
-    const actions = [
-      ["[data-repo-archive-sync-sync]", "sync"],
-      ["[data-repo-archive-sync-verify]", "verify"],
-      ["[data-repo-archive-sync-toggle]", "toggle"],
-      ["[data-repo-archive-sync-disconnect]", "disconnect"],
-    ];
-    const match = button && actions.find(([selector]) => button.matches(selector));
-    if (!match) return false;
-    const action = match[1];
-    if (action === "disconnect" && !window.confirm(
-      "Stop backing up this repository to the Internet Archive? The stored keys are deleted. Nothing already uploaded is removed from archive.org.",
-    )) return true;
-    const payload = { action };
-    if (action === "toggle") payload.active = button.dataset.repoArchiveSyncActive !== "1";
-    const pending = {
-      sync: "Requesting a backup…",
-      verify: "Checking the keys…",
-      toggle: payload.active ? "Resuming…" : "Pausing…",
-      disconnect: "Stopping…",
-    }[action];
-    button.disabled = true;
-    setRepoArchiveSyncStatus(pending);
-    try {
-      const body = await repoArchiveSyncRequest(repo, payload);
-      if (!repoAboutStillCurrent(repo)) return true;
-      archiveState.body = body;
-      if (action === "disconnect") archiveState.editing = false;
-      renderRepoArchiveSync();
-      setRepoArchiveSyncStatus({
-        sync: "Backup requested. The upload starts within a few minutes.",
-        verify: body.archive?.status?.error ? body.archive.status.error : "The keys work.",
-        toggle: payload.active ? "Backups resumed." : "Backups paused.",
-        disconnect: "Stopped backing up.",
-      }[action], action === "verify" && body.archive?.status?.error ? "bad" : "good");
-    } catch (error) {
-      setRepoArchiveSyncStatus(repoArchiveSyncErrorText(error), "bad");
-    } finally {
-      button.disabled = false;
-    }
-    return true;
-  }
-
-  async function handleRepoArchiveSyncSubmit(event) {
-    const form = event.target.closest("[data-repo-archive-sync-form]");
-    if (!form) return false;
-    event.preventDefault();
-    const repo = state.selectedRepo;
-    if (!repo || !sessionAdministersRepo(repo)) return true;
-    const archiveState = repoArchiveSyncState(repo);
-    const submit = form.querySelector('button[type="submit"]');
-    if (submit) submit.disabled = true;
-    setRepoArchiveSyncStatus("Checking the keys with archive.org…");
-    try {
-      const body = await repoArchiveSyncRequest(repo, {
-        action: "save",
-        identifier: form.querySelector("[data-repo-archive-sync-identifier]")?.value || "",
-        accessKey: form.querySelector("[data-repo-archive-sync-access]")?.value || "",
-        secret: form.querySelector("[data-repo-archive-sync-secret]")?.value || "",
-        interval: form.querySelector("[data-repo-archive-sync-interval]")?.value || "",
-      });
-      if (!repoAboutStillCurrent(repo)) return true;
-      archiveState.body = body;
-      archiveState.editing = false;
-      renderRepoArchiveSync();
-      setRepoArchiveSyncStatus("Backup saved.", "good");
-    } catch (error) {
-      setRepoArchiveSyncStatus(repoArchiveSyncErrorText(error), "bad");
     } finally {
       if (submit) submit.disabled = false;
     }
@@ -48475,15 +48304,13 @@ Your reply
             <span data-repo-forge-mirror-status class="text-[11px] text-muted-foreground"></span>
           </div>
         </div>
-        <div data-repo-archive-sync-card id="archive" data-repo-settings-section="Internet Archive backup" class="mt-5 scroll-mt-4 overflow-hidden rounded-lg border border-border bg-background">
-          <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-4 py-3">
-            <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="archive" class="h-3.5 w-3.5 text-muted-foreground"></i>Back up to the Internet Archive</span>
-            <span data-repo-archive-sync-summary class="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">Loading…</span>
-          </div>
-          <div class="grid gap-4 p-4">
-            <p class="text-[11px] leading-5 text-muted-foreground">Upload a copy of this repository to archive.org every day, week or month with your own archive.org S3 keys. Each upload is a git bundle of every branch and tag that anyone can clone, and it is skipped when nothing has changed. Only public repositories can be archived.</p>
-            <div data-repo-archive-sync-body class="text-xs text-muted-foreground">Loading archive settings…</div>
-            <span data-repo-archive-sync-status class="text-[11px] text-muted-foreground"></span>
+        <div data-repo-archive-link-card id="archive" data-repo-settings-section="Internet Archive backup" class="mt-5 scroll-mt-4 overflow-hidden rounded-lg border border-border bg-background">
+          <div class="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+            <div class="grid min-w-0 gap-0.5">
+              <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="archive" class="h-3.5 w-3.5 text-muted-foreground"></i>Back up to the Internet Archive</span>
+              <span class="text-[11px] leading-5 text-muted-foreground">Backups to archive.org, and checking each mirror against them, are in the Internet Archive plugin.</span>
+            </div>
+            <a href="/dashboard/internet-archive?repo=${encodeURIComponent(repoKey(repo))}" class="fm-btn fm-btn-sm">Open Internet Archive</a>
           </div>
         </div>
         <div data-repo-danger-zone id="settings-danger" data-repo-settings-section="Danger zone" class="mt-5 scroll-mt-4 overflow-hidden rounded-lg border border-destructive/50 bg-background">
@@ -49466,6 +49293,19 @@ Your reply
     return icons[String(kind || "").trim().toLowerCase()] || "bell";
   }
 
+  function pingIsGoodNews(item) {
+    return String(item?.kind || "").trim().toLowerCase() === "operational_alert"
+      && String(item?.meta?.state || "").trim().toLowerCase() === "up";
+  }
+
+  function notificationItemIcon(item) {
+    return pingIsGoodNews(item) ? "circle-check" : notificationIcon(item?.kind);
+  }
+
+  function notificationItemIconTone(item) {
+    return pingIsGoodNews(item) ? "text-success" : "";
+  }
+
   function notificationInstanceLogoHtml() {
     const name = escapeHtml(platformName());
     return `<img data-notification-instance-logo src="/assets/logo.svg" alt="${name}" title="${name}" class="h-4 w-4 shrink-0 rounded-sm object-contain" />`;
@@ -49494,7 +49334,7 @@ Your reply
   }
 
   function notificationAvatarHtml(item, lead) {
-    const icon = `<i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="${lead.actor ? "h-2.5 w-2.5" : "h-3.5 w-3.5"}"></i>`;
+    const icon = `<i data-notification-kind-icon data-lucide="${notificationItemIcon(item)}" class="${lead.actor ? "h-2.5 w-2.5" : "h-3.5 w-3.5"} ${notificationItemIconTone(item)}"></i>`;
     const login = lead.actor.replace(/^@/, "");
     return lead.actor
       ? `<span class="flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-xs font-semibold uppercase text-foreground">${botAvatarKind(login) ? botAvatarSvg(botAvatarKind(login), "h-4 w-4") : escapeHtml(login.charAt(0) || "?")}</span>
@@ -49563,7 +49403,7 @@ Your reply
     return `
       <div class="flex items-start gap-3">
         <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border bg-secondary text-muted-foreground">
-          <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="h-4 w-4"></i>
+          <i data-notification-kind-icon data-lucide="${notificationItemIcon(item)}" class="h-4 w-4 ${notificationItemIconTone(item)}"></i>
         </span>
         <div class="min-w-0 flex-1">
           <p class="text-sm font-semibold text-foreground">${textWithMentionsHtml(repoPublicText(item.title) || "Ping")}</p>
@@ -50943,7 +50783,6 @@ Your reply
       }
 
       if (await handleRepoForgeMirrorClick(event)) return;
-      if (await handleRepoArchiveSyncClick(event)) return;
 
       const webhookRow = event.target.closest("[data-repo-webhook-row]");
       if (
@@ -51782,6 +51621,11 @@ Your reply
         return;
       }
 
+      if (event.target.closest("[data-repo-pull-description-edit]")) {
+        void handleWebPullDescriptionEdit();
+        return;
+      }
+
       const pullCommentEditButton = event.target.closest("[data-repo-pull-comment-edit]");
       if (pullCommentEditButton) {
         void handleWebPullCommentAction("edit", pullCommentEditButton.dataset.repoPullCommentEdit || "");
@@ -52220,7 +52064,6 @@ Your reply
       return;
     }
     if (await handleRepoForgeMirrorSubmit(event)) return;
-    if (await handleRepoArchiveSyncSubmit(event)) return;
     const settingsLogoForm = event.target.closest("[data-repo-settings-logo-form]");
     if (settingsLogoForm && state.selectedRepo) {
       event.preventDefault();
@@ -54537,6 +54380,7 @@ Your reply
     const form = section.querySelector("[data-ai-review-settings-form]");
     form.querySelector("[data-ai-review-enabled]").checked = data.enabled === true;
     form.querySelector("[data-ai-review-default-on]").checked = data.defaultOn === true;
+    form.querySelector("[data-ai-review-notes]").checked = data.notesAssist !== false;
     form.querySelector("[data-ai-review-account]").value = data.accountId || "";
     const select = form.querySelector("[data-ai-review-model]");
     select.innerHTML = (data.models || []).map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.label)}${item.default ? " (default)" : ""}</option>`).join("");
@@ -54574,6 +54418,7 @@ Your reply
         const reply = await aiReviewPost("/api/ai-review/settings", {
           enabled: form.querySelector("[data-ai-review-enabled]").checked,
           defaultOn: form.querySelector("[data-ai-review-default-on]").checked,
+          notesAssist: form.querySelector("[data-ai-review-notes]").checked,
           accountId: form.querySelector("[data-ai-review-account]").value.trim(),
           model: form.querySelector("[data-ai-review-model]").value,
           dailyCap: number("[data-ai-review-daily-cap]"),
@@ -57951,6 +57796,11 @@ Your reply
       toggle?.focus();
     });
   }
+  // initPluginsPage lives in 09-plugins.js (a per-page chunk).
+  function initPluginsPage(...args) {
+    return loadDashboardChunk("plugins").then((chunk) => chunk.initPluginsPage(...args));
+  }
+
   const POST_TRANSLATE_PREFS_KEY = "forkmesh.postTranslate.v1";
   const POST_TRANSLATE_SKIP = new Set(["PRE", "CODE", "KBD", "SAMP", "VAR", "SCRIPT", "STYLE", "TEXTAREA", "INPUT", "SELECT", "BUTTON", "SVG", "MATH", "IMG", "VIDEO", "AUDIO"]);
   const POST_TRANSLATE_INLINE = new Set(["B", "STRONG", "I", "EM", "U", "S", "DEL", "INS", "MARK", "SMALL", "SUB", "SUP", "SPAN", "ABBR", "Q", "CITE", "DFN", "BDI", "BDO", "FONT"]);
@@ -61337,7 +61187,8 @@ Your reply
     "docs": "/dashboard-page-docs.js?v=1f739446a623",
     "hackathon": "/dashboard-page-hackathon.js?v=22656013417d",
     "links": "/dashboard-page-links.js?v=d86c45ee2e66",
-    "notes": "/dashboard-page-notes.js?v=b4c0210eaff3",
+    "notes": "/dashboard-page-notes.js?v=3b0bd7907872",
+    "plugins": "/dashboard-page-plugins.js?v=cd8a0dcf3338",
     "referrals": "/dashboard-page-referrals.js?v=9e46b4b9d5e8",
     "repo-activity": "/dashboard-page-repo-activity.js?v=38ff59fc7239",
     "repo-forum": "/dashboard-page-repo-forum.js?v=e5892a79b3e7",
@@ -61497,6 +61348,7 @@ Your reply
     "pings": initPingsPage,
     "agents": initAgentsPage,
     "docs": initDocsPage,
+    "plugins": initPluginsPage,
     "apps": initAppsPage,
     "apps-build": initAppsBuildPage,
     "tasks": initTasksPage,

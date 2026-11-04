@@ -94,4 +94,12 @@ View *viewOf(QWidget *widget)
     return dynamic_cast<View *>(widget);
 }
 
+bool setCookie(QObject *profile, const QUrl &origin, const QString &name, const QString &value,
+               bool httpOnly)
+{
+    if (!profile || !loaded() || !registered().setCookie)
+        return false;
+    return registered().setCookie(profile, origin, name, value, httpOnly);
+}
+
 }
