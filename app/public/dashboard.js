@@ -30519,6 +30519,8 @@ Your reply
     const hasBody = Boolean(String(body).trim());
     const canManage = Boolean(parsed.issueMutationAuthorized);
     const events = Array.isArray(parsed.issueEvents) ? parsed.issueEvents : [];
+    const openEvent = events.find((ev) => ev?.type === "open" && String(ev.id || "") === String(parsed.issueOpenEventId || ""));
+    const canEditText = canManage || webSessionAuthored(openEvent || { author: values.author, authorName: values.authorName });
     const commentCount = issueCommentCount(events);
     const participants = issueParticipants(parsed);
     const labels = parseFrontMatterList(values.labels);
@@ -30552,10 +30554,10 @@ Your reply
                       </form>`;
     const description = hasBody
       ? `<div data-repo-record-description="body">
-                      <div data-repo-record-body data-repo-issue-task-list class="px-4 py-4 ${MD_BODY_CLASS}">${renderRecordMarkdown(issueDescriptionWithoutDependencies(body), repo, { issueTasks: true, interactiveTasks: canManage })}</div>
+                      <div data-repo-record-body data-repo-issue-task-list class="px-4 py-4 ${MD_BODY_CLASS}">${renderRecordMarkdown(issueDescriptionWithoutDependencies(body), repo, { issueTasks: true, interactiveTasks: canEditText })}</div>
                       ${reactionRow}
-                    </div>${canManage ? descriptionForm : ""}`
-      : canManage
+                    </div>${canEditText ? descriptionForm : ""}`
+      : canEditText
         ? `<div data-repo-record-description="add" class="px-4 py-2"><button type="button" data-repo-issue-description-edit class="inline-flex h-7 items-center gap-1.5 rounded-md px-1 text-[14px] text-muted-foreground hover:text-[var(--dashboard-link)]"><i data-lucide="plus" class="h-4 w-4"></i>Add a description</button></div>${descriptionForm}`
         : `<p data-repo-record-description="empty" class="px-4 py-2 text-[14px] italic text-muted-foreground">No description provided.</p>`;
 
@@ -30566,7 +30568,7 @@ Your reply
                     <div class="flex min-w-0 items-center gap-1.5 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] py-1.5 pl-4 pr-2 text-[14px] text-muted-foreground">
                       <span class="min-w-0 truncate">${issueCardAuthorHtml(author, values.author)} opened <time datetime="${escapeHtml(opened.iso)}" title="${escapeHtml(opened.label)}">${escapeHtml(formatTimeAgo(openedAt))}</time></span>
                       <span class="ml-auto shrink-0 rounded-full border border-border px-2 text-[12px] font-medium leading-5">${isOwner ? "Owner" : "Contributor"}</span>
-                      ${canManage && hasBody ? `<button type="button" data-repo-issue-description-edit aria-label="Edit description" title="Edit description" class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="pencil" class="h-4 w-4"></i></button>` : ""}
+                      ${canEditText && hasBody ? `<button type="button" data-repo-issue-description-edit aria-label="Edit description" title="Edit description" class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="pencil" class="h-4 w-4"></i></button>` : ""}
                     </div>
                     ${description}
                   </div>
@@ -30665,13 +30667,13 @@ Your reply
         <header data-repo-record-hero class="border-b border-border pb-4">
           <div class="flex flex-wrap items-start justify-between gap-3">
             <h1 data-repo-issue-title-heading class="min-w-0 flex-1 text-[26px] font-normal leading-tight text-foreground [overflow-wrap:anywhere] sm:text-[32px]">${escapeHtml(title)} <span class="font-light text-muted-foreground">${recordLabel}</span></h1>
-            ${canManage ? `<form data-repo-issue-title-form class="hidden min-w-0 basis-full flex-wrap items-center gap-2 sm:flex-1 sm:flex-nowrap">
+            ${canEditText ? `<form data-repo-issue-title-form class="hidden min-w-0 basis-full flex-wrap items-center gap-2 sm:flex-1 sm:flex-nowrap">
               <input data-repo-issue-title-input value="${escapeHtml(title)}" maxlength="240" aria-label="Issue title" class="h-11 min-w-0 basis-full rounded-md border border-border bg-background px-3 text-[20px] text-foreground outline-none focus:border-[var(--dashboard-link)] sm:flex-1" />
               <button type="submit" class="h-8 rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground">Save</button>
               <button type="button" data-repo-issue-title-cancel class="h-8 rounded-md px-3 text-[14px] text-[var(--dashboard-link)] hover:underline">Cancel</button>
             </form>` : ""}
             <div class="flex shrink-0 items-center gap-2 pt-1">
-              ${canManage ? `<button type="button" data-repo-issue-title-edit class="inline-flex h-8 items-center rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground hover:bg-secondary/70">Edit</button>` : ""}
+              ${canEditText ? `<button type="button" data-repo-issue-title-edit class="inline-flex h-8 items-center rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground hover:bg-secondary/70">Edit</button>` : ""}
               ${renderIssueSourceLink(parsed.issueSourceUrl)}<button type="button" data-repo-issue-new class="inline-flex h-8 items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">New issue</button>
               <button type="button" data-dashboard-copy="${escapeHtml(issueUrl)}" aria-label="Copy link to this issue" title="Copy link" class="copy-button inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="link" class="copy-icon h-4 w-4"></i><i data-lucide="check" class="copy-check h-4 w-4"></i></button>
             </div>

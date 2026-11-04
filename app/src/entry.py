@@ -38604,7 +38604,7 @@ async def _authorize_issue_manager(env, owner, data, request=None):
 
 
 ISSUE_OWN_EDITABLE_EVENT_TYPES = frozenset({"comment", "open"})
-ISSUE_REPLAY_CHECKED_EVENT_TYPES = frozenset({"comment", "edit", "vote"})
+ISSUE_REPLAY_CHECKED_EVENT_TYPES = frozenset({"comment", "edit", "title", "vote"})
 
 
 async def _issue_event_signature_stored(env, owner, repo, number, event):
@@ -38639,9 +38639,11 @@ async def _issue_event_signature_stored(env, owner, repo, number, event):
     return False
 
 
-async def _issue_comment_owned_by_submitter(env, owner, repo, number, event):
+async def _issue_comment_owned_by_submitter(env, owner, repo, number, event,
+                                            opening=False):
     target = clean_string(event.get("target", "") or "", 200).strip()
-    if not target or target == "self" or int(number or 0) <= 0:
+    if int(number or 0) <= 0 or (
+            not opening and (not target or target == "self")):
         return False
     author = str(event.get("author", "") or "").strip()
     actor = clean_string(
@@ -38672,7 +38674,12 @@ async def _issue_comment_owned_by_submitter(env, owner, repo, number, event):
         if not isinstance(events, list):
             continue
         for item in events:
-            if not isinstance(item, dict) or str(item.get("id") or "") != target:
+            if not isinstance(item, dict):
+                continue
+            if opening:
+                if item.get("type") != "open":
+                    continue
+            elif str(item.get("id") or "") != target:
                 continue
             allowed = ISSUE_OWN_EDITABLE_EVENT_TYPES
             if event.get("type") == "delete":
@@ -42740,6 +42747,9 @@ async def _accept_issue_submission(env, request, owner, repo, repo_bi, data,
         if not ok and event_type in ("edit", "delete"):
             ok = await _issue_comment_owned_by_submitter(
                 env, owner, repo, number, event)
+        if not ok and event_type == "title":
+            ok = await _issue_comment_owned_by_submitter(
+                env, owner, repo, number, event, opening=True)
         if not ok and moderation is not None and \
                 event_type in moderation.MODERATOR_ISSUE_EVENTS:
             ok = await _issue_moderator_allowed(
