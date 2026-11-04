@@ -274,6 +274,11 @@ public enum NoteDocument {
 
     public static func isLayoutLine(_ line: String) -> Bool { layoutSettings(line) != nil }
 
+    public static func isImageOptions(_ line: String) -> Bool {
+        guard let body = commentBody(line) else { return false }
+        return body.drop { $0.isWhitespace }.prefix(6).lowercased() == "image:"
+    }
+
     public static func isPageBreak(_ line: String) -> Bool {
         guard let body = commentBody(line) else { return false }
         return body.trimmingCharacters(in: .whitespaces).lowercased() == "pagebreak"
@@ -401,7 +406,7 @@ public enum NoteDocument {
             if isPageBreak(line) {
                 flush()
                 out.append(.pageBreak)
-            } else if !isLayoutLine(line) {
+            } else if !isLayoutLine(line) && !isImageOptions(line) {
                 buffer.append(line)
             }
             index += 1

@@ -1,6 +1,7 @@
 #include "NoteCommentsPanel.h"
 
 #include "DesignTokens.h"
+#include "FlowLayout.h"
 #include "OcticonIcons.h"
 #include "Theme.h"
 
@@ -11,6 +12,7 @@
 #include <QKeyEvent>
 #include <QLabel>
 #include <QListWidget>
+#include <QMenu>
 #include <QMessageBox>
 #include <QMouseEvent>
 #include <QPlainTextEdit>
@@ -424,10 +426,28 @@ NoteCommentsPanel::NoteCommentsPanel(Hooks hooks, QWidget *parent)
             return;
         const QList<CommentThread> threads = commentThreads(
             m_comments, m_hooks.markdown ? m_hooks.markdown() : QString());
-        if (commentThreadsSignature(threads) != m_signature)
+        if (commentThreadsSignature(threads) != m_signature ||
+            noteReactionGroupsSignature(reactionGroups()) != m_reactionSignature)
             render();
+        if (!m_reactions.isEmpty() && m_hooks.reactionsChanged)
+            m_hooks.reactionsChanged();
     });
     render();
+}
+
+QString NoteCommentsPanel::reactionsPath(const QString &reactionId) const
+{
+    QString path = QStringLiteral("/api/notes/%1/reactions").arg(m_noteId);
+    if (!reactionId.isEmpty())
+        path += QLatin1Char('/') + reactionId;
+    return path;
+}
+
+QList<NoteReactionGroup> NoteCommentsPanel::reactionGroups() const
+{
+    return noteReactionGroups(m_reactions,
+                              m_hooks.markdown ? m_hooks.markdown() : QString(),
+                              m_hooks.me ? m_hooks.me() : QString());
 }
 
 QString NoteCommentsPanel::commentsPath(const QString &commentId) const
@@ -445,6 +465,9 @@ void NoteCommentsPanel::setNote(const QString &noteId)
     m_noteId = noteId;
     ++m_sequence;
     m_comments = QJsonArray();
+    m_reactions.clear();
+    m_reactionSignature.clear();
+    m_reactionBusy = false;
     m_people.clear();
     m_canResolve = false;
     m_loaded = false;
@@ -462,6 +485,8 @@ void NoteCommentsPanel::setNote(const QString &noteId)
     render();
     if (m_hooks.countChanged)
         m_hooks.countChanged();
+    if (m_hooks.reactionsChanged)
+        m_hooks.reactionsChanged();
     reload();
     ++m_chatSequence;
     m_chat.clear();
@@ -1072,6 +1097,7 @@ void NoteCommentsPanel::reload()
 void NoteCommentsPanel::apply(const QJsonObject &payload)
 {
     m_comments = payload.value(QStringLiteral("comments")).toArray();
+    m_reactions = noteReactions(payload.value(QStringLiteral("reactions")).toArray());
     m_people.clear();
     for (const QJsonValue &value : payload.value(QStringLiteral("people")).toArray()) {
         const QString name = value.toString().trimmed();
@@ -1088,6 +1114,8 @@ void NoteCommentsPanel::apply(const QJsonObject &payload)
     render();
     if (m_hooks.countChanged)
         m_hooks.countChanged();
+    if (m_hooks.reactionsChanged)
+        m_hooks.reactionsChanged();
     if (!m_pendingId.isEmpty()) {
         const QString pending = std::exchange(m_pendingId, QString());
         showThread(pending);
@@ -1144,6 +1172,14 @@ void NoteCommentsPanel::render()
     m_signature = commentThreadsSignature(threads);
     m_openCount = openThreadCount(threads);
     const int resolved = int(threads.size()) - m_openCount;
+    const QList<NoteReactionGroup> groups = reactionGroups();
+    m_reactionSignature = noteReactionGroupsSignature(groups);
+    if (m_loaded && !groups.isEmpty()) {
+        m_listLayout->addWidget(reactionsSection(groups));
+        auto *heading = mutedLabel(QStringLiteral("Comments"));
+        heading->setStyleSheet(QStringLiteral("font-weight: 600; background: transparent;"));
+        m_listLayout->addWidget(heading);
+    }
 
     if (!m_loaded) {
         if (!m_noteId.isEmpty())
@@ -1152,8 +1188,8 @@ void NoteCommentsPanel::render()
         m_listLayout->addWidget(mutedLabel(
             resolved ? QStringLiteral("No open comments.")
                      : QStringLiteral("No comments yet. Select text in the note "
-                                      "and choose Comment, or press New to "
-                                      "comment on the whole note.")));
+                                      "and choose Comment or React, or press New "
+                                      "to comment on the whole note.")));
     }
     for (const CommentThread &thread : threads) {
         if (!thread.resolved)
@@ -1396,6 +1432,148 @@ QWidget *NoteCommentsPanel::threadCard(const CommentThread &thread)
     }
     m_cards.insert(id, card);
     return card;
+}
+
+QWidget *NoteCommentsPanel::reactionsSection(const QList<NoteReactionGroup> &groups)
+{
+    auto *section = new QWidget;
+    section->setObjectName(QStringLiteral("noteReactionsSection"));
+    auto *layout = new QVBoxLayout(section);
+    layout->setContentsMargins(0, 0, 0, 4);
+    layout->setSpacing(6);
+    auto *heading = mutedLabel(QStringLiteral("Reactions"));
+    heading->setStyleSheet(QStringLiteral("font-weight: 600; background: transparent;"));
+    layout->addWidget(heading);
+    for (const NoteReactionGroup &group : groups)
+        layout->addWidget(reactionGroupCard(group));
+    return section;
+}
+
+QWidget *NoteCommentsPanel::reactionGroupCard(const NoteReactionGroup &group)
+{
+    auto *card = new QFrame;
+    card->setObjectName(QStringLiteral("noteReactionGroup"));
+    card->setProperty("reactionGroup", group.key());
+    card->setStyleSheet(QStringLiteral("QFrame#noteReactionGroup { background: %1;"
+                                       " border: 1px solid %2; border-radius: 8px; }")
+                            .arg(Theme::hex(Theme::Role::SurfaceRaised),
+                                 Theme::hex(Theme::Role::Border)));
+    auto *layout = new QVBoxLayout(card);
+    layout->setContentsMargins(10, 8, 10, 8);
+    layout->setSpacing(6);
+    if (group.wholeNote()) {
+        layout->addWidget(mutedLabel(QStringLiteral("On the whole note")));
+    } else {
+        auto *quoteHost = new ThreadCard;
+        quoteHost->setObjectName(QStringLiteral("noteReactionQuoteHost"));
+        quoteHost->setCursor(Qt::PointingHandCursor);
+        quoteHost->setToolTip(QStringLiteral("Select this passage in the note"));
+        auto *quoteLayout = new QVBoxLayout(quoteHost);
+        quoteLayout->setContentsMargins(0, 0, 0, 0);
+        auto *quote = new QLabel(elided(group.quote(), kQuotePreviewChars));
+        quote->setObjectName(QStringLiteral("noteReactionQuote"));
+        quote->setWordWrap(true);
+        quote->setTextFormat(Qt::PlainText);
+        quote->setStyleSheet(quoteSheet());
+        quoteLayout->addWidget(quote);
+        quoteHost->clicked = [this, group] {
+            if (m_hooks.selectPassage)
+                m_hooks.selectPassage(group);
+        };
+        layout->addWidget(quoteHost);
+    }
+    auto *chips = new QWidget;
+    chips->setObjectName(QStringLiteral("noteReactionChips"));
+    auto *flow = new FlowLayout(chips, 0, 4, 4);
+    const auto chipSheet = [](bool mine) {
+        return QStringLiteral("QToolButton { border: 1px solid %1; border-radius: 10px;"
+                              " padding: 1px 8px; background: %2; color: %3; }"
+                              " QToolButton:hover { border-color: %4; }")
+            .arg(Theme::hex(mine ? Theme::Role::Accent : Theme::Role::Border),
+                 Theme::hex(mine ? Theme::Role::AccentSubtle : Theme::Role::Surface),
+                 Theme::hex(mine ? Theme::Role::Accent : Theme::Role::Fg),
+                 Theme::hex(mine ? Theme::Role::Accent : Theme::Role::BorderStrong));
+    };
+    for (const NoteReactionChip &chip : group.chips) {
+        auto *button = new QToolButton;
+        button->setObjectName(QStringLiteral("noteReactionChip"));
+        button->setProperty("mine", chip.mine());
+        button->setCursor(Qt::PointingHandCursor);
+        button->setText(noteReactionChipLabel(chip));
+        button->setToolTip(noteReactionChipTip(chip));
+        button->setAccessibleName(noteReactionChipTip(chip));
+        button->setStyleSheet(chipSheet(chip.mine()));
+        const NoteReactionToggle toggle = noteReactionToggle(group, chip);
+        connect(button, &QToolButton::clicked, this, [this, toggle] {
+            sendReaction(toggle.method, reactionsPath(toggle.reactionId), toggle.body);
+        });
+        flow->addWidget(button);
+    }
+    auto *add = new QToolButton;
+    add->setObjectName(QStringLiteral("noteReactionAdd"));
+    add->setCursor(Qt::PointingHandCursor);
+    add->setText(QStringLiteral("+"));
+    add->setToolTip(group.wholeNote() ? QStringLiteral("React to the whole note")
+                                      : QStringLiteral("React to this passage"));
+    add->setAccessibleName(add->toolTip());
+    add->setStyleSheet(chipSheet(false));
+    const NoteReaction like = group.first;
+    connect(add, &QToolButton::clicked, this,
+            [this, add, like] { showReactionMenu(add, like); });
+    flow->addWidget(add);
+    layout->addWidget(chips);
+    return card;
+}
+
+void NoteCommentsPanel::showReactionMenu(QWidget *below, const NoteReaction &like)
+{
+    auto *menu = new QMenu(this);
+    menu->setObjectName(QStringLiteral("noteReactionMenu"));
+    menu->setAttribute(Qt::WA_DeleteOnClose);
+    for (const QString &emoji : noteQuickReactions()) {
+        QAction *action = menu->addAction(emoji);
+        connect(action, &QAction::triggered, this, [this, emoji, like] {
+            sendReaction(QByteArrayLiteral("POST"), reactionsPath(),
+                         noteReactionRequest(emoji, like));
+        });
+    }
+    menu->popup(below->mapToGlobal(QPoint(0, below->height())));
+}
+
+void NoteCommentsPanel::react(const QString &emoji, const CommentQuote &quote)
+{
+    sendReaction(QByteArrayLiteral("POST"), reactionsPath(),
+                 noteReactionRequest(emoji, quote));
+}
+
+void NoteCommentsPanel::sendReaction(const QByteArray &method, const QString &path,
+                                     const QJsonObject &body)
+{
+    if (!m_hooks.request || m_noteId.isEmpty() || m_reactionBusy)
+        return;
+    m_reactionBusy = true;
+    const QString noteId = m_noteId;
+    QPointer<NoteCommentsPanel> guard(this);
+    m_hooks.request(method, path, body,
+                    [guard, noteId](bool ok, const QJsonObject &payload,
+                                    const QString &error) {
+        if (!guard || guard->m_noteId != noteId)
+            return;
+        guard->m_reactionBusy = false;
+        if (!ok) {
+            const QString code = payload.value(QStringLiteral("error")).toString();
+            const QString text = noteReactionError(
+                code, QStringLiteral("That reaction did not go through: %1").arg(error));
+            if (guard->m_hooks.failed)
+                guard->m_hooks.failed(text);
+            else
+                guard->setStatus(text);
+            if (code == QLatin1String("reaction_not_found"))
+                guard->reload();
+            return;
+        }
+        guard->apply(payload);
+    });
 }
 
 void NoteCommentsPanel::restyleCards()

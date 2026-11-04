@@ -102,6 +102,29 @@ final class NoteDocumentTests: XCTestCase {
         XCTAssertEqual(NoteDocument.parts("```svg\n\(over)\n```"), [.markdown("```svg\n\(over)\n```")])
     }
 
+    func testImageOptionLinesAreHiddenOutsideFences() {
+        let options = "<!-- image: wrap=behind; align=left; width=80; height=60; rotate=0; margin=3.2; x=20; y=30; pages=all; recolor=grayscale; transparency=40; brightness=0; contrast=0 -->"
+        for line in [options, "<!--IMAGE:wrap=inline-->", "  <!--  Image: width=50  -->  ", "<!-- image: -->"] {
+            XCTAssertTrue(NoteDocument.isImageOptions(line), line)
+        }
+        XCTAssertFalse(NoteDocument.isImageOptions("<!-- image: width=50 --> text"))
+        XCTAssertFalse(NoteDocument.isImageOptions("<!-- images: width=50 -->"))
+        XCTAssertFalse(NoteDocument.isImageOptions("<!-- pagebreak -->"))
+        XCTAssertFalse(NoteDocument.isPageBreak(options))
+        XCTAssertFalse(NoteDocument.isLayoutLine(options))
+        XCTAssertEqual(
+            NoteDocument.parts("Intro\n\(options)\n![Chart](https://example.com/chart.png)\nAfter"),
+            [.markdown("Intro\n![Chart](https://example.com/chart.png)\nAfter")])
+        XCTAssertEqual(NoteDocument.parts(options), [])
+        let fenced = "```\n\(options)\n![Chart](https://example.com/chart.png)\n```"
+        XCTAssertEqual(NoteDocument.parts(fenced), [.markdown(fenced)])
+        guard case let .markdown(shown) = NoteDocument.parts("\(options)\n![Chart](https://example.com/chart.png)").first else {
+            return XCTFail("the image should stay in the note's Markdown")
+        }
+        XCTAssertEqual(shown, "![Chart](https://example.com/chart.png)")
+        XCTAssertEqual(DocsMarkdown.blocks(shown), [.paragraph("![Chart](https://example.com/chart.png)")])
+    }
+
     func testPageBreakLines() {
         for line in ["<!-- pagebreak -->", "<!--PAGEBREAK-->", "  <!--  pagebreak  -->  "] {
             XCTAssertTrue(NoteDocument.isPageBreak(line), line)

@@ -7,6 +7,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QSet>
+#include <QTextEdit>
 #include <QUrl>
 
 #include <memory>
@@ -17,6 +18,7 @@ class QComboBox;
 class QLabel;
 class QLineEdit;
 class QListWidget;
+class QMenu;
 class QPushButton;
 class QSplitter;
 class QStackedWidget;
@@ -121,6 +123,15 @@ private:
     void followNotePeer(const NotePeer &peer);
     void noteCaretMoved();
     void startNoteComment();
+    void startNoteReaction(const QString &emoji);
+    QMenu *noteReactionMenu(QWidget *parent);
+    void selectReactionPassage(const NoteReactionGroup &group);
+    void refreshEditorMarks();
+    void updateReactionMarks();
+    void setPeerMarks(const QList<NotePeer> &peers);
+    void placePeerLabels();
+    void applyEditorMarks();
+    QString editorMarkTip(bool preview, const QPoint &pos) const;
     CommentQuote noteSelectionQuote(bool *previewMiss = nullptr) const;
     void showCommentPassage(const CommentThread *thread);
     void clearCommentHighlight();
@@ -190,6 +201,18 @@ private:
     NoteCommentsPanel *m_commentsPanel = nullptr;
     QPushButton *m_commentsButton = nullptr;
     QPushButton *m_commentButton = nullptr;
+    QPushButton *m_reactButton = nullptr;
+    QList<QTextEdit::ExtraSelection> m_focusMarks;
+    QList<QTextEdit::ExtraSelection> m_previewFocusMarks;
+    QList<QTextEdit::ExtraSelection> m_reactionMarks;
+    QStringList m_reactionTips;
+    QList<QTextEdit::ExtraSelection> m_previewReactionMarks;
+    QStringList m_previewReactionTips;
+    QList<QTextEdit::ExtraSelection> m_peerMarks;
+    QList<NotePeer> m_markedPeers;
+    QList<NoteEditingLine> m_editingLines;
+    QString m_editingSignature;
+    QList<QLabel *> m_peerLabels;
     QPushButton *m_chatButton = nullptr;
     QPushButton *m_activityButton = nullptr;
     QPushButton *m_followStop = nullptr;

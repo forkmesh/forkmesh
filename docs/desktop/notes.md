@@ -339,6 +339,13 @@ Each poll also sends the caret's `line` (1-based block number) and `column`,
 and moving the caret to another line polls within a second, so people
 following you see where you are.
 
+In Write and Live the line each person who is `editing` has their caret on
+(a `line` above 0 in the presence answer) is tinted in their face colour, with
+their name in a small label at the right edge and "<name> is editing this
+line" on hover; a line past the end of your text marks your last line. The
+marks follow every presence answer and go when the person stops editing or
+leaves. They combine with the follow and comment highlights.
+
 ### Following someone
 
 The faces menu offers "Follow <name>" for everyone here. While you follow
@@ -357,8 +364,11 @@ code text formatted, links coloured, list markers in the accent colour, and
 the Markdown marks hidden on every line but the one with the caret. It edits
 the same text as Write, so comments, the caret line sent to followers and
 saving work unchanged; it only swaps the spell-check highlighter for the live
-one. The last tab you picked between Live and the others is remembered
-(`notes/liveMode`), and notes you can edit open in Live when it was Live.
+one. Notes you can edit open in Live unless you last picked another tab: the
+choice between Live and the others is remembered in `notes/openInLive`
+(default on). Before 2026-11-04 it was `notes/liveMode` with Write as the
+default; the new key is not seeded from it, so everyone starts in Live once.
+Notes you can only view open in Preview (Write when empty).
 
 Restyling a line changes only formats, but Qt still reports it as a text
 change (`textChanged`, and the document's revision moves). So
@@ -393,6 +403,25 @@ Preview the quote (or its longest line without Markdown marks) is marked
 there, and Write opens when the rendered text cannot be found.
 `/dashboard/notes?note=<id>&comment=<cid>` opens the note with that thread
 shown, the thread of a reply included (`trustedNoteLink()`).
+
+## Reactions
+
+Cloud notes only ([reactions](../app/notes-comments.md#reactions)). **React**
+sits next to Comment in the editor toolbar and as a submenu next to Comment in
+the right-click menu, both with the quick set 👍 ❤️ 😂 🎉 😮 👀. The menu
+reacts to the selection; the toolbar button reacts to the selection, or to the
+whole note when nothing is selected. Reacted passages get a light yellow
+highlight with a dotted underline (unlike the blue comment highlight) in Write
+and Live, and in Preview where the passage's text can be found, with a tooltip
+such as "ana, bo reacted with 👍".
+
+A Reactions section at the top of the Comments tab lists each group: its
+quote (or "On the whole note"), one chip per emoji with its count (accent
+coloured when you reacted, the names in the tooltip) and a "+" chip with the
+quick set. Clicking the quote selects the passage; clicking a chip removes
+your reaction or adds yours to the same passage. Parsing, grouping and the
+request bodies are in `desktop/src/NoteComments.h`. Reactions reload with the
+comments when the presence answer's `commentsKey` moves.
 
 ## Chat
 
@@ -491,8 +520,13 @@ dashboard and World open it from their own origin; the desktop does not use it
   capture, the Preview search text, thread grouping and order, resolve rights,
   mention spans and suggestions, error and time wording, the presence
   peers, labels, line, "+N", editing state, initials and colour hash, the
-  followed peer and cursor lines, chat messages and unread counts, and the
-  poll interval while following or chatting.
+  followed peer and cursor lines, chat messages and unread counts, the
+  poll interval while following or chatting, reaction parsing, grouping,
+  chips and request bodies, the lines others are editing, and the opening
+  tab (`notes/openInLive`).
+- `desktop/tests/test_note_document.cpp` (`forkmesh-note-document-tests`)
+  also checks that `<!-- image: … -->` option lines are hidden outside code
+  fences and the image below them still shows.
 - `desktop/tests/test_markdown_live.cpp` (`forkmesh-markdown-live-tests`):
   Live styling of headings, bold, italic, code, links, lists, rules, quotes
   and fenced code; marks shown only on the caret's line; the text left

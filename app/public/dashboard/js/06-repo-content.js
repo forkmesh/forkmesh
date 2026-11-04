@@ -412,6 +412,7 @@
   const NOTE_SVG_MAX_BYTES = 262144;
   const NOTE_PAGE_BREAK_LINE = /^\s*<!--\s*pagebreak\s*-->\s*$/i;
   const NOTE_LAYOUT_LINE = /^\s*<!--\s*page:([\s\S]*?)-->\s*$/i;
+  const NOTE_IMAGE_LINE = /^\s*<!--\s*image:([\s\S]*?)-->\s*$/i;
 
   function noteSvgFigure(info, code) {
     const words = /^\s*(\S+)\s*([\s\S]*?)\s*$/.exec(String(info || ""));
@@ -516,6 +517,12 @@
     let i = 0;
     while (i < lines.length) {
       const line = lines[i];
+      if (context?.noteDocument && NOTE_IMAGE_LINE.test(line)) {
+        closeLists();
+        out.push(`<span class="note-image-options" data-note-image-options="${escapeHtml(NOTE_IMAGE_LINE.exec(line)[1].trim())}" data-note-line="${i}" hidden></span>`);
+        i++;
+        continue;
+      }
       if (context?.noteDocument && (NOTE_LAYOUT_LINE.test(line) || NOTE_PAGE_BREAK_LINE.test(line))) {
         closeLists();
         if (NOTE_PAGE_BREAK_LINE.test(line)) out.push(NOTE_PAGE_BREAK_HTML);
@@ -635,7 +642,7 @@
       closeLists();
       const paragraph = takeWrappedLines(lines, i + 1);
       const paragraphHtml = inline(joinWrappedLines([line, ...paragraph.taken]));
-      out.push(`<p class="my-2 leading-6">${context?.figures ? mdLoneImage(paragraphHtml) : paragraphHtml}</p>`);
+      out.push(`<p class="my-2 leading-6"${context?.noteDocument && depth === 0 ? ` data-note-line="${i}"` : ""}>${context?.figures ? mdLoneImage(paragraphHtml) : paragraphHtml}</p>`);
       i = paragraph.next;
     }
     closeLists();

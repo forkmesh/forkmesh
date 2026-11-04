@@ -760,6 +760,16 @@ private struct NoteEditorBody: View {
                         model.commentOnSelection()
                     })
                     .accessibilityIdentifier("note-comment-selection")
+                    NoteReactionMenu(onPick: { (emoji: String) in
+                        Task { report(await model.reactOnSelection(emoji)) }
+                    }) {
+                        FmButtonLabel(label: NoteReactions.react, icon: "add_reaction_outlined", color: fm.accent, role: .labelLarge, busy: false)
+                            .padding(.horizontal, FmSpace.x3)
+                            .frame(minHeight: 32)
+                    }
+                    .disabled(model.selectedQuote == nil)
+                    .opacity(model.selectedQuote == nil ? 0.38 : 1)
+                    .accessibilityIdentifier("note-react-selection")
                 }
             }
         }
@@ -769,10 +779,11 @@ private struct NoteEditorBody: View {
     private var editor: some View {
         ZStack(alignment: .topLeading) {
             NoteTextView(
-                text: $model.markdown, editable: model.canEdit, highlight: model.highlightRange,
+                text: $model.markdown, editable: model.canEdit, highlight: model.highlightRange, marks: model.reactionMarks,
                 request: model.selectionRequest, canComment: model.canComment,
                 onSelect: { (range: Range<Int>) in model.selectionChanged(range) },
-                onComment: { model.commentOnSelection() })
+                onComment: { model.commentOnSelection() },
+                onReact: model.canComment ? { (emoji: String) in Task { report(await model.reactOnSelection(emoji)) } } : nil)
             if model.markdown.isEmpty {
                 Text("Write in markdown…")
                     .fmMono(size: FmType.small, color: fm.textTertiary)
@@ -789,7 +800,9 @@ private struct NoteEditorBody: View {
 
     private var preview: some View {
         ScrollView {
-            NotePreview(markdown: model.markdown)
+            NotePreview(
+                markdown: model.markdown, reactions: model.comments?.reactionGroups(markdown: model.markdown) ?? [],
+                onReactions: model.comments == nil ? nil : { model.commentsOpen = true })
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(FmSpace.x3)
         }
@@ -905,6 +918,21 @@ struct NotePreview: View {
     @Environment(\.fmPalette) private var fm
     let markdown: String
     var document: Bool = true
+    var reactions: [NoteReactionGroup] = []
+    var onReactions: (() -> Void)? = nil
+
+    private func placed(_ items: [NotePreviewItem]) -> [[NoteReactionGroup]] {
+        guard reactions.contains(where: { (group: NoteReactionGroup) in !group.whole }) else {
+            return Array(repeating: [], count: items.count)
+        }
+        let probes: [String?] = items.map { (item: NotePreviewItem) -> String? in
+            if case let .block(block) = item {
+                return NoteReactions.probe(block)
+            }
+            return nil
+        }
+        return NoteReactions.placed(reactions, starts: NoteReactions.blockStarts(probes, in: markdown))
+    }
 
     private var items: [NotePreviewItem] {
         let parts: [NoteDocumentPart] = document ? NoteDocument.parts(markdown) : [.markdown(markdown)]
@@ -924,6 +952,7 @@ struct NotePreview: View {
 
     var body: some View {
         let items: [NotePreviewItem] = self.items
+        let groups: [[NoteReactionGroup]] = placed(items)
         VStack(alignment: .leading, spacing: FmSpace.x2) {
             if items.isEmpty {
                 Text("Nothing written yet.")
@@ -931,6 +960,9 @@ struct NotePreview: View {
             }
             ForEach(Array(items.enumerated()), id: \.offset) { (pair: (offset: Int, element: NotePreviewItem)) in
                 item(pair.element)
+                if !groups[pair.offset].isEmpty {
+                    NoteReactionSummary(groups: groups[pair.offset], onPressed: onReactions)
+                }
             }
         }
         .textSelection(.enabled)

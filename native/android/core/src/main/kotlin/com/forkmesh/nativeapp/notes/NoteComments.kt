@@ -66,6 +66,7 @@ data class NoteCommentsPayload(
     val people: List<String> = emptyList(),
     val canResolve: Boolean = false,
     val comment: NoteComment? = null,
+    val reactions: List<NoteReaction> = emptyList(),
 ) {
     companion object {
         fun from(json: JsonObject): NoteCommentsPayload = NoteCommentsPayload(
@@ -73,6 +74,7 @@ data class NoteCommentsPayload(
             people = (json["people"] as? List<*>)?.mapNotNull { (it as? String)?.trim()?.takeIf(String::isNotEmpty) }?.distinctBy { it.lowercase() } ?: emptyList(),
             canResolve = json["canResolve"] == true,
             comment = (json["comment"] as? Map<*, *>)?.let { NoteComment.from(jsonObject(it)) },
+            reactions = NoteReaction.list(json["reactions"]),
         )
     }
 }
@@ -241,6 +243,10 @@ object NoteCommentText {
                 "too_many_comments" -> return "This note has reached its limit of 1000 comments."
                 "comment_author_required" -> return "Only the person who wrote a comment can change it."
                 "resolve_not_allowed" -> return "Only the note's owner, its editors or the thread's author can resolve it."
+                "invalid_reaction" -> return "React with a single emoji."
+                "too_many_reactions" -> return "This note already has 2000 reactions, the most it can hold."
+                "reaction_not_found" -> return "That reaction was already removed."
+                "reaction_author_required" -> return "Only the person who reacted, or the note's owner, can remove a reaction."
             }
         }
         return apiErrorText(error, fallback)

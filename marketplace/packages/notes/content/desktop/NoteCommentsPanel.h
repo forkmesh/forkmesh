@@ -40,6 +40,9 @@ public:
         std::function<int()> currentVersion;
         std::function<bool()> canEdit;
         std::function<void(int)> restoreVersion;
+        std::function<void(const NoteReactionGroup &)> selectPassage;
+        std::function<void()> reactionsChanged;
+        std::function<void(const QString &)> failed;
     };
 
     explicit NoteCommentsPanel(Hooks hooks, QWidget *parent = nullptr);
@@ -61,6 +64,8 @@ public:
     void reloadChat();
     void focusChat();
     void reloadActivity();
+    QList<NoteReactionGroup> reactionGroups() const;
+    void react(const QString &emoji, const CommentQuote &quote);
 
 protected:
     void showEvent(QShowEvent *event) override;
@@ -89,6 +94,12 @@ private:
     void apply(const QJsonObject &payload);
     void render();
     QWidget *threadCard(const CommentThread &thread);
+    QWidget *reactionsSection(const QList<NoteReactionGroup> &groups);
+    QWidget *reactionGroupCard(const NoteReactionGroup &group);
+    void showReactionMenu(QWidget *below, const NoteReaction &like);
+    void sendReaction(const QByteArray &method, const QString &path,
+                      const QJsonObject &body);
+    QString reactionsPath(const QString &reactionId = QString()) const;
     QWidget *commentBlock(const QJsonObject &comment, bool root);
     QPlainTextEdit *commentBox(const QString &placeholder, const QString &key,
                                std::function<void()> submit);
@@ -110,6 +121,9 @@ private:
     Hooks m_hooks;
     QString m_noteId;
     QJsonArray m_comments;
+    QList<NoteReaction> m_reactions;
+    QString m_reactionSignature;
+    bool m_reactionBusy = false;
     QStringList m_people;
     bool m_canResolve = false;
     bool m_loaded = false;

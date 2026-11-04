@@ -5,14 +5,14 @@ const NOTES_PAGE_PATH = path.resolve(__dirname, "..", "..", "public", "dashboard
 const NOTE_ID = "c".repeat(32);
 const MARKDOWN = "# Plan\n\nFirst paragraph here.\n\n- one\n- two\n\nLast words.";
 
-async function openNotes(page, { calls = [], messages = [], mode = "live", markdown = MARKDOWN, activity = [], versions = null, note: noteFields = {} } = {}) {
+async function openNotes(page, { calls = [], messages = [], reactions = [], mode = "", markdown = MARKDOWN, activity = [], versions = null, note: noteFields = {} } = {}) {
   await page.addInitScript((initialMode) => {
     localStorage.setItem("forkmesh.session", JSON.stringify({
       nodeName: "alice", email: "alice@example.test", emailVerified: true,
       sessionToken: "test-session", status: "active",
     }));
     localStorage.setItem("forkmesh.notes.activity", "closed");
-    localStorage.setItem("forkmesh.notes.mode", initialMode);
+    if (initialMode) localStorage.setItem("forkmesh.notes.layout", initialMode);
     window.ForkMeshDashboard = {
       _registrations: [["notes", ({ builtinPage }) => builtinPage("notes")]],
       registerPage(pageId, initializer) { this._registrations.push([pageId, initializer]); },
@@ -59,13 +59,20 @@ async function openNotes(page, { calls = [], messages = [], mode = "live", markd
       if (request.method() === "PATCH") Object.assign(note, { markdown: body.markdown ?? note.markdown, title: body.title ?? note.title });
       answer = { ok: true, note };
     } else if (url.pathname === `/api/notes/${NOTE_ID}/comments`) {
-      answer = { ok: true, comments: [], people: ["alice", "bob"], canResolve: true };
+      answer = { ok: true, comments: [], reactions, people: ["alice", "bob"], canResolve: true };
       if (request.method() === "POST") {
         answer.comment = { id: "e".repeat(32), parentId: "", author: "alice", body: body.body, quote: body.quote, prefix: body.prefix,
           suffix: body.suffix, start: body.start, end: body.end, mentions: [], createdAt: Date.now(), updatedAt: Date.now(),
           editedAt: 0, resolvedAt: 0, resolvedBy: "" };
         answer.comments = [answer.comment];
       }
+    } else if (url.pathname.startsWith(`/api/notes/${NOTE_ID}/reactions`)) {
+      if (request.method() === "POST") {
+        reactions.push({ id: String(reactions.length + 1).padStart(32, "f"), author: "alice", createdAt: Date.now(), ...body });
+      } else {
+        reactions.splice(reactions.findIndex((item) => url.pathname.endsWith(item.id)), 1);
+      }
+      answer = { ok: true, comments: [], reactions, people: ["alice", "bob"], canResolve: true };
     } else if (url.pathname === `/api/notes/${NOTE_ID}/chat`) {
       if (request.method() === "POST") {
         messages.push({ id: String(messages.length + 1).padStart(32, "a"), author: "alice", body: body.body, createdAt: Date.now() });
@@ -125,6 +132,63 @@ test("live mode edits the formatted note one block at a time", async ({ page }) 
   await page.keyboard.press("End");
   await page.keyboard.type(" day");
   await expect(page.locator("[data-note-title]")).toHaveValue("Launch day");
+});
+
+test("a note opens in Live when no layout was picked before", async ({ page }) => {
+  await openNotes(page);
+  await expect(page.locator("[data-note-work]")).toHaveAttribute("data-mode", "live");
+  await page.locator("[data-note-mode=\"split\"]").click();
+  expect(await page.evaluate(() => localStorage.getItem("forkmesh.notes.layout"))).toBe("split");
+});
+
+test("reacting to a passage shows the reaction beside it for everyone", async ({ page }) => {
+  const calls = [], reactions = [];
+  await openNotes(page, { calls, reactions });
+  const blocks = page.locator("[data-note-preview] .notes-live-block");
+  await blocks.nth(1).click();
+  const input = page.locator("[data-note-live-input]");
+  await input.evaluate((node) => { node.focus(); node.setSelectionRange(6, 15); });
+  const box = await input.boundingBox();
+  await input.dispatchEvent("mouseup", { clientX: box.x + 40, clientY: box.y + 8 });
+  await page.locator("[data-note-react-float]").click();
+  await page.locator("[data-note-reaction-pick=\"👍\"]").click();
+  await expect.poll(() => calls.filter((call) => call.method === "POST" && call.path.endsWith("/reactions")).length).toBe(1);
+  expect(calls.find((call) => call.path.endsWith("/reactions")).body).toMatchObject({
+    emoji: "👍", quote: "paragraph", start: MARKDOWN.indexOf("paragraph"), end: MARKDOWN.indexOf("paragraph") + 9 });
+  await expect(input).toHaveCount(0);
+  const chip = blocks.nth(1).locator("[data-note-reaction-toggle]");
+  await expect(chip).toHaveText("👍1");
+  await expect(chip).toHaveAttribute("aria-pressed", "true");
+  await expect(blocks.nth(1).locator(".notes-reaction-quote")).toHaveText("“paragraph”");
+
+  reactions.push({ id: "b".repeat(32), author: "bob", emoji: "👍", quote: "paragraph", prefix: "First ", suffix: " here.",
+    start: MARKDOWN.indexOf("paragraph"), end: MARKDOWN.indexOf("paragraph") + 9, createdAt: Date.now() });
+  reactions.push({ id: "d".repeat(32), author: "bob", emoji: "🎉", quote: "", prefix: "", suffix: "", start: 0, end: 0, createdAt: Date.now() });
+  await page.evaluate(() => window.__sockets[0].emit({ type: "note-comments", actor: "bob" }));
+  await expect(chip).toHaveText("👍2");
+  await expect(chip).toHaveAttribute("title", "alice, bob reacted with 👍");
+  await expect(page.locator("[data-note-reactions-note] [data-note-reaction-toggle]")).toHaveText("🎉1");
+  await expect(page.locator("[data-note-reactions-note] [data-note-reaction-toggle]")).toHaveAttribute("aria-pressed", "false");
+
+  await chip.click();
+  await expect.poll(() => calls.filter((call) => call.method === "DELETE").map((call) => call.path))
+    .toEqual([`/api/notes/${NOTE_ID}/reactions/${"1".padStart(32, "f")}`]);
+  await expect(chip).toHaveText("👍1");
+  await expect(chip).toHaveAttribute("aria-pressed", "false");
+  await expect(input).toHaveCount(0);
+});
+
+test("live mode marks the block each collaborator is editing", async ({ page }) => {
+  await openNotes(page);
+  await expect.poll(() => page.evaluate(() => window.__sockets.length)).toBe(1);
+  const blocks = page.locator("[data-note-preview] .notes-live-block");
+  await page.evaluate(() => window.__sockets[0].emit({ type: "cursor", clientId: "web-bob", name: "bob", state: "editing", line: 3, column: 2 }));
+  await expect(blocks.nth(1)).toHaveAttribute("data-peer-editing", "bob");
+  await page.evaluate(() => window.__sockets[0].emit({ type: "cursor", clientId: "web-bob", name: "bob", state: "editing", line: 6, column: 0 }));
+  await expect(blocks.nth(2)).toHaveAttribute("data-peer-editing", "bob");
+  await expect(blocks.nth(1)).not.toHaveAttribute("data-peer-editing", /./);
+  await page.evaluate(() => window.__sockets[0].emit({ type: "leave", clientId: "web-bob", name: "bob" }));
+  await expect(page.locator("[data-note-preview] [data-peer-editing]")).toHaveCount(0);
 });
 
 test("selected text in a live block can be commented on", async ({ page }) => {
@@ -318,4 +382,74 @@ test("pasting an image from the clipboard puts it in the note, made smaller when
   await pasteImage(page, 40, 20, "copied cell");
   await expect(page.locator("[data-note-preview] img")).toHaveCount(2);
   expect(await area.inputValue()).toBe(before);
+});
+
+const IMAGE = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHgAAABQCAIAAABd+SbeAAAAqElEQVR4nO3QAQkAIADAMJOY07CGsYXCHTzA2Zhr60Lj+cEngQbdCjToVqBBtwINuhVo0K1Ag24FGnQr0KBbgQbdCjToVqBBtwINuhVo0K1Ag24FGnQr0KBbgQbdCjToVqBBtwINuhVo0K1Ag24FGnQr0KBbgQbdCjToVqBBtwINuhVo0K1Ag24FGnQr0KBbgQbdCjToVqBBtwINuhVo0K1Ag24FGnSrA35MNiuKw9RgAAAAAElFTkSuQmCC";
+const PAGED = `# Plan\n\n![logo](${IMAGE})\n\n${Array.from({ length: 40 }, (_, index) => `Paragraph ${index + 1} of the plan, long enough to wrap across the line in the page.`).join("\n\n")}`;
+
+test("pages shows the note on paper and image options place an image behind the text", async ({ page }) => {
+  const calls = [];
+  await openNotes(page, { calls, mode: "pages", markdown: PAGED });
+  const frame = page.frameLocator("[data-note-pages-frame]");
+  await expect(frame.locator(".np-page").first()).toBeVisible();
+  const pages = await frame.locator(".np-page").count();
+  expect(pages).toBeGreaterThan(1);
+  await expect(page.locator("[data-note-pages-count]")).toHaveText(`${pages} pages`);
+  await expect(frame.locator(".np-page").first().locator(".np-number")).toHaveText(`1 / ${pages}`);
+  await expect(frame.locator(".np-page").nth(1).locator(".np-win")).toContainText("Paragraph");
+
+  await frame.locator(".np-win img[data-note-image-line]").first().click();
+  await expect(page.locator("[data-note-image-toolbar]")).toBeVisible();
+  await page.locator("[data-note-image-wrap-open]").click();
+  await page.locator("[data-note-image-wrap-menu] [data-note-image-wrap=\"wrap\"]").click();
+  await expect(page.locator("[data-note-markdown]")).toHaveValue(/\n<!-- image: wrap=wrap -->\n!\[logo\]/);
+
+  await page.locator("[data-note-image-options-open]").click();
+  const panel = page.locator("[data-note-image-panel]");
+  await expect(panel).toBeVisible();
+  await expect(panel.locator("[data-note-image-field=\"x\"]")).toBeDisabled();
+  await panel.locator("[data-note-image-wrap=\"behind\"]").click();
+  await expect(panel.locator("[data-note-image-field=\"x\"]")).toBeEnabled();
+  await panel.locator("[data-note-image-action=\"fill\"]").click();
+  await expect(page.locator("[data-note-markdown]")).toHaveValue(/<!-- image: wrap=behind; width=210; height=297 -->\n!\[logo\]/);
+  await panel.locator("[data-note-image-field=\"pages\"]").selectOption("all");
+  await panel.locator("summary", { hasText: "Recolor" }).click();
+  await panel.locator("[data-note-image-recolor=\"grayscale\"]").click();
+  await expect(page.locator("[data-note-markdown]")).toHaveValue(/<!-- image: wrap=behind; width=210; height=297; pages=all; recolor=grayscale -->/);
+  await expect.poll(() => frame.locator(".np-layer-behind img").count()).toBe(pages);
+  await expect(frame.locator(".np-page").first().locator(".np-layer-behind img")).toHaveCSS("filter", "grayscale(1)");
+  await expect(frame.locator(".np-win img")).toHaveCount(0);
+  await page.screenshot({ path: process.env.FORKMESH_SHOT ? `${process.env.FORKMESH_SHOT}/pages.png` : undefined });
+
+  await panel.locator("summary", { hasText: "Alt text" }).click();
+  await panel.locator("[data-note-image-field=\"alt\"]").fill("Company logo");
+  await panel.locator("[data-note-image-field=\"alt\"]").blur();
+  await expect(page.locator("[data-note-markdown]")).toHaveValue(/\n!\[Company logo\]\(data:image\/png/);
+  await expect.poll(() => calls.filter((call) => call.method === "PATCH").length).toBeGreaterThan(0);
+
+  await page.locator("[data-note-pages-export]").click();
+  await page.locator("[data-note-pdf-confirm]").click();
+  const print = page.frameLocator("iframe[data-note-print-frame]");
+  await expect(print.locator(".np-page")).toHaveCount(pages);
+  await expect(print.locator(".np-page").first().locator(".np-layer-behind img")).toHaveCount(1);
+});
+
+test("an image in Live can be resized and wrapped beside the text", async ({ page }) => {
+  await openNotes(page, { markdown: `Intro.\n\n![logo](${IMAGE})\n\nText that wraps around the picture.` });
+  const image = page.locator("[data-note-preview] img[data-note-image-line]");
+  await image.click();
+  await expect(page.locator("[data-note-live-input]")).toHaveCount(0);
+  await expect(page.locator("[data-note-image-select]")).toBeVisible();
+  const handle = page.locator("[data-note-image-select] span");
+  const box = await handle.boundingBox();
+  await page.mouse.move(box.x + 5, box.y + 5);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 120, box.y + 5, { steps: 4 });
+  await page.mouse.up();
+  await expect(page.locator("[data-note-markdown]")).toHaveValue(/<!-- image: width=\d+(\.\d)? -->\n!\[logo\]/);
+  await page.locator("[data-note-image-wrap-open]").click();
+  await page.locator("[data-note-image-wrap-menu] [data-note-image-wrap=\"wrap\"]").click();
+  await expect(image).toHaveCSS("float", "left");
+  await page.keyboard.press("Escape");
+  await expect(page.locator("[data-note-image-toolbar]")).toBeHidden();
 });

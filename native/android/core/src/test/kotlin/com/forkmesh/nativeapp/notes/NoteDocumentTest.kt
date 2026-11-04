@@ -1,5 +1,7 @@
 package com.forkmesh.nativeapp.notes
 
+import com.forkmesh.nativeapp.docs.DocsBlock
+import com.forkmesh.nativeapp.docs.DocsMarkdown
 import com.forkmesh.nativeapp.testing.assertEq
 import com.forkmesh.nativeapp.testing.expect
 import java.time.LocalDate
@@ -97,6 +99,28 @@ class NoteDocumentTest {
         expect(NoteDocument.figure("svg", atCap) != null)
         assertEq(null, NoteDocument.figure("svg", over))
         assertEq(0, figures("```svg\n$over\n```").size)
+    }
+
+    fun testImageOptionLinesAreHiddenOutsideFences() {
+        val options = "<!-- image: wrap=behind; align=left; width=80; height=60; rotate=0; margin=3.2; x=20; y=30; pages=all; recolor=grayscale; transparency=40; brightness=0; contrast=0 -->"
+        for (line in listOf(options, "<!--IMAGE:wrap=inline-->", "  <!--  Image: width=50  -->  ", "<!-- image: -->")) {
+            expect(NoteDocument.isImageOptions(line))
+        }
+        expect(!NoteDocument.isImageOptions("<!-- image: width=50 --> text"))
+        expect(!NoteDocument.isImageOptions("<!-- images: width=50 -->"))
+        expect(!NoteDocument.isImageOptions("<!-- pagebreak -->"))
+        expect(!NoteDocument.isPageBreak(options))
+        expect(!NoteDocument.isLayoutLine(options))
+        assertEq(
+            listOf<NoteSegment>(NoteSegment.Markdown("Intro\n![Chart](https://example.com/chart.png)\nAfter")),
+            NoteDocument.segments("Intro\n$options\n![Chart](https://example.com/chart.png)\nAfter"),
+        )
+        assertEq(emptyList<NoteSegment>(), NoteDocument.segments(options))
+        val fenced = "```\n$options\n![Chart](https://example.com/chart.png)\n```"
+        assertEq(listOf<NoteSegment>(NoteSegment.Markdown(fenced)), NoteDocument.segments(fenced))
+        val shown = NoteDocument.segments("$options\n![Chart](https://example.com/chart.png)").single() as NoteSegment.Markdown
+        assertEq("![Chart](https://example.com/chart.png)", shown.text)
+        assertEq(listOf<DocsBlock>(DocsBlock.Paragraph("![Chart](https://example.com/chart.png)")), DocsMarkdown.blocks(shown.text))
     }
 
     fun testPageBreakLines() {

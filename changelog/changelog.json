@@ -11,6 +11,9 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-04", "area": "Other improvements", "text": "Notes open in Live mode by default on the web and the desktop, and Live marks where each collaborator is typing with their name, so you see others editing as it happens."},
+  {"date": "2026-11-04", "area": "Highlights", "text": "Web Notes has a Pages view that shows the note page by page exactly as the PDF prints, and images get Google Docs-style options: resize and rotate, wrap text around them, place them behind or in front of the text anywhere on the page (full-page backgrounds included), recolor, adjust transparency, brightness and contrast, and add alt text."},
+  {"date": "2026-11-04", "area": "Highlights", "text": "Notes: select text and react with an emoji, and everyone with the note open sees the reaction beside that passage, on the web, the desktop, iPhone and Android."},
   {"date": "2026-11-04", "area": "Market", "text": "CRM now logs Mastodon replies from contacts every time the CRM loads, including replies to toots sent before a draft existed, and no longer misses older mentions on a busy day."},
   {"date": "2026-11-04", "area": "Other improvements", "text": "Web Notes: Split mode scrolls the Markdown and the preview together, an outline beside the editor jumps to any heading, and you can paste images straight from the clipboard."},
   {"date": "2026-11-04", "area": "Desktop", "text": "Diffs with avatars and agent transcripts with very long commands no longer freeze the window."},

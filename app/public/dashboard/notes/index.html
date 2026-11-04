@@ -4336,7 +4336,50 @@
             .notes-outline-entry[aria-current="true"] { background: var(--nt-selected); color: var(--nt-accent); }
             .notes-outline-empty { padding: .25rem .5rem; font-size: .75rem; color: var(--nt-faint); }
             .notes-work { display: grid; min-width: 0; flex: 1; min-height: 0; grid-template-columns: 1fr 1fr; }
-            .notes-work[data-mode="write"], .notes-work[data-mode="preview"], .notes-work[data-mode="live"] { grid-template-columns: 1fr; }
+            .notes-work[data-mode="write"], .notes-work[data-mode="preview"], .notes-work[data-mode="live"], .notes-work[data-mode="pages"] { grid-template-columns: 1fr; }
+            .notes-pages-pane { display: none; }
+            .notes-work[data-mode="pages"] [data-note-write-pane], .notes-work[data-mode="pages"] [data-note-preview-pane] { display: none; }
+            .notes-work[data-mode="pages"] .notes-pages-pane { display: flex; min-height: 0; flex-direction: column; }
+            .notes-pages-bar { display: flex; flex: none; align-items: center; gap: .5rem; border-bottom: 1px solid var(--nt-soft); padding: .4rem .75rem; }
+            .notes-pages-bar select { height: var(--dashboard-control-height-sm); border: 1px solid var(--nt-border); border-radius: var(--dashboard-control-radius); background: rgb(var(--dashboard-secondary-rgb)); padding: 0 .4rem; font-size: 12px; }
+            .notes-pages-count { font-size: 12px; color: var(--nt-muted); }
+            .notes-pages-spacer { flex: 1; }
+            .notes-pages-frame { display: block; width: 100%; min-height: 0; flex: 1; border: 0; background: #e8eaed; }
+            .notes-preview .note-image[data-wrap="wrap"] { float: left; margin: .25rem var(--note-image-margin) var(--note-image-margin) 0; }
+            .notes-preview .note-image[data-wrap="wrap"][data-align="right"] { float: right; margin: .25rem 0 var(--note-image-margin) var(--note-image-margin); }
+            .notes-preview .note-image[data-wrap="break"], .notes-preview .note-image[data-wrap="behind"], .notes-preview .note-image[data-wrap="front"] { display: block; }
+            .notes-preview .note-image[data-wrap="break"][data-align="center"] { margin-left: auto; margin-right: auto; }
+            .notes-preview .note-image[data-wrap="break"][data-align="right"] { margin-left: auto; margin-right: 0; }
+            .notes-preview .note-image[data-wrap="behind"], .notes-preview .note-image[data-wrap="front"] { outline: 1px dashed var(--nt-faint); outline-offset: 2px; }
+            .notes-work[data-mode="live"] .notes-preview img[data-note-image-line] { cursor: pointer; }
+            .notes-image-select { position: absolute; z-index: 14; border: 2px solid var(--nt-primary); pointer-events: none; }
+            .notes-image-select span { position: absolute; right: -6px; bottom: -6px; width: 10px; height: 10px; border: 2px solid #fff; background: var(--nt-primary); pointer-events: auto; cursor: nwse-resize; }
+            .notes-image-toolbar { position: absolute; z-index: 16; display: flex; align-items: center; gap: 2px; border: 1px solid var(--nt-border); border-radius: 999px; background: rgb(var(--dashboard-popover-rgb)); padding: 3px; box-shadow: 0 4px 12px rgb(1 4 9 / .3); }
+            .notes-image-toolbar button { display: inline-flex; align-items: center; gap: 4px; height: 28px; border-radius: 999px; padding: 0 8px; font-size: 12px; }
+            .notes-image-toolbar button:hover, .notes-image-toolbar button:focus-visible { background: var(--nt-hover); }
+            .notes-image-toolbar-sep { width: 1px; height: 18px; margin: 0 2px; background: var(--nt-soft); }
+            .notes-image-wrap-menu { z-index: 17; width: 13rem; }
+            .notes-image-wrap-menu [aria-checked="true"]::after { content: "✓"; margin-left: auto; color: var(--nt-accent); }
+            .notes-image-panel { position: absolute; top: 0; right: 0; bottom: 0; z-index: 18; width: 19rem; overflow-y: auto; border-left: 1px solid var(--nt-border); background: rgb(var(--dashboard-popover-rgb)); padding: .75rem .9rem 1.5rem; font-size: 12px; box-shadow: -4px 0 16px rgb(1 4 9 / .2); }
+            .notes-work[data-mode="pages"] ~ .notes-image-panel { top: calc(var(--dashboard-control-height-sm) + .8rem + 1px); }
+            .notes-image-panel header { display: flex; align-items: center; gap: .5rem; margin-bottom: .5rem; font-size: 14px; font-weight: 600; }
+            .notes-image-panel header button { margin-left: auto; }
+            .notes-image-panel details { border-top: 1px solid var(--nt-soft); padding: .55rem 0; }
+            .notes-image-panel summary { cursor: pointer; font-weight: 600; }
+            .notes-image-panel fieldset { min-width: 0; margin: 0; border: 0; padding: 0; }
+            .notes-image-panel fieldset[data-disabled="true"] { opacity: .5; }
+            .notes-image-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem .75rem; margin-top: .55rem; }
+            .notes-image-panel label { display: grid; gap: .2rem; color: var(--nt-muted); }
+            .notes-image-panel .notes-image-check { display: flex; align-items: center; gap: .4rem; color: inherit; }
+            .notes-image-unit-field { display: flex; align-items: center; gap: .3rem; }
+            .notes-image-panel input[type="number"], .notes-image-panel input[type="text"], .notes-image-panel textarea, .notes-image-panel select { width: 100%; min-width: 0; height: var(--dashboard-control-height-sm); border: 1px solid var(--nt-border); border-radius: var(--dashboard-control-radius); background: rgb(var(--dashboard-background-rgb)); padding: 0 .4rem; color: inherit; font-size: 12px; }
+            .notes-image-panel textarea { height: 4rem; padding: .3rem .4rem; resize: vertical; }
+            .notes-image-panel input[type="range"] { width: 100%; accent-color: var(--nt-primary); }
+            .notes-image-choices { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .55rem; }
+            .notes-image-choices button { display: inline-flex; align-items: center; gap: .3rem; height: var(--dashboard-control-height-sm); border: 1px solid var(--nt-border); border-radius: var(--dashboard-control-radius); padding: 0 .5rem; font-size: 12px; }
+            .notes-image-choices button[aria-pressed="true"] { border-color: var(--nt-primary); background: rgb(var(--dashboard-primary-rgb) / .12); color: var(--nt-accent); }
+            .notes-image-choices button:disabled { opacity: .45; }
+            .notes-image-hint { margin-top: .4rem; color: var(--nt-faint); }
             .notes-work[data-mode="write"] [data-note-preview-pane], .notes-work[data-mode="preview"] [data-note-write-pane], .notes-work[data-mode="live"] [data-note-write-pane] { display: none; }
             .notes-work[data-mode="live"] .notes-preview { flex: 1; cursor: text; }
             .notes-work[data-mode="live"] [data-note-preview-title][contenteditable] { outline: none; cursor: text; }
@@ -4350,6 +4393,20 @@
             .notes-live-input { display: block; width: 100%; overflow: hidden; resize: none; border: 0; background: transparent; padding: .25rem 0; font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; font-size: .84rem; line-height: 1.75; color: rgb(var(--dashboard-foreground-rgb)); outline: none; }
             .notes-live-empty { color: var(--nt-faint); font-style: italic; }
             [data-follow-name] { box-shadow: inset 3px 0 0 var(--follow-color, var(--nt-primary)); }
+            [data-peer-editing] { position: relative; box-shadow: inset 3px 0 0 var(--peer-color, var(--nt-primary)); }
+            [data-peer-editing]::after { content: attr(data-peer-editing); position: absolute; top: -.6rem; right: .25rem; z-index: 2; max-width: 12rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: .25rem; background: var(--peer-color, var(--nt-primary)); padding: 0 .35rem; font-size: .66rem; font-weight: 600; line-height: 1.15rem; color: #fff; pointer-events: none; }
+            .notes-reactions { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem; margin: .35rem 0 .15rem; }
+            .notes-reactions-note { margin: -.35rem 0 .9rem; }
+            .notes-reaction-quote { max-width: 14rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: .15rem; font-size: .7rem; color: var(--nt-faint); }
+            .notes-reaction { display: inline-flex; align-items: center; gap: .25rem; height: 1.5rem; border: 1px solid var(--nt-soft); border-radius: 999px; background: var(--nt-hover); padding: 0 .45rem; font-size: .75rem; line-height: 1; color: rgb(var(--dashboard-foreground-rgb) / .85); }
+            .notes-reaction:hover { border-color: var(--nt-faint); }
+            .notes-reaction[aria-pressed="true"] { border-color: rgb(var(--dashboard-accent-rgb) / .6); background: rgb(var(--dashboard-accent-rgb) / .14); color: var(--nt-accent); }
+            .notes-reaction-count { font-weight: 600; font-variant-numeric: tabular-nums; }
+            .notes-reaction-add { padding: 0 .35rem; color: var(--nt-muted); }
+            .notes-reaction-add svg.lucide { width: .85rem; height: .85rem; }
+            .notes-reaction-picker { display: flex; gap: .15rem; padding: .25rem; }
+            .notes-reaction-picker button { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: .375rem; font-size: 1.1rem; }
+            .notes-reaction-picker button:hover, .notes-reaction-picker button:focus-visible { background: var(--nt-hover); }
             .notes-follow-tag { position: absolute; z-index: 14; border-radius: .25rem; padding: 0 .35rem; font-size: .66rem; font-weight: 600; line-height: 1.2rem; color: #fff; pointer-events: none; }
             .notes-follow { display: inline-flex; align-items: center; gap: .4rem; color: var(--nt-accent); }
             .notes-follow button { border-radius: .25rem; padding: 0 .3rem; color: var(--nt-muted); }
@@ -4721,6 +4778,7 @@
                     <button type="button" data-note-mode="split" aria-pressed="true">Split</button>
                     <button type="button" data-note-mode="preview" aria-pressed="false">Preview</button>
                     <button type="button" data-note-mode="live" aria-pressed="false" title="Edit the formatted note">Live</button>
+                    <button type="button" data-note-mode="pages" aria-pressed="false" title="See the note on pages, as it prints">Pages</button>
                   </div>
                   <button data-note-outline-toggle type="button" class="notes-icon-btn notes-outline-toggle" title="Outline" aria-label="Show outline" aria-pressed="false" aria-controls="note-outline"><i data-lucide="list-tree"></i></button>
                   <button data-note-comments-toggle type="button" class="notes-btn" title="Comments" aria-label="Show comments" aria-pressed="false" aria-controls="note-comments"><i data-lucide="message-square"></i><span data-note-comments-count class="notes-count">Comments</span></button>
@@ -4769,9 +4827,23 @@
                       <textarea data-note-markdown class="notes-markdown" spellcheck="true" placeholder="Start writing in Markdown…" aria-label="Note body"></textarea>
                     </div>
                   </div>
+                  <div data-note-pages-pane class="notes-pages-pane">
+                    <div class="notes-pages-bar">
+                      <select data-note-pages-zoom aria-label="Zoom">
+                        <option value="fit">Fit width</option><option value="50">50%</option><option value="75">75%</option><option value="100">100%</option><option value="125">125%</option><option value="150">150%</option>
+                      </select>
+                      <span data-note-pages-count class="notes-pages-count"></span>
+                      <span class="notes-pages-spacer"></span>
+                      <button data-note-insert-image="image" type="button" class="notes-btn"><i data-lucide="image-plus"></i>Image</button>
+                      <button data-note-insert-image="background" type="button" class="notes-btn" title="Add an image behind every page"><i data-lucide="wallpaper"></i>Background</button>
+                      <button data-note-pages-export type="button" class="notes-btn"><i data-lucide="file-down"></i>Export PDF</button>
+                    </div>
+                    <iframe data-note-pages-frame class="notes-pages-frame" sandbox="allow-same-origin" title="The note on pages"></iframe>
+                  </div>
                   <div data-note-preview-pane class="notes-pane">
                     <div class="notes-doc">
                       <h1 class="notes-preview-title"><span data-note-preview-emoji class="notes-emoji" hidden></span><span data-note-preview-title></span></h1>
+                      <div data-note-reactions-note class="notes-reactions notes-reactions-note" hidden></div>
                       <article data-note-preview class="notes-preview"></article>
                     </div>
                   </div>
@@ -4820,7 +4892,9 @@
                   <div data-note-mention-list class="notes-suggest notes-mention-list" role="listbox" aria-label="People to mention" hidden></div>
                 </aside>
                 <button data-note-comment-float type="button" class="notes-btn notes-comment-float" hidden><i data-lucide="message-square-plus"></i>Comment</button>
+                <button data-note-react-float type="button" class="notes-btn notes-comment-float" hidden><i data-lucide="smile-plus"></i>React</button>
                 <button data-note-assist-float type="button" class="notes-btn notes-assist-float" hidden><i data-lucide="sparkles"></i>Ask AI</button>
+                <div data-note-reaction-picker class="notes-pop notes-reaction-picker" role="menu" aria-label="React" hidden></div>
                 <div data-note-assist-panel class="notes-pop notes-assist" role="dialog" aria-label="Write with AI" hidden>
                   <div class="notes-pop-sec">
                     <h2><i data-lucide="sparkles"></i><span data-note-assist-heading>Write with AI</span></h2>
@@ -4844,6 +4918,99 @@
                   <p class="notes-assist-hint">The selected text and your instruction go to this site's AI provider to write the suggestion; nothing is stored.</p>
                 </div>
                 <span data-note-follow-tag class="notes-follow-tag" hidden></span>
+                <input data-note-image-file type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden />
+                <div data-note-image-select class="notes-image-select" hidden><span title="Drag to resize"></span></div>
+                <div data-note-image-toolbar class="notes-image-toolbar" role="toolbar" aria-label="Image" hidden>
+                  <button data-note-image-options-open type="button" title="Image options"><i data-lucide="pencil"></i>Edit</button>
+                  <button data-note-image-wrap-open type="button" title="Text wrapping" aria-label="Text wrapping" aria-haspopup="menu"><i data-lucide="wrap-text"></i><i data-lucide="chevron-down"></i></button>
+                  <span class="notes-image-toolbar-sep"></span>
+                  <button data-note-image-comment type="button" title="Comment" aria-label="Comment"><i data-lucide="message-square-plus"></i></button>
+                  <button data-note-image-react type="button" title="React" aria-label="React"><i data-lucide="smile-plus"></i></button>
+                </div>
+                <div data-note-image-wrap-menu class="notes-pop notes-menu notes-image-wrap-menu" role="menu" aria-label="Text wrapping" hidden>
+                  <button type="button" role="menuitemradio" data-note-image-wrap="inline" aria-checked="false"><i data-lucide="image"></i>In line</button>
+                  <button type="button" role="menuitemradio" data-note-image-wrap="wrap" aria-checked="false"><i data-lucide="wrap-text"></i>Wrap text</button>
+                  <button type="button" role="menuitemradio" data-note-image-wrap="break" aria-checked="false"><i data-lucide="separator-horizontal"></i>Break text</button>
+                  <button type="button" role="menuitemradio" data-note-image-wrap="behind" aria-checked="false"><i data-lucide="layers-2"></i>Behind text</button>
+                  <button type="button" role="menuitemradio" data-note-image-wrap="front" aria-checked="false"><i data-lucide="layers"></i>In front of text</button>
+                </div>
+                <aside data-note-image-panel class="notes-image-panel" aria-label="Image options" hidden>
+                  <header><i data-lucide="image"></i>Image options<button data-note-image-panel-close type="button" class="notes-icon-btn" aria-label="Close image options"><i data-lucide="x"></i></button></header>
+                  <details open>
+                    <summary>Size &amp; rotation</summary>
+                    <div class="notes-image-grid">
+                      <label>Width<span class="notes-image-unit-field"><input data-note-image-field="width" type="number" min="0.1" step="0.01" /><span data-note-image-unit></span></span></label>
+                      <label>Height<span class="notes-image-unit-field"><input data-note-image-field="height" type="number" min="0.1" step="0.01" /><span data-note-image-unit></span></span></label>
+                      <label>Width scale<span class="notes-image-unit-field"><input data-note-image-field="widthScale" type="number" min="1" step="1" />%</span></label>
+                      <label>Height scale<span class="notes-image-unit-field"><input data-note-image-field="heightScale" type="number" min="1" step="1" />%</span></label>
+                    </div>
+                    <label class="notes-image-check" style="margin-top:.5rem"><input data-note-image-field="lock" type="checkbox" checked />Lock aspect ratio</label>
+                    <div class="notes-image-grid">
+                      <label>Angle<span class="notes-image-unit-field"><input data-note-image-field="rotate" type="number" min="-360" max="360" step="1" />°</span></label>
+                      <div class="notes-image-choices"><button type="button" data-note-image-action="rotate90" title="Rotate 90°"><i data-lucide="rotate-cw"></i>90°</button><button type="button" data-note-image-action="reset-size">Reset</button></div>
+                    </div>
+                  </details>
+                  <details open>
+                    <summary>Text wrapping</summary>
+                    <div class="notes-image-choices">
+                      <button type="button" data-note-image-wrap="inline" aria-pressed="false">In line</button>
+                      <button type="button" data-note-image-wrap="wrap" aria-pressed="false">Wrap text</button>
+                      <button type="button" data-note-image-wrap="break" aria-pressed="false">Break text</button>
+                      <button type="button" data-note-image-wrap="behind" aria-pressed="false">Behind text</button>
+                      <button type="button" data-note-image-wrap="front" aria-pressed="false">In front of text</button>
+                    </div>
+                    <div data-note-image-align-row class="notes-image-choices">
+                      <button type="button" data-note-image-align="left" aria-pressed="false"><i data-lucide="align-left"></i>Left</button>
+                      <button type="button" data-note-image-align="center" aria-pressed="false"><i data-lucide="align-center"></i>Center</button>
+                      <button type="button" data-note-image-align="right" aria-pressed="false"><i data-lucide="align-right"></i>Right</button>
+                    </div>
+                    <div data-note-image-margin-row class="notes-image-grid">
+                      <label>Margin from text<span class="notes-image-unit-field"><input data-note-image-field="margin" type="number" min="0" step="0.01" /><span data-note-image-unit></span></span></label>
+                    </div>
+                  </details>
+                  <details open>
+                    <summary>Position</summary>
+                    <fieldset data-note-image-position>
+                      <div class="notes-image-grid">
+                        <label>X from page left<span class="notes-image-unit-field"><input data-note-image-field="x" type="number" step="0.01" /><span data-note-image-unit></span></span></label>
+                        <label>Y from page top<span class="notes-image-unit-field"><input data-note-image-field="y" type="number" step="0.01" /><span data-note-image-unit></span></span></label>
+                      </div>
+                      <div class="notes-image-grid">
+                        <label>Show on<select data-note-image-field="pages"><option value="anchor">This page</option><option value="all">Every page</option><option value="first">First page</option><option value="rest">All but the first</option></select></label>
+                      </div>
+                      <div class="notes-image-choices">
+                        <button type="button" data-note-image-action="fill"><i data-lucide="maximize"></i>Fill the page</button>
+                        <button type="button" data-note-image-action="center"><i data-lucide="align-center-vertical"></i>Center on page</button>
+                      </div>
+                    </fieldset>
+                    <p class="notes-image-hint">Behind text and In front of text place the image anywhere on the page. Drag it in Pages to move it.</p>
+                  </details>
+                  <details>
+                    <summary>Recolor</summary>
+                    <div class="notes-image-choices">
+                      <button type="button" data-note-image-recolor="none" aria-pressed="false">No recolor</button>
+                      <button type="button" data-note-image-recolor="grayscale" aria-pressed="false">Grayscale</button>
+                      <button type="button" data-note-image-recolor="sepia" aria-pressed="false">Sepia</button>
+                      <button type="button" data-note-image-recolor="negative" aria-pressed="false">Negative</button>
+                    </div>
+                  </details>
+                  <details>
+                    <summary>Adjustments</summary>
+                    <div class="notes-image-grid" style="grid-template-columns:1fr">
+                      <label>Transparency<input data-note-image-field="transparency" type="range" min="0" max="100" step="1" /></label>
+                      <label>Brightness<input data-note-image-field="brightness" type="range" min="-100" max="100" step="1" /></label>
+                      <label>Contrast<input data-note-image-field="contrast" type="range" min="-100" max="100" step="1" /></label>
+                    </div>
+                    <div class="notes-image-choices"><button type="button" data-note-image-action="reset-adjust">Reset adjustments</button></div>
+                  </details>
+                  <details>
+                    <summary>Alt text</summary>
+                    <div class="notes-image-grid" style="grid-template-columns:1fr">
+                      <label>Title<input data-note-image-field="title" type="text" maxlength="200" /></label>
+                      <label>Description<textarea data-note-image-field="alt" maxlength="1000"></textarea></label>
+                    </div>
+                  </details>
+                </aside>
                 </div>
 
                 <footer class="notes-status">

@@ -2,7 +2,9 @@ package com.forkmesh.nativeapp.feature.tools
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -44,6 +46,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -63,12 +66,18 @@ import com.forkmesh.nativeapp.notes.NoteMentions
 import com.forkmesh.nativeapp.notes.NotePeer
 import com.forkmesh.nativeapp.notes.NotePresence
 import com.forkmesh.nativeapp.notes.NoteQuote
+import com.forkmesh.nativeapp.notes.NoteReactionAction
+import com.forkmesh.nativeapp.notes.NoteReactionChip
+import com.forkmesh.nativeapp.notes.NoteReactionGroup
+import com.forkmesh.nativeapp.notes.NoteReactions
 import com.forkmesh.nativeapp.notes.NoteThread
 import com.forkmesh.nativeapp.notes.NoteThreadList
 import com.forkmesh.nativeapp.notes.NoteThreads
 import com.forkmesh.nativeapp.ui.kit.FmAvatar
 import com.forkmesh.nativeapp.ui.kit.FmCircularProgressIndicator
 import com.forkmesh.nativeapp.ui.kit.FmConfirmDialog
+import com.forkmesh.nativeapp.ui.kit.FmDropdownMenu
+import com.forkmesh.nativeapp.ui.kit.FmDropdownMenuItem
 import com.forkmesh.nativeapp.ui.kit.FmIconButton
 import com.forkmesh.nativeapp.ui.kit.FmInlineStatus
 import com.forkmesh.nativeapp.ui.kit.FmListRow
@@ -90,6 +99,8 @@ internal class NoteCommentActions(
     val resolve: (commentId: String, resolved: Boolean) -> Unit,
     val delete: (commentId: String) -> Unit,
     val pick: (NoteThread) -> Unit,
+    val react: (NoteReactionAction) -> Unit = {},
+    val pickPassage: (NoteReactionGroup) -> Unit = {},
 )
 
 @Composable
@@ -184,8 +195,9 @@ internal fun NoteCommentsButton(openCount: Int, onClick: () -> Unit) {
     }
 }
 
-private fun threadKeys(threads: NoteThreadList, composing: Boolean, showResolved: Boolean): List<String> = buildList {
+private fun threadKeys(threads: NoteThreadList, composing: Boolean, showResolved: Boolean, reactions: Boolean): List<String> = buildList {
     if (composing) add("composer")
+    if (reactions) add("reactions")
     threads.open.forEach { add("t:${it.id}") }
     if (threads.resolved.isNotEmpty()) add("resolved")
     if (showResolved) threads.resolved.forEach { add("t:${it.id}") }
@@ -207,6 +219,7 @@ internal fun NoteCommentsSheet(
     busy: Boolean,
     status: FmStatus,
     actions: NoteCommentActions,
+    reactions: List<NoteReactionGroup> = emptyList(),
     onCompose: () -> Unit,
     onCancelCompose: () -> Unit,
     onDismiss: () -> Unit,
@@ -218,7 +231,7 @@ internal fun NoteCommentsSheet(
     LaunchedEffect(focus, loaded) {
         val target = focus ?: return@LaunchedEffect
         if (threads.resolved.any { it.id == target }) showResolved = true
-        val index = threadKeys(threads, composing, showResolved || threads.resolved.any { it.id == target }).indexOf("t:$target")
+        val index = threadKeys(threads, composing, showResolved || threads.resolved.any { it.id == target }, reactions.isNotEmpty()).indexOf("t:$target")
         if (index >= 0) list.animateScrollToItem(index)
     }
     LaunchedEffect(composing) { if (composing) list.scrollToItem(0) }
@@ -256,6 +269,11 @@ internal fun NoteCommentsSheet(
                                 ) { body, done -> actions.send(body, null, draft) { done(); onCancelCompose() } }
                             }
                             FmRowDivider()
+                        }
+                    }
+                    if (reactions.isNotEmpty()) {
+                        item(key = "reactions") {
+                            NoteReactionsSection(reactions, busy, actions)
                         }
                     }
                     if (threads.all.isEmpty() && !composing) {
@@ -433,13 +451,13 @@ private fun mentionText(body: String, mentions: List<String>, color: Color): Ann
 }
 
 @Composable
-private fun NoteQuoteBlock(quote: String, detached: Boolean, onClick: (() -> Unit)?) {
+private fun NoteQuoteBlock(quote: String, detached: Boolean, onClick: (() -> Unit)?, clickLabel: String = "Show in note") {
     val c = Fm.colors
     Row(
         Modifier
             .fillMaxWidth()
             .height(IntrinsicSize.Min)
-            .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClickLabel = "Show in note", onClick = onClick) else Modifier),
+            .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClickLabel = clickLabel, onClick = onClick) else Modifier),
     ) {
         Box(Modifier.width(3.dp).fillMaxHeight().clip(RoundedCornerShape(2.dp)).background(if (detached) c.textTertiary else c.accent))
         Spacer(Modifier.width(8.dp))
@@ -526,6 +544,137 @@ private fun NoteCommentInput(
                 filled = true,
                 height = 30.dp,
             )
+        }
+    }
+}
+
+@Composable
+private fun NoteReactionsSection(groups: List<NoteReactionGroup>, busy: Boolean, actions: NoteCommentActions) {
+    val c = Fm.colors
+    val shape = RoundedCornerShape(FmRadius.md)
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .clip(shape)
+            .background(c.bgRaised)
+            .border(1.dp, c.border, shape)
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(NoteReactions.TITLE, style = Fm.text.labelMedium.copy(color = c.textSecondary))
+        for (group in groups) NoteReactionGroupRow(group, busy, actions)
+    }
+}
+
+@Composable
+private fun NoteReactionGroupRow(group: NoteReactionGroup, busy: Boolean, actions: NoteCommentActions) {
+    val c = Fm.colors
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (group.isWhole) {
+            Text(NoteReactions.WHOLE_NOTE, style = Fm.text.bodySmall.copy(color = c.textTertiary))
+        } else {
+            NoteQuoteBlock(group.quote, detached = false, onClick = { actions.pickPassage(group) }, clickLabel = "Select this passage in the note")
+        }
+        Row(Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 1.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            for (chip in group.chips) {
+                NoteReactionChipButton(chip, enabled = !busy) { actions.react(NoteReactions.action(chip, group)) }
+            }
+            NoteReactionMenu(onPick = { emoji -> NoteReactions.adding(emoji, group)?.let(actions.react) }) { open ->
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(FmRadius.full))
+                        .background(c.bgOverlay)
+                        .border(1.dp, c.border, RoundedCornerShape(FmRadius.full))
+                        .clickable(enabled = !busy, role = Role.Button, onClickLabel = NoteReactions.ADD_LABEL, onClick = open)
+                        .heightIn(min = 34.dp)
+                        .padding(horizontal = 11.dp)
+                        .semantics { contentDescription = NoteReactions.ADD_LABEL },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    FmIcon("add_reaction_outlined", size = 18.dp, tint = c.textSecondary)
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun NoteReactionChipButton(chip: NoteReactionChip, enabled: Boolean, onToggle: () -> Unit) {
+    val c = Fm.colors
+    var showNames by remember(chip.emoji) { mutableStateOf(false) }
+    Box {
+        Row(
+            Modifier
+                .clip(RoundedCornerShape(FmRadius.full))
+                .background(if (chip.reacted) c.accentSubtle else c.bgOverlay)
+                .border(1.dp, if (chip.reacted) c.accent.copy(alpha = 0.7f) else c.border, RoundedCornerShape(FmRadius.full))
+                .combinedClickable(
+                    enabled = enabled,
+                    role = Role.Button,
+                    onClickLabel = if (chip.reacted) "Remove your reaction" else "Add your reaction",
+                    onLongClick = { showNames = true },
+                    onClick = onToggle,
+                )
+                .heightIn(min = 34.dp)
+                .padding(horizontal = 11.dp)
+                .semantics {
+                    contentDescription = chip.label
+                    selected = chip.reacted
+                },
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(chip.emoji, style = Fm.text.bodyMedium)
+            Text("${chip.count}", style = Fm.text.labelLarge.copy(color = if (chip.reacted) c.accent else c.textPrimary, fontWeight = FontWeight.SemiBold))
+        }
+        FmDropdownMenu(expanded = showNames, onDismissRequest = { showNames = false }) {
+            FmDropdownMenuItem(chip.label, onClick = { showNames = false })
+        }
+    }
+}
+
+@Composable
+internal fun NoteReactionMenu(onPick: (String) -> Unit, anchor: @Composable (open: () -> Unit) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        anchor { open = true }
+        NoteReactionChoices(open, onDismiss = { open = false }) { emoji ->
+            open = false
+            onPick(emoji)
+        }
+    }
+}
+
+@Composable
+internal fun NoteReactionChoices(expanded: Boolean, onDismiss: () -> Unit, onPick: (String) -> Unit) {
+    FmDropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+        for (choice in NoteReactions.quickSet) {
+            FmDropdownMenuItem("${choice.emoji}  ${choice.label}", onClick = { onPick(choice.emoji) })
+        }
+    }
+}
+
+@Composable
+internal fun NoteReactionSummary(groups: List<NoteReactionGroup>, onOpen: (() -> Unit)?) {
+    val c = Fm.colors
+    Row(Modifier.horizontalScroll(rememberScrollState()).padding(top = 2.dp, bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        for (group in groups) {
+            val mine = group.chips.any { it.reacted }
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(FmRadius.full))
+                    .background(if (mine) c.accentSubtle else c.bgOverlay)
+                    .border(1.dp, if (mine) c.accent.copy(alpha = 0.7f) else c.border, RoundedCornerShape(FmRadius.full))
+                    .clickable(enabled = onOpen != null, role = Role.Button, onClickLabel = "Open the reactions") { onOpen?.invoke() }
+                    .heightIn(min = 24.dp)
+                    .padding(horizontal = 8.dp)
+                    .semantics { contentDescription = "${group.quote}: ${group.label}" },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(group.summary, style = Fm.text.labelSmall.copy(color = if (mine) c.accent else c.textSecondary))
+            }
         }
     }
 }

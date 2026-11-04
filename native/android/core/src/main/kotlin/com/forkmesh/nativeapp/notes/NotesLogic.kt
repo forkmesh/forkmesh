@@ -123,6 +123,17 @@ class NotesApi(private val api: ApiService) {
 
     fun deleteComment(id: String, commentId: String): NoteCommentsPayload =
         NoteCommentsPayload.from(call("DELETE", "/$id/comments/$commentId"))
+
+    fun addReaction(id: String, emoji: String, anchor: NoteQuote?): NoteCommentsPayload =
+        NoteCommentsPayload.from(call("POST", "/$id/reactions", NoteReactions.body(emoji, anchor)))
+
+    fun deleteReaction(id: String, reactionId: String): NoteCommentsPayload =
+        NoteCommentsPayload.from(call("DELETE", "/$id/reactions/$reactionId"))
+
+    fun perform(id: String, action: NoteReactionAction): NoteCommentsPayload = when (action) {
+        is NoteReactionAction.Add -> addReaction(id, action.emoji, action.anchor)
+        is NoteReactionAction.Remove -> action.ids.map { deleteReaction(id, it) }.lastOrNull() ?: comments(id)
+    }
 }
 
 class NoteConflictException(val latest: JsonObject) : RuntimeException("version_conflict")

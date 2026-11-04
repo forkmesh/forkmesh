@@ -361,6 +361,7 @@ public final class NoteCommentsModel {
     public var isOwner: Bool
 
     public private(set) var comments: [NoteComment] = []
+    public private(set) var reactions: [NoteReaction] = []
     public private(set) var people: [String] = []
     public private(set) var canResolveAll = false
     public private(set) var loaded = false
@@ -388,6 +389,7 @@ public final class NoteCommentsModel {
     }
 
     var path: String { "/\(noteId)/comments" }
+    var reactionsPath: String { "/\(noteId)/reactions" }
 
     public var openCount: Int { comments.filter { $0.isThread && !$0.resolved }.count }
 
@@ -437,6 +439,7 @@ public final class NoteCommentsModel {
 
     func apply(_ data: JSONObject) {
         comments = ToolsJSON.maps(data["comments"]).map(NoteComment.init(json:)).filter { !$0.id.isEmpty }
+        reactions = NoteReactions.list(data["reactions"])
         people = ToolsJSON.strings(data["people"])
         canResolveAll = data["canResolve"]?.boolValue ?? false
         loaded = true
@@ -504,10 +507,14 @@ public final class NoteCommentsModel {
     }
 
     private func send(_ method: String, _ suffix: String, _ body: JSONObject?, fallback: String) async -> (data: JSONObject?, outcome: ToolsOutcome) {
+        await request(method, path + suffix, body, fallback: fallback)
+    }
+
+    private func request(_ method: String, _ target: String, _ body: JSONObject?, fallback: String) async -> (data: JSONObject?, outcome: ToolsOutcome) {
         busy = true
         defer { busy = false }
         do {
-            let data = try await call(method, path + suffix, body)
+            let data = try await call(method, target, body)
             apply(data)
             return (data, ToolsOutcome())
         } catch {
@@ -571,6 +578,37 @@ public final class NoteCommentsModel {
         let result = await send("DELETE", "/\(comment.id)", nil, fallback: "The comment was not deleted.")
         if result.data != nil, focusedId == comment.id { focusedId = nil }
         return result.data == nil ? result.outcome : .done(comment.isThread ? "Thread deleted" : "Comment deleted")
+    }
+
+    public func reactionGroups(markdown: String) -> [NoteReactionGroup] {
+        NoteReactions.groups(reactions, markdown: markdown, me: me)
+    }
+
+    public func react(_ emoji: String, to anchor: NoteQuote?) async -> ToolsOutcome {
+        let result = await request("POST", reactionsPath, NoteReactions.body(emoji: emoji, anchor: anchor), fallback: "The reaction was not added.")
+        return result.outcome
+    }
+
+    public func toggle(_ chip: NoteReactionChip, in group: NoteReactionGroup) async -> ToolsOutcome {
+        await perform(NoteReactions.action(chip, in: group))
+    }
+
+    public func add(_ emoji: String, to group: NoteReactionGroup) async -> ToolsOutcome {
+        guard let action = NoteReactions.action(adding: emoji, to: group) else { return ToolsOutcome() }
+        return await perform(action)
+    }
+
+    private func perform(_ action: NoteReactionAction) async -> ToolsOutcome {
+        switch action {
+        case let .add(emoji, anchor):
+            return await react(emoji, to: anchor)
+        case let .remove(ids):
+            for id in ids {
+                let result = await request("DELETE", "\(reactionsPath)/\(id)", nil, fallback: "The reaction was not removed.")
+                if result.data == nil { return result.outcome }
+            }
+            return ToolsOutcome()
+        }
     }
 
     public func suggestions(for text: String) -> [String] {
