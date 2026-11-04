@@ -119,21 +119,72 @@ struct SilentSpeechScreen: View {
     private var trainSection: some View {
         VStack(alignment: .leading, spacing: FmSpace.x1) {
             FmSectionHeader(title: "Teach", icon: "touch_app")
+            readSection
             if let word = listener.selectedWord {
                 SilentHoldButton(
                     label: listener.hold == .train(word) ? "Mouth “\(word)”, then let go" : "Hold and mouth “\(word)”",
                     active: listener.hold == .train(word),
-                    enabled: listener.connected,
+                    enabled: listener.connected && listener.reading == nil,
                     onBegin: { listener.beginHold(.train(word)) },
                     onEnd: { listener.endHold() })
                     .accessibilityIdentifier("silent-speech-train")
-                Text("Keep your head still, hold the button, mouth the word without a sound, then let go. Five takes of each word is a good start.")
+                Text("Or teach one word at a time: keep your head still, hold the button, mouth the word without a sound, then let go.")
                     .fmText(.bodySmall, color: fm.textSecondary)
             } else {
                 Text("Add a word to teach it.")
                     .fmText(.bodySmall, color: fm.textSecondary)
             }
         }
+    }
+
+    @ViewBuilder
+    private var readSection: some View {
+        if let reading = listener.reading {
+            FmGlassSurface(cornerRadius: FmRadius.md) {
+                VStack(alignment: .leading, spacing: FmSpace.x2) {
+                    sentenceText(reading)
+                        .fmText(.titleLarge, color: fm.textPrimary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityIdentifier("silent-speech-sentence")
+                    Text(readingDetail(reading))
+                        .fmText(.bodySmall, color: fm.textSecondary)
+                }
+                .padding(FmSpace.x3)
+            }
+            Text(listener.calibrating ? "Keep your head still for two seconds while it measures how still you are." : "Mouth each word without a sound, with a short stop between words. The highlight moves on as each word is heard.")
+                .fmText(.bodySmall, color: fm.textSecondary)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: FmSpace.x2) {
+                    FmOutlinedButton("Start again", icon: "refresh", minHeight: 34, onPressed: { listener.readAgain() })
+                        .disabled(reading.position == 0)
+                    FmOutlinedButton("Skip", icon: "skip_next", minHeight: 34, onPressed: { listener.skipSentence() })
+                    if !listener.lastSentence.isEmpty {
+                        FmOutlinedButton("Drop last sentence", icon: "undo", minHeight: 34, onPressed: { listener.dropLastSentence() })
+                    }
+                    FmOutlinedButton("Finish", icon: "stop", minHeight: 34, onPressed: { listener.finishReading() })
+                        .accessibilityIdentifier("silent-speech-read-finish")
+                }
+            }
+        } else {
+            FmOutlinedButton("Read sentences for 5 minutes", icon: "play_arrow", minHeight: 44, onPressed: { listener.startReading() })
+                .disabled(!listener.connected || listener.dataset.words.count < 2)
+                .accessibilityIdentifier("silent-speech-read")
+            Text(listener.readingSummary.map { "\($0) Check my words to see how well it tells them apart." } ?? "The best way to teach it: read short sentences made of your words for five minutes. Each word you mouth is saved as a take, so every word gets dozens of takes.")
+                .fmText(.bodySmall, color: fm.textSecondary)
+        }
+    }
+
+    private func sentenceText(_ reading: SilentReading) -> Text {
+        reading.sentence.enumerated().reduce(Text(verbatim: "")) { (line: Text, item: (offset: Int, element: String)) -> Text in
+            let color: Color = item.offset < reading.position ? fm.textTertiary : (item.offset == reading.position ? fm.accent : fm.textPrimary)
+            let word: Text = Text(item.element).foregroundColor(color).fontWeight(item.offset == reading.position ? .bold : .regular)
+            return item.offset == 0 ? word : line + Text(verbatim: " ") + word
+        }
+    }
+
+    private func readingDetail(_ reading: SilentReading) -> String {
+        let saved: String = reading.collected == 1 ? "1 take saved" : "\(reading.collected) takes saved"
+        return "Sentence \(reading.sentencesRead + 1) · \(reading.clock) · \(saved)"
     }
 
     private var checkSection: some View {
@@ -180,7 +231,7 @@ struct SilentSpeechScreen: View {
             SilentHoldButton(
                 label: listener.hold == .decode ? "Mouth a word, then let go" : "Hold and mouth a word",
                 active: listener.hold == .decode,
-                enabled: listener.connected && !listener.dataset.takes.isEmpty,
+                enabled: listener.connected && !listener.dataset.takes.isEmpty && listener.reading == nil,
                 onBegin: { listener.beginHold(.decode) },
                 onEnd: { listener.endHold() })
                 .accessibilityIdentifier("silent-speech-decode")

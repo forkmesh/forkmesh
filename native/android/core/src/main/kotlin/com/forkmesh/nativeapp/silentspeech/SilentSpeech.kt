@@ -351,6 +351,14 @@ object SilentEvaluator {
     const val PERMUTATIONS = 500
     const val SEED = 0x5EED5EEDL
     const val MINIMUM_TAKES = 2
+    const val MANY_TAKES = 10
+    const val MANY_NEIGHBORS = 3
+
+    fun neighbors(dataset: SilentDataset): Int {
+        val counts = dataset.words.map { dataset.count(it.word) }.filter { it > 0 }
+        if (counts.size < 2) return 1
+        return if (counts.min() >= MANY_TAKES) MANY_NEIGHBORS else 1
+    }
 
     fun requirement(dataset: SilentDataset): String? {
         val ready = dataset.words.count { dataset.count(it.word) >= MINIMUM_TAKES }
@@ -378,12 +386,12 @@ object SilentEvaluator {
         for (i in labels.indices) {
             if (counts[labels[i]] < MINIMUM_TAKES) continue
             for (list in near) list.clear()
-            for (j in labels.indices) if (j != i) near[labels[j]].add(d[i][j])
+            for (j in labels.indices) if (j != i) keep(near[labels[j]], d[i][j], k)
             var guess = -1
             var score = Double.POSITIVE_INFINITY
             for (w in 0 until wordCount) {
                 if (near[w].isEmpty()) continue
-                val value = if (k == 1) near[w].min() else near[w].sorted().take(k).average()
+                val value = if (k == 1) near[w][0] else near[w].average()
                 if (value < score) {
                     score = value
                     guess = w
@@ -392,6 +400,25 @@ object SilentEvaluator {
             if (guess >= 0) out.add(SilentResult(labels[i], guess, score))
         }
         return out
+    }
+
+    fun keep(best: ArrayList<Double>, value: Double, k: Int) {
+        var i: Int
+        if (best.size < k) {
+            best.add(value)
+            i = best.size - 1
+        } else if (value < best[k - 1]) {
+            best[k - 1] = value
+            i = k - 1
+        } else {
+            return
+        }
+        while (i > 0 && best[i - 1] > best[i]) {
+            val t = best[i - 1]
+            best[i - 1] = best[i]
+            best[i] = t
+            i--
+        }
     }
 
     fun evaluate(
@@ -513,6 +540,82 @@ class SilentSegmenter(
     }
 }
 
+data class SilentReading(
+    val sentences: List<List<String>>,
+    val duration: Double = DURATION,
+    val index: Int = 0,
+    val heard: List<List<SilentSample>> = emptyList(),
+    val started: Double? = null,
+    val elapsed: Double = 0.0,
+    val sentencesRead: Int = 0,
+    val collected: Int = 0,
+) {
+    val sentence: List<String> get() = if (sentences.isEmpty()) emptyList() else sentences[index % sentences.size]
+    val position: Int get() = heard.size
+    val timeUp: Boolean get() = elapsed >= duration
+    val done: Boolean get() = timeUp && heard.isEmpty()
+
+    val clock: String get() = "${minutes(elapsed)} of ${minutes(duration)}"
+
+    val summary: String
+        get() {
+            val takes = if (collected == 1) "1 take" else "$collected takes"
+            val read = if (sentencesRead == 1) "1 sentence" else "$sentencesRead sentences"
+            return "Saved $takes from $read."
+        }
+
+    fun tick(t: Double): SilentReading {
+        val from = started ?: t
+        return copy(started = from, elapsed = max(0.0, t - from))
+    }
+
+    fun hear(segment: List<SilentSample>): Pair<SilentReading, List<Pair<String, List<SilentSample>>>> {
+        if (segment.isEmpty() || sentence.isEmpty()) return this to emptyList()
+        val next = heard + listOf(segment)
+        if (next.size < sentence.size) return copy(heard = next) to emptyList()
+        val labelled = sentence.zip(next)
+        return copy(heard = emptyList(), index = index + 1, sentencesRead = sentencesRead + 1, collected = collected + labelled.size) to labelled
+    }
+
+    fun again(): SilentReading = copy(heard = emptyList())
+
+    fun skip(): SilentReading = copy(heard = emptyList(), index = index + 1)
+
+    fun forget(takes: Int): SilentReading =
+        if (takes <= 0 || sentencesRead <= 0) this else copy(sentencesRead = sentencesRead - 1, collected = max(0, collected - takes))
+
+    companion object {
+        const val DURATION = 300.0
+        const val SCRIPT_LENGTH = 100
+
+        fun start(words: List<String>, seed: Long, duration: Double = DURATION) = SilentReading(script(words, seed), duration)
+
+        fun length(wordCount: Int): Int = min(6, max(4, wordCount))
+
+        fun script(words: List<String>, seed: Long, count: Int = SCRIPT_LENGTH): List<List<String>> {
+            if (words.isEmpty()) return emptyList()
+            val length = length(words.size)
+            val random = SilentRandom(seed)
+            val pool = ArrayList<Int>()
+            while (pool.size < count * length) {
+                val order = IntArray(words.size) { it }
+                random.shuffle(order)
+                if (pool.isNotEmpty() && order.size > 1 && order[0] == pool.last()) {
+                    order[0] = order[1]
+                    order[1] = pool.last()
+                }
+                order.forEach { pool.add(it) }
+            }
+            return List(count) { s -> pool.subList(s * length, (s + 1) * length).map { words[it] } }
+        }
+
+        private fun minutes(seconds: Double): String {
+            val whole = max(0, floor(seconds).toInt())
+            return String.format(Locale.US, "%d:%02d", whole / 60, whole % 60)
+        }
+    }
+}
+
 data class SilentDataset(val words: List<SilentWord>, val takes: List<SilentTake> = emptyList()) {
     fun count(word: String): Int = takes.count { it.word == word }
 
@@ -534,6 +637,8 @@ data class SilentDataset(val words: List<SilentWord>, val takes: List<SilentTake
         val i = takes.indexOfLast { it.word == word }
         return if (i < 0) this else copy(takes = takes.filterIndexed { index, _ -> index != i })
     }
+
+    fun removeTakes(ids: Set<String>): SilentDataset = copy(takes = takes.filter { it.id !in ids })
 
     fun phrase(word: String): String = words.firstOrNull { it.word == word }?.spoken ?: word
 

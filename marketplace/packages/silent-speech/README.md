@@ -14,9 +14,13 @@ asked whether AirPods head motion can tell mouthed words apart.
 - **Earbuds.** On iPhone: AirPods Pro, AirPods Max, AirPods (3rd generation
   and later) or Beats Fit Pro. On Android 13 or later: earbuds that expose a
   head tracker, such as Pixel Buds Pro or Galaxy Buds with 360 Audio.
-- **Teach.** Pick a word, hold the button, mouth it, let go. Each take is
-  kept on the phone. Add your own words, and optionally a phrase to say
-  instead ("thirsty" can say "Could I have some water, please?").
+- **Teach.** Tap **Read sentences for 5 minutes**: it shows short sentences
+  made of your words and highlights the next one to mouth. Mouth each word
+  with a short stop between words; every word becomes a take, so five
+  minutes gives each word dozens of takes. You can also pick a word, hold the
+  button, mouth it and let go. Takes are kept on the phone. Add your own
+  words, and optionally a phrase to say instead ("thirsty" can say "Could I
+  have some water, please?").
 - **Check.** Tests every take against all the others, then against 500
   shuffles of the labels, and says whether your head motion really tells the
   words apart better than chance, with a table of what was taken for what.

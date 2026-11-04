@@ -53,7 +53,9 @@ Linux and the host JVM with the same synthetic data and expected numbers
    share between leave-one-out folds.
 4. **Matching.** `SilentDTW.distance`: Euclidean frame cost, Sakoe–Chiba band
    of 25% of the longer take (at least the length difference), total path cost
-   divided by `n + m`. A word's score is its best template (`neighbors` = 1).
+   divided by `n + m`. A word's score is its best template, or the mean of
+   its best three once every word has at least 10 takes
+   (`SilentEvaluator.neighbors`), so one mislabelled take cannot win alone.
    A match is rejected when it is above the max distance or less than 8% ahead
    of the runner-up.
 5. **Check** (`SilentEvaluator.evaluate`). Words with at least two takes are
@@ -64,6 +66,27 @@ Linux and the host JVM with the same synthetic data and expected numbers
    after two samples above `floor + max(4·spread, 0.05)`, with 0.2 s of
    pre-roll, and ends after 0.35 s below `floor + max(2·spread, 0.025)`;
    anything under 0.3 s from onset is dropped, and 3 s is the longest word.
+
+## Reading session
+
+One take per button press gives a handful of takes a word, and DTW with a
+handful of templates is fragile. **Read sentences for 5 minutes**
+(`SilentReading`) collects far more, in the same condition the listener
+decodes in: words mouthed one after another with a short stop between them.
+
+- **Script.** `SilentReading.script` deals the vocabulary in shuffled passes
+  (seeded SplitMix64, identical on both phones), never the same word twice in
+  a row, cut into sentences of 4 to 6 words. Every word appears equally often
+  and in varied neighbours.
+- **Labelling.** The session first measures stillness (two seconds, as in
+  step 6), then feeds `SilentSegmenter` output to `hear`. The highlighted word
+  moves on with each segment; when a sentence has as many segments as words,
+  they are labelled in order and saved as takes. **Start again** drops a
+  half-read sentence when the count slips (a nod, two words run together),
+  **Drop last sentence** removes a finished one, **Skip** moves on.
+- **Length.** Five minutes of motion-clock time; the session ends after the
+  sentence in progress, or on **Finish** or leaving the page. Around 1.5 s a
+  word gives roughly 200 takes, about 40 per word for the starter five.
 
 ## Storage and privacy
 

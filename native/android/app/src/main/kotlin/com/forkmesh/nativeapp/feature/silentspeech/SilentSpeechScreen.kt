@@ -37,6 +37,10 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -45,6 +49,7 @@ import com.forkmesh.nativeapp.silentspeech.SilentChannel
 import com.forkmesh.nativeapp.silentspeech.SilentDataset
 import com.forkmesh.nativeapp.silentspeech.SilentEvaluation
 import com.forkmesh.nativeapp.silentspeech.SilentEvaluator
+import com.forkmesh.nativeapp.silentspeech.SilentReading
 import com.forkmesh.nativeapp.silentspeech.SilentWord
 import com.forkmesh.nativeapp.ui.kit.FmCard
 import com.forkmesh.nativeapp.ui.kit.FmIconButton
@@ -177,6 +182,7 @@ class SilentSpeechScreen : Screen() {
         val listener = SilentSpeechListener
         Column(verticalArrangement = Arrangement.spacedBy(FmSpace.x1)) {
             FmSectionHeader("Teach", icon = "touch_app")
+            ReadSection()
             val word = listener.selectedWord
             if (word == null) {
                 Note("Add a word to teach it.")
@@ -186,12 +192,64 @@ class SilentSpeechScreen : Screen() {
             HoldButton(
                 if (active) "Mouth “$word”, then let go" else "Hold and mouth “$word”",
                 active = active,
-                enabled = listener.connected,
+                enabled = listener.connected && listener.reading == null,
                 onBegin = { listener.beginHold(SilentHold.Train(word)) },
                 onEnd = { listener.endHold() },
             )
-            Note("Keep your head still, hold the button, mouth the word without a sound, then let go. Five takes of each word is a good start.")
+            Note("Or teach one word at a time: keep your head still, hold the button, mouth the word without a sound, then let go.")
         }
+    }
+
+    @Composable
+    private fun ReadSection() {
+        val listener = SilentSpeechListener
+        val reading = listener.reading
+        if (reading == null) {
+            FmToneButton(
+                "Read sentences for 5 minutes",
+                if (listener.connected && listener.dataset.words.size >= 2) { { listener.startReading() } } else null,
+                icon = "play_arrow",
+            )
+            Note(
+                listener.readingSummary?.let { "$it Check my words to see how well it tells them apart." }
+                    ?: "The best way to teach it: read short sentences made of your words for five minutes. Each word you mouth is saved as a take, so every word gets dozens of takes.",
+            )
+            return
+        }
+        FmCard(color = Fm.colors.bgRaised, padding = PaddingValues(FmSpace.x3)) {
+            Column(verticalArrangement = Arrangement.spacedBy(FmSpace.x2)) {
+                Text(sentenceText(reading), style = Fm.text.titleLarge, color = Fm.colors.textPrimary, modifier = Modifier.fillMaxWidth())
+                Text(readingDetail(reading), style = Fm.text.bodySmall, color = Fm.colors.textSecondary)
+            }
+        }
+        Note(
+            if (listener.calibrating) "Keep your head still for two seconds while it measures how still you are."
+            else "Mouth each word without a sound, with a short stop between words. The highlight moves on as each word is heard.",
+        )
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(FmSpace.x2)) {
+            FmToneButton("Start again", if (reading.position > 0) { { listener.readAgain() } } else null, icon = "refresh")
+            FmToneButton("Skip", { listener.skipSentence() }, icon = "skip_next")
+            if (listener.lastSentence.isNotEmpty()) FmToneButton("Drop last sentence", { listener.dropLastSentence() }, icon = "undo")
+            FmToneButton("Finish", { listener.finishReading() }, icon = "stop")
+        }
+    }
+
+    @Composable
+    private fun sentenceText(reading: SilentReading) = buildAnnotatedString {
+        reading.sentence.forEachIndexed { i, word ->
+            if (i > 0) append(" ")
+            val style = when {
+                i < reading.position -> SpanStyle(color = Fm.colors.textTertiary)
+                i == reading.position -> SpanStyle(color = Fm.colors.accent, fontWeight = FontWeight.Bold)
+                else -> SpanStyle(color = Fm.colors.textPrimary)
+            }
+            withStyle(style) { append(word) }
+        }
+    }
+
+    private fun readingDetail(reading: SilentReading): String {
+        val saved = if (reading.collected == 1) "1 take saved" else "${reading.collected} takes saved"
+        return "Sentence ${reading.sentencesRead + 1} · ${reading.clock} · $saved"
     }
 
     @Composable
@@ -232,7 +290,7 @@ class SilentSpeechScreen : Screen() {
             HoldButton(
                 if (active) "Mouth a word, then let go" else "Hold and mouth a word",
                 active = active,
-                enabled = listener.connected && listener.dataset.takes.isNotEmpty(),
+                enabled = listener.connected && listener.dataset.takes.isNotEmpty() && listener.reading == null,
                 onBegin = { listener.beginHold(SilentHold.Decode) },
                 onEnd = { listener.endHold() },
             )

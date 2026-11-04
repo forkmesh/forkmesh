@@ -66,7 +66,7 @@ def test_core_has_no_platform_imports_and_matches_on_both_phones():
     assert imports == {"Foundation"}
     kotlin = _read(KOTLIN / "silentspeech" / "SilentSpeech.kt")
     assert "import android" not in kotlin
-    for name in ("SilentDTW", "SilentEvaluator", "SilentSegmenter", "SilentNoiseFloor", "SilentDataset", "SilentRandom"):
+    for name in ("SilentDTW", "SilentEvaluator", "SilentSegmenter", "SilentNoiseFloor", "SilentDataset", "SilentRandom", "SilentReading"):
         assert name in swift and name in kotlin, name
     for constant in ("0.25", "0.12", "500", "0x5EED", "1.4826", "0.08"):
         assert constant in swift and constant in kotlin, constant

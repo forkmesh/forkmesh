@@ -236,6 +236,90 @@ class SilentSpeechTest {
         near(0.02, dataset.takes[0].samples[1].acceleration!!.x)
     }
 
+    fun testReadingScriptIsBalancedWithoutRepeatsAndMatchesTheIPhone() {
+        val words = listOf("yes", "no", "help", "stop", "water")
+        val script = SilentReading.script(words, 7, count = 20)
+        assertEq(20, script.size)
+        expect(script.all { it.size == 5 }, "five words a sentence")
+        val flat = script.flatten()
+        assertEq(setOf(20), words.map { w -> flat.count { it == w } }.toSet())
+        expect(flat.zipWithNext().none { it.first == it.second }, "no word twice in a row")
+        assertEq("water no stop yes help", script[0].joinToString(" "))
+        assertEq("yes help stop no water", script[1].joinToString(" "))
+        assertEq(listOf(4, 4, 4), SilentReading.script(listOf("yes", "no"), 1, count = 3).map { it.size })
+        assertEq(6, SilentReading.length(9))
+        assertEq(emptyList<List<String>>(), SilentReading.script(emptyList(), 1))
+    }
+
+    fun testReadingLabelsEachHeardWordInOrder() {
+        var reading = SilentReading.start(listOf("yes", "no", "help", "stop"), 3, duration = 10.0)
+        val first = reading.sentence
+        val random = SilentRandom(4)
+        var labelled = emptyList<Pair<String, List<SilentSample>>>()
+        for (word in first) {
+            expect(labelled.isEmpty(), "labelled only at the end of the sentence")
+            val (next, out) = reading.hear(SilentSynth.take(word, random))
+            reading = next
+            labelled = out
+        }
+        assertEq(first, labelled.map { it.first })
+        assertEq(1, reading.sentencesRead)
+        assertEq(4, reading.collected)
+        assertEq(1, reading.index)
+        assertEq(0, reading.position)
+        assertEq("Saved 4 takes from 1 sentence.", reading.summary)
+        reading = reading.hear(SilentSynth.take("yes", random)).first
+        assertEq(1, reading.position)
+        reading = reading.again()
+        assertEq(0, reading.position)
+        assertEq(1, reading.index)
+        reading = reading.skip()
+        assertEq(2, reading.index)
+        reading = reading.forget(4)
+        assertEq(0, reading.collected)
+        assertEq(0, reading.sentencesRead)
+    }
+
+    fun testReadingRunsForItsDuration() {
+        var reading = SilentReading.start(listOf("yes", "no"), 1, duration = 300.0)
+        reading = reading.tick(1000.0).tick(1072.6)
+        assertEq("1:12 of 5:00", reading.clock)
+        expect(!reading.timeUp, "not yet")
+        reading = reading.tick(1300.0)
+        expect(reading.done, "done after five minutes")
+        reading = reading.hear(listOf(SilentSample(0.0, SilentVector.ZERO, SilentQuaternion.IDENTITY))).first
+        expect(!reading.done, "finishes the sentence first")
+    }
+
+    fun testManyTakesMatchOnThreeNeighbours() {
+        assertEq(1, SilentEvaluator.neighbors(SilentSynth.dataset(listOf("yes", "no"), 9, 1)))
+        var dataset = SilentSynth.dataset(listOf("yes", "no"), 10, 1)
+        assertEq(3, SilentEvaluator.neighbors(dataset))
+        dataset = dataset.addWord("help")!!
+        assertEq(3, SilentEvaluator.neighbors(dataset))
+        dataset = dataset.removeTakes(setOf("yes-0", "no-1"))
+        assertEq(9, dataset.count("yes"))
+        assertEq(1, SilentEvaluator.neighbors(dataset))
+    }
+
+    fun testLeaveOneOutOnThreeNeighboursMatchesSortingEveryDistance() {
+        val random = SilentRandom(21)
+        val n = 30
+        val d = Array(n) { DoubleArray(n) }
+        for (i in 0 until n) for (j in i + 1 until n) {
+            d[i][j] = Math.round(random.unit() * 8) / 4.0
+            d[j][i] = d[i][j]
+        }
+        val labels = IntArray(n) { it % 3 }
+        val results = SilentEvaluator.leaveOneOut(d, labels, 3, 3)
+        results.forEachIndexed { i, r ->
+            val scores = (0 until 3).map { w -> labels.indices.filter { it != i && labels[it] == w }.map { d[i][it] }.sorted().take(3).average() }
+            assertEq(scores.min(), r.distance)
+            assertEq(scores.indexOf(scores.min()), r.guess)
+        }
+        assertEq(n, results.size)
+    }
+
     fun testTranscriptUndoAndClear() {
         val transcript = SilentTranscript().append("help").append("water")
         assertEq("help water", transcript.text)
