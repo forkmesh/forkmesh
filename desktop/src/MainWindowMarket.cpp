@@ -4968,6 +4968,10 @@ forkmesh::market::NativePackageHost MainWindow::nativePackageHost(
         return forkmesh::market::nativePackageWebPageUrl(catalogApiUrl(), path)
             .toString(QUrl::FullyEncoded);
     };
+    if (permissionIds.contains(QStringLiteral("network.socket.connect")))
+        host.authorizeConnection = [this](const QString &method, const QUrl &url) {
+            return authorizeFirewallConnection(method, url);
+        };
     if (permissionIds.contains(QStringLiteral("desktop.models.usage.read")))
         host.agentUsagePage = [this](QWidget *parent) {
             return buildAgentUsagePage(parent);

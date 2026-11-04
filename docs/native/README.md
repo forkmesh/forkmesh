@@ -51,6 +51,7 @@ overview of every app is [apps.md](../apps.md). Per-app READMEs:
 | [NEXUS.md](NEXUS.md) | NEXUS package, permissions, safety policy, host integration and verification |
 | [notes.md](notes.md) | Notes: filters, autosave, conflicts, preview, sharing, links, export |
 | [RSS_READER_IOS.md](RSS_READER_IOS.md) | The local-only RSS Reader on iPhone |
+| [reticulum-android.md](reticulum-android.md) | The Reticulum plugin on Android: mesh map, LXMF messaging, IFAC, and what differs from the desktop |
 | [STATS.md](STATS.md) | The Stats board: every desktop tile over `stats.tiles`, and the release-version tiles |
 | [CAPTURE_MARKUP.md](CAPTURE_MARKUP.md) | Screen capture and markup in the composer, and selectable text |
 | [REFERENCE_LINKS.md](REFERENCE_LINKS.md) | Issue, task, pull request and commit links in messages |

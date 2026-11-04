@@ -12,8 +12,8 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-class SecureStore(context: Context) : SecretStore {
-    private val prefs = context.applicationContext.getSharedPreferences("forkmesh.secure", Context.MODE_PRIVATE)
+class SecureStore(context: Context, file: String = "forkmesh.secure") : SecretStore {
+    private val prefs = context.applicationContext.getSharedPreferences(file, Context.MODE_PRIVATE)
 
     @Synchronized
     override fun read(key: String): String? {

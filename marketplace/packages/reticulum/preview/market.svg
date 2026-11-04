@@ -1,0 +1,245 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="title desc">
+  <title id="title">Reticulum</title>
+  <desc id="desc">The Reticulum page: tiles for connection, destinations, announces and traffic above a radial network map with destinations placed by hop count around two interfaces, and a traffic chart beside it.</desc>
+  <rect width="1200" height="720" fill="#0d1117"/>
+  <text x="48" y="64" fill="#e6edf3" font-family="system-ui, sans-serif" font-size="30" font-weight="700">Reticulum</text>
+  <text x="232" y="62" fill="#8b949e" font-family="system-ui, sans-serif" font-size="16">2 of 2 interfaces online · you are &lt;3f9a1c…7be2&gt;</text>
+  <rect x="1000" y="38" width="150" height="36" rx="8" fill="none" stroke="#30363d"/><text x="1043" y="62" fill="#c9d1d9" font-family="system-ui, sans-serif" font-size="16">Announce</text>
+  <rect x="48" y="96" width="211" height="92" rx="10" fill="#161b22" stroke="#30363d"/>
+  <circle cx="68" cy="118" r="5" fill="#3fb950"/>
+  <text x="80" y="123" fill="#8b949e" font-family="system-ui, sans-serif" font-size="14">Connection</text>
+  <text x="64" y="154" fill="#e6edf3" font-family="system-ui, sans-serif" font-size="22" font-weight="700">Online</text>
+  <text x="64" y="176" fill="#8b949e" font-family="system-ui, sans-serif" font-size="12">2 of 2 interfaces up</text>
+  <rect x="271" y="96" width="211" height="92" rx="10" fill="#161b22" stroke="#30363d"/>
+  <text x="287" y="123" fill="#8b949e" font-family="system-ui, sans-serif" font-size="14">Destinations</text>
+  <text x="287" y="154" fill="#e6edf3" font-family="system-ui, sans-serif" font-size="22" font-weight="700">1,284</text>
+  <text x="287" y="176" fill="#8b949e" font-family="system-ui, sans-serif" font-size="12">37 new in 10 min</text>
+  <rect x="494" y="96" width="211" height="92" rx="10" fill="#161b22" stroke="#30363d"/>
+  <text x="510" y="123" fill="#8b949e" font-family="system-ui, sans-serif" font-size="14">Announces</text>
+  <text x="510" y="154" fill="#e6edf3" font-family="system-ui, sans-serif" font-size="22" font-weight="700">46/min</text>
+  <text x="510" y="176" fill="#8b949e" font-family="system-ui, sans-serif" font-size="12">9,812 heard · 3 rejected</text>
+  <polyline points="625.3,119.1 628.3,128.9 631.2,128.9 634.2,120.2 637.1,122.0 640.0,123.5 643.0,129.0 645.9,127.1 648.9,120.4 651.8,119.2 654.7,129.1 657.7,128.7 660.6,120.1 663.5,122.1 666.5,123.7 669.4,129.2 672.4,126.9 675.3,120.3 678.2,119.3 681.2,129.2 684.1,128.5 687.1,120.0 690.0,122.1 692.9,123.8" fill="none" stroke="#3987e5" stroke-width="2" stroke-linejoin="round"/>
+  <rect x="718" y="96" width="211" height="92" rx="10" fill="#161b22" stroke="#30363d"/>
+  <text x="734" y="123" fill="#8b949e" font-family="system-ui, sans-serif" font-size="14">Traffic</text>
+  <text x="734" y="154" fill="#e6edf3" font-family="system-ui, sans-serif" font-size="22" font-weight="700">3.4 KB/s</text>
+  <text x="734" y="176" fill="#8b949e" font-family="system-ui, sans-serif" font-size="12">↓ 3.1 KB/s · ↑ 0.3 KB/s</text>
+  <polyline points="848.5,132.3 851.5,125.6 854.4,118.6 857.4,122.9 860.3,126.4 863.2,127.4 866.2,124.5 869.1,120.0 872.1,121.2 875.0,132.5 877.9,125.5 880.9,118.5 883.8,123.0 886.7,126.6 889.7,127.2 892.6,124.4 895.6,120.0 898.5,121.3 901.4,132.7 904.4,125.3 907.3,118.5 910.3,123.0 913.2,126.8 916.1,127.0" fill="none" stroke="#3987e5" stroke-width="2" stroke-linejoin="round"/>
+  <rect x="941" y="96" width="211" height="92" rx="10" fill="#161b22" stroke="#30363d"/>
+  <text x="957" y="123" fill="#8b949e" font-family="system-ui, sans-serif" font-size="14">Path lookups</text>
+  <text x="957" y="154" fill="#e6edf3" font-family="system-ui, sans-serif" font-size="22" font-weight="700">4 found</text>
+  <text x="957" y="176" fill="#8b949e" font-family="system-ui, sans-serif" font-size="12">Fastest answer 412 ms</text>
+  <text x="48" y="226" fill="#58a6ff" font-family="system-ui, sans-serif" font-size="16" font-weight="700">Network</text>
+  <rect x="48" y="234" width="68" height="3" rx="1.5" fill="#58a6ff"/>
+  <text x="151" y="226" fill="#8b949e" font-family="system-ui, sans-serif" font-size="16" font-weight="400">Interfaces</text>
+  <text x="281" y="226" fill="#8b949e" font-family="system-ui, sans-serif" font-size="16" font-weight="400">Destinations</text>
+  <text x="429" y="226" fill="#8b949e" font-family="system-ui, sans-serif" font-size="16" font-weight="400">Activity</text>
+  <text x="541" y="226" fill="#8b949e" font-family="system-ui, sans-serif" font-size="16" font-weight="400">Identity</text>
+  <line x1="48" y1="238" x2="1152" y2="238" stroke="#21262d"/>
+  <circle cx="340" cy="462" r="52" fill="none" stroke="#21262d" stroke-width="1.5"/>
+  <text x="346" y="406" fill="#8b949e" font-family="system-ui, sans-serif" font-size="11">1 hop</text>
+  <circle cx="340" cy="462" r="98" fill="none" stroke="#21262d" stroke-width="1.5"/>
+  <text x="346" y="360" fill="#8b949e" font-family="system-ui, sans-serif" font-size="11">2 hops</text>
+  <circle cx="340" cy="462" r="144" fill="none" stroke="#21262d" stroke-width="1.5"/>
+  <text x="346" y="314" fill="#8b949e" font-family="system-ui, sans-serif" font-size="11">3 hops</text>
+  <circle cx="340" cy="462" r="190" fill="none" stroke="#21262d" stroke-width="1.5"/>
+  <text x="346" y="268" fill="#8b949e" font-family="system-ui, sans-serif" font-size="11">4 hops</text>
+  <line x1="330.1" y1="452.1" x2="198.6" y2="305.0" stroke="#21262d" stroke-dasharray="4 4"/>
+  <line x1="352.9" y1="456.6" x2="392.7" y2="440.2" stroke="#58a6ff" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="527.9" cy="376.9" r="4" fill="#3fb950"/>
+  <text x="535.9" y="380.9" fill="#e6edf3" font-family="system-ui, sans-serif" font-size="12" font-weight="600" text-anchor="start">RMAP Backbone 1</text>
+  <line x1="340.0" y1="476.0" x2="340.0" y2="684.0" stroke="#21262d" stroke-dasharray="4 4"/>
+  <line x1="327.1" y1="467.4" x2="287.3" y2="483.8" stroke="#58a6ff" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="152.1" cy="539.1" r="4" fill="#3fb950"/>
+  <text x="144.1" y="543.1" fill="#e6edf3" font-family="system-ui, sans-serif" font-size="12" font-weight="600" text-anchor="end">Local rnsd</text>
+  <circle cx="359.5" cy="508.7" r="3.5" fill="#6e7681" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="400.0" cy="443.7" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="221.4" cy="526.3" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <rect x="254.7" y="328.9" width="9" height="9" rx="1.5" fill="#d95926" stroke="#0d1117" stroke-width="2"/>
+  <rect x="320.4" y="369.1" width="9" height="9" rx="1.5" fill="#d95926" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="249.3" cy="631.0" r="3.5" fill="#6e7681" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="219.3" cy="381.4" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="308.8" cy="419.3" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="432.6" cy="362.6" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="374.9" cy="411.4" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <rect x="378.2" y="331.2" width="9" height="9" rx="1.5" fill="#d95926" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="487.7" cy="573.5" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <polygon points="388.1,370.7 394.1,376.7 388.1,382.7 382.1,376.7" fill="#199e70" stroke="#0d1117" stroke-width="2"/>
+  <polygon points="371.9,498.5 377.4,508.5 366.4,508.5" fill="#c98500" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="336.0" cy="419.5" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="257.5" cy="625.7" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="210.3" cy="517.0" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="330.8" cy="404.0" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="330.8" cy="404.0" r="16" fill="none" stroke="#3987e5" stroke-opacity="0.45" stroke-width="2"/>
+  <circle cx="330.8" cy="404.0" r="10" fill="none" stroke="#58a6ff" stroke-width="2"/>
+  <line x1="340" y1="462" x2="330.8" y2="404.0" stroke="#58a6ff" stroke-dasharray="5 4" stroke-width="1.5"/>
+  <rect x="344.8" y="391.0" width="118" height="26" rx="6" fill="#161b22" stroke="#30363d"/><text x="403.8" y="409.0" fill="#e6edf3" font-family="system-ui, sans-serif" font-size="13" font-weight="600" text-anchor="middle">Sideband peer</text>
+  <circle cx="495.2" cy="583.4" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="285.2" cy="390.2" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="237.1" cy="438.9" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <polygon points="419.4,278.5 424.9,288.5 413.9,288.5" fill="#c98500" stroke="#0d1117" stroke-width="2"/>
+  <polygon points="439.9,338.9 445.4,348.9 434.4,348.9" fill="#c98500" stroke="#0d1117" stroke-width="2"/>
+  <rect x="404.8" y="377.2" width="9" height="9" rx="1.5" fill="#d95926" stroke="#0d1117" stroke-width="2"/>
+  <rect x="278.6" y="548.0" width="9" height="9" rx="1.5" fill="#d95926" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="159.0" cy="477.1" r="3.5" fill="#6e7681" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="391.0" cy="462.8" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="314.7" cy="422.8" r="3.5" fill="#6e7681" stroke="#0d1117" stroke-width="2"/>
+  <rect x="384.2" y="535.5" width="9" height="9" rx="1.5" fill="#d95926" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="288.0" cy="334.3" r="3.5" fill="#6e7681" stroke="#0d1117" stroke-width="2"/>
+  <polygon points="380.4,365.6 385.9,375.6 374.9,375.6" fill="#c98500" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="272.1" cy="637.4" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="198.3" cy="484.3" r="3.5" fill="#6e7681" stroke="#0d1117" stroke-width="2"/>
+  <polygon points="221.5,381.1 227.5,387.1 221.5,393.1 215.5,387.1" fill="#199e70" stroke="#0d1117" stroke-width="2"/>
+  <rect x="404.4" y="581.0" width="9" height="9" rx="1.5" fill="#d95926" stroke="#0d1117" stroke-width="2"/>
+  <rect x="283.6" y="326.6" width="9" height="9" rx="1.5" fill="#d95926" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="442.7" cy="476.5" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="444.6" cy="347.9" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <rect x="136.5" y="468.0" width="9" height="9" rx="1.5" fill="#d95926" stroke="#0d1117" stroke-width="2"/>
+  <rect x="430.0" y="444.2" width="9" height="9" rx="1.5" fill="#d95926" stroke="#0d1117" stroke-width="2"/>
+  <polygon points="288.5,463.1 294.0,473.1 283.0,473.1" fill="#c98500" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="443.5" cy="447.1" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <polygon points="391.5,320.2 397.5,326.2 391.5,332.2 385.5,326.2" fill="#199e70" stroke="#0d1117" stroke-width="2"/>
+  <polygon points="380.0,489.3 385.5,499.3 374.5,499.3" fill="#c98500" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="410.5" cy="640.9" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="280.5" cy="286.4" r="3.5" fill="#6e7681" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="348.7" cy="510.9" r="3.5" fill="#6e7681" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="375.7" cy="372.5" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="223.5" cy="308.9" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="297.3" cy="333.9" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="411.8" cy="391.6" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <polygon points="299.7,311.7 305.2,321.7 294.2,321.7" fill="#c98500" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="405.8" cy="524.0" r="3.5" fill="#6e7681" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="393.2" cy="386.5" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="445.4" cy="546.5" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="405.8" cy="528.3" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <rect x="426.8" y="432.5" width="9" height="9" rx="1.5" fill="#d95926" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="230.8" cy="629.4" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="310.5" cy="412.5" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="319.4" cy="372.0" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="370.0" cy="612.0" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <polygon points="296.3,542.6 301.8,552.6 290.8,552.6" fill="#c98500" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="386.8" cy="483.1" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="213.1" cy="592.9" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="476.6" cy="429.9" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="391.7" cy="450.9" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="377.6" cy="510.6" r="3.5" fill="#6e7681" stroke="#0d1117" stroke-width="2"/>
+  <polygon points="404.8,520.3 410.8,526.3 404.8,532.3 398.8,526.3" fill="#199e70" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="284.1" cy="290.5" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <rect x="258.6" y="520.2" width="9" height="9" rx="1.5" fill="#d95926" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="192.9" cy="587.4" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <polygon points="330.4,400.5 335.9,410.5 324.9,410.5" fill="#c98500" stroke="#0d1117" stroke-width="2"/>
+  <polygon points="323.4,359.5 328.9,369.5 317.9,369.5" fill="#c98500" stroke="#0d1117" stroke-width="2"/>
+  <polygon points="263.9,339.1 269.4,349.1 258.4,349.1" fill="#c98500" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="189.2" cy="573.9" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <polygon points="219.4,534.4 224.9,544.4 213.9,544.4" fill="#c98500" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="237.1" cy="567.5" r="3.5" fill="#6e7681" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="489.7" cy="425.1" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="491.9" cy="464.2" r="3.5" fill="#6e7681" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="483.8" cy="479.5" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="400.2" cy="282.0" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <polygon points="321.6,403.6 327.6,409.6 321.6,415.6 315.6,409.6" fill="#199e70" stroke="#0d1117" stroke-width="2"/>
+  <polygon points="459.9,365.1 465.9,371.1 459.9,377.1 453.9,371.1" fill="#199e70" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="280.7" cy="457.1" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="457.8" cy="550.6" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="238.5" cy="485.2" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="361.0" cy="417.1" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <rect x="206.6" y="418.8" width="9" height="9" rx="1.5" fill="#d95926" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="395.4" cy="456.2" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <polygon points="178.4,548.3 183.9,558.3 172.9,558.3" fill="#c98500" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="377.8" cy="598.7" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="438.3" cy="476.0" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="354.5" cy="410.9" r="3.5" fill="#6e7681" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="355.7" cy="402.1" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="213.9" cy="419.6" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="218.8" cy="599.2" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <rect x="294.1" y="318.3" width="9" height="9" rx="1.5" fill="#d95926" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="193.8" cy="411.0" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="459.8" cy="618.9" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="317.1" cy="358.4" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="233.8" cy="557.0" r="3.5" fill="#6e7681" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="366.4" cy="497.8" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="469.0" cy="415.6" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <polygon points="360.8,415.8 366.3,425.8 355.3,425.8" fill="#c98500" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="387.9" cy="649.7" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="362.4" cy="424.9" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="338.8" cy="321.0" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="404.7" cy="288.2" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="354.1" cy="362.4" r="3.5" fill="#6e7681" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="372.2" cy="496.5" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <polygon points="420.7,562.1 426.2,572.1 415.2,572.1" fill="#c98500" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="248.3" cy="422.6" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="262.8" cy="533.1" r="3.5" fill="#6e7681" stroke="#0d1117" stroke-width="2"/>
+  <rect x="477.9" y="318.5" width="9" height="9" rx="1.5" fill="#d95926" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="330.2" cy="415.9" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="433.7" cy="584.2" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="244.5" cy="455.0" r="3.5" fill="#6e7681" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="373.0" cy="487.2" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="404.0" cy="544.9" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <polygon points="363.1,304.9 368.6,314.9 357.6,314.9" fill="#c98500" stroke="#0d1117" stroke-width="2"/>
+  <rect x="466.1" y="521.2" width="9" height="9" rx="1.5" fill="#d95926" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="524.5" cy="502.1" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="414.7" cy="575.9" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <rect x="433.7" y="361.9" width="9" height="9" rx="1.5" fill="#d95926" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="352.4" cy="562.9" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <polygon points="401.8,444.9 407.3,454.9 396.3,454.9" fill="#c98500" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="479.5" cy="485.0" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <polygon points="338.5,397.2 344.5,403.2 338.5,409.2 332.5,403.2" fill="#199e70" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="390.1" cy="331.8" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="383.7" cy="420.0" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="372.1" cy="498.6" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="156.3" cy="420.2" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <polygon points="160.4,452.5 166.4,458.5 160.4,464.5 154.4,458.5" fill="#199e70" stroke="#0d1117" stroke-width="2"/>
+  <rect x="219.4" y="383.0" width="9" height="9" rx="1.5" fill="#d95926" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="348.7" cy="404.6" r="3.5" fill="#6e7681" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="439.7" cy="368.7" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="418.0" cy="641.7" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="317.7" cy="552.5" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="252.4" cy="470.3" r="3.5" fill="#6e7681" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="336.1" cy="419.8" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <rect x="286.9" y="457.9" width="9" height="9" rx="1.5" fill="#d95926" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="419.7" cy="425.4" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="224.3" cy="395.5" r="3.5" fill="#6e7681" stroke="#0d1117" stroke-width="2"/>
+  <polygon points="294.3,428.6 300.3,434.6 294.3,440.6 288.3,434.6" fill="#199e70" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="463.1" cy="537.9" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="217.6" cy="603.7" r="3.5" fill="#6e7681" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="432.9" cy="338.6" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="336.7" cy="419.7" r="5" fill="#3987e5" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="288.6" cy="554.9" r="3.5" fill="#6e7681" stroke="#0d1117" stroke-width="2"/>
+  <rect x="520.7" y="507.7" width="9" height="9" rx="1.5" fill="#d95926" stroke="#0d1117" stroke-width="2"/>
+  <circle cx="340" cy="462" r="12" fill="#58a6ff" stroke="#0d1117" stroke-width="3"/><circle cx="340" cy="462" r="4" fill="#0d1117"/>
+  <text x="340" y="492" fill="#e6edf3" font-family="system-ui, sans-serif" font-size="12" font-weight="600" text-anchor="middle">This desktop</text>
+  <circle cx="60" cy="700" r="5" fill="#3987e5"/><text x="70" y="704" fill="#8b949e" font-family="system-ui, sans-serif" font-size="12">People 612</text>
+  <circle cx="166.0" cy="700" r="5" fill="#d95926"/><text x="176.0" y="704" fill="#8b949e" font-family="system-ui, sans-serif" font-size="12">Nodes and services 241</text>
+  <circle cx="351.2" cy="700" r="5" fill="#199e70"/><text x="361.2" y="704" fill="#8b949e" font-family="system-ui, sans-serif" font-size="12">Propagation nodes 38</text>
+  <circle cx="523.2" cy="700" r="5" fill="#c98500"/><text x="533.2" y="704" fill="#8b949e" font-family="system-ui, sans-serif" font-size="12">Transport 97</text>
+  <circle cx="642.4000000000001" cy="700" r="5" fill="#6e7681"/><text x="652.4000000000001" y="704" fill="#8b949e" font-family="system-ui, sans-serif" font-size="12">Other 296</text>
+  <text x="700" y="280" fill="#e6edf3" font-family="system-ui, sans-serif" font-size="15" font-weight="700">Traffic, last 3 minutes</text>
+  <line x1="1000" y1="275" x2="1014" y2="275" stroke="#3987e5" stroke-width="3"/><text x="1020" y="280" fill="#8b949e" font-family="system-ui, sans-serif" font-size="12">Received</text>
+  <line x1="1090" y1="275" x2="1104" y2="275" stroke="#d95926" stroke-width="3"/><text x="1110" y="280" fill="#8b949e" font-family="system-ui, sans-serif" font-size="12">Sent</text>
+  <line x1="756" y1="470" x2="1148" y2="470" stroke="#30363d"/>
+  <text x="748" y="474" fill="#8b949e" font-family="system-ui, sans-serif" font-size="11" text-anchor="end">0</text>
+  <line x1="756" y1="428" x2="1148" y2="428" stroke="#21262d"/>
+  <text x="748" y="432" fill="#8b949e" font-family="system-ui, sans-serif" font-size="11" text-anchor="end">1 KB/s</text>
+  <line x1="756" y1="385" x2="1148" y2="385" stroke="#21262d"/>
+  <text x="748" y="389" fill="#8b949e" font-family="system-ui, sans-serif" font-size="11" text-anchor="end">2 KB/s</text>
+  <line x1="756" y1="342" x2="1148" y2="342" stroke="#21262d"/>
+  <text x="748" y="346" fill="#8b949e" font-family="system-ui, sans-serif" font-size="11" text-anchor="end">3 KB/s</text>
+  <line x1="756" y1="300" x2="1148" y2="300" stroke="#21262d"/>
+  <text x="748" y="304" fill="#8b949e" font-family="system-ui, sans-serif" font-size="11" text-anchor="end">4 KB/s</text>
+  <text x="756" y="488" fill="#8b949e" font-family="system-ui, sans-serif" font-size="11" text-anchor="start">3 min ago</text>
+  <text x="887" y="488" fill="#8b949e" font-family="system-ui, sans-serif" font-size="11" text-anchor="middle">2 min</text>
+  <text x="1017" y="488" fill="#8b949e" font-family="system-ui, sans-serif" font-size="11" text-anchor="middle">1 min</text>
+  <text x="1148" y="488" fill="#8b949e" font-family="system-ui, sans-serif" font-size="11" text-anchor="end">now</text>
+  <polygon points="756.0,451.7 762.6,441.9 769.3,452.5 775.9,460.8 782.6,457.1 789.2,458.3 795.9,462.7 802.5,463.5 809.2,463.6 815.8,462.6 822.4,462.6 829.1,460.4 835.7,452.1 842.4,452.8 849.0,459.6 855.7,448.9 862.3,438.8 868.9,451.8 875.6,457.7 882.2,445.7 888.9,447.5 895.5,459.6 902.2,460.1 908.8,458.6 915.5,462.0 922.1,463.5 928.7,463.6 935.4,462.3 942.0,461.6 948.7,462.0 955.3,454.4 962.0,448.4 968.6,456.7 975.3,455.9 981.9,440.3 988.5,443.7 995.2,458.2 1001.8,452.6 1008.5,445.8 1015.1,455.8 1021.8,461.8 1028.4,459.9 1035.1,461.6 1041.7,463.5 1048.3,463.6 1055.0,462.4 1061.6,460.2 1068.3,461.7 1074.9,458.1 1081.6,447.3 1088.2,450.5 1094.8,458.9 1101.5,447.0 1108.1,438.6 1114.8,453.0 1121.4,458.1 1128.1,448.7 1134.7,452.0 1141.4,461.1 1148.0,461.6 1148.0,470.0 756.0,470.0" fill="#d95926" fill-opacity="0.12"/>
+  <polyline points="756.0,451.7 762.6,441.9 769.3,452.5 775.9,460.8 782.6,457.1 789.2,458.3 795.9,462.7 802.5,463.5 809.2,463.6 815.8,462.6 822.4,462.6 829.1,460.4 835.7,452.1 842.4,452.8 849.0,459.6 855.7,448.9 862.3,438.8 868.9,451.8 875.6,457.7 882.2,445.7 888.9,447.5 895.5,459.6 902.2,460.1 908.8,458.6 915.5,462.0 922.1,463.5 928.7,463.6 935.4,462.3 942.0,461.6 948.7,462.0 955.3,454.4 962.0,448.4 968.6,456.7 975.3,455.9 981.9,440.3 988.5,443.7 995.2,458.2 1001.8,452.6 1008.5,445.8 1015.1,455.8 1021.8,461.8 1028.4,459.9 1035.1,461.6 1041.7,463.5 1048.3,463.6 1055.0,462.4 1061.6,460.2 1068.3,461.7 1074.9,458.1 1081.6,447.3 1088.2,450.5 1094.8,458.9 1101.5,447.0 1108.1,438.6 1114.8,453.0 1121.4,458.1 1128.1,448.7 1134.7,452.0 1141.4,461.1 1148.0,461.6" fill="none" stroke="#d95926" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="756.0,407.9 762.6,373.4 769.3,397.7 775.9,415.9 782.6,362.0 789.2,350.7 795.9,408.1 802.5,409.0 809.2,377.1 815.8,400.8 822.4,429.5 829.1,427.2 835.7,430.0 842.4,435.7 849.0,435.8 855.7,431.1 862.3,419.6 868.9,424.5 875.6,421.3 882.2,378.2 888.9,373.1 895.5,415.3 902.2,391.2 908.8,343.9 915.5,382.6 922.1,420.7 928.7,393.7 935.4,391.5 942.0,423.7 948.7,431.7 955.3,431.1 962.0,435.6 968.6,435.7 975.3,433.0 981.9,418.5 988.5,414.2 995.2,426.3 1001.8,395.7 1008.5,358.6 1015.1,394.5 1021.8,413.6 1028.4,360.1 1035.1,358.1 1041.7,413.3 1048.3,413.2 1055.0,393.1 1061.6,414.8 1068.3,432.8 1074.9,433.0 1081.6,435.6 1088.2,435.4 1094.8,434.4 1101.5,421.8 1108.1,405.1 1114.8,419.1 1121.4,414.7 1128.1,363.2 1134.7,366.3 1141.4,415.0 1148.0,389.1 1148.0,470.0 756.0,470.0" fill="#3987e5" fill-opacity="0.12"/>
+  <polyline points="756.0,407.9 762.6,373.4 769.3,397.7 775.9,415.9 782.6,362.0 789.2,350.7 795.9,408.1 802.5,409.0 809.2,377.1 815.8,400.8 822.4,429.5 829.1,427.2 835.7,430.0 842.4,435.7 849.0,435.8 855.7,431.1 862.3,419.6 868.9,424.5 875.6,421.3 882.2,378.2 888.9,373.1 895.5,415.3 902.2,391.2 908.8,343.9 915.5,382.6 922.1,420.7 928.7,393.7 935.4,391.5 942.0,423.7 948.7,431.7 955.3,431.1 962.0,435.6 968.6,435.7 975.3,433.0 981.9,418.5 988.5,414.2 995.2,426.3 1001.8,395.7 1008.5,358.6 1015.1,394.5 1021.8,413.6 1028.4,360.1 1035.1,358.1 1041.7,413.3 1048.3,413.2 1055.0,393.1 1061.6,414.8 1068.3,432.8 1074.9,433.0 1081.6,435.6 1088.2,435.4 1094.8,434.4 1101.5,421.8 1108.1,405.1 1114.8,419.1 1121.4,414.7 1128.1,363.2 1134.7,366.3 1141.4,415.0 1148.0,389.1" fill="none" stroke="#3987e5" stroke-width="2.5" stroke-linejoin="round"/>
+  <text x="700" y="530" fill="#e6edf3" font-family="system-ui, sans-serif" font-size="15" font-weight="700">Sideband peer</text>
+  <text x="700" y="558" fill="#8b949e" font-family="system-ui, sans-serif" font-size="13">Application</text><text x="810" y="558" fill="#c9d1d9" font-family="system-ui, sans-serif" font-size="13">LXMF messaging (lxmf.delivery)</text>
+  <text x="700" y="582" fill="#8b949e" font-family="system-ui, sans-serif" font-size="13">Destination</text><text x="810" y="582" fill="#c9d1d9" font-family="system-ui, sans-serif" font-size="13">a41f0c9e27d84b6f9031c2e5d7a8b6f1</text>
+  <text x="700" y="606" fill="#8b949e" font-family="system-ui, sans-serif" font-size="13">Distance</text><text x="810" y="606" fill="#c9d1d9" font-family="system-ui, sans-serif" font-size="13">2 hops via RMAP Backbone 1</text>
+  <text x="700" y="630" fill="#8b949e" font-family="system-ui, sans-serif" font-size="13">Last heard</text><text x="810" y="630" fill="#c9d1d9" font-family="system-ui, sans-serif" font-size="13">42 s ago</text>
+  <text x="700" y="654" fill="#8b949e" font-family="system-ui, sans-serif" font-size="13">Path lookup</text><text x="810" y="654" fill="#c9d1d9" font-family="system-ui, sans-serif" font-size="13">Answered in 412 ms</text>
+  <rect x="700" y="680" width="98" height="32" rx="7" fill="none" stroke="#30363d"/><text x="749" y="701" fill="#c9d1d9" font-family="system-ui, sans-serif" font-size="13" text-anchor="middle">Find path</text>
+  <rect x="810" y="680" width="98" height="32" rx="7" fill="none" stroke="#30363d"/><text x="859" y="701" fill="#c9d1d9" font-family="system-ui, sans-serif" font-size="13" text-anchor="middle">Copy hash</text>
+  <rect x="920" y="680" width="98" height="32" rx="7" fill="none" stroke="#30363d"/><text x="969" y="701" fill="#c9d1d9" font-family="system-ui, sans-serif" font-size="13" text-anchor="middle">Forget</text>
+</svg>

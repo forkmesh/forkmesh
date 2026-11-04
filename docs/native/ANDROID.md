@@ -601,6 +601,12 @@ How repositories reach mirrors is in [mirroring.md](../mirroring.md).
   stop after words sends the prompt (`SpeechDictation` `onQuiet`).
 - Approving waiting checks from a notification opens the app (the screen lock
   needs an on-screen dialog to fall back to); iOS approves from the banner.
+- Reticulum: Android also offers the shared-instance interface (another app's
+  Reticulum, such as Sideband, on TCP 127.0.0.1:37428) and UDP. The iPhone
+  offers TCP only, because no other app can share a Reticulum instance there
+  and UDP broadcast needs the multicast entitlement
+  ([reticulum-android.md](reticulum-android.md),
+  [reticulum-ios.md](reticulum-ios.md)).
 
 iOS features Android does not have, because they need an Apple-only API:
 

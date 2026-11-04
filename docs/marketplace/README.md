@@ -37,6 +37,7 @@ documentation; the package format, lifecycle and publishing rules are in
 | [runners.md](runners.md) | `runners`: your agent runners on desktop and phones |
 | [usage.md](usage.md) | `usage`: coding-agent account usage on desktop, iPhone and Android |
 | [openwrt.md](openwrt.md) | `openwrt`: an OpenWrt router and its USB storage |
+| [reticulum.md](reticulum.md) | `reticulum`: the Reticulum mesh network connector (map, stats, interfaces, path lookups) |
 | [files.md](files.md) | `files`: device files and SMB network shares |
 | [nexus.md](nexus.md) | `nexus`: desktop network inspection |
 | [secure-drive.md](secure-drive.md) | `secure-drive`: the encrypted shared drive format (`fmsd1`) |

@@ -190,6 +190,7 @@ sealed class Route {
     data class Strata(val repo: RepoRef?) : Route() { override val kind get() = Kind.Strata }
     data class Synapse(val repo: RepoRef?) : Route() { override val kind get() = Kind.Synapse }
     data object OpenWrtRouter : Route() { override val kind get() = Kind.OpenWrtRouter }
+    data object Reticulum : Route() { override val kind get() = Kind.Reticulum }
     data object FaceChanger : Route() { override val kind get() = Kind.FaceChanger }
     data object AppStoreStatus : Route() { override val kind get() = Kind.AppStoreStatus }
     data object Runners : Route() { override val kind get() = Kind.Runners }
@@ -246,7 +247,7 @@ sealed class Route {
         Vault("vault", "WS21"), Coves("coves", "WS21"), Cove("cove", "WS21"), Calories("calories", "existing"),
         Steps("steps", "existing"), Water("water", "existing"), Sleep("sleep", "existing"), SugarBreak("sugarBreak", "existing"),
         Stretch("stretch", "existing"), FoodGuide("foodGuide", "existing"), Speech("speech", "existing"),
-        GlassesAlert("glassesAlert", "existing"), PhoneSecurity("phoneSecurity", "existing"), SilentSpeech("silentSpeech", "existing"), Ember("ember", "existing"), Strata("strata", "existing"), Synapse("synapse", "existing"), OpenWrtRouter("openWrtRouter", "existing"), FaceChanger("faceChanger", "existing"), AppStoreStatus("appStoreStatus", "WS20"), Runners("runners", "WS7"), VideoMixDjStudio("videoMixDjStudio", "S045"), Poker("poker", "S046"), Usage("usage", "WS10"), RssReader("rssReader", "WS20"), InstanceFeed("instanceFeed", "WS20"), Mastodon("mastodon", "WS20"), SecureDrive("secureDrive", "WS23"), Files("files", "existing"), Nexus("nexus", "existing"), Workflows("workflows", "existing"),
+        GlassesAlert("glassesAlert", "existing"), PhoneSecurity("phoneSecurity", "existing"), SilentSpeech("silentSpeech", "existing"), Ember("ember", "existing"), Strata("strata", "existing"), Synapse("synapse", "existing"), OpenWrtRouter("openWrtRouter", "existing"), Reticulum("reticulum", "existing"), FaceChanger("faceChanger", "existing"), AppStoreStatus("appStoreStatus", "WS20"), Runners("runners", "WS7"), VideoMixDjStudio("videoMixDjStudio", "S045"), Poker("poker", "S046"), Usage("usage", "WS10"), RssReader("rssReader", "WS20"), InstanceFeed("instanceFeed", "WS20"), Mastodon("mastodon", "WS20"), SecureDrive("secureDrive", "WS23"), Files("files", "existing"), Nexus("nexus", "existing"), Workflows("workflows", "existing"),
         LocalAI("localAI", "existing"), Activity("activity", "WS20"), Logs("logs", "WS20"), Diagnostics("diagnostics", "WS20"),
         Stats("stats", "WS20"), Status("status", "WS20"), Admin("admin", "WS20"),
         Settings("settings", "WS18"), Orgs("orgs", "existing"), Org("org", "existing"), InstalledApps("installedApps", "WS22"),

@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-04", "area": "Market", "text": "A new Reticulum plugin connects the desktop, iPhone and Android to the Reticulum mesh network: chat end to end encrypted with Sideband and MeshChat users, see a live map of every destination by hop count with traffic and announce charts, find paths, and manage TCP, UDP, local rnsd and passphrase-protected interfaces."},
   {"date": "2026-11-04", "area": "Desktop", "text": "Opening the Market again no longer freezes the desktop for seconds when no package has changed."},
   {"date": "2026-11-03", "area": "Desktop", "text": "Creating a payment wallet in the app now asks you to back up its key right away, since the app holds the only copy."},
   {"date": "2026-11-03", "area": "Desktop", "text": "The Ledger now says when your payment wallet's key file has gone missing and offers to relink it, instead of showing it as never linked."},
