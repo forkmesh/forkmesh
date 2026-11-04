@@ -46,6 +46,7 @@ documentation; the package format, lifecycle and publishing rules are in
 | [rss-reader.md](rss-reader.md) | `rss-reader`: a local-only feed reader |
 | [instance-feed.md](instance-feed.md) | `instance-feed` (Feed): one instance's timeline; `feed` (Network Feed) |
 | [mastodon.md](mastodon.md) | `mastodon`: the Mastodon client on the web, phones and desktop |
+| [internet-archive.md](internet-archive.md) | `internet-archive`: archive.org backups of public repositories, and every mirror checked against them |
 | [discourse-mirror.md](discourse-mirror.md) | `discourse-mirror`: a read-only copy of a public Discourse forum in a Git repository |
 | [poker.md](poker.md) | `poker`: Texas Hold'em for virtual chips |
 | [video-mix-dj-studio.md](video-mix-dj-studio.md) | `video-mix-dj-studio`: the DJ studio on web, desktop and iOS (user guide: [DJ Studio jams](../dj-studio.md)) |

@@ -62,6 +62,7 @@
     const form = section.querySelector("[data-ai-review-settings-form]");
     form.querySelector("[data-ai-review-enabled]").checked = data.enabled === true;
     form.querySelector("[data-ai-review-default-on]").checked = data.defaultOn === true;
+    form.querySelector("[data-ai-review-notes]").checked = data.notesAssist !== false;
     form.querySelector("[data-ai-review-account]").value = data.accountId || "";
     const select = form.querySelector("[data-ai-review-model]");
     select.innerHTML = (data.models || []).map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.label)}${item.default ? " (default)" : ""}</option>`).join("");
@@ -99,6 +100,7 @@
         const reply = await aiReviewPost("/api/ai-review/settings", {
           enabled: form.querySelector("[data-ai-review-enabled]").checked,
           defaultOn: form.querySelector("[data-ai-review-default-on]").checked,
+          notesAssist: form.querySelector("[data-ai-review-notes]").checked,
           accountId: form.querySelector("[data-ai-review-account]").value.trim(),
           model: form.querySelector("[data-ai-review-model]").value,
           dailyCap: number("[data-ai-review-daily-cap]"),
