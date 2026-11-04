@@ -46,7 +46,14 @@ class OutreachRuntime(harness.MastodonRuntime):
                 "account": {"acct": "forkmesh"}, "mentions": []}}
         if parsed.path == "/api/v1/notifications":
             self.outbound_calls.append((url, method, dict(headers or {}), body))
-            return {"ok": True, "status": 200, "data": self.mentions}
+            limit = int(query.get("limit", ["40"])[0])
+            notes = sorted(self.mentions, key=lambda item: int(item["id"]))
+            if "min_id" in query:
+                notes = [item for item in notes if int(item["id"]) > int(query["min_id"][0])]
+                notes = notes[:limit]
+            else:
+                notes = notes[-limit:]
+            return {"ok": True, "status": 200, "data": list(reversed(notes))}
         return await super().outbound_json(url, method, headers, body)
 
 
@@ -276,8 +283,50 @@ def test_toot_sync_logs_mentions_from_known_contacts_as_replies():
     assert _fields(runtime, ada)["fields"]["mastodon_status"] == "replied"
     runtime.outbound_calls.clear()
     call(runtime.use("POST", body={}), "/api/crm/acme/emails/toots")
-    assert "since_id=901" in next(item[0] for item in runtime.outbound_calls
+    assert "min_id=901" in next(item[0] for item in runtime.outbound_calls
                                   if "/notifications?" in item[0])
+
+
+def _mention(number, acct, status_id):
+    return {"id": str(number), "type": "mention", "status": {
+        "id": str(status_id), "url": "https://hachyderm.io/@%s/%d" % (acct.split("@")[0], status_id),
+        "created_at": "2033-05-18T03:40:00.000Z", "spoiler_text": "",
+        "content": "<p>@forkmesh hello</p>", "visibility": "direct",
+        "account": {"acct": acct}, "mentions": [{"acct": "forkmesh"}]}}
+
+
+def test_toot_sync_pages_through_a_burst_of_mentions_oldest_first():
+    runtime = OutreachRuntime(mentions=[_mention(100, "who@example.org", 117558000000000100)])
+    _connect(runtime)
+    ada = _drafts(runtime, {"handle": "@ada@hachyderm.io", "draft": DRAFT})["data"]["ids"][0]
+    call(runtime.use("POST", body={"contactId": ada}), "/api/crm/acme/mastodon/send")
+    call(runtime.use("POST", body={}), "/api/crm/acme/emails/toots")
+    runtime.mentions = [_mention(100, "who@example.org", 117558000000000100),
+                        _mention(101, "ada@hachyderm.io", 117558000000000101)] + [
+        _mention(102 + n, "who@example.org", 117558000000000102 + n)
+        for n in range(crm.MASTODON_MENTION_PAGE + 10)]
+    runtime.outbound_calls.clear()
+    synced = call(runtime.use("POST", body={}), "/api/crm/acme/emails/toots")
+    assert synced["data"]["replies"] == 1, synced
+    pages = [item[0] for item in runtime.outbound_calls if "/notifications?" in item[0]]
+    assert len(pages) == 2 and "min_id=100" in pages[0]
+    assert _fields(runtime, ada)["fields"]["mastodon_status"] == "replied"
+
+
+def test_a_toot_to_a_contact_with_no_outreach_status_still_counts_its_reply():
+    runtime = OutreachRuntime()
+    ada = _contact(runtime, name="Ada", mastodon="@ada@hachyderm.io", flow="customers",
+                   stage="contacted")["id"]
+    sent = call(runtime.use("POST", body={
+        "url": "https://mastodon.social/@forkmesh/117558444444444444", "contactId": ada}),
+        "/api/crm/acme/emails/toot")
+    assert sent["data"]["outreach"] == "sent"
+    reply = call(runtime.use("POST", body={
+        "url": "https://hachyderm.io/@ada/117558555555555555",
+        "contactId": ada, "direction": "inbound"}), "/api/crm/acme/emails/toot")
+    assert reply["data"]["outreach"] == "replied"
+    contact = _fields(runtime, ada)
+    assert (contact["stage"], contact["fields"]["mastodon_status"]) == ("qualified", "replied")
 
 
 def test_the_leaderboard_counts_toots_apart_from_emails():

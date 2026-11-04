@@ -1616,11 +1616,17 @@ def test_desktop_skip_follow_and_reply_check_update_the_contact():
     replies = _feature_body("checkMastodonReplies")
     assert '"/api/v1/notifications"' in replies
     assert '"types[]"' in replies and 'QStringLiteral("mention")' in replies
-    assert 'QStringLiteral("40")' in replies
-    assert '"mastodon_status") !=\n            QLatin1String("sent")' in replies
+    assert "QString::number(kMastodonMentionPage)" in replies
+    assert "constexpr int kMastodonMentionPage = 80;" in FEATURE
+    assert '"mastodon_status"' not in replies
+    assert "key != follower.account" in replies
     assert '{QStringLiteral("direction"), QStringLiteral("inbound")}' in replies
     assert "loadOrganization();" in replies and "loadMastodonOutreach(false);" in replies
     assert "[this] { checkMastodonReplies(false); }" in FEATURE
+    organization = _feature_body("loadOrganization")
+    assert organization.count("checkMastodonReplies(true);") == 2
+    remaining = _feature_body("loadRemainingContacts")
+    assert "checkMastodonReplies(true);\n            return;" in remaining
 
 
 def test_prepare_more_starts_an_agent_session_through_the_window_command():
