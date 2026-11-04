@@ -4385,6 +4385,9 @@ private:
     void ensureSectionBuilt(int index);
     QWidget *buildMarketSection();
     void refreshMarketPage();
+    void refreshMarketPageIfChanged();
+    void queueMarketResidentRead();
+    void applyMarketResidentBytes(const QHash<QString, qint64> &resident);
     QPixmap marketPreviewPixmap(const QString &path, const QSize &box,
                                 QString *key = nullptr);
     void applyMarketPreview(const QString &key, const QImage &image);
@@ -9137,6 +9140,15 @@ private:
     void repoWorkflowRunChanged(const forkmesh::repoworkflows::Run &run);
     QString finishRepoWorkflowRun(const forkmesh::repoworkflows::Run &run, const QString &markdown);
     void checkRepoWorkflowSchedules();
+    struct RepoWorkflowScheduleScan {
+        int index = -1;
+        QString key;
+        QString checkout;
+        QList<forkmesh::repoworkflows::Listing> listings;
+        QHash<QString, qint64> lastStarted;
+    };
+    void applyRepoWorkflowSchedules(const QList<RepoWorkflowScheduleScan> &scans);
+    bool m_repoWorkflowScheduleScanPending = false;
     void triggerRepoWorkflowsForEvent(const QString &eventName, int repoIndex);
     bool repoWorkflowApproved(int repoIndex, const QString &path, const QString &name);
     QString repoWorkflowPath(int repoIndex, const QString &workflowId) const;
@@ -9158,7 +9170,8 @@ private:
                           const QString &workflowId) const;
     void showWorkflowPinDropIndicator(QWidget *strip, const QPoint &at);
     void hideWorkflowPinDropIndicator();
-    void refreshWorkflowPins();
+    void refreshWorkflowPins(
+        const QHash<QString, QList<forkmesh::repoworkflows::Listing>> &known = {});
     void showWorkflowPinMenu(const QString &repo, const QString &workflowId, const QPoint &globalPos);
     QPixmap repoWorkflowIcon(const forkmesh::repoworkflows::Workflow &workflow, int side) const;
     void notifyRepoWorkflowsChanged();
@@ -11298,6 +11311,31 @@ private:
     int m_marketPreviewDecodes = 0;
     QTimer *m_marketStatsRefresh = nullptr;
     int m_marketPageBuilds = 0;
+    struct MarketPageInputs {
+        bool built = false;
+        QStringList packages;
+        QHash<QString, QPair<qint64, qint64>> counts;
+        QHash<QString, MarketPackageScore> scores;
+        QString theme;
+        QString settingsPackage;
+        int settingsTab = -1;
+        int sort = -1;
+        bool next = false;
+        bool modelRunning = false;
+        bool operator==(const MarketPageInputs &other) const
+        {
+            return built == other.built && packages == other.packages &&
+                   counts == other.counts && scores == other.scores &&
+                   theme == other.theme &&
+                   settingsPackage == other.settingsPackage &&
+                   settingsTab == other.settingsTab && sort == other.sort &&
+                   next == other.next && modelRunning == other.modelRunning;
+        }
+    };
+    MarketPageInputs marketPageInputs() const;
+    MarketPageInputs m_marketPageInputs;
+    QHash<QString, qint64> m_marketResidentBytes;
+    bool m_marketResidentPending = false;
     std::unique_ptr<forkmesh::market::PackageRegistry> m_packageRegistry;
     std::unique_ptr<forkmesh::capture::CaptureFeature> m_captureFeature;
     std::unique_ptr<forkmesh::ledger::LedgerFeature> m_ledgerFeature;

@@ -240,13 +240,24 @@ QJsonObject queuedApprovalsFor(const QString &repoKey)
     return queued.byRepoKey.value(repoKey);
 }
 
+QJsonObject parsedApprovals(const QString &repoKey, const QByteArray &raw)
+{
+    static QMutex mutex;
+    static QHash<QString, QPair<QByteArray, QJsonObject>> cache;
+    QMutexLocker lock(&mutex);
+    const auto found = cache.constFind(repoKey);
+    if (found != cache.cend() && found->first == raw)
+        return found->second;
+    const QJsonObject parsed = QJsonDocument::fromJson(raw).object();
+    cache.insert(repoKey, qMakePair(raw, parsed));
+    return parsed;
+}
+
 QJsonObject storedApprovals(const QString &repoKey)
 {
     const QJsonObject queued = queuedApprovalsFor(repoKey);
-    QJsonObject approvals =
-        QJsonDocument::fromJson(
-            QSettings().value(approvalKey(repoKey)).toByteArray())
-            .object();
+    QJsonObject approvals = parsedApprovals(
+        repoKey, QSettings().value(approvalKey(repoKey)).toByteArray());
     for (auto it = queued.constBegin(); it != queued.constEnd(); ++it)
         approvals.insert(it.key(), it.value());
     return approvals;

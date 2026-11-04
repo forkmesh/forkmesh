@@ -7107,7 +7107,7 @@ void MainWindow::showSection(int index)
     } else if (index == kSessionsSectionIndex) {
         refreshSessionsPage();
     } else if (index == kMarketSectionIndex) {
-        refreshMarketPage();
+        refreshMarketPageIfChanged();
         refreshAccountPackages(true);
     } else if (index == kLedgerSectionIndex) {
         refreshLedgerPage();

@@ -1180,15 +1180,14 @@ QWidget *marketNextPermissionList(const PackageManifest &manifest, qreal ratio)
     return list;
 }
 
-QLabel *marketFootprintLabel(const PackageManifest &manifest, bool installed,
-                             const QHash<QString, qint64> &resident)
+bool marketFootprintText(const PackageManifest &manifest, bool installed,
+                         const QHash<QString, qint64> &resident, QString *textOut,
+                         QString *tipOut)
 {
-    if (!manifest.entrypoints.contains(QStringLiteral("desktop")))
-        return nullptr;
     const std::optional<forkmesh::market::modules::Module> module =
         forkmesh::market::modules::moduleForPackage(manifest.id);
-    QString text;
-    QString tip;
+    QString &text = *textOut;
+    QString &tip = *tipOut;
     if (module) {
         const QString file = QFileInfo(module->path).fileName();
         if (module->loaded) {
@@ -1225,10 +1224,23 @@ QLabel *marketFootprintLabel(const PackageManifest &manifest, bool installed,
                   "apart from the app's.")
                   .arg(manifest.name);
     }
+    return module.has_value();
+}
+
+QLabel *marketFootprintLabel(const PackageManifest &manifest, bool installed,
+                             const QHash<QString, qint64> &resident)
+{
+    if (!manifest.entrypoints.contains(QStringLiteral("desktop")))
+        return nullptr;
+    QString text;
+    QString tip;
+    const bool separate =
+        marketFootprintText(manifest, installed, resident, &text, &tip);
     auto *label = new QLabel(text);
     label->setObjectName(QStringLiteral("marketPackageFootprint"));
     label->setProperty("packageId", manifest.id);
-    label->setProperty("separate", module.has_value());
+    label->setProperty("separate", separate);
+    label->setProperty("installed", installed);
     label->setTextFormat(Qt::PlainText);
     label->setWordWrap(true);
     label->setToolTip(tip);
@@ -2432,8 +2444,9 @@ void MainWindow::refreshMarketPage()
     const int settingsTabIndex =
         settingsManifest && m_marketTabs ? m_marketTabs->currentIndex() : -1;
 
-    const QHash<QString, qint64> resident =
-        forkmesh::market::modules::residentBytesByPackage();
+    const MarketPageInputs inputs = marketPageInputs();
+    const QHash<QString, qint64> resident = m_marketResidentBytes;
+    queueMarketResidentRead();
     const bool projectOwned = m_packageRegistry->projectOwnsInstalls();
     const QString activeThemeSetting =
         QSettings().value(forkmesh::ui::kThemeSetting).toString();
@@ -2837,6 +2850,7 @@ void MainWindow::refreshMarketPage()
         if (nextPane)
             nextPane->dismiss();
         applyMarketSearch();
+        m_marketPageInputs = inputs;
         return;
     }
 
@@ -2846,6 +2860,99 @@ void MainWindow::refreshMarketPage()
     if (nextPane)
         nextPane->restore();
     applyMarketSearch();
+    m_marketPageInputs = inputs;
+}
+
+MainWindow::MarketPageInputs MainWindow::marketPageInputs() const
+{
+    MarketPageInputs inputs;
+    inputs.built = true;
+    for (const PackageManifest &manifest : m_packageRegistry->packages()) {
+        QString entry = manifest.id + QLatin1Char(' ') + manifest.version +
+                        (m_packageRegistry->isInstalled(manifest.id)
+                             ? QLatin1String(" 1")
+                             : QLatin1String(" 0"));
+        if (manifest.accountSync)
+            entry += QLatin1Char(' ') +
+                     m_packageRegistry->places(manifest.id).join(QLatin1Char(','));
+        inputs.packages.append(entry);
+    }
+    for (const NativePackagePage &page : m_nativePackagePages) {
+        if (page.widget)
+            inputs.packages.append(QStringLiteral("page ") + page.id);
+    }
+    for (const forkmesh::market::modules::Module &module :
+         forkmesh::market::modules::modules())
+        inputs.packages.append(QStringLiteral("module %1 %2 %3")
+                                   .arg(module.id)
+                                   .arg(module.loaded ? 1 : 0)
+                                   .arg(module.error));
+    inputs.counts = m_packageInstallCounts;
+    inputs.scores = m_packageMarketScores;
+    inputs.theme = QSettings().value(forkmesh::ui::kThemeSetting).toString();
+    inputs.next = Theme::isNext();
+    inputs.settingsPackage = m_marketSettingsPackageId;
+    if (!m_marketSettingsPackageId.isEmpty() && m_marketTabs)
+        inputs.settingsTab = m_marketTabs->currentIndex();
+    inputs.sort = m_marketSort ? m_marketSort->currentIndex() : -1;
+    inputs.modelRunning =
+        !m_marketModelPackageId.isEmpty() && m_marketModelProcess &&
+        m_marketModelProcess->state() != QProcess::NotRunning;
+    if (inputs.modelRunning)
+        inputs.settingsPackage += QLatin1Char(' ') + m_marketModelPackageId;
+    return inputs;
+}
+
+void MainWindow::refreshMarketPageIfChanged()
+{
+    if (!m_marketPageInputs.built || !m_packageRegistry ||
+        !m_packageRegistry->isReady() ||
+        !(m_marketPageInputs == marketPageInputs())) {
+        refreshMarketPage();
+        return;
+    }
+    queueMarketResidentRead();
+}
+
+void MainWindow::queueMarketResidentRead()
+{
+    if (m_marketResidentPending)
+        return;
+    m_marketResidentPending = true;
+    runOffThread<QHash<QString, qint64>>(
+        [] { return forkmesh::market::modules::residentBytesByPackage(); },
+        [this](QHash<QString, qint64> resident) {
+            m_marketResidentPending = false;
+            applyMarketResidentBytes(resident);
+        });
+}
+
+void MainWindow::applyMarketResidentBytes(const QHash<QString, qint64> &resident)
+{
+    if (resident == m_marketResidentBytes)
+        return;
+    m_marketResidentBytes = resident;
+    if (!m_marketTabs || !m_packageRegistry)
+        return;
+    const QList<QLabel *> labels = m_marketTabs->findChildren<QLabel *>(
+        QStringLiteral("marketPackageFootprint"));
+    for (QLabel *label : labels) {
+        if (!label->property("separate").toBool())
+            continue;
+        const PackageManifest *manifest =
+            m_packageRegistry->package(label->property("packageId").toString());
+        if (!manifest)
+            continue;
+        QString text;
+        QString tip;
+        marketFootprintText(*manifest, label->property("installed").toBool(),
+                            resident, &text, &tip);
+        if (label->text() == text)
+            continue;
+        label->setText(text);
+        label->setToolTip(tip);
+        label->setAccessibleName(text);
+    }
 }
 
 void MainWindow::applyMarketSearch()
