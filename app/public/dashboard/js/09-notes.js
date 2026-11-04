@@ -18,6 +18,8 @@
   const NOTE_REACTIONS = ["👍", "❤️", "😂", "🎉", "😮", "👀"];
   const NOTE_MODES = ["write", "split", "preview", "live", "pages"];
   const NOTE_IMAGE_SETTINGS_LINE = /^\s*<!--\s*image:([\s\S]*?)-->\s*$/i;
+  const NOTE_IMAGE_UNDO_MAX = 50;
+  const NOTE_IMAGE_DRAG_PX = 3;
   const NOTE_IMAGE_DEFAULTS = {
     wrap: "inline", align: "left", width: 0, height: 0, rotate: 0, margin: 3.2, x: 0, y: 0, pages: "anchor",
     recolor: "none", transparency: 0, brightness: 0, contrast: 0,
@@ -877,8 +879,8 @@ ${screen ? ".np-page img[data-note-image-line] { cursor: pointer; } .np-layer im
     const view = state.notesView, frame = $("[data-note-pages-frame]");
     if (!frame || !notePagesMode() || !view.selected) return;
     const current = noteCurrentDocument();
-    const key = JSON.stringify([view.selected.id, current.title, current.emoji, current.markdown]);
-    if (key === view.pagesKey && frame.contentDocument?.querySelector(".np-pages")) { fitNotePages(); return; }
+    const key = notePagesKey(current);
+    if (key === view.pagesKey && frame.contentDocument?.querySelector(".np-pages")) { fitNotePages(); selectPendingNoteImage(frame.contentDocument); return; }
     view.pagesKey = key;
     const scroll = frame.contentDocument?.scrollingElement?.scrollTop || 0;
     frame.onload = async () => {
@@ -892,9 +894,14 @@ ${screen ? ".np-page img[data-note-image-line] { cursor: pointer; } .np-layer im
       wireNotePagesFrame(doc);
       fitNotePages();
       if (doc.scrollingElement) doc.scrollingElement.scrollTop = scroll;
+      if (selectPendingNoteImage(doc)) return;
       if (view.imageSelection?.where === "pages") reselectNoteImage();
     };
     frame.srcdoc = notePrintDocument(current);
+  }
+
+  function notePagesKey(current) {
+    return JSON.stringify([state.notesView.selected?.id, current.title, current.emoji, current.markdown]);
   }
 
   function fitNotePages() {
@@ -912,8 +919,9 @@ ${screen ? ".np-page img[data-note-image-line] { cursor: pointer; } .np-layer im
 
   function wireNotePagesFrame(doc) {
     doc.addEventListener("pointerdown", (event) => {
-      const image = event.target.closest?.("img[data-note-image-line]");
       if (event.target.closest?.(".np-select span")) { startNoteImageResize(event); return; }
+      const image = event.target.closest?.("img[data-note-image-line]")
+        || (event.target.closest?.("a") ? null : doc.elementsFromPoint(event.clientX, event.clientY).find((node) => node.matches("img[data-note-image-line]")));
       if (!image) { if (!event.target.closest?.(".np-select")) selectNoteImage(null); return; }
       if (!noteCanEdit(state.notesView.selected)) return;
       event.preventDefault();
@@ -943,13 +951,27 @@ ${screen ? ".np-page img[data-note-image-line] { cursor: pointer; } .np-layer im
       return;
     }
     if (view.live) endNoteLiveEdit();
+    view.imagePending = -1;
     view.imageSelection = { line: Number(image.dataset.noteImageLine), where, page: image.closest(".np-page")?.dataset.page || "" };
+    const active = document.activeElement;
+    if (active?.matches?.("input, textarea, select, [contenteditable]") && !active.closest("[data-note-image-panel]")) active.blur();
     $("[data-note-comment-float]").hidden = true;
     $("[data-note-react-float]").hidden = true;
     $("[data-note-image-toolbar]").hidden = false;
     positionNoteImageChrome();
     if (!$("[data-note-image-panel]").hidden) renderNoteImagePanel();
-    refreshNoteIcons();
+    if (document.querySelector("[data-note-image-toolbar] i[data-lucide], [data-note-image-panel] i[data-lucide]")) refreshNoteIcons();
+  }
+
+  function selectPendingNoteImage(root) {
+    const view = state.notesView, line = view.imagePending;
+    if (!(line >= 0) || !root) return false;
+    const pages = notePagesMode();
+    if (!pages) view.imagePending = -1;
+    const image = (pages || noteLiveMode()) && root.querySelector(`img[data-note-image-line="${line}"]`);
+    if (!image) return false;
+    selectNoteImage(image, notePagesMode() ? "pages" : "live");
+    return true;
   }
 
   function reselectNoteImage() {
@@ -999,15 +1021,54 @@ ${screen ? ".np-page img[data-note-image-line] { cursor: pointer; } .np-layer im
     return noteImageSettingsAt(noteDocumentLines(), view.imageSelection.line);
   }
 
-  function writeNoteImageSettings(settings, { render = true } = {}) {
+  function noteImagePositioned(settings) { return ["behind", "front"].includes(settings?.wrap); }
+
+  function recordNoteImageEdit(before, after, beforeLine, afterLine, merge = false) {
+    const view = state.notesView, noteId = view.selected?.id || "";
+    view.imageUndo = view.imageUndo || [];
+    const top = view.imageUndo[view.imageUndo.length - 1];
+    if (merge && top?.merge === merge && top.noteId === noteId && top.after === before) { top.after = after; top.afterLine = afterLine; }
+    else view.imageUndo.push({ noteId, before, after, beforeLine, afterLine, merge });
+    if (view.imageUndo.length > NOTE_IMAGE_UNDO_MAX) view.imageUndo.shift();
+    view.imageRedo = [];
+  }
+
+  function undoNoteImageEdit(redo) {
+    const view = state.notesView, area = $("[data-note-markdown]");
+    const from = redo ? view.imageRedo : view.imageUndo, to = redo ? view.imageUndo : view.imageRedo;
+    const entry = from?.[from.length - 1];
+    if (!entry || !area || !noteCanEdit(view.selected)) return false;
+    if (entry.noteId !== (view.selected?.id || "") || area.value !== (redo ? entry.before : entry.after)) {
+      view.imageUndo = []; view.imageRedo = [];
+      return false;
+    }
+    from.pop();
+    to.push(entry);
+    selectNoteImage(null);
+    area.value = redo ? entry.after : entry.before;
+    view.imagePending = redo ? entry.afterLine : entry.beforeLine;
+    area.dispatchEvent(new Event("input", { bubbles: true }));
+    if (!notePagesMode()) selectPendingNoteImage($("[data-note-preview]"));
+    return true;
+  }
+
+  function writeNoteImageSettings(settings, { render = true, merge = false } = {}) {
     const view = state.notesView, area = $("[data-note-markdown]");
     if (!view.imageSelection || !area || !noteCanEdit(view.selected)) return;
+    const was = noteImageSettingsNow(), beforeLine = view.imageSelection.line;
     const result = noteWithImageSettings(area.value, view.imageSelection.line, settings);
     view.imageSelection.line = result.line;
     for (const image of noteImageElements()) image.dataset.noteImageLine = String(result.line);
     if (result.markdown === area.value) return;
+    const shown = view.pagesKey === notePagesKey(noteCurrentDocument());
+    recordNoteImageEdit(area.value, result.markdown, beforeLine, result.line, merge);
     area.value = result.markdown;
-    for (const image of noteImageElements()) if (!["behind", "front"].includes(settings.wrap) || image.closest(".np-layer")) styleNoteImage(image, settings);
+    const inPlace = shown && view.imageSelection.where === "pages" && noteImagePositioned(was) && was.wrap === settings.wrap && was.pages === settings.pages;
+    for (const image of noteImageElements()) {
+      if (!noteImagePositioned(settings) || image.closest(".np-layer")) styleNoteImage(image, settings);
+      if (inPlace) { image.style.left = `${settings.x}mm`; image.style.top = `${settings.y}mm`; }
+    }
+    if (inPlace) view.pagesKey = notePagesKey(noteCurrentDocument());
     if (render) area.dispatchEvent(new Event("input", { bubbles: true }));
     else { scheduleNoteSave(); sendNoteDraft(); noteTyped(); }
     requestAnimationFrame(positionNoteImageChrome);
@@ -1085,7 +1146,10 @@ ${screen ? ".np-page img[data-note-image-line] { cursor: pointer; } .np-layer im
     const text = `![${escape(alt, /[\\\]]/g)}](${source.url}${title ? ` "${escape(title, /[\\"]/g)}"` : ""})`;
     const line = lines[view.imageSelection.line];
     lines[view.imageSelection.line] = line.slice(0, source.match.index) + text + line.slice(source.match.index + source.match[0].length);
-    area.value = lines.join("\n");
+    const next = lines.join("\n");
+    if (next === area.value) return;
+    recordNoteImageEdit(area.value, next, view.imageSelection.line, view.imageSelection.line);
+    area.value = next;
     area.dispatchEvent(new Event("input", { bubbles: true }));
   }
 
@@ -1140,7 +1204,7 @@ ${screen ? ".np-page img[data-note-image-line] { cursor: pointer; } .np-layer im
       if (height > 0) changeNoteImage({ height, width: lock ? round(height / ratio) : round(size.width) });
     } else if (["margin", "x", "y"].includes(key)) changeNoteImage({ [key]: round(number * unit.mm) });
     else if (key === "rotate") changeNoteImage({ rotate: number });
-    else if (["transparency", "brightness", "contrast"].includes(key)) changeNoteImage({ [key]: number }, { render: field.type !== "range" || field.dataset.committed === "true" });
+    else if (["transparency", "brightness", "contrast"].includes(key)) changeNoteImage({ [key]: number }, { render: field.type !== "range" || field.dataset.committed === "true", merge: field.type === "range" ? key : false });
   }
 
   function noteImageAction(action) {
@@ -1179,14 +1243,21 @@ ${screen ? ".np-page img[data-note-image-line] { cursor: pointer; } .np-layer im
     if (rest) { lines[line] = rest; if (from < line) lines.splice(from, 1); }
     else lines.splice(from, line - from + 1);
     selectNoteImage(null);
-    area.value = lines.join("\n");
+    const next = lines.join("\n");
+    recordNoteImageEdit(area.value, next, line, -1);
+    area.value = next;
     area.dispatchEvent(new Event("input", { bubbles: true }));
   }
 
   function noteImageKeydown(event) {
     const view = state.notesView;
-    if (!view.imageSelection) return;
     const typing = event.target.closest?.("input, textarea, select, [contenteditable]");
+    const work = $("[data-note-work]");
+    if ((event.ctrlKey || event.metaKey) && !event.altKey && !typing && /^[zy]$/i.test(event.key) && work?.getClientRects().length) {
+      if (undoNoteImageEdit(event.key.toLowerCase() === "y" || event.shiftKey)) event.preventDefault();
+      return;
+    }
+    if (!view.imageSelection) return;
     if (event.key === "Escape") { selectNoteImage(null); closeNoteImagePanel(); return; }
     if (typing) return;
     if (event.key === "Delete" || event.key === "Backspace") { event.preventDefault(); removeNoteImage(); }
@@ -1200,20 +1271,36 @@ ${screen ? ".np-page img[data-note-image-line] { cursor: pointer; } .np-layer im
   function startNoteImageMove(event, image) {
     const settings = noteImageSettingsNow();
     if (!settings) return;
-    const doc = image.ownerDocument, perMm = noteImagePerMm(), from = { x: event.clientX, y: event.clientY };
-    let moved = null;
-    const move = (next) => {
-      moved = { x: Math.round((settings.x + (next.clientX - from.x) / perMm) * 10) / 10, y: Math.round((settings.y + (next.clientY - from.y) / perMm) * 10) / 10 };
-      for (const copy of noteImageElements()) { copy.style.left = `${moved.x}mm`; copy.style.top = `${moved.y}mm`; }
+    const doc = image.ownerDocument, perMm = noteImagePerMm(), from = { x: event.clientX, y: event.clientY }, copies = noteImageElements();
+    let moved = null, last = null, frame = 0;
+    try { image.setPointerCapture(event.pointerId); } catch (_) {}
+    const paint = () => {
+      frame = 0;
+      if (!last) return;
+      moved = { x: Math.round((settings.x + (last.clientX - from.x) / perMm) * 10) / 10, y: Math.round((settings.y + (last.clientY - from.y) / perMm) * 10) / 10 };
+      for (const copy of copies) copy.style.translate = `${moved.x - settings.x}mm ${moved.y - settings.y}mm`;
       positionNoteImageChrome();
+    };
+    const move = (next) => {
+      if (!moved && !last && Math.hypot(next.clientX - from.x, next.clientY - from.y) < NOTE_IMAGE_DRAG_PX) return;
+      last = { clientX: next.clientX, clientY: next.clientY };
+      if (!frame) frame = requestAnimationFrame(paint);
     };
     const up = () => {
       doc.removeEventListener("pointermove", move);
       doc.removeEventListener("pointerup", up);
-      if (moved) changeNoteImage(moved);
+      doc.removeEventListener("pointercancel", up);
+      cancelAnimationFrame(frame);
+      paint();
+      for (const copy of copies) {
+        copy.style.translate = "";
+        if (moved) { copy.style.left = `${moved.x}mm`; copy.style.top = `${moved.y}mm`; }
+      }
+      if (moved && (moved.x !== settings.x || moved.y !== settings.y)) changeNoteImage(moved);
     };
     doc.addEventListener("pointermove", move);
     doc.addEventListener("pointerup", up);
+    doc.addEventListener("pointercancel", up);
   }
 
   function startNoteImageResize(event) {
@@ -1223,19 +1310,27 @@ ${screen ? ".np-page img[data-note-image-line] { cursor: pointer; } .np-layer im
     event.stopPropagation();
     const doc = event.target.ownerDocument, perMm = noteImagePerMm(), from = event.clientX;
     const size = noteImageSizeMm(image, settings), ratio = size.width ? size.height / size.width : 1;
-    let width = 0;
-    const move = (next) => {
-      width = Math.max(5, Math.round((size.width + (next.clientX - from) / perMm) * 10) / 10);
-      for (const copy of noteImageElements()) { copy.style.width = `${width}mm`; copy.style.height = settings.height ? `${width * ratio}mm` : "auto"; copy.style.maxWidth = "none"; }
+    const copies = noteImageElements();
+    let width = 0, last = null, frame = 0;
+    const paint = () => {
+      frame = 0;
+      if (!last) return;
+      width = Math.max(5, Math.round((size.width + (last - from) / perMm) * 10) / 10);
+      for (const copy of copies) { copy.style.width = `${width}mm`; copy.style.height = settings.height ? `${width * ratio}mm` : "auto"; copy.style.maxWidth = "none"; }
       positionNoteImageChrome();
     };
+    const move = (next) => { last = next.clientX; if (!frame) frame = requestAnimationFrame(paint); };
     const up = () => {
       doc.removeEventListener("pointermove", move);
       doc.removeEventListener("pointerup", up);
+      doc.removeEventListener("pointercancel", up);
+      cancelAnimationFrame(frame);
+      paint();
       if (width) changeNoteImage({ width, height: settings.height ? Math.round(width * ratio * 10) / 10 : 0 });
     };
     doc.addEventListener("pointermove", move);
     doc.addEventListener("pointerup", up);
+    doc.addEventListener("pointercancel", up);
   }
 
   async function insertNoteImageFile(file, background) {
@@ -1253,8 +1348,14 @@ ${screen ? ".np-page img[data-note-image-line] { cursor: pointer; } .np-layer im
       ? noteImageSettingsLine({ ...NOTE_IMAGE_DEFAULTS, wrap: "behind", x: 0, y: 0, width: geometry.width, height: geometry.height, pages: "all" })
       : "";
     const trimmed = base.replace(/\s+$/, "");
-    area.value = `${trimmed}${trimmed ? "\n\n" : ""}${settings ? `${settings}\n` : ""}![${background ? "background" : "image"}](${url})\n`;
+    const next = `${trimmed}${trimmed ? "\n\n" : ""}${settings ? `${settings}\n` : ""}![${background ? "background" : "image"}](${url})\n`;
+    const line = noteLines(next).length - 2;
+    recordNoteImageEdit(markdown, next, -1, line);
+    selectNoteImage(null);
+    area.value = next;
+    state.notesView.imagePending = line;
     area.dispatchEvent(new Event("input", { bubbles: true }));
+    if (!notePagesMode()) selectPendingNoteImage($("[data-note-preview]"));
   }
 
   function wireNoteImages() {
@@ -1279,6 +1380,7 @@ ${screen ? ".np-page img[data-note-image-line] { cursor: pointer; } .np-layer im
       }
       if (button.matches("[data-note-image-comment]")) { const anchor = noteImageAnchor(); if (anchor) { selectNoteImage(null); startNoteComment(anchor); } }
       if (button.matches("[data-note-image-react]")) { const anchor = noteImageAnchor(); if (anchor) openNoteReactionPicker(anchor, button); }
+      if (button.matches("[data-note-image-delete]")) removeNoteImage();
     });
     menu?.addEventListener("click", (event) => {
       const item = event.target.closest("[data-note-image-wrap]"); if (!item) return;
@@ -1301,6 +1403,8 @@ ${screen ? ".np-page img[data-note-image-line] { cursor: pointer; } .np-layer im
       const field = event.target.closest("[data-note-image-field]"); if (!field) return;
       field.dataset.committed = "true";
       noteImageFieldChange(field);
+      const top = state.notesView.imageUndo?.[state.notesView.imageUndo.length - 1];
+      if (top && field.type === "range") top.merge = false;
     });
     document.addEventListener("keydown", noteImageKeydown);
     document.addEventListener("pointerdown", (event) => {
@@ -4787,7 +4891,7 @@ ${screen ? ".np-page img[data-note-image-line] { cursor: pointer; } .np-layer im
       pages: null, pagesError: "", pageId: "", page: null, pageNoteId: "", pageContent: new Map(),
       pageFetching: new Set(), pageCollapsed: new Map(), pageGeneration: 0, pageOutlineOpen: false,
       pageDraft: null, pageDraftVersion: 0, pageSaving: false, pageDrag: "",
-      live: null, reactionGroups: new Map(), reactionAnchor: null, imageSelection: null, imageLock: true,
+      live: null, reactionGroups: new Map(), reactionAnchor: null, imageSelection: null, imageLock: true, imagePending: -1, imageUndo: [], imageRedo: [],
       pagesTimer: 0, pagesKey: "", pagesZoom: 1, pagesCount: 0, follow: "", followTagTimer: 0, cursorTimer: 0, sentCursor: "", panelTab: "comments",
       chat: null, chatTimer: 0, chatGeneration: 0, chatSending: false, chatScroll: false,
       assist: null, assistReady: null, assistStatus: false,
