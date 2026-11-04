@@ -529,7 +529,8 @@ def main():
         "create_cloud_note", "read_chat_messages", "post_chat_message", "crm_list_organizations",
         "crm_get_pipeline", "crm_list_contacts", "crm_get_contact",
         "crm_list_activity", "crm_update_contact", "crm_find_duplicates",
-        "crm_merge_contacts", "crm_check_accounts", "marketing_x_context",
+        "crm_merge_contacts", "crm_check_accounts", "crm_mastodon_outreach",
+        "crm_save_mastodon_drafts", "marketing_x_context",
         "marketing_save_ready_post", "booking_get_page", "booking_update_page",
         "list_tasks", "get_task",
         "create_task", "update_task", "complete_task", "reopen_task",
@@ -1298,6 +1299,18 @@ def main():
         elif path == "/api/crm/acme/contacts/evidence":
             payload = {"ok": True, "checked": 2, "accounts": 1, "paying": 1,
                        "trial": 0, "ahead": 1, "changed": 2}
+        elif path == "/api/crm/acme/mastodon":
+            payload = {"ok": True, "queue": [
+                {"id": crm_contact_a, "handle": "ada@hachyderm.io",
+                 "mastodon_status": "ready", "mastodon_draft": "@ada@hachyderm.io Hi"}],
+                "stats": {"today": {"sent": 3, "replied": 1}}, "dailyTarget": 25,
+                "dailyLimit": 40, "canSend": False, "account": "",
+                "bookingLink": "https://forkmesh.com/meet?alice", "strategyNote": "Mastodon outreach strategy",
+                "prompt": "long prompt"}
+        elif path == "/api/crm/acme/mastodon/drafts":
+            saved = json.loads(body)["drafts"]
+            payload = {"ok": True, "created": len(saved), "updated": 0, "skipped": [],
+                       "ids": [crm_contact_a] * len(saved)}
         elif path == "/api/crm/acme/contacts/merge":
             merged = json.loads(body)
             gone = crm_state["contacts"].pop(merged["from"])
@@ -1462,6 +1475,24 @@ def main():
               json.loads(text) == {"organization": "acme", "checked": 2,
                                    "accounts": 1, "paying": 1, "trial": 0,
                                    "ahead": 1, "changed": 2})
+        text, err = call("crm_mastodon_outreach", {"organization": "acme"})
+        outreach = json.loads(text) if not err else {}
+        check("crm_mastodon_outreach reads the queue and counts without the prompt",
+              not err and crm_requests[-1]["signed"] and
+              outreach["queued"] == 1 and outreach["queue"][0]["handle"] == "ada@hachyderm.io"
+              and outreach["dailyTarget"] == 25 and "prompt" not in outreach)
+        _, err = call("crm_save_mastodon_drafts", {"organization": "acme", "drafts": []})
+        check("crm_save_mastodon_drafts needs drafts", err)
+        text, err = call("crm_save_mastodon_drafts", {"organization": "acme", "drafts": [{
+            "handle": "ada@hachyderm.io", "draft": "@ada@hachyderm.io Hi", "segment": "tor",
+            "ask": "interview", "extra": "dropped"}]})
+        check("crm_save_mastodon_drafts posts the known keys and is a gated write",
+              not err and crm_requests[-1]["method"] == "POST" and
+              crm_requests[-1]["body"] == {"drafts": [{
+                  "handle": "ada@hachyderm.io", "draft": "@ada@hachyderm.io Hi",
+                  "segment": "tor", "ask": "interview"}]} and
+              json.loads(text)["created"] == 1 and
+              "crm_save_mastodon_drafts" in srv.WRITE_TOOLS)
         check("crm_merge_contacts is a destructive connector-gated write",
               "crm_merge_contacts" in srv.WRITE_TOOLS and
               "crm_merge_contacts" in srv.DESTRUCTIVE_TOOLS)

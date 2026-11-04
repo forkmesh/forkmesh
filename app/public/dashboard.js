@@ -57796,6 +57796,11 @@ Your reply
       toggle?.focus();
     });
   }
+  // initPluginsPage lives in 09-plugins.js (a per-page chunk).
+  function initPluginsPage(...args) {
+    return loadDashboardChunk("plugins").then((chunk) => chunk.initPluginsPage(...args));
+  }
+
   const POST_TRANSLATE_PREFS_KEY = "forkmesh.postTranslate.v1";
   const POST_TRANSLATE_SKIP = new Set(["PRE", "CODE", "KBD", "SAMP", "VAR", "SCRIPT", "STYLE", "TEXTAREA", "INPUT", "SELECT", "BUTTON", "SVG", "MATH", "IMG", "VIDEO", "AUDIO"]);
   const POST_TRANSLATE_INLINE = new Set(["B", "STRONG", "I", "EM", "U", "S", "DEL", "INS", "MARK", "SMALL", "SUB", "SUP", "SPAN", "ABBR", "Q", "CITE", "DFN", "BDI", "BDO", "FONT"]);
@@ -61183,6 +61188,7 @@ Your reply
     "hackathon": "/dashboard-page-hackathon.js?v=22656013417d",
     "links": "/dashboard-page-links.js?v=d86c45ee2e66",
     "notes": "/dashboard-page-notes.js?v=3b0bd7907872",
+    "plugins": "/dashboard-page-plugins.js?v=cd8a0dcf3338",
     "referrals": "/dashboard-page-referrals.js?v=9e46b4b9d5e8",
     "repo-activity": "/dashboard-page-repo-activity.js?v=38ff59fc7239",
     "repo-forum": "/dashboard-page-repo-forum.js?v=e5892a79b3e7",
@@ -61342,6 +61348,7 @@ Your reply
     "pings": initPingsPage,
     "agents": initAgentsPage,
     "docs": initDocsPage,
+    "plugins": initPluginsPage,
     "apps": initAppsPage,
     "apps-build": initAppsBuildPage,
     "tasks": initTasksPage,

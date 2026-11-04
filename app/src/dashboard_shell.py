@@ -242,6 +242,15 @@ PAGES = {
         "title": "Developer docs - ForkMesh",
         "description": "Every Markdown file in the docs folder of forkmesh/forkmesh as one page, with the last update of each file.",
     },
+    "plugins": {
+        "view": "plugins",
+        "section": "plugins",
+        "nav": "plugins",
+        "route": "/dashboard/plugins",
+        "asset": "dashboard/plugins/index.html",
+        "title": "Plugins - ForkMesh",
+        "description": "Every Market plugin and switch on this instance: what it ships, where it is installed, the data it keeps and its logs.",
+    },
     "apps": {
         "view": "apps",
         "section": "apps",
@@ -424,6 +433,9 @@ CACHE_BUSTED_ASSETS = (
     "chat-apps.js",
     # Standalone chat shell styling.
     "chat.css",
+    # Meeting room (/call).
+    "call-room.js",
+    "call-room.css",
     # Away + custom status helper (chat page and dashboard).
     "user-status.js",
     "username-autocomplete.js",
@@ -441,6 +453,7 @@ CACHE_BUSTED_ASSETS = (
     "dashboard-page-links.js",
     "dashboard-page-achievements.js",
     "dashboard-page-notes.js",
+    "dashboard-page-plugins.js",
     "dashboard-page-referrals.js",
     "dashboard-page-repo-activity.js",
     "dashboard-page-repo-forum.js",
@@ -458,6 +471,7 @@ CHUNK_PAGES = {
     "calendar": "calendar",
     "challenges": "challenges",
     "docs": "docs",
+    "plugins": "plugins",
     "hackathon": "hackathon",
     "links": "links",
     "achievements": "achievements",

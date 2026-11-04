@@ -1,7 +1,7 @@
 window.ForkMeshDashboard.registerPage("booking", ({ select: $, selectAll: $$, session, escapeHtml, relativeTimeLabel }) => {
   const DAYS = [["mon", "Monday"], ["tue", "Tuesday"], ["wed", "Wednesday"], ["thu", "Thursday"], ["fri", "Friday"], ["sat", "Saturday"], ["sun", "Sunday"]];
   const LOCATION_LABELS = { video: "Video call", phone: "Phone call", place: "In person", custom: "Other", none: "No location" };
-  const LOCATION_HINTS = { video: "https://meet.example.com/you", phone: "Leave empty to ask the guest for their number", place: "Address", custom: "Shown after booking", none: "" };
+  const LOCATION_HINTS = { video: "Leave empty for a private ForkMesh video room", phone: "Leave empty to ask the guest for their number", place: "Address", custom: "Shown after booking", none: "" };
   const ERRORS = {
     slug_taken: "That link is taken. Try another.", invalid_slug: "Links use lowercase letters, numbers and dashes.",
     slug_reserved: "That link is reserved. Try another.", meeting_type_required: "Keep at least one meeting type.",
@@ -125,7 +125,7 @@ window.ForkMeshDashboard.registerPage("booking", ({ select: $, selectAll: $$, se
       <div class="text-sm font-semibold text-foreground">${escapeHtml(`${clock(booking.startAt)} – ${clock(booking.endAt)}`)}<p class="text-xs font-normal text-muted-foreground">${escapeHtml(minutesLabel(booking.minutes))}</p></div>
       <div class="min-w-0">
         <p class="flex flex-wrap items-center gap-2 text-sm text-foreground"><span class="font-semibold">${escapeHtml(guest.name || "Guest")}</span><span class="text-muted-foreground">${escapeHtml(booking.typeTitle || "")}</span>${status}${moved}</p>
-        <p class="mt-1 flex flex-wrap gap-x-3 text-xs text-muted-foreground"><a class="text-accent hover:underline" href="mailto:${escapeHtml(guest.email || "")}">${escapeHtml(guest.email || "")}</a>${guest.phone ? `<span>${escapeHtml(guest.phone)}</span>` : ""}${where ? `<span class="truncate">${escapeHtml(where)}</span>` : ""}${guest.timezone && guest.timezone !== state.data.settings.timezone ? `<span>Their time zone: ${escapeHtml(guest.timezone)}</span>` : ""}</p>
+        <p class="mt-1 flex flex-wrap gap-x-3 text-xs text-muted-foreground"><a class="text-accent hover:underline" href="mailto:${escapeHtml(guest.email || "")}">${escapeHtml(guest.email || "")}</a>${guest.phone ? `<span>${escapeHtml(guest.phone)}</span>` : ""}${booking.location?.room && booking.location?.detail && !cancelled ? `<a class="text-accent hover:underline" href="${escapeHtml(booking.location.detail)}" target="_blank" rel="noopener noreferrer">Join video call</a>` : where ? `<span class="truncate">${escapeHtml(where)}</span>` : ""}${guest.timezone && guest.timezone !== state.data.settings.timezone ? `<span>Their time zone: ${escapeHtml(guest.timezone)}</span>` : ""}</p>
         ${guest.notes ? `<p class="mt-1 whitespace-pre-wrap break-words text-xs text-foreground">${escapeHtml(guest.notes)}</p>` : ""}
         ${cancelled && booking.cancelReason ? `<p class="mt-1 text-xs italic text-muted-foreground">“${escapeHtml(booking.cancelReason)}”</p>` : ""}
       </div>

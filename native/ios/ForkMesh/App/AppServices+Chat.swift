@@ -290,6 +290,10 @@ struct ChatInstaller: AppServicesInstaller {
             guard case let .discord(guild, channel) = route else { return AnyView(RoutePlaceholderView(route: route)) }
             return AnyView(DiscordRouteScreen(guild: guild, channel: channel))
         }
+        services.routes.register(.meeting, by: "WS13") { route in
+            guard case let .meeting(room, key) = route else { return AnyView(RoutePlaceholderView(route: route)) }
+            return AnyView(MeetingScreen(room: room, key: key))
+        }
     }
 }
 

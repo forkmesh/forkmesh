@@ -24,6 +24,7 @@ same page) and in the Booking screen of the iPhone and Android apps; guests use
 | `native/ios/ForkMesh/Features/Packages/BookingScreen.swift`, `BookingSettingsScreen.swift` | The iPhone Booking screen and its settings. |
 | `native/android/core/.../market/Booking.kt` | The Android app's decoding, labels, settings draft and API calls. |
 | `native/android/app/.../feature/booking/BookingScreens.kt` | The Android Booking screen and its settings. |
+| `app/public/call.html`, `call-room.js` | The meeting room each video booking links to ([meeting rooms](../app/meeting-rooms.md)). |
 | `tests/test_booking.py` | Worker tests against SQLite with a fake runtime. |
 | `tools/forkmesh_mcp_server.py` (`booking_get_page`, `booking_update_page`) | Agent tools that read and change the account's page, signed with `forkmesh-booking-request-v1` like the apps; see [agent tools](../agents/tools.md). |
 
@@ -177,6 +178,43 @@ checked with `hmac.compare_digest`. It can read the booking (without the
 guest's email), list open times excluding the booking itself, reschedule, and
 cancel until the meeting starts. Meeting links for video calls are only shown
 after booking; the public page shows the kind of location, not its details.
+The page shows a ForkMesh room as **Join the video call (end-to-end
+encrypted)**.
+
+## Video rooms
+
+The owner asked that new bookings get a ForkMesh meeting link instead of
+"Video call (link to follow)". A meeting type set to **Video call** with no
+link of its own now gives every booking its own room; a type with its own
+link (Zoom, Meet) keeps using it.
+
+- **Making one.** `_book` draws a room id (`new_id`, 32 hex) and a key
+  (SHA-256 of `new_secret`, 64 hex), and stores the location as
+  `{kind: "video", detail: "<app origin>/call?<room>#<key>", room: true}`
+  inside the sealed booking. `booking_rooms` maps `blind("booking-room:<room>")`
+  to the booking and the account; the key is never in a plain column.
+- **Where it shows.** The guest's and owner's emails get a **Join the video
+  call** button and the link under Where; the calendar event's meeting URL,
+  the guest's confirmation and manage page, the dashboard row and both phone
+  apps' booking rows show **Join video call**. Rescheduling keeps the room.
+- **Window.** The room opens 30 minutes before the start and closes two
+  hours after the end. `GET /api/booking/-/call/<room>` answers `{state,
+  title, host, accent, minutes, startAt, endAt, opensAt, closesAt, timezone,
+  now}` with `state` `early`, `open`, `ended` or `cancelled`, never the guest's
+  details. Outside the window the other routes answer 409 `room_<state>`.
+- **Tickets.** `POST .../ticket` asks the host's `runtime.call_ticket(room)`
+  ([`plugin_call_ticket`](../app/meeting-rooms.md#code-map)), a 60-second
+  call-server ticket for the room `plugin:booking:<room>` with a per-join
+  account hash, so the call server's limits work as for `/chat` (16 people).
+  Without `FORKMESH_CALLS_SECRET` and `FORKMESH_CALLS_NODES` it answers 503
+  `calls_unavailable`. One connection gets 90 tickets an hour and a room 240.
+- **Relay.** `POST .../signal` with `{box}` stores one sealed signalling box
+  (40 to 6,000 base64url characters, else 400 `invalid_signal`) in
+  `booking_room_signals` and answers 202; `GET .../signal?after=<seq>` lists
+  up to 200 newer boxes, or the last two minutes without `after`. The worker
+  cannot open a box. A room keeps its newest 400, a connection may post 1,500
+  an hour and a room 6,000, the reminder hook deletes boxes older than six
+  hours, and uninstalling deletes rooms and boxes.
 
 ## Abuse limits
 
@@ -199,6 +237,12 @@ message, and the settings for the page, hours, meeting types and email. Export
 saves the JSON (Android) or shares it (iPhone); uninstall exports first.
 Guests never need the app: `/meet` is a web page that works in any phone
 browser.
+
+A booking with a ForkMesh room reads "ForkMesh video call, end-to-end
+encrypted" with a **Join video call** link (`joinURL` on iPhone, `joinUrl()`
+on Android), hidden once it is cancelled; it opens the in-app Meeting screen
+([meeting rooms](../app/meeting-rooms.md#phones)). The video location's hint
+says to leave it empty for a private room.
 
 The settings screen edits weekly hours as text times (`HH:MM`); an end of
 `24:00` shows as `23:59` and is saved back as `24:00`, as on the web.

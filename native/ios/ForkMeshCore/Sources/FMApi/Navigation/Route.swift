@@ -141,6 +141,7 @@ public enum Route: Codable, Hashable, Sendable {
     case thread(channel: String, id: String)
     case dm(user: String)
     case discord(guild: String, channel: String?)
+    case meeting(room: String, key: String)
     // People and search (WS18, WS8)
     case profile(name: String)
     case people
@@ -275,6 +276,7 @@ public enum Route: Codable, Hashable, Sendable {
         case .thread: return .thread
         case .dm: return .dm
         case .discord: return .discord
+        case .meeting: return .meeting
         case .profile: return .profile
         case .people: return .people
         case .docs: return .docs
@@ -365,7 +367,7 @@ public enum Route: Codable, Hashable, Sendable {
         case repos, repo, tree, file, fileHistory, codeMap, commits, commit, range, compare, conflicts
         case issue, newIssue, board, pull, review, discussion, run, release, project, milestones
         case repoSettings, localRepos, localRepo, quickEdit
-        case chat, channel, thread, dm, discord
+        case chat, channel, thread, dm, discord, meeting
         case profile, people, docs, search
         case notes, note, notePage, tasks, task, calendar, event, timers
         case desktops, desktop, hosts, host, runners, provision, network, node
@@ -391,7 +393,7 @@ public enum Route: Codable, Hashable, Sendable {
             case .run, .release: return "WS14"
             case .project, .milestones, .notes, .note, .notePage, .tasks, .task, .calendar, .event, .timers: return "WS15"
             case .localRepos, .localRepo, .quickEdit: return "WS5"
-            case .chat, .channel, .thread, .dm, .discord: return "WS13"
+            case .chat, .channel, .thread, .dm, .discord, .meeting: return "WS13"
             case .profile, .people, .docs, .settings: return "WS18"
             case .search, .tour, .updateRequired, .launchedAgent: return "WS8"
             case .desktops, .desktop, .provision, .node: return "WS16"

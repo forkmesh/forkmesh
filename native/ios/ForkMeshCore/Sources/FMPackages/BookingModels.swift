@@ -4,16 +4,19 @@ import Foundation
 public struct BookingLocation: Equatable, Hashable, Sendable {
     public var kind: String
     public var detail: String
+    public var room: Bool
 
-    public init(kind: String = "video", detail: String = "") {
+    public init(kind: String = "video", detail: String = "", room: Bool = false) {
         self.kind = kind
         self.detail = detail
+        self.room = room
     }
 
     public init(json: JSONObject) {
         let raw = json.str("kind").trimmingCharacters(in: .whitespaces).lowercased()
         kind = BookingText.locationKinds.contains(raw) ? raw : "video"
         detail = json.str("detail")
+        room = json.bool("room")
     }
 
     public var body: JSONObject { ["kind": .string(kind), "detail": .string(detail.trimmingCharacters(in: .whitespacesAndNewlines))] }
@@ -98,7 +101,13 @@ public struct Booking: Identifiable, Equatable, Hashable, Sendable {
         return out
     }
 
+    public var joinURL: URL? {
+        guard location.kind == "video", location.room, !isCancelled, location.detail.hasPrefix("https://") else { return nil }
+        return URL(string: location.detail)
+    }
+
     public var whereText: String {
+        if joinURL != nil { return "ForkMesh video call, end-to-end encrypted" }
         switch location.kind {
         case "phone": return location.detail.isEmpty ? (guest.phone.isEmpty ? "Phone call" : guest.phone) : location.detail
         case "none": return ""
@@ -453,7 +462,7 @@ public enum BookingText {
 
     public static func locationHint(_ kind: String) -> String {
         switch kind {
-        case "video": return "https://meet.example.com/you"
+        case "video": return "Leave empty for a private ForkMesh video room"
         case "phone": return "Leave empty to ask the guest for their number"
         case "place": return "Address"
         case "custom": return "Shown after booking"

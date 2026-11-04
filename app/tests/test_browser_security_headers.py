@@ -137,6 +137,20 @@ def test_world_pages_may_use_the_camera_for_avatar_capture():
         assert "geolocation=()" in rule
 
 
+def test_the_meeting_room_may_use_the_camera_but_is_never_framed():
+    rules = {
+        pattern: body
+        for pattern, body in re.findall(
+            r"^(/\S*)\n((?:  .*\n?)+)", HEADERS, flags=re.M)
+    }
+    for pattern in ("/call", "/call.html"):
+        rule = rules[pattern]
+        assert "camera=(self)" in rule and "microphone=(self)" in rule
+        assert "mediastream:" in rule
+        assert "frame-ancestors 'none'" in rule
+        assert "X-Frame-Options" not in rule
+
+
 def test_dynamic_app_html_receives_the_same_security_boundary():
     wanted = {
         "_BROWSER_CSP",
@@ -249,6 +263,14 @@ def test_dynamic_app_html_receives_the_same_security_boundary():
         assert "microphone=(self)" in chat.headers["permissions-policy"]
         assert "mediastream:" in chat.headers["content-security-policy"]
         assert chat.headers["x-frame-options"] == "SAMEORIGIN"
+    for path in ("/call", "/call.html"):
+        room = namespace["_apply_browser_security_headers"](
+            DynamicResponse(), path)
+        assert "camera=(self)" in room.headers["permissions-policy"]
+        assert "microphone=(self)" in room.headers["permissions-policy"]
+        assert "mediastream:" in room.headers["content-security-policy"]
+        assert room.headers["x-frame-options"] == "DENY"
+        assert "frame-ancestors 'none'" in room.headers["content-security-policy"]
 
     strict = DynamicResponse()
     strict.headers["content-security-policy"] = (

@@ -375,6 +375,7 @@ struct BookingRow: View {
     let timeFormat: String
     let ownerZone: String
     let now: Int64
+    @Environment(\.openURL) private var openURL
 
     private func tint(_ badge: String) -> Color {
         if badge.hasPrefix("Cancelled") { return .red }
@@ -404,6 +405,12 @@ struct BookingRow: View {
             if !booking.whereText.isEmpty {
                 Label(booking.whereText, systemImage: placeSymbol).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
             }
+            if let join = booking.joinURL {
+                Button { openMeeting(join) } label: { Label("Join video call", systemImage: "video.fill") }
+                    .buttonStyle(.borderless)
+                    .font(.footnote.weight(.semibold))
+                    .accessibilityIdentifier("booking-join-call")
+            }
             if !booking.guest.timezone.isEmpty, booking.guest.timezone != ownerZone {
                 Text("Their time zone: " + booking.guest.timezone.replacingOccurrences(of: "_", with: " "))
                     .font(.caption)
@@ -418,6 +425,14 @@ struct BookingRow: View {
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
+    }
+
+    private func openMeeting(_ join: URL) {
+        if let route = MeetingLink.route(from: join), let navigator = AppNavigator.shared {
+            navigator.open(route)
+        } else {
+            openURL(join)
+        }
     }
 
     private var placeSymbol: String {

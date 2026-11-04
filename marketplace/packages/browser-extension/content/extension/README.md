@@ -4,9 +4,9 @@ One extension, one sign-in:
 
 - **Password Vault.** Fills and saves logins from your end-to-end encrypted
   ForkMesh Password Vault (the `vault` Market package).
-- **CRM.** Ties the email or Mastodon conversation you have open to a contact
+- **CRM.** Ties the email, Mastodon or X conversation you have open to a contact
   in your organization's ForkMesh CRM (the `crm` Market package), and tracks
-  mail you send.
+  mail, posts and X direct messages you send.
 - **Marketing readers.** Reads the counts that channel pages show (X profile,
   Reddit, any configured channel) for the `marketing` package, only when you
   ask.
@@ -15,8 +15,8 @@ One extension, one sign-in:
   it, and mirrors it to your ForkMesh account in one click.
 
 The CRM half works in Gmail (`mail.google.com`), Zoho Mail (`mail.zoho.com`,
-`.eu`, `.in`, `.com.au`, `.jp`, `mail.zohocloud.ca`) and any Mastodon instance
-you add. The vault half works on any https site through the toolbar popup.
+`.eu`, `.in`, `.com.au`, `.jp`, `mail.zohocloud.ca`), any Mastodon instance
+you add, and X (`x.com`, `twitter.com`). The vault half works on any https site through the toolbar popup.
 Requires Chrome 137 or newer (or a Chromium browser of that age) for native
 X25519 and Ed25519.
 
@@ -156,6 +156,31 @@ token. Mastodon 5's redesigned post page (`article[data-variant="page"]`, the
 one with "Message by …" over a private mention) and the older
 `.detailed-status` page are both read; the CRM header there stops key presses
 so typing in it does not fire Mastodon's shortcuts (`f`, `b`, `r`).
+
+**X**: `x-crm.js` puts the CRM header on any post open on its own page
+(`x.com/<name>/status/<id>`), above the post's text, with no setup. The
+conversation is linked with `provider: "x"`, the author's handle (`name`, no
+`@`) and the thread's root post as its thread id; the people are the author,
+the accounts above the post and the `@name` links in it (not the quoted post).
+The CRM finds the contact by the handle or profile link in its **Twitter**
+field and matches a new one there as `@name`. A display name that spells the
+handle (`Ada Lovelace` for `@AdaLovelace`) is kept as the contact's name.
+
+**Your X posts and messages** (on by default, **Add people I mention or message
+on X**): `x-sent.js` runs in the X page (`MAIN` world, from the manifest) and
+watches only the answers to X's own `CreateTweet`, `CreateNoteTweet` and
+`dm/new2.json` requests, then hands `x-crm.js` the post's id, author, time,
+text, thread and the accounts it replies to and mentions, or the direct
+message's id, conversation and recipient. `x-crm.js` sends `fm-track-tweet`;
+the service worker accepts it only from an `x.com` or `twitter.com` tab, for a
+post whose author is the X account signed in on the page or the handle the
+Marketing X widget tracks, and links each person (at most ten) with
+`createContact: true`. A post opened on its own page is logged the same way
+after it settles (1.5 s). Each post or message is logged once (the last 500 are
+remembered), a direct message's permalink is `x.com/messages/<conversation>`,
+and the popup shows who was logged last. Received messages and other people's
+posts send nothing unless linked from the header. The encrypted X Chat
+(`x.com/i/chat`) is not read.
 
 **Mail you send** (on by default, **Track emails I send**): sends from Gmail or
 Zoho Mail are linked to the first recipient that already has a record (To
@@ -536,11 +561,12 @@ answer the popup only.
 ## What leaves the browser
 
 - **CRM**: only when you press a button, send a message, or open your own
-  Mastodon post on its permalink or send one: provider message and thread ids, subject, addresses or handles, direction, date, permalink,
+  Mastodon or X post on its permalink or send one (or an X direct message): provider message and thread ids, subject, addresses or handles, direction, date, permalink,
   the contact details shown in the panel, and the chosen flow and stage. The
   email body is read in the page only to prefill fields and is never sent. A
-  Mastodon post's content warning or opening line stands in for a subject, also
-  for a post logged as you send it. A
+  Mastodon post's content warning or opening line, or an X post's or direct
+  message's opening line, stands in for a subject, also for a post logged as you
+  send it. A
   tracked send carries its subject, sending mailbox, up to five recipients and
   the time, never its body.
 - **Marketing**: the counts, page title, description, image, handle, address
@@ -582,6 +608,8 @@ extension's storage with the host permission Chrome granted.
 | `mastodon.js`      | Reads the open conversation on a Mastodon instance.           |
 | `mastodon-sent.js` | In the Mastodon page: hands each post you send to `mastodon.js`. |
 | `x.js`             | Reads the tracked X profile's counts for Marketing.           |
+| `x-crm.js`         | The CRM header on an X post; logs your posts and messages.    |
+| `x-sent.js`        | In the X page: hands each post or direct message you send to `x-crm.js`. |
 | `x-developer.js`   | Guides Connect X through X's developer console and reads the keys. |
 | `reddit.js`        | Reads watched Reddit pages you open, and monitored threads' views, for the Reddit desk. |
 | `reddit-walk.js`   | Paces one page of a walk: scrolls and moves the pointer, reads and sends nothing. |

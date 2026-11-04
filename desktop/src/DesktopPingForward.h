@@ -84,6 +84,7 @@ QJsonObject deleteBody(const QString &node, const QStringList &pingIds);
 QString duplicateKey(const Ping &ping);
 bool isOwnEcho(const QJsonObject &alert, const QString &node);
 bool isFreshCelebration(const QJsonObject &alert, qint64 nowMs);
+QString celebrationHeadline(const QStringList &titles);
 bool cameOnline(qint64 lastOnlineMs, qint64 nowMs);
 QString offlineSpan(qint64 ms);
 Source onlineSource(const QString &node, qint64 lastOnlineMs, qint64 nowMs);

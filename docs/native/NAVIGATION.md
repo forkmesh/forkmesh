@@ -699,7 +699,12 @@ describes, moves, and offers three depths.
   and past meetings with cancel, and Booking settings (page, hours, meeting
   types, email) saved with one `PUT /api/booking/page`
   ([Booking Page](../marketplace/booking.md)). Android: `Route.Booking`,
-  `Booking.kt`, `feature/booking/`.
+  `Booking.kt`, `feature/booking/`. A booking's **Join video call** opens
+  the Meeting screen in the app.
+- **Meeting** (`.meeting(room, key)`, `/call?<room>#<key>`): the
+  [meeting room](../app/meeting-rooms.md#phones) page in an in-app web view
+  locked to the active server. Open to guests. Android: `Route.Meeting`,
+  `MeetingLink.kt`, `feature/meeting/`.
 - **App Store Status** (`.appStoreStatus`, `/dashboard/app-store-status`,
   Insights group): the App Store Connect snapshot the desktop last published,
   read from `GET /api/app-store-status` and drawn natively
@@ -1367,6 +1372,7 @@ current tab. Desktop-only capabilities have no destination.
 | Conversation, thread | `.channel(id)`, `.thread(channel, id)` | Chat | 9.5-9.19 |
 | DM | `.dm(user)` | Chat | 9.10 |
 | Discord (through the desktop) | `.discord(guild, channel)` | Chat | 9.17 |
+| Meeting room (a booked video meeting) | `.meeting(room, key)` | current | — |
 | Mesh room | `.channel(.mesh)` | Chat | 8.7 |
 | Profile (`/@name`) | `.profile(name)` | current | 8.5 |
 | People | `.people` | current | 8.5, 9.10 |
@@ -1420,6 +1426,7 @@ the website's own:
 | `/dashboard/apps` | `.settings(section: "apps")` |
 | `/ledger.html`, `/market.html`, `/status.html` | `.ledger`, `.market`, `.status` |
 | `/market/<package-id>` (plugin share link; not `/market/previews/…`) | `.market`, then `.package(id)` |
+| `/call?<room>#<key>` (also `forkmesh://call?<room>#<key>`) | `.meeting(room, key)` |
 | anything else | opens in the browser |
 
 `oauth` is a reserved owner, so `/oauth/authorize` always opens in the

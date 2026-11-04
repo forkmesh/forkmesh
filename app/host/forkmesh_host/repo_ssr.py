@@ -47,7 +47,7 @@ RESERVED_OWNERS = frozenset({
     "api", "assets", "dashboard", "favicon", "docs", "blog", "world", "login",
     "signup", "static", "ap", "nodeinfo", "admin", "hackathon", "notes",
     "referral", "referrals", "microjobs", "status", "start", "chat",
-    "pitch-deck", "product-analysis", "network", "ledger", "leaderboards",
+    "call", "pitch-deck", "product-analysis", "network", "ledger", "leaderboards",
 })
 README_RE = re.compile(r"^readme(\.md|\.txt|\.rst)?$", re.I)
 # The page waits at most this long for its first view; after that it is

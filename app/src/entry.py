@@ -11485,6 +11485,31 @@ def chat_call_ticket(secret, channel_id, peer, now_ms, account_bi,
     }
 
 
+PLUGIN_CALL_ROOM_RE = re.compile(r"^[0-9a-f]{32}$")
+PLUGIN_CALL_ID_RE = re.compile(r"^[a-z][a-z0-9-]{0,63}$")
+
+
+def plugin_call_channel(plugin, room):
+    return "plugin:" + str(plugin) + ":" + str(room)
+
+
+async def plugin_call_ticket(env, plugin, room):
+    plugin, room = str(plugin or ""), str(room or "")
+    if not PLUGIN_CALL_ID_RE.fullmatch(plugin) or not PLUGIN_CALL_ROOM_RE.fullmatch(room):
+        return None
+    secret = str(getattr(env, "FORKMESH_CALLS_SECRET", "") or "")
+    nodes = chat_call_nodes(getattr(env, "FORKMESH_CALLS_NODES", "") or "")
+    if len(secret) < 32 or not nodes:
+        return None
+    peer = bytes(js_crypto.getRandomValues(Uint8Array.new(16)).to_py()).hex()
+    ticket = chat_call_ticket(
+        secret, plugin_call_channel(plugin, room), peer, int(Date.now()),
+        "plugin-peer:" + plugin + ":" + peer)
+    ticket["url"] = chat_call_pick(
+        ticket["room"], nodes, await _chat_call_healthy(nodes))
+    return ticket
+
+
 class _ChatChannelsRuntime(_WorldCommunityRuntime):
     async def ensure_schema(self):
         await super().ensure_schema()
@@ -12651,6 +12676,9 @@ class _PluginApiRuntime(_WorldCommunityRuntime):
         key = "PACKAGE_" + plugin.upper().replace("-", "_") + "_" + clean
         return str(getattr(self.env, key, "") or "").strip()
 
+    async def call_ticket(self, room):
+        return await plugin_call_ticket(self.env, self._plugin, room)
+
     async def send_mailtrap(self, supplied_token, payload):
         token = str(supplied_token or "").strip()
         payload = dict(payload if isinstance(payload, dict) else {})
@@ -12999,6 +13027,9 @@ async def plugin_api_handler(env, request, path, plugin):
     module = plugin_data.api_module(plugin)
     if module is None:
         return json_response({"error": "not_found"}, status=404)
+    if not await plugin_data.enabled_here(_PluginPurgeRuntime(env), plugin):
+        return json_response({"error": "plugin_disabled_here"}, status=404,
+                             cache_control="no-store")
     return await module.handle(_PluginApiRuntime(
         env, request, module, plugin_data.outbound_origins(plugin), plugin), path)
 
@@ -21411,8 +21442,9 @@ def _apply_browser_security_headers(response, pathname):
             "frame-src 'self'",
             "frame-src 'self' " + _TURNSTILE_CHALLENGE_ORIGIN, 1,
         )
-    devices = ("camera", "microphone") if chat_page else _plugin_device_page(
-        path)
+    call_page = path in ("/call", "/call.html")
+    devices = ("camera", "microphone") if chat_page or call_page else (
+        _plugin_device_page(path))
     if devices:
         csp = csp.replace(
             "media-src 'self' blob: https:", _DEVICE_PAGE_MEDIA_SRC, 1)

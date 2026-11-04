@@ -4599,6 +4599,7 @@ void MainWindow::syncPackageSurfaces()
          on(QStringLiteral("network")) || on(QStringLiteral("hosts"))},
         {m_teamNavButton, on(QStringLiteral("special-agents"))},
         {m_statsNavButton, on(QStringLiteral("stats"))},
+        {m_filesNavButton, on(QStringLiteral("files"))},
         {m_repoIssuesTab, on(QStringLiteral("issues"))},
         {m_repoPullsTab, on(QStringLiteral("pull-requests"))},
         {m_repoDiscussionsTab, on(QStringLiteral("discussions"))},
@@ -4668,6 +4669,7 @@ void MainWindow::syncPackageSurfaces()
             {3, QStringLiteral("inbox")},
             {kTeamSectionIndex, QStringLiteral("special-agents")},
             {kStatsSectionIndex, QStringLiteral("stats")},
+            {kFilesSectionIndex, QStringLiteral("files")},
         };
         const bool networkGone =
             section == kNetworkDiagnosticsSectionIndex &&
