@@ -18,11 +18,17 @@ import com.forkmesh.nativeapp.platform.AppLifecycle
 import com.forkmesh.nativeapp.platform.Prefs
 import com.forkmesh.nativeapp.silentspeech.SilentChannel
 import com.forkmesh.nativeapp.silentspeech.SilentDataset
+import com.forkmesh.nativeapp.silentspeech.SilentDiagnosis
+import com.forkmesh.nativeapp.silentspeech.SilentDoctor
+import com.forkmesh.nativeapp.silentspeech.SilentDoctorInput
 import com.forkmesh.nativeapp.silentspeech.SilentEvaluation
 import com.forkmesh.nativeapp.silentspeech.SilentEvaluator
+import com.forkmesh.nativeapp.silentspeech.SilentFinding
+import com.forkmesh.nativeapp.silentspeech.SilentFix
 import com.forkmesh.nativeapp.silentspeech.SilentMatch
 import com.forkmesh.nativeapp.silentspeech.SilentModel
 import com.forkmesh.nativeapp.silentspeech.SilentNoiseFloor
+import com.forkmesh.nativeapp.silentspeech.SilentPulse
 import com.forkmesh.nativeapp.silentspeech.SilentQuaternion
 import com.forkmesh.nativeapp.silentspeech.SilentReading
 import com.forkmesh.nativeapp.silentspeech.SilentSample
@@ -35,7 +41,9 @@ import com.forkmesh.nativeapp.silentspeech.SilentVector
 import java.io.File
 import java.util.Locale
 import java.util.UUID
+import kotlin.math.max
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -48,6 +56,8 @@ object SilentSpeechListener : SensorEventListener {
     private const val CALIBRATION_SECONDS = 2.0
     private const val HOLD_PRE_ROLL = 0.1
     private const val RECENT_SECONDS = 0.4
+    private const val DRAW_INTERVAL = 1.0 / 15
+    private const val PULSE_INTERVAL = 1.0
 
     var listening by mutableStateOf(false)
         private set
@@ -65,7 +75,11 @@ object SilentSpeechListener : SensorEventListener {
         private set
     var evaluation by mutableStateOf<SilentEvaluation?>(null)
         private set
-    var evaluating by mutableStateOf(false)
+    var diagnosis by mutableStateOf<SilentDiagnosis?>(null)
+        private set
+    var diagnosing by mutableStateOf(false)
+        private set
+    var pulse by mutableStateOf<SilentPulse?>(null)
         private set
     var lastMatch by mutableStateOf<SilentMatch?>(null)
         private set
@@ -107,10 +121,18 @@ object SilentSpeechListener : SensorEventListener {
     private var calibrationStart: Double? = null
     private var segmenter: SilentSegmenter? = null
     private val rateWindow = ArrayList<Double>()
+    private var live = SilentScope()
+    private var drawn = Double.NEGATIVE_INFINITY
+    private var session: SilentReading? = null
+    private val still = ArrayList<SilentSample>()
+    private var pulseChecked = Double.NEGATIVE_INFINITY
+    private var generation = 0
     private var tts: TextToSpeech? = null
     private var ttsReady = false
     private var pendingSpeech: String? = null
     private val main = Handler(Looper.getMainLooper())
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val saver = Dispatchers.IO.limitedParallelism(1)
 
     private val dynamicCallback = object : SensorManager.DynamicSensorCallback() {
         override fun onDynamicSensorConnected(sensor: Sensor) {
@@ -138,6 +160,7 @@ object SilentSpeechListener : SensorEventListener {
             val loaded = withContext(Dispatchers.IO) { runCatching { file(appContext).takeIf { it.isFile }?.readText() }.getOrNull()?.let(SilentDataset::decode) }
             if (loaded != null) dataset = loaded
             if (selectedWord == null) selectedWord = dataset.words.firstOrNull()?.word
+            rebuild()
         }
     }
 
@@ -175,9 +198,13 @@ object SilentSpeechListener : SensorEventListener {
         hold = null
         held.clear()
         recent.clear()
-        scope = SilentScope()
+        live = SilentScope()
+        scope = live
+        drawn = Double.NEGATIVE_INFINITY
+        still.clear()
+        pulse = null
         rateWindow.clear()
-        if (reading != null) finishReading()
+        if (session != null) finishReading()
         segmenter?.reset()
         calibrating = false
         detecting = false
@@ -195,6 +222,8 @@ object SilentSpeechListener : SensorEventListener {
         rate = null
         hold = null
         held.clear()
+        still.clear()
+        pulse = null
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
@@ -212,14 +241,16 @@ object SilentSpeechListener : SensorEventListener {
 
     private fun receive(sample: SilentSample) {
         connected = true
-        scope = scope.push(sample)
+        live = live.push(sample)
+        if (sample.t - drawn >= DRAW_INTERVAL) draw()
         rateWindow.add(sample.t)
-        rateWindow.removeAll { it < sample.t - 2 }
+        trim(rateWindow) { it < sample.t - 2 }
         if (rateWindow.size > 5 && rateWindow.last() > rateWindow.first()) {
-            rate = (rateWindow.size - 1) / (rateWindow.last() - rateWindow.first())
+            rate = Math.round((rateWindow.size - 1) / (rateWindow.last() - rateWindow.first())).toDouble()
         }
         recent.add(sample)
-        recent.removeAll { it.t < sample.t - RECENT_SECONDS }
+        trim(recent) { it.t < sample.t - RECENT_SECONDS }
+        listenForPulse(sample)
         if (hold != null) {
             held.add(sample)
             return
@@ -231,67 +262,109 @@ object SilentSpeechListener : SensorEventListener {
             return
         }
         val current = segmenter
-        if ((!autoDetect && reading == null) || current == null) return
+        if ((!autoDetect && session == null) || current == null) return
         val segment = current.push(sample)
         detecting = current.active
-        if (reading != null) read(sample.t, segment) else if (segment != null) decode(segment)
+        if (session != null) read(sample.t, segment, current.active) else if (segment != null) decode(segment)
+    }
+
+    private fun <T> trim(list: ArrayList<T>, old: (T) -> Boolean) {
+        var n = 0
+        while (n < list.size && old(list[n])) n++
+        if (n > 0) list.subList(0, n).clear()
+    }
+
+    private fun draw() {
+        drawn = live.latest ?: drawn
+        scope = live
+    }
+
+    private fun listenForPulse(sample: SilentSample) {
+        still.add(sample)
+        trim(still) { it.t < sample.t - SilentPulse.WINDOW }
+        if (sample.t - pulseChecked < PULSE_INTERVAL) return
+        pulseChecked = sample.t
+        val found = SilentPulse.estimate(still, max(noise?.on ?: 0.0, SilentPulse.STILLNESS))
+        if (found?.label != pulse?.label) pulse = found
     }
 
     fun startReading() {
-        if (!listening || reading != null || hold != null) return
-        reading = SilentReading.start(SilentReading.plan(dataset), System.currentTimeMillis())
+        if (!listening || session != null || hold != null) return
+        session = SilentReading.start(SilentReading.plan(dataset), System.currentTimeMillis())
+        publishReading()
         readingSummary = null
         lastSentence = emptyList()
         segmenter?.reset()
         calibrate()
     }
 
-    private fun read(t: Double, segment: List<SilentSample>?) {
-        var current = reading?.tick(t) ?: return
+    private fun read(t: Double, segment: List<SilentSample>?, busy: Boolean) {
+        var current = session ?: return
         if (segment != null) {
-            scope = scope.mark(segment, current.sentence.getOrNull(current.position).orEmpty())
-            val (next, labelled) = current.hear(segment)
-            current = next
-            if (labelled.isNotEmpty()) {
-                val takes = labelled.map { SilentTake(UUID.randomUUID().toString(), it.first, it.second) }
-                dataset = takes.fold(dataset) { d, take -> d.learn(take) }
-                lastSentence = takes.map { it.id }
-                changed()
-            }
+            live = live.mark(segment, current.sentence.getOrNull(current.position) ?: "+")
+            draw()
+            current = current.hear(segment)
         }
-        reading = current
+        val (next, labelled) = current.tick(t, busy)
+        current = next
+        if (labelled.isNotEmpty()) {
+            val takes = labelled.map { SilentTake(UUID.randomUUID().toString(), it.first, it.second) }
+            dataset = takes.fold(dataset) { d, take -> d.learn(take) }
+            lastSentence = takes.map { it.id }
+            changed()
+        }
+        session = current
+        publishReading()
         if (current.done) finishReading()
     }
 
+    private fun publishReading() {
+        val current = session
+        val shown = reading
+        if (current == null) {
+            reading = null
+            return
+        }
+        if (shown != null && shown.clock == current.clock && shown.position == current.position && shown.index == current.index &&
+            shown.collected == current.collected && shown.notice == current.notice && shown.sentencesRead == current.sentencesRead
+        ) return
+        reading = current
+    }
+
     fun readAgain() {
-        reading = reading?.again()
+        session = session?.again()
+        publishReading()
         segmenter?.reset()
     }
 
     fun skipSentence() {
-        reading = reading?.skip()
+        session = session?.skip()
+        publishReading()
         segmenter?.reset()
     }
 
     fun dropLastSentence() {
         if (lastSentence.isEmpty()) return
         dataset = dataset.removeTakes(lastSentence.toSet())
-        reading = reading?.forget(lastSentence.size)
+        session = session?.forget(lastSentence.size)
+        publishReading()
         lastSentence = emptyList()
         changed()
     }
 
     fun finishReading() {
-        val current = reading ?: return
+        val current = session ?: return
+        session = null
         reading = null
         readingSummary = current.summary
         lastSentence = emptyList()
         segmenter?.reset()
         detecting = false
+        rebuild()
     }
 
     fun beginHold(kind: SilentHold) {
-        if (!listening || hold != null || reading != null) return
+        if (!listening || hold != null || session != null) return
         if (kind is SilentHold.Train && dataset.words.none { it.word == kind.word }) return
         val now = recent.lastOrNull()?.t ?: 0.0
         held.clear()
@@ -308,11 +381,15 @@ object SilentSpeechListener : SensorEventListener {
         if (samples.size < 2 || samples.last().t - samples.first().t < 0.2) return
         when (kind) {
             is SilentHold.Train -> {
-                scope = scope.mark(samples, kind.word)
+                live = live.mark(samples, kind.word)
+                draw()
                 dataset = dataset.addTake(SilentTake(UUID.randomUUID().toString(), kind.word, samples))
                 changed()
             }
-            SilentHold.Decode -> decode(samples)
+            SilentHold.Decode -> {
+                val words = noise?.let { SilentSegmenter.split(samples, it) }.orEmpty()
+                if (words.isEmpty()) decode(samples) else words.forEach(::decode)
+            }
         }
     }
 
@@ -329,18 +406,23 @@ object SilentSpeechListener : SensorEventListener {
         segmenter = noise?.let { SilentSegmenter(it) }
         calibration.clear()
         calibrationStart = null
-        scope = scope.recentre()
+        live = live.recentre()
+        draw()
     }
 
     fun recentre() {
-        scope = scope.recentre()
+        live = live.recentre()
+        draw()
     }
 
     private fun decode(samples: List<SilentSample>) {
-        val current = model ?: SilentModel(dataset.takes, channels, SilentEvaluator.neighbors(dataset), dataset.language).also { model = it }
+        val current = model ?: SilentModel(dataset.takes, channels, SilentEvaluator.neighbors(dataset), dataset.language, SilentModel.MAX_PER_WORD).also { model = it }
         val match = current.match(samples, maxDistance, minMargin, transcript.words.lastOrNull())
         lastMatch = match
-        if (match != null) scope = scope.mark(samples, if (match.accepted) match.word else "?")
+        if (match != null) {
+            live = live.mark(samples, if (match.accepted) match.word else "?")
+            draw()
+        }
         if (match == null || !match.accepted) return
         transcript = transcript.append(match.word)
         if (speakAloud) speak(dataset.phrase(match.word))
@@ -369,21 +451,55 @@ object SilentSpeechListener : SensorEventListener {
         }
     }
 
-    fun evaluate() {
-        if (evaluating) return
-        evaluating = true
-        val snapshot = dataset
-        val chosen = channels
+    fun diagnose() {
+        if (diagnosing) return
+        diagnosing = true
+        val input = SilentDoctorInput(
+            dataset, channels, if (hasAcceleration) SilentChannel.DEFAULTS else SilentChannel.DEFAULTS - SilentChannel.ACCELERATION,
+            minMargin, maxDistance, rate, noise, pulse,
+        )
         AppLifecycle.scope.launch {
-            val result = withContext(Dispatchers.Default) { SilentEvaluator.evaluate(snapshot, chosen, SilentEvaluator.neighbors(snapshot)) }
-            evaluation = result
-            evaluating = false
-            result?.suggestedMaxDistance?.let { updateMaxDistance(it) }
+            val (checked, found) = withContext(Dispatchers.Default) {
+                SilentEvaluator.evaluate(input.dataset, input.channels, SilentEvaluator.neighbors(input.dataset)) to SilentDoctor.diagnose(input)
+            }
+            evaluation = checked
+            diagnosis = found
+            diagnosing = false
+        }
+    }
+
+    fun applyFix(finding: SilentFinding) {
+        val fix = finding.fix ?: return
+        diagnosis = diagnosis?.without(finding)
+        when (fix) {
+            is SilentFix.DropTakes -> {
+                dataset = dataset.removeTakes(fix.ids.toSet())
+                updateMaxDistance(null)
+                changed()
+                diagnose()
+            }
+            is SilentFix.Channels -> {
+                chooseChannels(fix.channels)
+                diagnose()
+            }
+            is SilentFix.Margin -> {
+                minMargin = fix.value
+                prefs()?.putDouble(SilentSpeechPrefs.MIN_MARGIN, fix.value)
+            }
+            SilentFix.ClearLimit -> updateMaxDistance(null)
+            SilentFix.Calibrate -> calibrate()
+            SilentFix.Read -> {
+                diagnosis = null
+                startReading()
+            }
         }
     }
 
     fun toggleChannel(channel: SilentChannel, on: Boolean) {
-        val next = if (on) channels + channel else channels - channel
+        chooseChannels(if (on) channels + channel else channels - channel)
+    }
+
+    private fun chooseChannels(next: Set<SilentChannel>) {
         if (next.isEmpty()) return
         channels = next
         prefs()?.putStringList(SilentSpeechPrefs.CHANNELS, next.map { it.wire }.sorted())
@@ -448,13 +564,29 @@ object SilentSpeechListener : SensorEventListener {
     private fun invalidate() {
         model = null
         evaluation = null
+        rebuild()
+    }
+
+    private fun rebuild() {
+        generation++
+        if (session != null || dataset.takes.isEmpty()) return
+        val ticket = generation
+        val takes = dataset.takes
+        val chosen = channels
+        val neighbors = SilentEvaluator.neighbors(dataset)
+        val language = dataset.language
+        AppLifecycle.scope.launch {
+            val built = withContext(Dispatchers.Default) { SilentModel(takes, chosen, neighbors, language, SilentModel.MAX_PER_WORD) }
+            if (ticket == generation && model == null) model = built
+        }
     }
 
     private fun save() {
         val context = app ?: return
-        val text = dataset.encoded()
-        AppLifecycle.scope.launch(Dispatchers.IO) {
+        val snapshot = dataset
+        AppLifecycle.scope.launch(saver) {
             runCatching {
+                val text = snapshot.encoded()
                 val target = file(context)
                 target.parentFile?.mkdirs()
                 val temp = File(target.parentFile, "dataset.json.tmp")

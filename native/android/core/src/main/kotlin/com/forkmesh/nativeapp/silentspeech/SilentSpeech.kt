@@ -322,12 +322,19 @@ class SilentLanguage(sentences: List<List<String>>) {
     }
 }
 
-class SilentModel(takes: List<SilentTake>, val channels: Set<SilentChannel>, val neighbors: Int = 1, val language: SilentLanguage? = null) {
+class SilentModel(
+    takes: List<SilentTake>,
+    val channels: Set<SilentChannel>,
+    val neighbors: Int = 1,
+    val language: SilentLanguage? = null,
+    perWord: Int? = null,
+) {
     val normalizer: SilentNormalizer
     val templates: List<Pair<String, List<DoubleArray>>>
 
     init {
-        val raw = takes.map { it.word to SilentFeatures.frames(it.samples, channels) }.filter { it.second.isNotEmpty() }
+        val used = if (perWord != null) SilentEvaluator.sample(takes, perWord, Int.MAX_VALUE) else takes
+        val raw = used.map { it.word to SilentFeatures.frames(it.samples, channels) }.filter { it.second.isNotEmpty() }
         normalizer = SilentNormalizer.of(raw.map { it.second })
         templates = raw.map { it.first to normalizer.apply(it.second) }
     }
@@ -343,6 +350,10 @@ class SilentModel(takes: List<SilentTake>, val channels: Set<SilentChannel>, val
         val margin = SilentMatch.margin(best.effective, second?.effective)
         val accepted = (maxDistance == null || best.distance <= maxDistance) && (second == null || margin >= minMargin)
         return SilentMatch(best.word, best.distance, second?.word, margin, accepted)
+    }
+
+    companion object {
+        const val MAX_PER_WORD = 30
     }
 }
 
@@ -432,13 +443,15 @@ object SilentEvaluator {
     }
 
     fun neighbors(dataset: SilentDataset): Int {
-        val counts = dataset.words.map { dataset.count(it.word) }.filter { it > 0 }
+        val all = dataset.counts()
+        val counts = dataset.words.map { all[it.word] ?: 0 }.filter { it > 0 }
         if (counts.size < 2) return 1
         return if (counts.min() >= MANY_TAKES) MANY_NEIGHBORS else 1
     }
 
     fun requirement(dataset: SilentDataset): String? {
-        val ready = dataset.words.count { dataset.count(it.word) >= MINIMUM_TAKES }
+        val counts = dataset.counts()
+        val ready = dataset.words.count { (counts[it.word] ?: 0) >= MINIMUM_TAKES }
         if (ready >= 2) return null
         return "Record at least $MINIMUM_TAKES takes of at least 2 words to check them. Five or more takes each gives a fairer score."
     }
@@ -560,6 +573,347 @@ object SilentEvaluator {
     }
 }
 
+data class SilentPulse(val bpm: Double, val strength: Double) {
+    val label: String get() = "${bpm.roundToInt()} bpm"
+
+    companion object {
+        const val WINDOW = 12.0
+        const val MINIMUM_SECONDS = 8.0
+        const val LOW_BPM = 40.0
+        const val HIGH_BPM = 180.0
+        const val MINIMUM_STRENGTH = 0.3
+        const val STILLNESS = 0.15
+        const val DETREND_FRAMES = 25
+        const val SMOOTH_FRAMES = 3
+
+        fun estimate(samples: List<SilentSample>, stillness: Double = STILLNESS): SilentPulse? {
+            val frames = SilentFeatures.resampled(samples)
+            val rate = SilentFeatures.RATE
+            val n = frames.size
+            if (n < (MINIMUM_SECONDS * rate).toInt() || frames.any { it.energy > stillness }) return null
+            val series = ArrayList<DoubleArray>()
+            series.add(DoubleArray(n) { frames[it].rotationRate.x })
+            series.add(DoubleArray(n) { frames[it].rotationRate.y })
+            series.add(DoubleArray(n) { frames[it].rotationRate.z })
+            if (frames.all { it.acceleration != null }) {
+                series.add(DoubleArray(n) { frames[it].acceleration?.x ?: 0.0 })
+                series.add(DoubleArray(n) { frames[it].acceleration?.y ?: 0.0 })
+                series.add(DoubleArray(n) { frames[it].acceleration?.z ?: 0.0 })
+            }
+            val filtered = series.mapNotNull { raw ->
+                val trend = average(raw, DETREND_FRAMES)
+                val smooth = average(DoubleArray(n) { raw[it] - trend[it] }, SMOOTH_FRAMES)
+                val mean = smooth.sum() / n
+                val sd = sqrt(smooth.sumOf { (it - mean) * (it - mean) } / n)
+                if (sd > 1e-9) DoubleArray(n) { (smooth[it] - mean) / sd } else null
+            }
+            if (filtered.isEmpty()) return null
+            val minLag = floor(rate * 60 / HIGH_BPM).toInt()
+            val maxLag = min(ceil(rate * 60 / LOW_BPM).toInt(), n / 2)
+            if (maxLag <= minLag) return null
+            val ac = DoubleArray(maxLag + 2)
+            for (lag in (minLag - 1)..(maxLag + 1)) {
+                var total = 0.0
+                for (x in filtered) {
+                    var sum = 0.0
+                    for (i in 0 until n - lag) sum += x[i] * x[i + lag]
+                    total += sum / (n - lag)
+                }
+                ac[lag] = total / filtered.size
+            }
+            val peaks = (minLag..maxLag).filter { ac[it] > ac[it - 1] && ac[it] >= ac[it + 1] }
+            var lag = peaks.maxByOrNull { ac[it] } ?: return null
+            val half = peaks.firstOrNull { abs(it.toDouble() - lag / 2.0) <= 1 }
+            if (half != null && ac[half] >= 0.85 * ac[lag]) lag = half
+            if (ac[lag] < MINIMUM_STRENGTH) return null
+            val bend = ac[lag - 1] - 2 * ac[lag] + ac[lag + 1]
+            val shift = if (bend < 0) (0.5 * (ac[lag - 1] - ac[lag + 1]) / bend).coerceIn(-0.5, 0.5) else 0.0
+            return SilentPulse(60 * rate / (lag + shift), ac[lag])
+        }
+
+        fun average(values: DoubleArray, width: Int): DoubleArray {
+            val half = width / 2
+            val prefix = DoubleArray(values.size + 1)
+            for (i in values.indices) prefix[i + 1] = prefix[i] + values[i]
+            return DoubleArray(values.size) { i ->
+                val lo = max(0, i - half)
+                val hi = min(values.size - 1, i + half)
+                (prefix[hi + 1] - prefix[lo]) / (hi - lo + 1)
+            }
+        }
+    }
+}
+
+sealed class SilentFix {
+    data class DropTakes(val ids: List<String>) : SilentFix()
+    data class Channels(val channels: Set<SilentChannel>) : SilentFix()
+    data class Margin(val value: Double) : SilentFix()
+    data object ClearLimit : SilentFix()
+    data object Calibrate : SilentFix()
+    data object Read : SilentFix()
+
+    val label: String
+        get() = when (this) {
+            is DropTakes -> if (ids.size == 1) "Drop it" else "Drop ${ids.size}"
+            is Channels -> "Use them"
+            is Margin -> "Set ${(value * 100).roundToInt()}%"
+            ClearLimit -> "Turn off"
+            Calibrate -> "Measure"
+            Read -> "Read now"
+        }
+}
+
+enum class SilentLevel { PROBLEM, TIP, GOOD }
+
+data class SilentFinding(val level: SilentLevel, val title: String, val detail: String, val fix: SilentFix? = null)
+
+data class SilentCall(val index: Int, val truth: Int, val guess: Int, val distance: Double, val margin: Double)
+
+data class SilentDiagnosis(val findings: List<SilentFinding>, val accuracy: Double? = null, val chance: Double? = null) {
+    fun without(finding: SilentFinding): SilentDiagnosis = copy(findings = findings.filter { it != finding })
+}
+
+data class SilentDoctorInput(
+    val dataset: SilentDataset,
+    val channels: Set<SilentChannel>,
+    val available: Set<SilentChannel>,
+    val minMargin: Double,
+    val maxDistance: Double? = null,
+    val rate: Double? = null,
+    val noise: SilentNoiseFloor? = null,
+    val pulse: SilentPulse? = null,
+)
+
+object SilentDoctor {
+    const val MINIMUM_RATE = 20.0
+    const val SHAKY = 0.4
+    const val FEW_TAKES = 3
+    const val PER_WORD = 8
+    const val MAX_TAKES = 240
+    const val WEAK_PEAK = 0.06
+    const val LONG_TAKE = 2.5
+    const val OUTLIER_RATIO = 2.0
+    const val CHANNEL_GAIN = 0.05
+    const val LIMIT_LOSS = 0.25
+    val MARGINS = listOf(0.02, 0.04, 0.06, 0.08, 0.12)
+
+    private class Prepared(val ids: List<String>, val labels: IntArray, val words: List<String>, val d: Array<DoubleArray>)
+
+    private fun prepare(takes: List<SilentTake>, channels: Set<SilentChannel>): Prepared? {
+        val raw = takes.map { it to SilentFeatures.frames(it.samples, channels) }.filter { it.second.isNotEmpty() }
+        val counts = raw.groupingBy { it.first.word }.eachCount()
+        val words = ArrayList<String>()
+        for ((take, _) in raw) if ((counts[take.word] ?: 0) >= SilentEvaluator.MINIMUM_TAKES && take.word !in words) words.add(take.word)
+        if (words.size < 2) return null
+        val index = words.withIndex().associate { it.value to it.index }
+        val kept = raw.filter { it.first.word in index }
+        val normalizer = SilentNormalizer.of(kept.map { it.second })
+        return Prepared(
+            kept.map { it.first.id }, IntArray(kept.size) { index[kept[it].first.word] ?: 0 }, words,
+            SilentEvaluator.matrix(kept.map { normalizer.apply(it.second) }),
+        )
+    }
+
+    fun calls(d: Array<DoubleArray>, labels: IntArray, wordCount: Int, neighbors: Int): List<SilentCall> {
+        val counts = IntArray(wordCount)
+        for (label in labels) counts[label]++
+        val k = max(1, neighbors)
+        val near = Array(wordCount) { DoubleArray(k) }
+        val sizes = IntArray(wordCount)
+        val out = ArrayList<SilentCall>()
+        for (i in labels.indices) {
+            if (counts[labels[i]] < SilentEvaluator.MINIMUM_TAKES) continue
+            sizes.fill(0)
+            for (j in labels.indices) {
+                if (j == i) continue
+                val w = labels[j]
+                sizes[w] = SilentEvaluator.keep(near[w], sizes[w], d[i][j], k)
+            }
+            var bestWord = -1
+            var bestScore = Double.POSITIVE_INFINITY
+            var second = Double.POSITIVE_INFINITY
+            for (w in 0 until wordCount) {
+                val size = sizes[w]
+                if (size == 0) continue
+                var sum = 0.0
+                for (n in 0 until size) sum += near[w][n]
+                val value = sum / size
+                if (value < bestScore) {
+                    second = bestScore
+                    bestScore = value
+                    bestWord = w
+                } else if (value < second) {
+                    second = value
+                }
+            }
+            if (bestWord < 0) continue
+            out.add(SilentCall(i, labels[i], bestWord, bestScore, SilentMatch.margin(bestScore, if (second.isFinite()) second else null)))
+        }
+        return out
+    }
+
+    fun outliers(d: Array<DoubleArray>, labels: IntArray): List<Int> {
+        val same = DoubleArray(labels.size) { Double.POSITIVE_INFINITY }
+        val other = DoubleArray(labels.size) { Double.POSITIVE_INFINITY }
+        for (i in labels.indices) for (j in labels.indices) {
+            if (j == i) continue
+            if (labels[j] == labels[i]) same[i] = min(same[i], d[i][j]) else other[i] = min(other[i], d[i][j])
+        }
+        val typical = HashMap<Int, Double>()
+        for (label in labels.toSet()) {
+            val values = labels.indices.filter { labels[it] == label && same[it].isFinite() }.map { same[it] }
+            if (values.isNotEmpty()) typical[label] = SilentNoiseFloor.median(values)
+        }
+        return labels.indices.filter { i ->
+            val usual = typical[labels[i]]
+            usual != null && same[i].isFinite() && same[i] > OUTLIER_RATIO * usual && same[i] > other[i]
+        }
+    }
+
+    private fun subsets(available: Set<SilentChannel>): List<Set<SilentChannel>> {
+        val order = SilentChannel.entries.filter { it in available }
+        if (order.isEmpty()) return emptyList()
+        return (1 until (1 shl order.size)).map { mask -> order.indices.filter { mask and (1 shl it) != 0 }.map { order[it] }.toSet() }
+    }
+
+    private fun names(channels: Set<SilentChannel>): String = SilentChannel.entries.filter { it in channels }.joinToString(" + ") { it.label }
+
+    private fun percent(value: Double) = "${(value * 100).roundToInt()}%"
+
+    private fun list(words: List<String>, limit: Int = 6): String {
+        val shown = words.take(limit).joinToString(", ")
+        return if (words.size > limit) "$shown and ${words.size - limit} more" else shown
+    }
+
+    private fun ordered(findings: List<SilentFinding>): List<SilentFinding> = findings.sortedBy { it.level.ordinal }
+
+    fun diagnose(input: SilentDoctorInput): SilentDiagnosis {
+        val findings = ArrayList<SilentFinding>()
+        val dataset = input.dataset
+        val rate = input.rate
+        if (rate != null && rate < MINIMUM_RATE) {
+            findings.add(SilentFinding(SilentLevel.TIP, "Earbuds send ${rate.roundToInt()} readings a second",
+                "The recogniser works at 25. Quick words blur at fewer; keep the phone close and close other apps using the earbuds."))
+        }
+        val noise = input.noise
+        if (noise != null) {
+            if (noise.on > SHAKY) {
+                findings.add(SilentFinding(SilentLevel.PROBLEM, "Too much movement between words",
+                    "The word threshold is ${String.format(Locale.US, "%.2f", noise.on)}, so soft words are missed and stray moves count as words. Rest your head and measure stillness again.", SilentFix.Calibrate))
+            }
+        } else {
+            findings.add(SilentFinding(SilentLevel.TIP, "Stillness not measured yet",
+                "Hands-free listening and reading need two still seconds to set the word threshold.", SilentFix.Calibrate))
+        }
+        input.pulse?.let {
+            findings.add(SilentFinding(SilentLevel.GOOD, "Earbuds feel your heartbeat, ${it.label}", "They pick up movements that small, so the sensor is working."))
+        }
+        val counts = dataset.counts()
+        val taught = dataset.words.map { it.word }.filter { (counts[it] ?: 0) >= SilentEvaluator.MINIMUM_TAKES }
+        if (taught.size < 2) {
+            findings.add(SilentFinding(SilentLevel.PROBLEM, "Not enough taught yet", "Read sentences for five minutes: every word read becomes a take.", SilentFix.Read))
+            return SilentDiagnosis(ordered(findings))
+        }
+        val few = dataset.words.map { it.word }.filter { (counts[it] ?: 0) < FEW_TAKES }
+        if (few.isNotEmpty()) {
+            findings.add(SilentFinding(SilentLevel.TIP, if (few.size == 1) "1 word has fewer than $FEW_TAKES takes" else "${few.size} words have fewer than $FEW_TAKES takes",
+                "${list(few)}. A reading session starts with the least-trained sentences.", SilentFix.Read))
+        }
+        val weak = HashSet<String>()
+        val long = HashSet<String>()
+        for (take in dataset.takes) {
+            val peak = take.samples.maxOfOrNull { it.energy } ?: 0.0
+            val span = (take.samples.lastOrNull()?.t ?: 0.0) - (take.samples.firstOrNull()?.t ?: 0.0)
+            if (peak < WEAK_PEAK) weak.add(take.id)
+            if (span > LONG_TAKE) long.add(take.id)
+        }
+        val sampled = SilentEvaluator.sample(dataset.takes, PER_WORD, MAX_TAKES)
+        val k = SilentEvaluator.neighbors(dataset)
+        var accuracy: Double? = null
+        var chance: Double? = null
+        var mislabelled: Set<String> = emptySet()
+        val current = prepare(sampled, input.channels)
+        if (current != null) {
+            val results = calls(current.d, current.labels, current.words.size, k)
+            val right = results.filter { it.truth == it.guess }
+            val wrong = results.filter { it.truth != it.guess }
+            if (results.isNotEmpty()) {
+                val score = right.size.toDouble() / results.size
+                accuracy = score
+                chance = 1.0 / current.words.size
+                val level = if (score >= 2.0 / current.words.size) SilentLevel.GOOD else SilentLevel.PROBLEM
+                findings.add(SilentFinding(level, "Picks the right word ${percent(score)} of the time",
+                    "Each of ${results.size} recent takes matched against the others; guessing would get ${percent(1.0 / current.words.size)}.",
+                    if (level == SilentLevel.PROBLEM) SilentFix.Read else null))
+            }
+            mislabelled = outliers(current.d, current.labels).map { current.ids[it] }.toSet()
+            val mixups = LinkedHashMap<String, Int>()
+            for (call in wrong) {
+                val key = "${current.words[call.truth]} → ${current.words[call.guess]}"
+                mixups[key] = (mixups[key] ?: 0) + 1
+            }
+            val worst = mixups.entries.sortedWith(compareBy({ -it.value }, { it.key })).take(3)
+            val top = worst.firstOrNull()
+            if (top != null && top.value >= 2) {
+                findings.add(SilentFinding(SilentLevel.TIP, "Most mixed up: ${top.key}",
+                    worst.joinToString(", ") { "${it.key} ×${it.value}" } + ". Words that move the jaw alike need more takes; read sentences that use them."))
+            }
+            fun gain(m: Double) = right.count { it.margin >= m } - wrong.count { it.margin >= m }
+            fun keep(m: Double, calls: List<SilentCall>) = calls.count { it.margin >= m }
+            val candidates = (MARGINS + input.minMargin).sorted()
+            val best = candidates.maxWithOrNull(compareBy({ gain(it) }, { -abs(it - input.minMargin) }))
+            if (best != null && abs(best - input.minMargin) > 1e-9 && gain(best) - gain(input.minMargin) >= max(1, results.size / 20)) {
+                findings.add(SilentFinding(SilentLevel.TIP, if (best < input.minMargin) "Accept closer calls" else "Be stricter about close calls",
+                    "Needing ${percent(best)} ahead of the runner-up keeps ${keep(best, right)} of ${right.size} right words and ${keep(best, wrong)} of ${wrong.size} wrong ones; ${percent(input.minMargin)} keeps ${keep(input.minMargin, right)} and ${keep(input.minMargin, wrong)}.",
+                    SilentFix.Margin(best)))
+            }
+            val limit = input.maxDistance
+            if (limit != null && right.isNotEmpty()) {
+                val lost = right.count { it.distance > limit }.toDouble() / right.size
+                if (lost > LIMIT_LOSS) {
+                    findings.add(SilentFinding(SilentLevel.PROBLEM, "Skip far-off turns away ${percent(lost)} of right words",
+                        "Its limit came from an older check; the takes have changed since.", SilentFix.ClearLimit))
+                }
+            }
+            val score = accuracy
+            if (score != null && input.available.size > 1) {
+                var bestChannels = input.channels
+                var bestAccuracy: Double = score
+                for (channels in subsets(input.available)) {
+                    if (channels == input.channels) continue
+                    val other = prepare(sampled, channels) ?: continue
+                    val found = calls(other.d, other.labels, other.words.size, k)
+                    if (found.isEmpty()) continue
+                    val value = found.count { it.truth == it.guess }.toDouble() / found.size
+                    if (value > bestAccuracy + 1e-9) {
+                        bestChannels = channels
+                        bestAccuracy = value
+                    }
+                }
+                if (bestChannels != input.channels && bestAccuracy >= score + CHANNEL_GAIN) {
+                    findings.add(SilentFinding(SilentLevel.TIP, "Match on ${names(bestChannels)}",
+                        "Right ${percent(bestAccuracy)} of the time with ${if (bestChannels.size == 1) "it" else "these"} against ${percent(score)} with ${names(input.channels)}.",
+                        SilentFix.Channels(bestChannels)))
+                }
+            }
+        }
+        val doubtful = dataset.takes.map { it.id }.filter { it in weak || it in long || it in mislabelled }
+        if (doubtful.isNotEmpty()) {
+            val parts = ArrayList<String>()
+            val weakCount = doubtful.count { it in weak }
+            val longCount = doubtful.count { it in long && it !in weak }
+            val oddCount = doubtful.count { it in mislabelled && it !in weak && it !in long }
+            if (weakCount > 0) parts.add("$weakCount barely moved")
+            if (longCount > 0) parts.add("$longCount ran longer than ${LONG_TAKE.toInt()} s, likely two words")
+            if (oddCount > 0) parts.add("$oddCount look more like another word than their own, likely labelled out of step")
+            val share = doubtful.size.toDouble() / max(1, dataset.takes.size)
+            findings.add(SilentFinding(if (share > 0.2) SilentLevel.PROBLEM else SilentLevel.TIP, if (doubtful.size == 1) "1 take looks wrong" else "${doubtful.size} takes look wrong",
+                parts.joinToString("; ") + ". Dropping them sharpens matching.", SilentFix.DropTakes(doubtful)))
+        }
+        return SilentDiagnosis(ordered(findings), accuracy, chance)
+    }
+}
+
 data class SilentNoiseFloor(val floor: Double, val spread: Double) {
     val on: Double get() = floor + max(4 * spread, MINIMUM_RISE)
     val off: Double get() = floor + max(2 * spread, MINIMUM_RISE / 2)
@@ -573,7 +927,7 @@ data class SilentNoiseFloor(val floor: Double, val spread: Double) {
             return SilentNoiseFloor(middle, 1.4826 * median(energies.map { abs(it - middle) }))
         }
 
-        private fun median(values: List<Double>): Double {
+        fun median(values: List<Double>): Double {
             val sorted = values.sorted()
             val m = sorted.size / 2
             return if (sorted.size % 2 == 1) sorted[m] else (sorted[m - 1] + sorted[m]) / 2
@@ -637,6 +991,29 @@ class SilentSegmenter(
         if (finished.isEmpty() || cut - onset < minimum) return null
         return finished
     }
+
+    fun flush(): List<SilentSample>? {
+        val last = segment.lastOrNull()
+        if (!active || last == null) {
+            reset()
+            return null
+        }
+        val cut = quietSince ?: last.t
+        val finished = segment.filter { it.t <= cut + 0.08 }
+        reset()
+        if (finished.isEmpty() || cut - onset < minimum) return null
+        return finished
+    }
+
+    companion object {
+        fun split(samples: List<SilentSample>, noise: SilentNoiseFloor): List<List<SilentSample>> {
+            val segmenter = SilentSegmenter(noise)
+            val out = ArrayList<List<SilentSample>>()
+            for (sample in samples) segmenter.push(sample)?.let { out.add(it) }
+            segmenter.flush()?.let { out.add(it) }
+            return out
+        }
+    }
 }
 
 object SilentText {
@@ -690,10 +1067,13 @@ data class SilentReading(
     val duration: Double = DURATION,
     val index: Int = 0,
     val heard: List<List<SilentSample>> = emptyList(),
+    val lastHeard: Double? = null,
     val started: Double? = null,
     val elapsed: Double = 0.0,
     val sentencesRead: Int = 0,
     val collected: Int = 0,
+    val missed: Int = 0,
+    val notice: String? = null,
 ) {
     val sentence: List<String> get() = if (sentences.isEmpty()) emptyList() else sentences[index % sentences.size]
     val position: Int get() = heard.size
@@ -706,25 +1086,36 @@ data class SilentReading(
         get() {
             val takes = if (collected == 1) "1 take" else "$collected takes"
             val read = if (sentencesRead == 1) "1 sentence" else "$sentencesRead sentences"
-            return "Saved $takes from $read."
+            val skipped = if (missed == 0) "" else " $missed not saved: the word count was off."
+            return "Saved $takes from $read.$skipped"
         }
 
-    fun tick(t: Double): SilentReading {
+    fun tick(t: Double, busy: Boolean = false): Pair<SilentReading, List<Pair<String, List<SilentSample>>>> {
         val from = started ?: t
-        return copy(started = from, elapsed = max(0.0, t - from))
+        val next = copy(started = from, elapsed = max(0.0, t - from))
+        val last = lastHeard
+        if (busy || heard.isEmpty() || last == null || t - last < SENTENCE_PAUSE) return next to emptyList()
+        return next.close()
     }
 
-    fun hear(segment: List<SilentSample>): Pair<SilentReading, List<Pair<String, List<SilentSample>>>> {
-        if (segment.isEmpty() || sentence.isEmpty()) return this to emptyList()
-        val next = heard + listOf(segment)
-        if (next.size < sentence.size) return copy(heard = next) to emptyList()
-        val labelled = sentence.zip(next)
-        return copy(heard = emptyList(), index = index + 1, sentencesRead = sentencesRead + 1, collected = collected + labelled.size) to labelled
+    fun hear(segment: List<SilentSample>): SilentReading {
+        val last = segment.lastOrNull() ?: return this
+        if (sentence.isEmpty()) return this
+        return copy(heard = heard + listOf(segment), lastHeard = last.t, notice = null)
     }
 
-    fun again(): SilentReading = copy(heard = emptyList())
+    private fun close(): Pair<SilentReading, List<Pair<String, List<SilentSample>>>> {
+        val cleared = copy(heard = emptyList(), lastHeard = null)
+        if (heard.size != sentence.size) {
+            return cleared.copy(missed = missed + 1, notice = "Heard ${heard.size} of ${sentence.size} words, so it was not saved. Read it again.") to emptyList()
+        }
+        val labelled = sentence.zip(heard)
+        return cleared.copy(index = index + 1, sentencesRead = sentencesRead + 1, collected = collected + labelled.size, notice = null) to labelled
+    }
 
-    fun skip(): SilentReading = copy(heard = emptyList(), index = index + 1)
+    fun again(): SilentReading = copy(heard = emptyList(), lastHeard = null, notice = null)
+
+    fun skip(): SilentReading = again().copy(index = index + 1)
 
     fun forget(takes: Int): SilentReading =
         if (takes <= 0 || sentencesRead <= 0) this else copy(sentencesRead = sentencesRead - 1, collected = max(0, collected - takes))
@@ -734,6 +1125,7 @@ data class SilentReading(
         const val SCRIPT_LENGTH = 100
         const val SESSION_SENTENCES = 8
         const val CHUNK = 5
+        const val SENTENCE_PAUSE = 1.5
 
         fun start(sentences: List<List<String>>, seed: Long, duration: Double = DURATION) = SilentReading(script(sentences, seed), duration)
 
@@ -838,6 +1230,7 @@ data class SilentScope(
             if (tail.size < MINIMUM_SPECTRUM) return SilentSpectrum(emptyList(), binHz, null)
             val n = tail.size
             val pad = size - n
+            val table = if (size == SPECTRUM_SIZE) TWIDDLES else table(size)
             val power = DoubleArray(size / 2 + 1)
             for (axis in 0 until 3) {
                 val raw = tail.map { if (axis == 0) it.x else if (axis == 1) it.y else it.z }
@@ -850,10 +1243,10 @@ data class SilentScope(
                 for (k in 0..size / 2) {
                     var re = 0.0
                     var im = 0.0
-                    for (i in 0 until size) {
-                        val phase = 2 * PI * (k * i).toDouble() / size
-                        re += signal[i] * cos(phase)
-                        im -= signal[i] * sin(phase)
+                    for (i in pad until size) {
+                        val j = (k * i) % size
+                        re += signal[i] * table.first[j]
+                        im -= signal[i] * table.second[j]
                     }
                     power[k] += (re * re + im * im) / size
                 }
@@ -864,6 +1257,13 @@ data class SilentScope(
                 if (peak == null || power[k] > power[peak]) peak = k
             }
             return SilentSpectrum(power.toList(), binHz, peak?.let { it * binHz })
+        }
+
+        private val TWIDDLES: Pair<DoubleArray, DoubleArray> = table(SPECTRUM_SIZE)
+
+        private fun table(size: Int): Pair<DoubleArray, DoubleArray> {
+            val phases = DoubleArray(size) { 2 * PI * it / size }
+            return DoubleArray(size) { cos(phases[it]) } to DoubleArray(size) { sin(phases[it]) }
         }
     }
 }
