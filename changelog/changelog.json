@@ -11,6 +11,8 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-04", "area": "Market", "text": "Instance administrators can choose on which places (phone, desktop, web) a Market package may be used across the whole instance, or turn it off there entirely, from the web Plugins page."},
+  {"date": "2026-11-04", "area": "Market", "text": "Instance administrators get a Plugins page on the web dashboard that lists every Market plugin and switch with what it ships and where it is installed, and shows each one's tables, row counts, errors and activity, with install, places and data export."},
   {"date": "2026-11-04", "area": "Android", "text": "Minimizing a call on a locked phone now hides the app behind the lock screen until you unlock."},
   {"date": "2026-11-04", "area": "iPhone", "text": "Telling, continuing or stopping an agent with Siri now asks you to unlock your iPhone first."},
   {"date": "2026-11-04", "area": "Market", "text": "Browser extension 2.34.0 opens a wider, more compact window that shows two sections per row and remembers which ones you left open, and Zoho Mail's Select and Delete now act on exactly the messages shown, even with a message open."},
