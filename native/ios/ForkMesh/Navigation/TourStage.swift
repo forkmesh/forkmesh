@@ -13,27 +13,23 @@ struct TourStage: View {
     @State private var phase: Int = 0
     @State private var quietUntil: Date = .distantPast
 
-    static let height: CGFloat = 330
     static let beat: Double = 1.9
 
     var body: some View {
-        content
-            .frame(maxWidth: .infinity)
-            .frame(height: TourStage.height, alignment: .top)
-            .background(fm.bgBase)
-            .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 30, style: .continuous)
-                    .strokeBorder(fm.border, lineWidth: 1)
+        Group {
+            if scene.isObject {
+                content
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                TourPhone(fullBleed: scene == .system) { content }
             }
-            .shadow(color: Color.black.opacity(fm.dark ? 0.5 : 0.12), radius: 18, y: 8)
-            .padding(.horizontal, FmSpace.x2)
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel(Text("Preview: \(title)"))
-            .task(id: active) { await play() }
-            .onChange(of: active) { (_: Bool, now: Bool) in
-                if !now { phase = 0 }
-            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(Text("Preview: \(title)"))
+        .task(id: active) { await play() }
+        .onChange(of: active) { (_: Bool, now: Bool) in
+            if !now { phase = 0 }
+        }
     }
 
     @ViewBuilder private var content: some View {
@@ -78,6 +74,58 @@ struct TourStage: View {
                     phase += 1
                 }
             }
+        }
+    }
+}
+
+extension TourScene {
+    var isObject: Bool {
+        switch self {
+        case .agents, .newAgent, .inbox, .voice, .code, .market: return true
+        default: return false
+        }
+    }
+}
+
+struct TourPhone<Screen: View>: View {
+    @Environment(\.fmPalette) private var fm
+    var fullBleed: Bool = false
+    @ViewBuilder let screen: () -> Screen
+
+    static var screenSize: CGSize { CGSize(width: 360, height: 500) }
+    static var bezel: CGFloat { 7 }
+
+    var body: some View {
+        GeometryReader { (proxy: GeometryProxy) in
+            let height: CGFloat = min(proxy.size.height - 24, 440)
+            let scale: CGFloat = max(0.3, (height - TourPhone.bezel * 2) / TourPhone.screenSize.height)
+            let width: CGFloat = TourPhone.screenSize.width * scale + TourPhone.bezel * 2
+            let radius: CGFloat = 50 * scale + TourPhone.bezel
+            ZStack(alignment: .top) {
+                screen()
+                    .frame(
+                        width: TourPhone.screenSize.width,
+                        height: TourPhone.screenSize.height - (fullBleed ? 0 : 50), alignment: .top)
+                    .clipped()
+                    .padding(.top, fullBleed ? 0 : 38)
+                    .padding(.bottom, fullBleed ? 0 : 12)
+                    .background(fm.bgBase)
+                    .scaleEffect(scale, anchor: .topLeading)
+                    .frame(width: width - TourPhone.bezel * 2, height: height - TourPhone.bezel * 2, alignment: .topLeading)
+                    .clipShape(RoundedRectangle(cornerRadius: radius - TourPhone.bezel, style: .continuous))
+                    .padding(TourPhone.bezel)
+                Capsule()
+                    .fill(Color.black)
+                    .frame(width: 100 * scale, height: 30 * scale)
+                    .padding(.top, TourPhone.bezel + 10 * scale)
+                    .accessibilityHidden(true)
+            }
+            .frame(width: width, height: height)
+            .background(
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .fill(fm.dark ? Color(fmARGB: 0xFF1C1C1F) : Color(fmARGB: 0xFFD9D9DE)))
+            .shadow(color: Color.black.opacity(fm.dark ? 0.55 : 0.16), radius: 28, y: 16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }
@@ -156,7 +204,7 @@ struct TourSparkleButton: View {
         }
         .frame(width: size, height: size)
         .clipShape(Circle())
-        .shadow(color: fm.accent.opacity(0.45), radius: 8, y: 3)
+        .shadow(color: Color.black.opacity(fm.dark ? 0.4 : 0.16), radius: size * 0.16, y: size * 0.08)
         .tourTarget(lit, round: true)
     }
 }
@@ -225,9 +273,9 @@ struct TourBottomBar: View {
     var style: ShellBarStyle = ShellBarStyle()
 
     var body: some View {
-        ShellBarPreview(style: style, iconSize: iconSize, cellWidth: 50, cellHeight: 44)
-            .padding(.horizontal, 8)
-            .padding(.bottom, 8)
+        ShellBarPreview(style: style, iconSize: iconSize, cellWidth: 50, cellHeight: 44, plain: true)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 14)
             .contentShape(Rectangle())
             .accessibilityHidden(true)
     }
@@ -242,7 +290,7 @@ struct TourTitle: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
             Text(text)
-                .font(.system(size: 24, weight: .bold))
+                .font(.system(size: 26, weight: .semibold))
                 .foregroundStyle(fm.textPrimary)
             Spacer(minLength: 0)
             if let trailing = trailing {
@@ -265,10 +313,9 @@ struct TourSectionLabel: View {
     let text: String
 
     var body: some View {
-        Text(text.uppercased())
-            .font(.system(size: 11, weight: .semibold))
-            .tracking(0.6)
-            .foregroundStyle(fm.textTertiary)
+        Text(text)
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(fm.textSecondary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 16)
             .padding(.top, 6)
@@ -288,10 +335,9 @@ struct TourRow<Trailing: View>: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: symbol)
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(tint ?? fm.accent)
-                .frame(width: 30, height: 30)
-                .background((tint ?? fm.accent).opacity(0.14), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(tint ?? fm.textSecondary)
+                .frame(width: 26, height: 30)
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
                     .font(.system(size: 14, weight: unread ? .semibold : .medium))

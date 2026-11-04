@@ -31,7 +31,7 @@ SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
 ENTRY_TEXT = (SRC / "entry.py").read_text(encoding="utf-8")
 WORLD_SRC = ROOT.parent / "world" / "src"
-DOC = ROOT.parent / "www" / "docs" / "security" / "organization-roles.md"
+DOC = ROOT.parent / "docs" / "security" / "organization-roles.md"
 
 
 def _module(name):
@@ -322,6 +322,6 @@ def test_published_documentation_table_is_the_matrix():
     assert rbac.org_authorization_matrix_markdown() in doc
     for role in ROLES:
         assert "| `" + role + "` |" in doc, role
-    readme = (ROOT.parent / "www" / "docs" / "README.md").read_text(
+    readme = (ROOT.parent / "docs" / "README.md").read_text(
         encoding="utf-8")
     assert "security/organization-roles.md" in readme

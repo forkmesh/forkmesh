@@ -1,6 +1,7 @@
 # Feedback, bounties and link rewards in the dashboard
 
-Three dashboard surfaces backed by existing server APIs.
+Part of [the App docs](README.md). Three dashboard surfaces backed by
+existing server APIs.
 
 | Feature | Where | API |
 | --- | --- | --- |
@@ -13,7 +14,7 @@ Three dashboard surfaces backed by existing server APIs.
 | Path | Responsibility |
 | --- | --- |
 | `app/public/dashboard/partials/modals.html` (`data-feedback-modal`), `js/09-feedback.js` | Feedback dialog |
-| `app/public/dashboard/partials/header.html` (`data-plugin-menu`), `js/09-plugin-menu.js` | ⋯ menu on plugin pages (`docs/marketplace/README.md`) |
+| `app/public/dashboard/partials/header.html` (`data-plugin-menu`), `js/09-plugin-menu.js` | ⋯ menu on plugin pages ([plugin page menu](../marketplace/market.md#plugin-page-menu)) |
 | `app/public/dashboard/partials/views/bounties.html`, `js/09-bounties.js` | Bounties page (lazy chunk) |
 | `app/public/dashboard/partials/views/links.html`, `js/09-links.js` | Link rewards page (lazy chunk) |
 | `app/src/dashboard_shell.py`, `dashboard_bundle.py`, `static_routes.py` | Page registration, chunks and routes |
@@ -41,8 +42,8 @@ All checks are on the server.
   `solana:` pay link and a copy button.
 - **Microjobs** "Submit an issue" links to `/forkmesh/forkmesh/issues/new`.
   For a signed-in visitor the repo page keeps that address and opens the New
-  issue form straight away instead of the list (issue #737;
-  `issueComposeRouteActive` in `07-repo-compose-branch.js`). "Back to issues"
+  issue form straight away instead of the list
+  (`issueComposeRouteActive` in `07-repo-compose-branch.js`). "Back to issues"
   returns to `/issues` and loads the list if it was never read. Signed out,
   the route shows the list, whose New issue button asks for a login.
 

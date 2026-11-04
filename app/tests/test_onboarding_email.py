@@ -8,7 +8,7 @@ import pytest
 import onboarding_email as oe
 
 SRC = Path(__file__).resolve().parents[1] / "src"
-DOC = Path(__file__).resolve().parents[2] / "docs" / "app" / "onboarding-email.md"
+DOC = Path(__file__).resolve().parents[2] / "docs" / "app" / "marketing-email.md"
 UNSUB = "https://app.forkmesh.com/api/onboarding-email/unsubscribe?a=ada&s=" + "0" * 32
 FIELDS = ("step", "subject", "preheader", "heading", "intro_html", "text",
           "body_html", "footer_html", "action_label", "action_url")

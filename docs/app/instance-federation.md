@@ -1,10 +1,10 @@
 # Self-hosted instances in the ForkMesh directory and World
 
-Part of [the App docs](README.md) and [../INSTANCES.md](../INSTANCES.md).
-Instances started from `forkmesh.com/start` are written into the directory by
-the launch itself. An instance installed directly with
-`www/public/install-instance.sh` was never seen by forkmesh.com, so
-`GET /api/start/instances` did not know it. This page describes how such an
+Part of [the App docs](README.md) and [instances](../operations/instances.md); see
+also [self-hosting](../self-hosting.md). Instances started from
+`forkmesh.com/start` are written into the directory by the launch itself. An
+instance installed directly with `www/public/install-instance.sh` is unknown
+to forkmesh.com until it announces itself. This page describes how such an
 instance joins the directory (the homepage list and a World hexagon), and
 leaves it, on its operator's choice.
 
@@ -150,10 +150,9 @@ What "each World is connected" means in the code:
   Worlds share no state: there is no relay between them.
 - **The bundle.** The instance build copies the built World into `app/dist`
   (`build_site_assets.py instance-world`), and `_serve_world_asset` answers
-  `/world`, `/world/` and `/world/*` from it. Before that step existed the
-  instance had no World files at all, so `/world/` answered the 404 page even
-  with the plugin on. Headers, caching, branding and the parts that need
-  forkmesh.com are in [INSTANCES.md](../INSTANCES.md#the-world-on-an-instance).
+  `/world`, `/world/` and `/world/*` from it (without the bundle `/world/`
+  would 404 even with the plugin on). Headers, caching, branding and the parts that need
+  forkmesh.com are in [instances](../operations/instances.md#the-world-on-an-instance).
 - **Twelve instance slots.** The ForkMesh World's town is ringed by twelve
   instance hexagons (`INSTANCE_HEX_SLOTS`, `scene/layout.js`). Every World
   reads `/api/start/instances` on its own origin and builds a hexagon for each
@@ -165,7 +164,7 @@ What "each World is connected" means in the code:
   (`instance_directory.world_url` requires the same host). Its hexagon's
   label reads "portal · <domain>", and clicking the landmark travels, in the
   same tab, to `https://<domain>/world/?portal=<slot>`. Without `worldUrl`
-  the landmark opens the instance's home page in a new tab, as before.
+  the landmark opens the instance's home page in a new tab.
 - **The way back.** `/api/instance` on an instance reports
   `directory: {listed, world, portal}`; `portal` is
   `{"home": "https://world.forkmesh.com/world/", "slot": <its hexagon>}` once
@@ -186,7 +185,7 @@ What "each World is connected" means in the code:
   two Worlds (`?from=`, `&slot=`, `&pos=`), and an instance's World is drawn
   as its own hexagon with the ForkMesh World next door instead of a copy of
   the ForkMesh town. See
-  [INSTANCES.md](../INSTANCES.md#an-instance-world-is-its-own-hexagon).
+  [instances](../operations/instances.md#an-instance-world-is-its-own-hexagon).
 - The legacy relay federation (`/api/world/instances`, approved `relays`
   rows drawn as small towers in the Fediverse district) is separate and
   unchanged.

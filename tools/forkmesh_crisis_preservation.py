@@ -2,7 +2,7 @@
 """Plan, assess, and drill a preservation-first crisis migration.
 
 Implements the forkmesh-crisis-preservation v1 model
-(www/docs/crisis-preservation.md) by reusing the Worker's reference
+(docs/crisis-preservation.md) by reusing the Worker's reference
 implementation, so the CLI, the API, and the shared fixture always agree.
 
   forkmesh_crisis_preservation.py plan urgent_takedown --minutes 60 --access owner

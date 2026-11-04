@@ -402,8 +402,16 @@ private struct DesktopDiscoverySection: View {
                         Text(card.detail).font(.footnote).foregroundStyle(.secondary)
                             .fmMessageTools(card.detail)
                     }
-                    if control.status == .awaitingApproval, let code = LocalDesktopText.spacedCode(control.pairingCode) {
+                    if control.status == .awaitingApproval || control.status == .confirmingCode, let code = LocalDesktopText.spacedCode(control.pairingCode) {
                         Text(code).font(.system(size: 34, weight: .semibold, design: .monospaced))
+                    }
+                    if control.status == .confirmingCode {
+                        HStack(spacing: 8) {
+                            Button("Confirm") { control.confirmDesktop(control.desktopKey) }
+                                .buttonStyle(.borderedProminent)
+                            Button("Cancel") { Task { await control.disconnect() } }
+                                .buttonStyle(.bordered)
+                        }
                     }
                 }
                 .padding(.vertical, 4)
@@ -420,7 +428,7 @@ private struct DesktopDiscoverySection: View {
                         Task { await control.connect(host) }
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(control.status == .connecting || control.status == .awaitingApproval)
+                    .disabled(control.status == .connecting || control.status == .awaitingApproval || control.status == .confirmingCode)
                 }
             }
         } header: {

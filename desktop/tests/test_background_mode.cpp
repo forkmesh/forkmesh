@@ -314,11 +314,11 @@ void testRestartPermission()
     check(read(m.restartPolicyPath()) == m.restartPolicy(), "the policy text is installed unchanged");
     check(m.restartPolicyPath() != m.bootSleepPolicyPath(), "restart and sleep policies are separate files");
     check(m.restartPolicy().contains(QLatin1String("subject.user === \"forkmesh-test\"")) &&
-              m.restartPolicy().count(QLatin1String("action.id")) == 2 &&
+              m.restartPolicy().count(QLatin1String("action.id")) == 3 &&
               m.restartPolicy().contains(QLatin1String("\"org.freedesktop.login1.reboot\"")) &&
               m.restartPolicy().contains(QLatin1String("\"org.freedesktop.login1.reboot-multiple-sessions\"")) &&
-              !m.restartPolicy().contains(QLatin1String("power-off")) &&
-              !m.restartPolicy().contains(QLatin1String("ignore-inhibit")),
+              m.restartPolicy().contains(QLatin1String("\"org.freedesktop.login1.reboot-ignore-inhibit\"")) &&
+              !m.restartPolicy().contains(QLatin1String("power-off")),
           "only this account may restart, and nothing else is granted");
     check(m.allowRestart(false) && !QFileInfo::exists(m.restartPolicyPath()) && !m.restartAllowed(),
           "turning it off removes the policy");

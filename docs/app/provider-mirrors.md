@@ -3,14 +3,17 @@
 Part of [the App docs](README.md). A repository owner can mirror a repository
 to GitHub or GitLab with a personal access token, choosing a direction per
 feature. Available from repository Settings, the Code page **Mirror** button,
-and the iOS and Android apps (which render the server's `catalog`).
+and the iOS and Android apps (which render the server's `catalog`). How
+ForkMesh's own mirrors work is in
+[mirroring](../mirroring.md); this page covers copies on outside
+hosts.
 
 | Part | File |
 | --- | --- |
 | Settings, provider API, import, outbox, cron | `app/src/repository_provider_mirror.py` |
 | Route | `REPO_PROVIDER_MIRROR_RE` in `app/src/urls.py` |
 | Tables | `repo_provider_mirrors`, `repo_provider_mirror_links`, `repo_provider_mirror_outbox` |
-| Code push | `server/hosted_push_mirror.go`, fed by `hosted_repos.replicas` ([../HOSTED_REPOS.md](../HOSTED_REPOS.md)) |
+| Code push | `server/hosted_push_mirror.go`, fed by `hosted_repos.replicas` ([core-hosted repositories](../operations/core-hosted-repositories.md)) |
 | Tests | `app/tests/test_repository_provider_mirror.py`, `server/hosted_push_mirror_test.go` |
 
 ## Features
@@ -57,7 +60,8 @@ A provider mirror is listed (`role: "mirror"`) only while it is active, pushes
 code, and its last check found the remote existing and public; a read-only
 mirror's `mirrorOf` is listed as `role: "upstream"`. GitHub is one more mirror
 of the repository, so a visitor who finds the ForkMesh page also finds it there.
-Built by `public_link` / `public_about_link` here and `upstream_link` /
+Built by `public_link` / `public_about_link` in
+`repository_provider_mirror.py` and `upstream_link` /
 `external_mirrors` in `app/src/read_only_mirrors.py`.
 
 ## Security
@@ -67,4 +71,5 @@ Built by `public_link` / `public_about_link` here and `upstream_link` /
   the command line or URL; push errors are redacted.
 - Provider calls use `redirect: "manual"` and only `api.github.com` and
   `gitlab.com/api/v4`; remote names are `owner/name` with `[A-Za-z0-9_.-]`.
-- The stored token is listed in `www/docs/relay-data-retention.md`.
+- The stored token is listed in
+  [relay-data-retention.md](../relay-data-retention.md).

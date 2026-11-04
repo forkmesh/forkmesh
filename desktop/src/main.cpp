@@ -10,6 +10,7 @@
 #include "AppPaths.h"
 #include "BrowserPrivacy.h"
 #include "ControlNode.h"
+#include "CopyFormatting.h"
 #include "DirectorySizeScan.h"
 #include "DesktopDisplayReadiness.h"
 #include "DesktopLauncherIcon.h"
@@ -280,7 +281,7 @@ bool isLocalActionLink(const QString &value)
 {
     return isCloudflareSetupLink(value) || repositoryForkLinkParts(value) ||
            agentLoginLinkParts(value) ||
-           !forkmesh::notes::parseNoteLink(value).id.isEmpty();
+           forkmesh::notes::parseNoteLink(value).isValid();
 }
 
 QStringList launchArguments(int argc, char *argv[])
@@ -780,6 +781,7 @@ int main(int argc, char *argv[])
         app.setStyle(QStyleFactory::create("Fusion"));
         forkmesh::ui::SplitterHairline::install(&app);
         forkmesh::hiddenunicode::installInputGuard(&app);
+        forkmesh::copyformat::installClipboardFormatting(&app);
     }
 
     {
@@ -1001,7 +1003,7 @@ int main(int argc, char *argv[])
             window->openCloudflareSetupFromSystemLink(target);
         else if (repositoryForkLinkParts(target))
             window->openRepositoryForkFromSystemLink(target);
-        else if (!forkmesh::notes::parseNoteLink(target).id.isEmpty())
+        else if (forkmesh::notes::parseNoteLink(target).isValid())
             window->openNoteFromSystemLink(target);
         else {
             QString node, provider;

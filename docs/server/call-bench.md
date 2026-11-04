@@ -6,7 +6,7 @@ network between one of them and the server, and it measures what people in
 the call would notice: how long joining takes, how smooth the video is, how
 much audio is concealed, how late the picture is, and what it costs in CPU.
 [fm-media.md](fm-media.md) uses it to decide when FM Media is better than the
-WebRTC path in [rtc.md](rtc.md). Built 2026-10-21.
+WebRTC path in [rtc.md](rtc.md). Home: [Go daemon](README.md).
 
 ## Running it
 
@@ -198,64 +198,71 @@ direction (two each way).
 `results.json` also has `delayProxyMs` (RTT / 2 plus the video jitter buffer
 delay), a cruder delay figure for an engine that cannot draw into its frames.
 
-## Baseline: the WebRTC path
+## The WebRTC path: baseline and fixes
 
-Run 2026-10-21 on the branch that added the bench: the SFU of
-[rtc.md](rtc.md) with the production client `app/public/chat-group-calls.js`
-(end-to-end encrypted, VP8 640x360 at 24 fps, Opus), headless Chromium 151
-(`chrome-headless-shell`), a 36-CPU Linux desktop, 30 s per profile, three
-browsers, `python3 tools/call_bench.py run`. A second full run the same day
-gave the same picture (fps within about 1 per stream, joins within a few
-hundred ms except `loss-20`, whose audio join was 6.7 s in one run and 0.35 s
-in the other). **Down** is what `ana` receives, **up** is `ana`'s media at the
+Setup for every run below: the SFU of [rtc.md](rtc.md) with the production
+client `app/public/chat-group-calls.js` (end-to-end encrypted, VP8 640x360 at
+24 fps, Opus), headless Chromium 151 (`chrome-headless-shell`), a 36-CPU Linux
+desktop, 30 s per profile, three browsers, `python3 tools/call_bench.py run`.
+Two full runs agree within about 1 fps per stream and a few hundred ms of join
+time, except the `loss-20` audio join (6.7 s in one run, 0.35 s in the
+other). **Down** is what `ana` receives, **up** is `ana`'s media at the
 others; means per stream.
 
-### Join and video
+### What the first baseline showed
 
-| Profile | Join video ms | Join audio ms | Down fps | Down freezes | Down stalls | Down height | Down kbps | Down delay p50/p95 ms | Up fps | Up freezes | Up stalls | Up height | Up kbps | Up delay p50/p95 ms |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| clean | 293 | 318 | 24.0 | 0.0 / 0.0 s | 0.0 / 0.0 s | 360 | 1515 | 50 / 83 | 23.9 | 0.0 / 0.0 s | 0.0 / 0.0 s | 360 | 1425 | 69 / 98 |
-| loss-5 | 332 | 370 | 0.9 | 2.0 / 10.6 s | 9.0 / 29.3 s | 360 | 1437 | 35 / 1326 | 0.6 | 3.0 / 15.3 s | 4.0 / 28.9 s | 360 | 1345 | 44 / 70 |
-| loss-10 | 1272 | 440 | 0.3 | 0.0 / 0.0 s | 4.0 / 28.5 s | 360 | 1366 | 34 / 64 | 0.2 | 1.0 / 18.2 s | 4.0 / 29.5 s | 360 | 1316 | 63 / 285 |
-| loss-20 | 8830 | 349 | 0.1 | 0.0 / 0.0 s | 1.5 / 17.0 s | 360 | 1210 | 27 / 43 | 0.0 | 0.0 / 0.0 s | 1.0 / 22.6 s | 360 | 1159 | 33 / 33 |
-| burst | 299 | 334 | 1.3 | 5.0 / 21.3 s | 7.5 / 28.3 s | 360 | 1399 | 36 / 109 | 2.3 | 7.0 / 21.5 s | 9.0 / 25.3 s | 360 | 1314 | 57 / 85 |
-| jitter-100 | 1512 | 1051 | 24.0 | 0.0 / 0.0 s | 0.0 / 0.0 s | 360 | 1480 | 190 / 232 | 23.9 | 0.0 / 0.0 s | 0.0 / 0.0 s | 360 | 1424 | 201 / 247 |
-| cap-1m | never | 401 | 0.0 | 0.0 / 0.0 s | 1.0 / 30.1 s | 0 | 454 | - | 1.4 | 1.0 / 15.8 s | 2.0 / 27.0 s | 360 | 945 | 130 / 305 |
-| cap-300k | never | 476 | 0.0 | 0.0 / 0.0 s | 1.0 / 30.0 s | 0 | 103 | - | 0.4 | 0.0 / 0.0 s | 1.0 / 28.6 s | 360 | 247 | 215 / 398 |
-| drop-recover | 303 | 317 | 0.2 | 0.0 / 0.0 s | 1.0 / 29.6 s | 180 | 666 | 166 / 241 | 13.1 | 3.0 / 13.0 s | 1.0 / 12.6 s | 360 | 972 | 115 / 470 |
-| path-change | 1348 | 369 | 11.4 | 3.0 / 11.2 s | 4.0 / 15.2 s | 360 | 1429 | 60 / 204 | 11.1 | 4.0 / 13.0 s | 5.0 / 15.9 s | 360 | 1364 | 70 / 203 |
+The first run found six things; items 1 to 4 were then fixed.
 
-### Audio
+1. **No loss repair for video.** The SFU offered `nack pli` but not plain
+   `nack` and no RTX (`describe.go`, `codecLines`), so receivers never sent a
+   NACK and senders never retransmitted. The only repair was a keyframe on
+   PLI, at most one per second per stream (`keyframeInterval`), and a
+   1.4 Mbps keyframe is dozens of packets, so it rarely arrived whole. At 5%
+   loss video fell from 24 to under 1 fps with about 29 of 30 s stalled; at
+   20% the first frame took 8.8 s; the 1% loss of the cellular leg in
+   `path-change` kept video near 4 fps.
+2. **Senders were never told to slow down.** `ana`'s available outgoing
+   bitrate was 1500 kbps in every profile, the SFU's fixed REMB
+   (`Config.VideoBitrate`, sent from `Room.tick`), and its encoder kept sending
+   about 1.42 Mbps into a 300 kbps link (58% of its packets dropped by the
+   full queue, RTT 0.73 s), `qualityLimitationReason` `none` throughout. The
+   SFU's receiver reports carried no report blocks (`rtp.NewReceiverReport`),
+   receivers' REMB and receiver reports were dropped (`rtcpLocked` kept only
+   PLI, FIR and SR), and no transport-wide congestion control or
+   `abs-send-time` was negotiated, so Chromium's estimator had neither a loss
+   nor a delay signal. For the same reason Opus never switched on in-band FEC
+   although the SFU offers `useinbandfec=1`, and audio concealment tracked the
+   loss rate one for one.
+3. **No per-receiver adaptation.** Every stream went at the sender's rate to
+   every receiver. A receiver needs about 3 Mbps for two 1.45 Mbps streams, so
+   at 1 Mbps, 300 kbps and even 2 Mbps `ana` never showed a remote frame.
+4. **Join was slow under loss**: 1.3 s (video) at 10% loss, 8.8 s at 20%,
+   1.5 s on the 100 ms jitter path. Besides the keyframe problem, the SFU's
+   DTLS server retransmitted a lost flight after 1 s, doubling, giving up
+   after four tries (`dtls/server.go`, `initialRetransmit`,
+   `maxRetransmits`), so one lost handshake datagram cost a second.
+5. **The path change itself is handled.** When `ana` arrives from a new
+   source port at 12 s, the SFU's ICE-lite agent follows Chromium's next
+   nominated check: media stops for about 1 to 2 s, then flows at full rate.
+6. **Delay is fine when nothing is lost**: glass to glass, less the display,
+   about 50 to 70 ms on a clean link and about 190 to 200 ms on the
+   100 ± 30 ms path (one way 100 ms plus about 90 ms of jitter buffer and
+   pipeline). Capped links add the queue.
 
-| Profile | Down concealed % | Down concealment events | Down jitter buffer ms | Down packets lost | Up concealed % | Up concealment events | Up jitter buffer ms | Up packets lost |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| clean | 0.0 | 0 | 31 | 0 | 0.0 | 0 | 30 | 0 |
-| loss-5 | 4.0 | 66 | 26 | 66 | 4.0 | 79 | 24 | 75 |
-| loss-10 | 9.3 | 188 | 17 | 138 | 8.5 | 176 | 20 | 137 |
-| loss-20 | 18.0 | 267 | 22 | 310 | 18.9 | 271 | 22 | 307 |
-| burst | 6.5 | 113 | 20 | 100 | 5.2 | 57 | 23 | 89 |
-| jitter-100 | 0.0 | 0 | 54 | 0 | 0.0 | 0 | 65 | 0 |
-| cap-1m | 1.1 | 12 | 66 | 9 | 0.9 | 8 | 166 | 1 |
-| cap-300k | 2.4 | 20 | 67 | 18 | 1.6 | 19 | 177 | 9 |
-| drop-recover | 1.6 | 15 | 176 | 16 | 1.5 | 6 | 263 | 7 |
-| path-change | 5.6 | 9 | 54 | 8 | 5.3 | 9 | 48 | 6 |
+The fixes (design and safety in [rtc.md](rtc.md), "Loss repair" and "Rate
+control"):
 
-### Loss repair and the sender
+- receivers' NACKs are answered by the SFU from a 1 s cache, as RTX to that
+  receiver only, and the SFU NACKs senders itself for what it lost upstream;
+- transport-wide congestion control both ways: senders get feedback and adapt
+  with their own estimator, receivers' feedback drives a per-receiver estimate
+  that caps each sender by REMB, and a receiver far below the floor loses
+  video but keeps audio;
+- receiver reports carry real report blocks, so Opus turns in-band FEC on;
+- the DTLS flight retransmit starts at 300 ms instead of 1 s;
+- keyframe requests for a newcomer wait until its DTLS handshake ends.
 
-| Profile | Down video loss % | Down NACK/PLI/FIR | Down frames dropped | Up video loss % | Up NACK/PLI/FIR | Available out kbps | Sent kbps | Sent height | Limited by | RTT ms | Relay up lost/overflow | Relay down lost/overflow |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| clean | 0.0 | 0 / 0 / 0 | 0 | 0.0 | 0 / 2 / 0 | 1500 | 1438 | 360 | none | 1 | 0.0% / 0.0% | 0.0% / 0.0% |
-| loss-5 | 5.1 | 0 / 9 / 0 | 395 | 4.8 | 0 / 10 / 0 | 1500 | 1418 | 360 | none | 3 | 4.7% / 0.0% | 5.0% / 0.0% |
-| loss-10 | 9.6 | 0 / 16 / 0 | 294 | 9.5 | 0 / 10 / 0 | 1500 | 1433 | 360 | none | 1 | 9.6% / 0.0% | 9.5% / 0.0% |
-| loss-20 | 20.0 | 0 / 60 / 0 | 86 | 19.7 | 0 / 39 / 0 | 1500 | 1427 | 360 | none | 1 | 19.8% / 0.0% | 20.4% / 0.0% |
-| burst | 7.1 | 0 / 9 / 0 | 532 | 6.2 | 0 / 17 / 0 | 1500 | 1436 | 360 | none | 1 | 6.2% / 0.0% | 7.0% / 0.0% |
-| jitter-100 | 0.0 | 0 / 4 / 0 | 12 | 0.0 | 0 / 0 / 0 | 1500 | 1425 | 360 | none | 225 | 0.0% / 0.0% | 0.0% / 0.0% |
-| cap-1m | 69.7 | 0 / 123 / 0 | 0 | 33.7 | 0 / 12 / 0 | 1500 | 1423 | 360 | none | 446 | 0.0% / 23.7% | 0.0% / 51.8% |
-| cap-300k | 74.2 | 0 / 134 / 0 | 0 | 82.4 | 0 / 11 / 0 | 1500 | 1419 | 360 | none | 733 | 0.0% / 58.0% | 0.0% / 69.1% |
-| drop-recover | 48.0 | 0 / 70 / 0 | 0 | 29.8 | 0 / 8 / 0 | 1500 | 1418 | 360 | none | 435 | 0.0% / 21.2% | 0.0% / 41.1% |
-| path-change | 0.5 | 0 / 10 / 0 | 236 | 0.6 | 0 / 5 / 0 | 1500 | 1428 | 360 | none | 92 | 0.6% / 0.0% | 0.5% / 0.0% |
-
-### CPU
+### CPU (WebRTC path before the fixes)
 
 | Profile | ana CPU % | Others CPU % (mean) | Server process CPU % |
 | --- | --- | --- | --- |
@@ -270,94 +277,11 @@ others; means per stream.
 | drop-recover | 36 | 48 | 11 |
 | path-change | 48 | 52 | 11 |
 
-### Phases
-
-| Profile | Phase | Down fps | Down kbps | Up fps | Up kbps | Available out kbps | Sent kbps |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| drop-recover | 0-10 s | 0.0 | 928 | 21.9 | 1221 | 1500 | 1325 |
-| drop-recover | 10-20 s | 0.0 | 95 | 0.1 | 240 | 1500 | 1455 |
-| drop-recover | 20-30 s | 0.0 | 922 | 16.7 | 1482 | 1500 | 1447 |
-| drop-recover | recovery after the last change | n/a | 1 s | 4 s | 1 s |  |  |
-| path-change | 0-12 s | 23.9 | 1465 | 24.0 | 1370 | 1500 | 1373 |
-| path-change | 12-30 s | 4.1 | 1352 | 3.1 | 1353 | 1500 | 1459 |
-| path-change | recovery after the last change | 7 s | 2 s | none | 2 s |  |  |
-
-### What the baseline shows
-
-Each of these is what the SFU did when the bench was built, with the
-evidence above. Items 1 to 4 were fixed the same day; the next section has
-what that changed.
-
-1. **No loss repair for video.** The SFU offers `nack pli` but not plain
-   `nack` and no RTX (`describe.go`, `codecLines`), so receivers never send a
-   NACK (0 in every profile) and senders never retransmit (0 packets). The only
-   repair is a keyframe on PLI, at most one per second per stream
-   (`keyframeInterval`), and a 1.4 Mbps keyframe is dozens of packets, so it
-   rarely arrives whole. At 5% loss video falls from 24 to under 1 fps with
-   about 29 of 30 s stalled; at 20% the first frame takes 8.8 s. Even the 1%
-   loss of the cellular leg in `path-change` keeps video near 4 fps.
-2. **Senders are never told to slow down.** `ana`'s available outgoing
-   bitrate is 1500 kbps in every profile, which is the SFU's fixed REMB
-   (`Config.VideoBitrate`, sent from `Room.tick`), and its encoder keeps
-   sending about 1.42 Mbps into a 300 kbps link (`cap-300k`: 58% of its
-   packets dropped by the full queue, RTT 0.73 s; `drop-recover` 10-20 s:
-   1455 kbps sent), with `qualityLimitationReason` `none` throughout. The SFU's own receiver reports
-   carry no report blocks (`rtp.NewReceiverReport`), receivers' REMB and
-   receiver reports are dropped (`rtcpLocked` keeps only PLI, FIR and SR), and
-   no transport-wide congestion control or `abs-send-time` extension is
-   negotiated, so Chromium's estimator has neither a loss nor a delay signal.
-   The same is why Opus never switches on in-band FEC although the SFU offers
-   `useinbandfec=1` (0 FEC packets received, Opus target stuck at 32 kbps),
-   and audio concealment tracks the loss rate one for one.
-3. **No per-receiver adaptation.** The SFU forwards every stream at the
-   sender's rate to every receiver, with no simulcast or layer choice. In a
-   three-person call a receiver needs about 3 Mbps for two 1.45 Mbps streams,
-   so at 1 Mbps, 300 kbps and even 2 Mbps (`drop-recover` before the drop)
-   `ana` never shows a single remote frame (join video `never`, 0 fps), and
-   only the sender's own uplink recovers after the drop (up fps back in 4 s
-   because the queue empties, not because anything adapted).
-4. **Join is slow under loss.** Join stays under 0.5 s on a clean link but
-   takes 1.3 s (video) at 10% loss and 8.8 s at 20%, and 1.5 s on the 100 ms
-   jitter path. Besides the keyframe problem above, the SFU's DTLS server
-   retransmits a lost flight after 1 s, doubling, and gives up after four
-   tries (`dtls/server.go`, `initialRetransmit`, `maxRetransmits`), so one lost
-   handshake datagram costs a second; the run-to-run spread of the `loss-20`
-   audio join (0.35 s against 6.7 s) fits that.
-5. **The path change itself is handled.** When `ana` arrives from a new
-   source port at 12 s the SFU's ICE-lite agent follows Chromium's next
-   nominated check to the new address: media stops for about 1 to 2 s and
-   then flows at the full rate (down kbps back within 2 s). What stays broken
-   afterwards is item 1, the 1% cellular loss.
-6. **Delay is fine when nothing is lost.** Glass to glass, less the display,
-   is about 50 to 70 ms on a clean link and about 190 to 200 ms on the
-   100 ± 30 ms path (one way 100 ms plus about 90 ms of jitter buffer and
-   pipeline). Capped links add the queue: 115 to 215 ms p50 for what still
-   gets through, and the audio jitter buffer grows to 180 to 260 ms in
-   `drop-recover`.
-
-## After loss repair and rate control
-
-The SFU was changed on 2026-10-21 to answer the findings above (the design
-and why each part is safe are in [rtc.md](rtc.md), "Loss repair" and "Rate
-control"):
-
-- receivers' NACKs are answered by the SFU from a 1 s cache, as RTX to that
-  receiver only, and the SFU NACKs senders itself for what it lost upstream;
-- transport-wide congestion control both ways: senders get feedback and adapt
-  with their own estimator, receivers' feedback drives a per-receiver estimate
-  that caps each sender by REMB, and a receiver far below the floor loses
-  video but keeps audio;
-- receiver reports carry real report blocks, so Opus turns in-band FEC on;
-- the DTLS flight retransmit starts at 300 ms instead of 1 s;
-- keyframe requests for a newcomer wait until its DTLS handshake ends.
-
 ### Before and after
 
-The machine was shared with other agents' builds (load average 16 to 41 on
-36 CPUs, as against a quiet machine for the baseline above), so the two engines
-were run alternately, one profile at a time, the old SFU (commit 4c309afda4)
-right before the new one, 30 s each, same Chromium 151. Before → after; means
-per stream as above.
+The machine was shared with other builds (load average 16 to 41 on 36 CPUs),
+so the old SFU (commit 4c309afda4) and the new one were run alternately, one
+profile at a time, 30 s each. Before → after; means per stream.
 
 | Profile | Join video ms | Join audio ms | Down fps | Down stalls | Down kbps | Down delay p50/p95 ms | Up fps | Up stalls | Up kbps | Down concealed % | ana available / sent kbps |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -372,13 +296,12 @@ per stream as above.
 | drop-recover | 393 → 399 | 387 → 395 | 0.2 → 18.0 | 1.0 / 29.5 s → 1.0 / 5.6 s | 663 → 436 | 158 / 252 → 239 / 1249 | 13.3 → 19.1 | 1.0 / 12.6 s → 2.0 / 4.4 s | 996 → 563 | 2.5 → 2.1 | 1500 / 1427 → 739 / 585 |
 | path-change | 1368 → 544 | 424 → 552 | 10.2 → 21.3 | 5.0 / 16.4 s → 1.0 / 3.5 s | 1406 → 1248 | 62 / 196 → 194 / 288 | 10.5 → 19.5 | 5.0 / 16.2 s → 2.0 / 5.4 s | 1322 → 1049 | 6.1 → 6.1 | 1500 / 1404 → 1384 / 1183 |
 
-Three after figures are the machine, not the SFU: in that run the jitter-100
-browsers used 137% of a core each against about 60% elsewhere. Run again
-right after, the new SFU gave clean join 452 / 482 ms, jitter-100 23.9 fps
-down with 197 / 253 ms delay, and cap-1m 21.1 fps down with 66 / 128 ms delay
-and 380 kbps per stream. Earlier runs of the new SFU the same afternoon
-agreed: video 24 fps at 5 and 10% loss and in bursts, 15 to 19 fps at
-300 kbps, 20 to 24 fps at 1 Mbps.
+Three after figures are machine load, not the SFU (the jitter-100 browsers
+used 137% of a core each against about 60% elsewhere). A quieter rerun gave
+clean join 452 / 482 ms, jitter-100 23.9 fps down with 197 / 253 ms delay,
+and cap-1m 21.1 fps down with 66 / 128 ms delay and 380 kbps per stream.
+Other runs agree: video 24 fps at 5 and 10% loss and in bursts, 15 to 19 fps
+at 300 kbps, 20 to 24 fps at 1 Mbps.
 
 ### After, in detail
 
@@ -430,17 +353,16 @@ Phases:
    no stalls, from under 2 fps), and usable at 20% (21 fps down). NACKs now
    flow (hundreds a run) and the stream's own loss stays at the link's: the
    SFU repairs downstream from its cache and upstream by asking the sender.
-   Opus FEC is on (an audio stream under 10% loss received 108 FEC packets
-   in one run; none before), yet concealment still tracks the loss rate
+   Opus FEC is on (an audio stream under 10% loss receives about 100 FEC
+   packets a run; none before), yet concealment still tracks the loss rate
    closely; FEC at 32 kbps only covers single losses.
 2. **Senders adapt.** `ana`'s available outgoing bitrate now follows its link
    (280 kbps at a 300 kbps cap, 890 kbps at 1 Mbps, 1.5 Mbps when clean), and
    its encoder drops resolution (`limited by bandwidth`). At 20% loss Chrome's
    own loss-based estimator takes `ana`'s uplink down to about 100 kbps, so
-   up video is 17.5 fps at a low rate; that is the browser reacting to real
-   loss now that it hears about it, and the price of being told the truth.
-   At 5% it sometimes settles lower than it needs to (797 kbps sent here, 1.3
-   Mbps in other runs).
+   up video is 17.5 fps at a low rate: the browser reacting to real loss now
+   that it hears about it. At 5% it sometimes settles lower than it needs to
+   (797 kbps sent here, 1.3 Mbps in other runs).
 3. **Per receiver.** Video flows at 1 Mbps (about 380 kbps a stream) and at
    300 kbps (about 75 kbps a stream, 180p to 270p) where nothing arrived
    before. Without simulcast the slowest receiver holds every sender it
@@ -463,9 +385,10 @@ Phases:
    (its target was 600 kbps at 180p for several seconds in the traces).
 6. **Delay.** On a clean link delay is unchanged (about 60 to 70 ms). With
    NACK on, Chrome adds the round trip to its video jitter buffer target so a
-   retransmission can arrive in time, so a high-RTT path pays it (jitter-100 about 200 ms as before; capped links 70
-   to 140 ms p50 in quiet runs, up to 600 ms when the machine was loaded,
-   because delay-based control also reacts to CPU stalls).
+   retransmission can arrive in time, so a high-RTT path pays it (jitter-100
+   about 200 ms as before; capped links 70 to 140 ms p50 in quiet runs, up to
+   600 ms when the machine was loaded, because delay-based control also
+   reacts to CPU stalls).
 7. **Clean costs a little rate.** Clean video is about 1.39 Mbps a stream
    instead of 1.51 (same 24 fps, 360p). Chrome's own estimator now decides
    within the 1.5 Mbps cap, and our reading is that it counts audio and

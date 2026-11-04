@@ -69,6 +69,7 @@ RELEASE_FILES = ("marketplace/catalog.json", "marketplace/manifest.schema.json",
 RELEASE_GLOBS = ("tools/next_*.py",)
 ROLL_PREFIXES = ("server/", "deploy/core/")
 ROLL_FILES = ("tools/mirror_gateway.py",)
+WEBSITE_PREFIXES = ("docs/",)
 RUNNER_ROLL_PREFIXES = ("server/",)
 RUNNER_ROLL_RETRY_SECONDS = 600
 RUNNERS_BUSY_EXIT = 3
@@ -162,7 +163,7 @@ WEBSITE_HEADER = "x-forkmesh-deploy-fingerprint"
 WEBSITE_TIMEOUT = 900
 
 
-WEBSITE_TREES = ("www", "marketplace")
+WEBSITE_TREES = ("www", "marketplace", "docs")
 
 
 def website_fingerprint(git, target) -> str:
@@ -199,10 +200,10 @@ def classify(paths) -> dict:
 
 def workflow_path_patterns(depth=PATH_DEPTH) -> list:
     patterns = []
-    for prefix in RELEASE_PREFIXES + ROLL_PREFIXES:
+    prefixes = RELEASE_PREFIXES + ROLL_PREFIXES + WEBSITE_PREFIXES
+    for prefix in prefixes:
         base = prefix.rstrip("/")
-        if any(prefix != other and prefix.startswith(other)
-               for other in RELEASE_PREFIXES + ROLL_PREFIXES):
+        if any(prefix != other and prefix.startswith(other) for other in prefixes):
             continue
         patterns += [base + "/*" * level for level in range(1, depth + 1)]
     return patterns + list(RELEASE_FILES) + list(ROLL_FILES) + [
@@ -409,13 +410,12 @@ def fleet_hosts(text: str, instances=None) -> dict:
     import tomllib
     import render
     data = tomllib.loads(text)
-    production = data.get("production") or {}
     cores = [n for n in data.get("nodes") or [] if n.get("role", "core") == "core"]
     render.fill_public_addresses(cores, instances)
     nodes = [{"name": n["name"], "ip": n["public_ipv4"]} for n in cores]
     return {"domain": data.get("domain", ""),
-            "app_host": production.get("app_host") or data.get("app_host", ""),
-            "world_host": production.get("world_host") or data.get("world_host", ""),
+            "app_host": data.get("app_host", ""),
+            "world_host": data.get("world_host", ""),
             "nodes": nodes}
 
 
@@ -1337,6 +1337,12 @@ class Pipeline:
                 self.say("catch-up: %s: FAILED: %s" % (name, error))
         return outcome
 
+    def website_env(self, bin_dir, **extra) -> dict:
+        home = self.scratch() / "website-home"
+        home.mkdir(parents=True, exist_ok=True)
+        return {"PATH": "%s:/usr/local/bin:/usr/bin:/bin" % bin_dir, "HOME": str(home),
+                "LANG": "C.UTF-8", "WRANGLER_SEND_METRICS": "false", **extra}
+
     def website(self, target, result):
         try:
             wanted = website_fingerprint(self.git, target)
@@ -1349,17 +1355,23 @@ class Pipeline:
             bin_dir = node22_bin()
             if bin_dir is None:
                 raise ToolError("Node 22 (~/.nvm/versions/node/v22*) is needed for wrangler")
-            worktree = self.worktree(target)
-            env = dict(os.environ)
-            env["PATH"] = "%s:%s" % (bin_dir, env.get("PATH", ""))
-            env["CLOUDFLARE_API_TOKEN"] = common.credential("cloudflare.env",
-                                                            "CLOUDFLARE_API_TOKEN")
-            env["CLOUDFLARE_ACCOUNT_ID"] = common.credential("cloudflare.env",
-                                                             "CLOUDFLARE_ACCOUNT_ID")
-            code = stream([str(bin_dir / "npx"), "--yes", "wrangler", "deploy",
+            www = Path(self.worktree(target)) / "www"
+            code = stream([str(bin_dir / "npm"), "ci", "--ignore-scripts", "--no-audit",
+                           "--no-fund"], self.say, cwd=str(www),
+                          env=self.website_env(bin_dir),
+                          timeout=WEBSITE_TIMEOUT, popen=self.popen)
+            if code != 0:
+                raise ToolError("npm ci exited %d" % code)
+            env = self.website_env(
+                bin_dir,
+                CLOUDFLARE_API_TOKEN=common.credential("cloudflare.env",
+                                                       "CLOUDFLARE_API_TOKEN"),
+                CLOUDFLARE_ACCOUNT_ID=common.credential("cloudflare.env",
+                                                        "CLOUDFLARE_ACCOUNT_ID"))
+            code = stream([str(www / "node_modules" / ".bin" / "wrangler"), "deploy",
                            "--config", "wrangler.production.toml",
                            "--var", "DEPLOY_FINGERPRINT:%s" % wanted],
-                          self.say, cwd=str(Path(worktree) / "www"), env=env,
+                          self.say, cwd=str(www), env=env,
                           timeout=WEBSITE_TIMEOUT, popen=self.popen)
             if code != 0:
                 raise ToolError("wrangler deploy exited %d" % code)
@@ -1430,7 +1442,7 @@ class Pipeline:
             self.say("gate 1: " + result["message"])
             return result
         if not changed["release"] and self.mode == "auto":
-            result.update(ok=True, message="no served-stack change between the deployed "
+            result.update(ok=True, message="no core-node change between the deployed "
                           "%s and %s" % (base[:12], rev))
             self.say("gate 1: " + result["message"])
             return result
@@ -1504,7 +1516,7 @@ def record_outcome(result, notifier, say, state_dir=None, mode="auto"):
                       "%s\n\nThe skipped core is caught up when it answers again and is "
                       "not held out of DNS: the agent checks every %d s, rolls only that "
                       "core to what the others run and Pings when it is done "
-                      "(docs/deploy/auto-deploy.md, \"Skipped cores\")." % (
+                      "(docs/operations/auto-deploy.md, \"Skipped cores\")." % (
                           "\n".join("%s: %s" % kv for kv in sorted(result["skipped"].items())),
                           CATCH_UP_SECONDS),
                       "deploy-skipped:%s" % rev)
@@ -1531,7 +1543,7 @@ def record_outcome(result, notifier, say, state_dir=None, mode="auto"):
                       "stopped: %s. The core it stopped on is left drained out of DNS; "
                       "check it, then run python3 tools/next_fleet.py roll nN --execute "
                       "for the cores still to do and python3 tools/next_autodeploy.py "
-                      "ack-roll (docs/deploy/auto-deploy.md)." % (
+                      "ack-roll (docs/operations/auto-deploy.md)." % (
                           rev, "\n".join(roll[:20]), result["rollError"]),
                       "node-roll-failed:%s" % rev, email=True)
     elif roll:
@@ -1539,7 +1551,7 @@ def record_outcome(result, notifier, say, state_dir=None, mode="auto"):
                       "%s changed daemon or gateway files that only "
                       "next_fleet.py install applies:\n%s\n\nRoll one node at a time "
                       "(python3 tools/next_fleet.py roll, "
-                      "docs/deploy/auto-deploy.md)." % (rev, "\n".join(roll[:20])),
+                      "docs/operations/auto-deploy.md)." % (rev, "\n".join(roll[:20])),
                       "node-roll:%s" % rev)
     return state
 
@@ -1613,7 +1625,7 @@ def catch_up(repo, log, state_dir=None, notifier=None, layout=None,
                           "the other cores run: %s\n\nThe agent tries again every %d s. "
                           "By hand: python3 tools/next_deploy.py upload %s --rev <rev> "
                           "--execute, then restart %s --rev <rev> --execute "
-                          "(docs/deploy/auto-deploy.md)." % (
+                          "(docs/operations/auto-deploy.md)." % (
                               name, text, CATCH_UP_SECONDS, name, name),
                           "core-catch-up-failed:%s" % name, email=True)
     return outcome
@@ -1639,7 +1651,7 @@ def notify_runner_roll(notifier, result):
         notifier.send("Runner roll failed after %s" % rev,
                       "%s changed the Go daemon; rolling the runners stopped: %s. "
                       "Check the runner, then run python3 tools/next_fleet.py "
-                      "roll-runners --execute (docs/deploy/auto-deploy.md)." % (
+                      "roll-runners --execute (docs/operations/auto-deploy.md)." % (
                           rev, result["runnerRollError"]),
                       "runner-roll-failed:%s" % rev, email=True)
 
@@ -2101,7 +2113,7 @@ def self_update(repo, commit, layout, log, state_dir=None, notifier=None,
                           "The deploy agent did not update itself to %s: %s\n\nIt keeps "
                           "running its installed copy and will not try these files again. "
                           "Fix them on main or run python3 tools/next_autodeploy.py install "
-                          "(docs/deploy/auto-deploy.md)." % (rev, message),
+                          "(docs/operations/auto-deploy.md)." % (rev, message),
                           "agent-update-failed:%s" % rev, email=True)
         return {"status": "failed", "message": message}
 
@@ -2208,7 +2220,7 @@ def watch_self_update(digest, layout, state_dir=None, notifier=None, run=subproc
     if notifier is not None:
         notifier.send("Node deploy agent update to %s failed" % record.get("rev"),
                       "%s. These files are not tried again; fix them on main or run "
-                      "python3 tools/next_autodeploy.py install (docs/deploy/auto-deploy.md)."
+                      "python3 tools/next_autodeploy.py install (docs/operations/auto-deploy.md)."
                       % message, "agent-update-failed:%s" % record.get("rev"), email=True)
     return 1
 

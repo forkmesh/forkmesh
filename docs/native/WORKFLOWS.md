@@ -1,9 +1,8 @@
 # Workflows on iPhone and Android
 
 Part of [the native docs](README.md). The `workflows` plugin
-([docs/app/workflows.md](../app/workflows.md)) used to open
-`/dashboard/workflows` in the browser on phones. It is now a native screen on
-both apps (`Route.workflows`), and a phone can run a workflow itself.
+([../app/workflows.md](../app/workflows.md)) is a native screen on both apps
+(`Route.workflows`), and a phone can run a workflow itself.
 
 ## What the phone does
 
@@ -36,17 +35,14 @@ both apps (`Route.workflows`), and a phone can run a workflow itself.
 
 ## The desktop's workflows
 
-The user asked (2026-10-28) for every workflow the desktop shows to appear on
-the phone too, for them to run from the phone, and for Free disk space to run
-from the phone and clean the desktop. Before, the phone listed only the
-account's workflows (`/api/workflows`), so the desktop's special agents and
-repository workflows (`.forkmesh/workflows/*.json`,
+Every workflow the desktop shows also appears on the phone and runs from it,
+including the desktop's special agents and repository workflows
+(`.forkmesh/workflows/*.json`,
 [../app/workflows.md](../app/workflows.md#desktop-workflows-and-special-agents))
-were missing, and Free disk space could only run from the browser or the
-desktop.
+and Free disk space, which cleans the desktop.
 
 - **One list, two sections.** The Workflows screen shows **On ForkMesh** (the
-  account's workflows, as before) and **On your desktop**, which
+  account's workflows) and **On your desktop**, which
   `DesktopWorkflowsStore` (`FMWorkflows/DesktopWorkflows.swift`) fills from
   the desktop's `workflows.list`. Each row names its kind (Special agent or
   Desktop workflow), repository, state and last run, with a play button.
@@ -85,18 +81,13 @@ desktop.
   as a desktop run. The step list shows each step's progress live
   (`desktopLive`). The desktop runs `tools/free_disk_space.py` in its own
   forkmesh/forkmesh checkout; nothing new runs on the desktop for this.
-- **Run on your desktop from the list.** The user asked (2026-10-28) for
-  Free disk space to have a button that runs it on the desktop, and for every
-  workflow to show on the phone. The button sat only inside the editor, and
-  Android had none of this section (S147 was still pending), so an Android
-  phone listed only the account's workflows and Free disk space failed when
-  run there. Now the server's list marks a workflow with desktop steps
-  `runsOn: "desktop"` (`WorkflowSummary.runsOnDesktop`), and its row on both
-  phones shows a play button instead of the Active badge: it opens the
-  workflow, asks with the steps named (`WorkflowDesktopSteps.confirmation`),
-  and runs it with `runOnDesktop`, a spinner on the row while it goes. Without
-  a paired desktop it says so instead. Android has the On your desktop section,
-  its detail screen and the editor's Run on your desktop as on iOS.
+- **Run on your desktop from the list.** The server's list marks a workflow
+  with desktop steps `runsOn: "desktop"` (`WorkflowSummary.runsOnDesktop`),
+  and its row on both phones shows a play button instead of the Active badge:
+  it opens the workflow, asks with the steps named
+  (`WorkflowDesktopSteps.confirmation`), and runs it with `runOnDesktop`, a
+  spinner on the row while it goes. Without a paired desktop it says so.
+  Android has the same section, detail screen and editor button as iOS.
 
 ## One engine, three runtimes
 
@@ -109,14 +100,15 @@ desktop.
 The JavaScript engine is a line-for-line port of `workflows.py`: validation
 (`clean`), expressions, every core node including the scripting, text,
 number, list and date steps ([app/workflow-steps.md](../app/workflow-steps.md)),
-the script interpreter ([app/workflow-scripts.md](../app/workflow-scripts.md)),
-integration request building, the run report. Python details that change results are reproduced on purpose:
+the script interpreter ([app/workflow-steps.md](../app/workflow-steps.md#run-script)),
+integration request building, the run report. Python details that change
+results are reproduced on purpose:
 `json.dumps` spacing and `ensure_ascii`, `quote`/`urlencode` escaping, Python
 truthiness for `or`, `str(True)`, negative list indexes, the lazy whole-value
 expression match.
 
 Android has no JavaScriptCore, the project allows first-party dependencies
-only (`docs/native/README.md`), and the offline build cannot add QuickJS or
+only ([README.md](README.md)), and the offline build cannot add QuickJS or
 `androidx.javascriptengine`, so Android runs a Kotlin port of the same code.
 
 **HTTP stays native.** The JS engine is a generator: `start(input)` returns
@@ -125,8 +117,7 @@ own HTTP stack and calls `resume(session, {status, text})`. A Wait step
 yields `{wait: ms}`: the host sleeps (iOS `Task.sleep`, Android the `sleep`
 callback of `WorkflowEngine.run`) and resumes with `null`. Random numbers come
 from the platform unless the input carries `randoms`, which the conformance
-cases use. JavaScriptCore has
-no `fetch`, and this keeps the JSContext single-threaded behind a lock while
+cases use. JavaScriptCore has no `fetch`, and this keeps the JSContext single-threaded behind a lock while
 the request runs on URLSession (`HTTPWorkflowTransport` over FMNet's
 `HTTPClient`). Android's `HttpWorkflowTransport` uses `HttpURLConnection`.
 
@@ -158,7 +149,7 @@ reaches only what the phone itself could already reach.
   the script corpus plus script errors and limits), plus
   `clean`, `safeUrl` and catalog cases. Both phone test suites replay them and
   compare requests, recorded waits and reports (step timings excluded; script
-logs and `stopped` included).
+  logs and `stopped` included).
 
 `--check` fails when any file is stale; `test_workflows_mobile.py` runs the
 check and the Node conformance harness, so a change to the server engine or an
@@ -175,5 +166,5 @@ shows up as a failing phone case.
 | Screens | `ForkMesh/Features/Workflows/` | `app/.../feature/workflows/` |
 | Route | `Route.workflows`, `RouteFallbacks.swift` | `Route.Workflows`, `WorkflowsFeature` |
 
-`/dashboard/workflows` links now parse to the native route on both apps. The
+`/dashboard/workflows` links parse to the native route on both apps. The
 editor's menu still offers the web canvas (`HubItem.workflowsPath`).

@@ -107,7 +107,7 @@ def message(row):
         lines += ["", "The node sealed itself (DATA_KEY left memory), "
                   "blocked inbound traffic except SSH and stopped its "
                   "services. Investigate, then release it with "
-                  "tools/next_ids.py release %s --execute (docs/IDS.md)."
+                  "tools/next_ids.py release %s --execute (docs/operations/intrusion-detection.md)."
                   % node]
     return title[:200], "\n".join(lines)[:BODY_MAX]
 

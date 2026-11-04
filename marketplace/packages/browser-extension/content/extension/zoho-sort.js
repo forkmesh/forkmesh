@@ -76,9 +76,27 @@
     return found;
   }
 
+  function selectsAll(box) {
+    const words = ["aria-label", "title", "data-title", "data-tooltip"].map((name) => box.getAttribute(name) || "");
+    return /select\s*all/i.test(words.join(" "));
+  }
+
+  function rowDepth(boxes) {
+    const tally = new Map();
+    for (let index = 1; index < boxes.length; index += 1) {
+      const shared = common(boxes[index - 1], boxes[index]);
+      const steps = Math.min(depth(boxes[index - 1], shared), depth(boxes[index], shared)) - 1;
+      tally.set(steps, (tally.get(steps) || 0) + 1);
+    }
+    let best = Infinity;
+    let most = 0;
+    for (const [steps, count] of tally) if (count > most || (count === most && steps < best)) { best = steps; most = count; }
+    return best;
+  }
+
   function findList() {
     const boxes = [...document.querySelectorAll(BOX)]
-      .filter((box) => !box.parentElement?.closest(BOX) && !/select all/i.test(box.getAttribute("aria-label") || ""));
+      .filter((box) => !box.parentElement?.closest(BOX) && !selectsAll(box));
     const memo = new Map();
     const groups = new Map();
     for (const box of boxes) {
@@ -91,12 +109,10 @@
     let inside = [];
     for (const [candidate, list] of groups) if (list.length > inside.length) { scroller = candidate; inside = list; }
     if (inside.length < 2) return null;
-    let steps = Infinity;
-    for (let index = 1; index < inside.length; index += 1) {
-      const shared = common(inside[index - 1], inside[index]);
-      steps = Math.min(steps, depth(inside[index - 1], shared) - 1, depth(inside[index], shared) - 1);
-    }
-    const rows = [...new Set(inside.map((box) => ancestor(box, steps)))].filter(visible);
+    const steps = rowDepth(inside);
+    const found = [...new Set(inside.map((box) => ancestor(box, steps)))];
+    const rows = found.filter((row) => visible(row) && !row.contains(scroller)
+      && !found.some((other) => other !== row && row.contains(other)));
     if (rows.length < 2) return null;
     let root = rows[0].parentElement;
     while (root && !rows.every((row) => root.contains(row))) root = root.parentElement;
@@ -304,10 +320,12 @@
 
   function isTicked(row) {
     const box = boxOf(row);
+    const input = box?.matches('input[type="checkbox"]') ? box : box?.querySelector('input[type="checkbox"]');
+    const aria = box?.hasAttribute("aria-checked") ? box : box?.querySelector("[aria-checked]");
     return tidy.ticked({
-      checked: box?.checked === true,
-      ariaChecked: box?.getAttribute("aria-checked") ?? null,
-      ariaSelected: row.getAttribute("aria-selected"),
+      checked: input ? input.checked : null,
+      ariaChecked: aria?.getAttribute("aria-checked") ?? null,
+      rowChecked: row.getAttribute("aria-checked"),
       boxClass: classText(box),
       rowClass: classText(row),
     });

@@ -1,10 +1,12 @@
 #include "ClaudeAccountRouting.h"
 
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QHash>
 #include <QSaveFile>
 
 namespace forkmesh::agentaccounts {
@@ -175,6 +177,43 @@ bool moveClaudeLogin(const QString &fromDir, const QString &fromStateFile,
     writePrivateFile(fromStateFile,
                      QJsonDocument(fromState).toJson(QJsonDocument::Indented));
     return true;
+}
+
+QString readClaudeBoolSetting(const QString &path, const QString &key)
+{
+    struct Cached {
+        qint64 modified = -1;
+        qint64 size = -1;
+        QString value;
+    };
+    static QHash<QString, Cached> cache;
+    const QFileInfo info(path);
+    if (!info.isFile())
+        return QString();
+    const QString cacheKey = path + QLatin1Char('\n') + key;
+    const qint64 modified = info.lastModified().toMSecsSinceEpoch();
+    const auto it = cache.constFind(cacheKey);
+    if (it != cache.constEnd() && it->modified == modified && it->size == info.size())
+        return it->value;
+    QJsonObject object;
+    bool exists = false;
+    QString value;
+    if (readJsonObject(path, &object, &exists) && object.value(key).isBool())
+        value = object.value(key).toBool() ? QStringLiteral("on") : QStringLiteral("off");
+    cache.insert(cacheKey, Cached{modified, info.size(), value});
+    return value;
+}
+
+ClaudeRemoteControl readClaudeRemoteControl(const QString &settingsFile,
+                                            const QString &stateFile)
+{
+    const QString key = QStringLiteral("remoteControlAtStartup");
+    for (const QString &path : {settingsFile, stateFile}) {
+        const QString value = readClaudeBoolSetting(path, key);
+        if (!value.isEmpty())
+            return ClaudeRemoteControl{value, path};
+    }
+    return ClaudeRemoteControl{QStringLiteral("default"), QString()};
 }
 
 } // namespace forkmesh::agentaccounts

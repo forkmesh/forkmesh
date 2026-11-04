@@ -1,13 +1,10 @@
 # Videos in issue and pull request markdown
 
-People asked to attach screen recordings to issues and pull requests. Images
-were already possible on the web, but only as base64 `data:` URLs inside the
-signed body, which the relay caps at 64 KB (`MAX_ISSUE_BYTES`); a video does
-not fit, nothing served media with Range support (seeking, and Safari playing
-at all), and the renderer dropped `<video>`.
-
-A video is now uploaded once to the cores' replicated database and linked from
-the markdown like an image:
+Part of the [App](README.md). Images in issue markdown are base64 `data:` URLs
+inside the signed body, which the relay caps at 64 KB (`MAX_ISSUE_BYTES`); a
+video does not fit and needs Range support (seeking, and Safari playing at
+all). So a video is uploaded once to the cores' replicated database and linked
+from the markdown like an image:
 
 ```
 ![demo.mp4](/api/repo/<owner>/<repo>/media/<id>.mp4)
@@ -18,18 +15,19 @@ Code: `app/src/repo_media_api.py` (pure, behind `_RepoMediaRuntime` in
 `repo_uploads` and `repo_upload_parts` (migration `0282_repo_uploads`). Tests:
 `app/tests/test_repo_media_api.py`.
 
-The tables are not called `repo_media`: that name already holds repository
-logos and banners (migration 0030), and `CREATE TABLE IF NOT EXISTS` would have
-kept that table and then failed on indexes for columns it does not have.
+The tables are not called `repo_media`: that name holds repository logos and
+banners (migration 0030), and `CREATE TABLE IF NOT EXISTS` would keep that
+table and then fail on indexes for columns it lacks.
 `test_upload_tables_do_not_reuse_an_existing_table_name` guards every table
 name.
 
 ## Why the database
 
-The served stack has no object store. The chat's view-once video
+The served stack has no object store
+([architecture](../architecture.md)). The chat's view-once video
 ([chat-private-rooms.md](chat-private-rooms.md)) already stores media as
-512 KiB parts in the rqlite-backed D1 that every core replicates, with quotas
-and a sweep; this reuses that shape. Committing videos into the repository
+512 KiB parts in the rqlite database every core replicates (behind the D1
+shape, `d1_rqlite.py`), with quotas and a sweep; this reuses that shape. Committing videos into the repository
 would make every clone download them (`.forkmesh/issues` and the pull ledger
 are ordinary branches), and peers replicate only `refs/heads` and `refs/tags`,
 so a hidden ref would not reach the other cores.
@@ -56,9 +54,8 @@ is sealed like every other row.
   hours (`media_quota_count` / `media_quota_bytes`), and 2 GiB across every
   account in any 24 hours (`media_quota_instance`), because every byte is
   replicated to every core's database and per-account caps alone do not
-  bound what many accounts store. An upload not finished
-  within an hour is removed by the hourly `chat-prune` phase and by the next
-  create.
+  bound what many accounts store. An upload not finished within an hour is
+  removed by the hourly `chat-prune` phase and by the next create.
 - Serving: one `bytes=` range per request (206, `Content-Range`), open-ended
   ranges capped at 4 MiB, `416` past the end, `Accept-Ranges: bytes`. Headers
   `nosniff`, `Content-Disposition: inline`, `Content-Security-Policy:
@@ -70,7 +67,7 @@ is sealed like every other row.
   cannot be replayed under another repository's address.
 - Deletes and keys: a repository delete purges its `repo_uploads` rows and
   their parts (`_repo_scoped_state_statements`); `repo_uploads` is in the
-  rekey inventory ([../REKEY.md](../REKEY.md)) for its two blind indexes and
+  rekey inventory ([rekey](../operations/rekey.md)) for its two blind indexes and
   its sealed `data`.
 
 ## Web

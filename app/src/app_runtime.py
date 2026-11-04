@@ -2977,7 +2977,7 @@ class Default:
             return await package_ratings_handler(self.env, request)
 
         # Account-based Market star ratings with required improvement
-        # reviews, owner replies and moderation (docs/MARKETPLACE_RATINGS.md).
+        # reviews, owner replies and moderation (docs/marketplace/ratings.md).
         if (url.path == "/api/market/reviews"
                 or url.path.startswith("/api/market/reviews/")):
             return await marketplace_reviews.handle(
@@ -3005,6 +3005,12 @@ class Default:
             instance_launch._bind_runtime(globals())
             return await instance_launch.route(self.env, request, url.path)
 
+        if url.path in ("/api/forum-mirrors", "/api/forum-mirrors/"):
+            import forum_mirror_setup
+            forum_mirror_setup._bind_runtime(globals())
+            return await forum_mirror_setup.forum_mirrors_handler(
+                self.env, request)
+
         # Anonymous docs/page feedback: like/dislike clicks with optional text.
         if url.path in ("/api/feedback", "/api/feedback/"):
             return await feedback_handler(self.env, request)
@@ -3012,7 +3018,7 @@ class Default:
         if url.path in ("/api/client-errors", "/api/client-errors/"):
             return await client_error_handler(self.env, request)
 
-        # Acquisition attribution (docs/attribution.md): the www Worker's
+        # Acquisition attribution (docs/app/attribution.md): the www Worker's
         # page-view relay, the copy-clone-URL beacon, self-serve erasure,
         # and the admin-only report/list/discovery-call endpoints.
         if url.path in (
@@ -3201,7 +3207,7 @@ class Default:
                 self.env, request, url.path)
 
         # Preservation-first crisis plans and their scenario catalog
-        # (www/docs/crisis-preservation.md).
+        # (docs/crisis-preservation.md).
         if url.path in ("/api/preservation/crisis-plan",
                         "/api/preservation/crisis-plan/"):
             return await crisis_preservation_plan_handler(self.env, request)
@@ -3221,6 +3227,10 @@ class Default:
         if url.path in ("/api/notifications/desktop",
                         "/api/notifications/desktop/"):
             return await desktop_ping_handler(self.env, request)
+
+        if url.path in ("/api/notifications/agent-approval",
+                        "/api/notifications/agent-approval/"):
+            return await agent_approval_ping_handler(self.env, request)
 
         if (url.path == "/api/calendar" or url.path == "/api/calendar/"
                 or url.path.startswith("/api/calendar/")):
@@ -3405,6 +3415,8 @@ class Default:
                         "/api/bug-reports/inbox/attachment",
                         "/api/bug-reports/inbox/attachment/"):
             return await bug_reports_inbox_handler(self.env, request)
+        if url.path in ("/api/bug-reports/mine", "/api/bug-reports/mine/"):
+            return await bug_reports_mine_handler(self.env, request)
 
         if url.path in ("/api/forkbot/chat", "/api/forkbot/chat/"):
             return await forkbot_chat_handler(self.env, request)
@@ -3925,6 +3937,16 @@ class Default:
                 return json_response({"error": "not_found"}, status=404)
             return await repo_webhooks_handler(self.env, request, owner, repo)
 
+        forum_match = REPO_FORUM_RE.match(url.path)
+        if forum_match:
+            owner = safe_segment(forum_match.group(1))
+            repo = safe_segment(forum_match.group(2))
+            if not owner or not repo:
+                return json_response({"error": "not_found"}, status=404)
+            import forum_records
+            forum_records._bind_runtime(globals())
+            return await forum_records.forum_handler(self.env, request, owner, repo)
+
         provider_mirror_match = REPO_PROVIDER_MIRROR_RE.match(url.path)
         if provider_mirror_match:
             owner = safe_segment(provider_mirror_match.group(1))
@@ -3932,15 +3954,6 @@ class Default:
             if not owner or not repo:
                 return json_response({"error": "not_found"}, status=404)
             return await repo_provider_mirror_handler(
-                self.env, request, owner, repo)
-
-        archive_sync_match = REPO_ARCHIVE_SYNC_RE.match(url.path)
-        if archive_sync_match:
-            owner = safe_segment(archive_sync_match.group(1))
-            repo = safe_segment(archive_sync_match.group(2))
-            if not owner or not repo:
-                return json_response({"error": "not_found"}, status=404)
-            return await repo_archive_sync_handler(
                 self.env, request, owner, repo)
 
         repo_media_match = REPO_MEDIA_RE.match(url.path)

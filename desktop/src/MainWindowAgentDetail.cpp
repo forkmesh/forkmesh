@@ -289,7 +289,7 @@ void MainWindow::refreshAgentTaskGradeControl(const AgentSession *session)
 
 void MainWindow::refreshAgentWorkflowLink(const AgentSession *session)
 {
-    if (!m_agentWorkflowLink)
+    if (!m_agentWorkflowButton)
         return;
     const QString key =
         session && !session->teammateId.isEmpty()
@@ -297,12 +297,12 @@ void MainWindow::refreshAgentWorkflowLink(const AgentSession *session)
                   .arg(QString::number(session->id), session->teammateId,
                        session->owner, session->name)
             : QString();
-    if (key == m_agentWorkflowLinkKey)
+    if (key == m_agentWorkflowButtonKey)
         return;
-    m_agentWorkflowLinkKey = key;
-    m_agentWorkflowLink->hide();
-    m_agentWorkflowLink->setProperty("workflowRepo", QString());
-    m_agentWorkflowLink->setProperty("workflowId", QString());
+    m_agentWorkflowButtonKey = key;
+    m_agentWorkflowButton->hide();
+    m_agentWorkflowButton->setProperty("workflowRepo", QString());
+    m_agentWorkflowButton->setProperty("workflowId", QString());
     if (key.isEmpty())
         return;
     const int repoIndex = repoIndexFor(session->owner, session->name);
@@ -316,14 +316,14 @@ void MainWindow::refreshAgentWorkflowLink(const AgentSession *session)
             continue;
         const QString name = listing.workflow.name.isEmpty() ? listing.workflow.id
                                                              : listing.workflow.name;
-        m_agentWorkflowLink->setProperty("workflowRepo", shortcutRepoKey(repoIndex));
-        m_agentWorkflowLink->setProperty("workflowId", listing.workflow.id);
-        m_agentWorkflowLink->setText(
-            QStringLiteral("<a href=\"workflow\">%1 Workflow: %2</a>")
-                .arg(QString::fromUtf8("\xE2\x86\x90"), name.toHtmlEscaped()));
-        m_agentWorkflowLink->setToolTip(
-            QStringLiteral("Open %1 in Workflows").arg(name));
-        m_agentWorkflowLink->show();
+        m_agentWorkflowButton->setProperty("workflowRepo", shortcutRepoKey(repoIndex));
+        m_agentWorkflowButton->setProperty("workflowId", listing.workflow.id);
+        m_agentWorkflowButton->setToolTip(
+            QStringLiteral("Started by the workflow %1. Open it in Workflows.")
+                .arg(name));
+        m_agentWorkflowButton->setAccessibleName(
+            QStringLiteral("Open workflow %1").arg(name));
+        m_agentWorkflowButton->show();
         return;
     }
 }
@@ -1088,6 +1088,7 @@ void MainWindow::showAgentSession(int sessionId)
     }
     if (m_agentOutputModeButton)
         m_agentOutputModeButton->setVisible(transcript);
+    refreshAgentRawWindow(false);
     if (m_agentListenButton) {
         m_agentListenButton->setVisible(transcript);
         refreshAgentListenButton();
@@ -1111,9 +1112,7 @@ void MainWindow::showAgentSession(int sessionId)
         const bool termLive = sessionId == m_terminalSessionId && m_agentTerminal &&
                               m_agentTerminal->isRunning();
         if (transcript) {
-            m_agentOutputStack->setCurrentWidget(
-                m_agentRawOutputMode ? static_cast<QWidget *>(m_agentLog)
-                                     : static_cast<QWidget *>(m_agentTranscript));
+            m_agentOutputStack->setCurrentWidget(m_agentTranscript);
         } else if (termLive) {
             m_agentOutputStack->setCurrentWidget(m_agentTerminal);
         } else {

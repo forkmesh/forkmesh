@@ -24,19 +24,16 @@ roles and a compact control size. Both live in one file,
 Which of the two sets a page shows is the visitor's Settings, Appearance
 choice (System, Dark or Light), else the instance's colour mode (dark unless
 its theme says light or system); see
-[Colour mode](../INSTANCES.md#colour-mode). The light values here are also
+[Colour mode](../operations/instances.md#colour-mode). The light values here are also
 what a script-less visitor gets on a system-mode instance.
 
 ## Why `primary` is blue
 
-In October 2026 the user asked why every new page came out with green inputs,
-selects, selected cards and icons when the rest of the product used blue.
-The cause was the token: `primary` was GitHub green, and new pages naturally
-used `primary` for focus, selection and icons. Rather than fixing pages one by
-one, `primary` became blue (`#4493f8` dark, `#0969da` light), so the default
-choice is now the right one. The green button colour moved to its own token,
-`cta`, and solid `bg-primary` buttons were moved to `bg-cta`; green status
-uses `success`.
+New pages naturally use `primary` for focus, selection and icons, so
+`primary` is blue (`#4493f8` dark, `#0969da` light) and the default choice is
+the right one. (When it was GitHub green, every new page came out with green
+inputs and selections.) The green button colour has its own token, `cta`
+(solid buttons use `bg-cta`); green status uses `success`.
 
 | Role | Token | Used for |
 | --- | --- | --- |
@@ -60,8 +57,8 @@ only holds the markers), and that each one has a dark and a light value in
 
 White text on the dark-theme blue (`#4493f8`) reaches only 3.1:1, below the
 4.5:1 text minimum in
-`www/docs/engineering/daily-interface-budgets.json`, and the daily-interface
-browser check failed on it. In the dark theme, `primary-foreground` is now the
+`docs/engineering/daily-interface-budgets.json` (the daily-interface
+browser check enforces it). In the dark theme, `primary-foreground` is the
 page background (`1 4 9`), which gives 6.6:1 and keeps the blue unchanged for
 links, focus and selection. The light theme keeps white text on `#0969da`
 (5.2:1).
@@ -71,17 +68,15 @@ links, focus and selection. The light theme keeps white text on `#0969da`
 The header search box (`data-global-search-shell` in
 `app/public/dashboard/partials/header.html`) shows one focus state, like
 GitHub's: the wrapper border turns `accent`. The shell's global
-`:focus-visible` outline is loaded after `tailwind.css`, so it beat the
-input's `outline-none` and drew a second blue box inside the wrapper. A
-`[data-global-search]` rule in `shell.html` removes the outline and shadow
-from the input itself.
+`:focus-visible` outline is loaded after `tailwind.css` and would beat the
+input's `outline-none`, drawing a second blue box, so a `[data-global-search]`
+rule in `shell.html` removes the outline and shadow from the input itself.
 
 ## Ping icons
 
-Ping kind icons (`data-notification-kind-icon`) in the bell dropdown, the
-full pings list, the detail pane and the home feed are grey. Unread pings in
-the dropdown used `text-primary`, which made them green; read and unread are
-already told apart by the row's opacity. A `shell.html` rule lifts the icon to
+Ping kind icons (`data-notification-kind-icon`) on the Pings page rows, the
+expanded detail and the home feed are grey, unread too (the
+row's opacity tells read from unread). A `shell.html` rule lifts the icon to
 `foreground` while its row is hovered or focused.
 
 ## Calendar today

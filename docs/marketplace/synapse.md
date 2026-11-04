@@ -8,7 +8,7 @@ fibre from the importing file to the imported one, and files in a circular
 dependency glow red and pulse. It works for every language the shared engine
 resolves imports for (see [codebase-analysis.md](codebase-analysis.md)), not
 only JavaScript and TypeScript, on any repository open in ForkMesh or any
-folder picked with **Folder…**.
+folder picked with **Folder…**. Part of [Marketplace](README.md).
 
 ## Code map
 

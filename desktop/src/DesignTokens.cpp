@@ -4,6 +4,7 @@
 
 #include <QDir>
 #include <QFile>
+#include <QApplication>
 #include <QFontDatabase>
 #include <QGuiApplication>
 #include <QRegularExpression>
@@ -46,9 +47,9 @@ const std::array<RoleValues, kRoleCount> kRoles = {{
     {"accentHover", "#388bfd", "#0550ae", "#739dff", "#2860d6"},
     {"accentPressed", "#1158c7", "#0a5cc7", "#4a7be8", "#2254bd"},
     {"accentFg", "#58a6ff", "#0969da", "#5b8cff", "#2f6fed"},
-    {"accentSubtle", "#132b45", "#ddf4ff", "#1d2438", "#e8eefb"},
+    {"accentSubtle", "#132b45", "#ddf4ff", "#1d2438", "#d6e2fb"},
     {"onAccent", "#ffffff", "#ffffff", "#ffffff", "#ffffff"},
-    {"selection", "#1f6feb", "#0969da", "#1d2438", "#e8eefb"},
+    {"selection", "#1f6feb", "#0969da", "#1d2438", "#c6d6f8"},
     {"success", "#3fb950", "#1a7f37", "#3fb871", "#1f9d55"},
     {"successSubtle", "#12261a", "#dafbe1", "#152a1f", "#e3f2e9"},
     {"warning", "#d29922", "#9a6700", "#d9a440", "#b7791f"},
@@ -451,6 +452,25 @@ QFont interfaceFont(Design design, const QFont &classicFont)
     }
     font.setFamilies(families);
     return font;
+}
+
+void adoptInterfaceFamiliesForWidgetClasses()
+{
+    if (!qobject_cast<QApplication *>(QCoreApplication::instance()))
+        return;
+    const QStringList families = QApplication::font().families();
+    for (const char *className :
+         {"QMenu", "QMenuBar", "QMenuItem", "QMessageBox", "QLabel", "QTipLabel",
+          "QStatusBar", "QMdiSubWindowTitleBar", "QDockWidgetTitle", "QPushButton",
+          "QCheckBox", "QRadioButton", "QToolButton", "QAbstractItemView",
+          "QListView", "QHeaderView", "QListBox", "QComboMenuItem",
+          "QComboLineEdit", "QSmallFont", "QMiniFont"}) {
+        QFont font = QApplication::font(className);
+        if (font.families() == families)
+            continue;
+        font.setFamilies(families);
+        QApplication::setFont(font, className);
+    }
 }
 
 QFont monospaceFont(const QFont &classicFont)

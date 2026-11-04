@@ -181,44 +181,46 @@ fun FmAlertDialog(
         val window = (LocalView.current.parent as? DialogWindowProvider)?.window
         SideEffect { window?.setDimAmount(0.54f) }
         val shadow = if (c.dark) Color(0x99000000) else Color(0x33000000)
-        Column(
-            modifier
-                .fmTapSounds()
-                .padding(FmSpace.x5)
-                .widthIn(min = 280.dp)
-                .shadow(if (c.dark) 24.dp else 8.dp, shape, ambientColor = shadow, spotColor = shadow)
-                .background(containerColor ?: if (c.dark) c.bgOverlay else c.bgRaised, shape),
-        ) {
-            if (title != null) {
-                Text(
-                    title,
-                    modifier = Modifier.padding(start = 24.dp, top = 24.dp, end = 24.dp, bottom = if (content == null) 20.dp else 0.dp),
-                    maxLines = titleMaxLines,
-                    overflow = TextOverflow.Ellipsis,
-                    style = Fm.text.titleMedium,
-                )
-            }
-            if (content != null) {
-                ProvideTextStyle(
-                    Fm.text.bodyMedium.copy(color = c.textSecondary, lineHeight = FmType.small * FmType.leadingRelaxed),
-                ) {
-                    Column(
-                        Modifier
-                            .weight(1f, fill = false)
-                            .padding(start = 24.dp, top = 16.dp, end = 24.dp, bottom = 24.dp),
-                        content = content,
+        SelectionContainer {
+            Column(
+                modifier
+                    .fmTapSounds()
+                    .padding(FmSpace.x5)
+                    .widthIn(min = 280.dp)
+                    .shadow(if (c.dark) 24.dp else 8.dp, shape, ambientColor = shadow, spotColor = shadow)
+                    .background(containerColor ?: if (c.dark) c.bgOverlay else c.bgRaised, shape),
+            ) {
+                if (title != null) {
+                    Text(
+                        title,
+                        modifier = Modifier.padding(start = 24.dp, top = 24.dp, end = 24.dp, bottom = if (content == null) 20.dp else 0.dp),
+                        maxLines = titleMaxLines,
+                        overflow = TextOverflow.Ellipsis,
+                        style = Fm.text.titleMedium,
                     )
                 }
-            }
-            if (actions != null) {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(actionsPadding),
-                    horizontalArrangement = Arrangement.spacedBy(FmSpace.x2, Alignment.End),
-                    verticalAlignment = Alignment.CenterVertically,
-                    content = actions,
-                )
+                if (content != null) {
+                    ProvideTextStyle(
+                        Fm.text.bodyMedium.copy(color = c.textSecondary, lineHeight = FmType.small * FmType.leadingRelaxed),
+                    ) {
+                        Column(
+                            Modifier
+                                .weight(1f, fill = false)
+                                .padding(start = 24.dp, top = 16.dp, end = 24.dp, bottom = 24.dp),
+                            content = content,
+                        )
+                    }
+                }
+                if (actions != null) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(actionsPadding),
+                        horizontalArrangement = Arrangement.spacedBy(FmSpace.x2, Alignment.End),
+                        verticalAlignment = Alignment.CenterVertically,
+                        content = actions,
+                    )
+                }
             }
         }
     }
@@ -267,9 +269,12 @@ fun FmConfirmDialog(
                 if (body != null) {
                     val style = LocalTextStyle.current
                     SelectionContainer {
-                        Text(body, style = style.copy(color = Fm.colors.textSecondary, lineHeight = style.fontSize * 1.4f))
+                        Text(
+                            body,
+                            Modifier.fmMessageTools("$title\n$body"),
+                            style = style.copy(color = Fm.colors.textSecondary, lineHeight = style.fontSize * 1.4f),
+                        )
                     }
-                    FmMessageTools("$title\n$body")
                 }
                 if (fields != null) fields()
             }
@@ -342,7 +347,9 @@ fun FmModalBottomSheet(
         scrimColor = if (c.dark) Color(0x8C000000) else Color(0x59000000),
         dragHandle = dragHandle,
     ) {
-        Column(if (isScrollControlled) Modifier.fmTapSounds() else Modifier.fmTapSounds().heightIn(max = maxHeight), content = content)
+        SelectionContainer {
+            Column(if (isScrollControlled) Modifier.fmTapSounds() else Modifier.fmTapSounds().heightIn(max = maxHeight), content = content)
+        }
     }
 }
 

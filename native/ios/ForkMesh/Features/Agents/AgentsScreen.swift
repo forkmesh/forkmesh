@@ -12,6 +12,7 @@ import SwiftUI
 struct AgentsScreen: View {
     @Environment(\.fmPalette) private var fm
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.shellTabHidden) private var tabHidden
     @State private var model: AgentsListModel
     @State private var notice: FmNotice?
     @State private var bulkNotice: FmNotice?
@@ -37,6 +38,7 @@ struct AgentsScreen: View {
     @State private var stopAllCount = 0
     @State private var folderFolds = AgentFolderFolds.load(Services.get(KeyValueStore.self))
     @State private var opened: AgentOpenedLine?
+    @State private var live = AgentsTabLiveGate()
 
     private static let leaveDelay: Duration = .milliseconds(500)
 
@@ -97,6 +99,12 @@ struct AgentsScreen: View {
             model.start()
             followDialogs()
             syncDots()
+        }
+        .onChange(of: tabHidden) { (_: Bool, hidden: Bool) in
+            if !hidden {
+                followDialogs()
+                syncDots()
+            }
         }
         .task { await HostsFeature.agents?.refresh() }
         .task { await attention?.refresh() }
@@ -168,7 +176,17 @@ struct AgentsScreen: View {
         return "eagle:" + center.rows.map { $0.isActive ? "+" + $0.id : $0.id }.joined(separator: ",")
     }
 
+    private func liveAllowed() -> Bool {
+        var gate: AgentsTabLiveGate = live
+        let allowed: Bool = gate.allows(hidden: tabHidden)
+        if gate != live {
+            live = gate
+        }
+        return allowed
+    }
+
     private func followDialogs() {
+        guard liveAllowed() else { return }
         if listView == .eagle, let center = HostsFeature.agents {
             eagle.follow(center.rows, feeds: { ControlWatchFeeds(center) }) { row in
                 (try? await center.transcript(row, since: 0).text) ?? ""
@@ -179,6 +197,7 @@ struct AgentsScreen: View {
     }
 
     private func syncDots() {
+        guard liveAllowed() else { return }
         guard !runningIds.isEmpty,
               let screen = AgentWatchScreen.forAgentsTab(
                 model.groups, center: HostsFeature.agents, ownerAccount: { model.ownerAccount(for: $0) }) else {
@@ -214,10 +233,24 @@ struct AgentsScreen: View {
     }
 
     private var tabBar: some View {
-        tools
-            .frame(maxWidth: .infinity)
-            .padding(.horizontal, FmSpace.x2)
-            .frame(height: 46)
+        VStack(alignment: .leading, spacing: FmSpace.x1) {
+            Text("Agents")
+                .fmText(.displaySmall)
+                .lineLimit(1)
+                .accessibilityAddTraits(.isHeader)
+                .padding(.horizontal, FmSpace.x4)
+            ScrollView(.horizontal, showsIndicators: false) {
+                tools
+                    .padding(.horizontal, FmSpace.x4)
+                    .padding(.vertical, FmSpace.x1)
+            }
+            .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.top, FmSpace.x2)
+        .padding(.bottom, FmSpace.x1)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .genieKeepsClear()
     }
 
     private var tools: some View {
@@ -399,8 +432,12 @@ struct AgentsScreen: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
+    private var awaitingFirstList: Bool {
+        model.isPendingFirstLoad || HostsFeature.agents.map { !$0.listed } ?? false
+    }
+
     @ViewBuilder private var pending: some View {
-        if model.isPendingFirstLoad {
+        if awaitingFirstList {
             FmSkeletonList(rows: 4, label: "Loading agents")
                 .frame(height: 320)
         } else if model.isFailed {
@@ -408,7 +445,7 @@ struct AgentsScreen: View {
                 VStack(spacing: FmSpace.x3) {
                     Text(model.loadError ?? "")
                         .fmText(.bodyMedium, color: fm.textSecondary)
-                    FmMessageTools(model.loadError ?? "")
+                        .fmMessageTools(model.loadError ?? "")
                     FmToneButton(label: "Retry", onPressed: { Task { await model.refresh() } })
                 }
                 .frame(maxWidth: .infinity)
@@ -434,7 +471,7 @@ struct AgentsScreen: View {
             FmSwap(stateKey: listPhase(shown)) {
                 if !shown.isEmpty {
                     lineList(shown)
-                } else if model.isPendingFirstLoad || model.isFailed {
+                } else if awaitingFirstList || model.isFailed {
                     pending
                 } else if model.sealedCount == 0 {
                     emptyList
@@ -450,7 +487,7 @@ struct AgentsScreen: View {
 
     private func listPhase(_ shown: [AgentLine]) -> Int {
         if !shown.isEmpty { return 0 }
-        if model.isPendingFirstLoad { return 1 }
+        if awaitingFirstList { return 1 }
         if model.isFailed { return 2 }
         return 3
     }
@@ -492,6 +529,7 @@ struct AgentsScreen: View {
                             let request: AgentLineDeleteRequest? = AgentLineDeleteRequest(line)
                             lineRow(line, nowMs: nowMs)
                                 .contentShape(.contextMenuPreview, FmRoundedShape(radius: FmRadius.sm))
+                                .textSelection(.disabled)
                                 .contextMenu { lineMenu(line, request) }
                                 .agentSwipeToDelete(id: line.id, openId: $swipedOpen, enabled: request != nil && !deleting.contains(line.id)) {
                                     if let request { ask(request) }
@@ -675,20 +713,53 @@ struct AgentsScreen: View {
         }
     }
 
+    static let starters: [(title: String, detail: String, prompt: String)] = [
+        ("Fix the failing tests", "Finds them on main and opens a pull request", "Find the failing tests on main and fix them."),
+        ("Write docs for a screen", "A short page in docs/ with how it works", "Write a short docs page explaining how this screen works: "),
+    ]
+
     private var emptyList: some View {
-        VStack(alignment: .leading, spacing: FmSpace.x3) {
+        VStack(alignment: .leading, spacing: 0) {
             FmEmptyState(
                 icon: "smart_toy_outlined",
-                title: "No agent sessions yet",
+                title: "No agents yet",
                 message: canStart
-                    ? "Send a prompt from the compose button and follow it here from the mirror that runs it to its branch, pull request and merge."
-                    : "Agent sessions pushed by desktop nodes will appear here."
+                    ? "Tap + and describe a change. Follow it here from branch to merge."
+                    : "Agent sessions pushed by desktop nodes will appear here.",
+                art: AnyView(AgentPipelineArt())
             )
+            .frame(minHeight: 320)
+            if canStart {
+                FmSectionHeader(title: "Try one")
+                    .padding(.horizontal, FmSpace.x2)
+                    .padding(.bottom, FmSpace.x2)
+                VStack(spacing: 0) {
+                    ForEach(Array(AgentsScreen.starters.enumerated()), id: \.offset) {
+                        (entry: (offset: Int, element: (title: String, detail: String, prompt: String))) in
+                        if entry.offset > 0 {
+                            FmRowDivider(indent: FmSpace.x4)
+                        }
+                        FmListRow(
+                            title: entry.element.title,
+                            subtitle: entry.element.detail,
+                            trailing: AnyView(
+                                Image(systemName: "arrow.up.right")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(fm.textTertiary)),
+                            onTap: { FmMessageHandoff.compose(ComposeTarget(text: entry.element.prompt)) },
+                            showChevron: false,
+                            minHeight: 56)
+                    }
+                }
+                .background(fm.bgRaised)
+                .clipShape(FmRoundedShape(radius: FmRadius.lg * 2))
+            }
             if !model.hasDesktopNode {
-                FmNeedsDesktopNote(
-                    detail: "This account has no desktop or server node enrolled. A prompt still goes to a mirror of the repository when one can run agents; otherwise it runs on this phone, against a mirror of the repository, on your own provider key or with Gemma 4 on this iPhone.",
-                    icon: "smart_toy_outlined"
-                )
+                Text("No desktop enrolled. Prompts run on a mirror of the repository, or on this iPhone with your own key or Gemma 4.")
+                    .fmText(.bodySmall, color: fm.textSecondary)
+                    .padding(.horizontal, FmSpace.x2)
+                    .padding(.top, FmSpace.x3)
+                    .fmMessageTools("No desktop enrolled. Prompts run on a mirror of the repository, or on this iPhone with your own key or Gemma 4.")
             }
         }
     }
@@ -755,6 +826,7 @@ extension AgentLineSort {
 struct AgentToolChip: ViewModifier {
     func body(content: Content) -> some View {
         content
+            .frame(minWidth: 30)
             .frame(height: 30)
             .shellGlass(RoundedRectangle(cornerRadius: FmRadius.md, style: .continuous))
             .contentShape(RoundedRectangle(cornerRadius: FmRadius.md, style: .continuous))

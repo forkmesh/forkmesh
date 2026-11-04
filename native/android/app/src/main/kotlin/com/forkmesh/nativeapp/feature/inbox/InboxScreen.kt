@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.inbox
 
+import com.forkmesh.nativeapp.ui.kit.FmHoldArea
 import com.forkmesh.nativeapp.ui.kit.LocalShellClearance
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -40,6 +41,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.forkmesh.nativeapp.account.PingTone
 import com.forkmesh.nativeapp.account.notificationTimeLabel
 import com.forkmesh.nativeapp.feature.navigation.NavigationFeature
 import com.forkmesh.nativeapp.feature.navigation.RoutePage
@@ -53,6 +55,12 @@ import com.forkmesh.nativeapp.ui.SoundCue
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenu
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenuItem
 import com.forkmesh.nativeapp.ui.kit.FmEmptyState
+import com.forkmesh.nativeapp.ui.kit.FmSectionHeader
+import com.forkmesh.nativeapp.ui.kit.FmToneButton
+import com.forkmesh.nativeapp.ui.kit.FmTone
+import com.forkmesh.nativeapp.feature.account.AccountFeature
+import java.time.Instant
+import java.time.ZoneId
 import com.forkmesh.nativeapp.ui.kit.FmInlineStatus
 import com.forkmesh.nativeapp.ui.kit.FmInlineStatusLine
 import com.forkmesh.nativeapp.ui.kit.FmPullToRefreshBox
@@ -115,7 +123,7 @@ class InboxScreen(private val pinnedFilter: InboxFilter?) : Screen() {
         LaunchedEffect(model) { reload() }
         tick.let { }
         if (model == null) {
-            FmEmptyState("inbox", "Inbox", message = "Sign in to see what needs you.")
+            InboxSignedOut()
             return
         }
         model.filter = filter
@@ -137,10 +145,11 @@ class InboxScreen(private val pinnedFilter: InboxFilter?) : Screen() {
         }
 
         Column(Modifier.fillMaxSize().background(c.bgBase)) {
-            InboxFilterBar(
+            InboxTitleBar(
                 model,
                 filter,
                 unreadOnly,
+                pinnedFilter != null,
                 InboxBarActions(
                     onFilter = { if (pinnedFilter == null) InboxFeature.setFilter(it) },
                     onMarkAllRead = {
@@ -174,7 +183,7 @@ class InboxScreen(private val pinnedFilter: InboxFilter?) : Screen() {
             if (model.isPaused) {
                 Text(model.pauseLabel, Modifier.padding(horizontal = FmSpace.x4, vertical = FmSpace.x1), style = Fm.text.bodySmall.copy(color = c.warning))
             }
-            model.errors.forEach {
+            if (!model.signedOut) model.errors.forEach {
                 Text(it, Modifier.padding(horizontal = FmSpace.x4, vertical = FmSpace.x1), style = Fm.text.bodySmall.copy(color = c.danger))
             }
             FmInlineStatusLine(
@@ -185,11 +194,21 @@ class InboxScreen(private val pinnedFilter: InboxFilter?) : Screen() {
             )
             FmInlineStatus(status, Modifier.padding(horizontal = FmSpace.x4, vertical = FmSpace.x1))
             FmPullToRefreshBox(isRefreshing = loading && model.loaded, onRefresh = { reload() }, modifier = Modifier.weight(1f)) {
-                if (visible.isEmpty() && model.loaded) {
+                if (visible.isEmpty() && model.signedOut) {
+                    InboxSignedOut()
+                } else if (visible.isEmpty() && model.loaded) {
                     FmEmptyState("inbox", filter.emptyMessage)
                 } else {
+                    val days = remember(visible) { InboxDays.label(visible.map { it.ts }) }
                     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = FmSpace.x6 + LocalShellClearance.current)) {
-                        items(visible, key = { it.id }) { item ->
+                        visible.forEachIndexed { index, item ->
+                            val day = days[index]
+                            if (day != null) {
+                                item(key = "day:$index:$day") {
+                                    FmSectionHeader(day, Modifier.padding(start = FmSpace.x4, end = FmSpace.x4, top = FmSpace.x4, bottom = FmSpace.x1))
+                                }
+                            }
+                            item(key = item.id) {
                             SwipeRow(
                                 item = item,
                                 onShow = { navigator.push(InboxItemScreen(item)) },
@@ -208,6 +227,7 @@ class InboxScreen(private val pinnedFilter: InboxFilter?) : Screen() {
                                     }
                                 },
                             )
+                            }
                         }
                         if (model.pendingSyncCount > 0) {
                             item {
@@ -222,6 +242,45 @@ class InboxScreen(private val pinnedFilter: InboxFilter?) : Screen() {
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun InboxSignedOut() {
+    FmEmptyState(
+        icon = "inbox",
+        title = "Reviews, pings and approvals land here",
+        message = "Sign in to ForkMesh to see them.",
+        action = {
+            FmToneButton(
+                label = "Sign in",
+                onPressed = { AccountFeature.openSignIn() },
+                tone = FmTone.Accent,
+                filled = true,
+                height = 44.dp,
+            )
+        },
+    )
+}
+
+internal object InboxDays {
+    fun label(stamps: List<Long>, now: Long = System.currentTimeMillis(), zone: ZoneId = ZoneId.systemDefault()): List<String?> {
+        val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+        val days = stamps.map { ms ->
+            if (ms <= 0) {
+                "Earlier"
+            } else {
+                val date = Instant.ofEpochMilli(ms).atZone(zone).toLocalDate()
+                when {
+                    !date.isBefore(today) -> "Today"
+                    date == today.minusDays(1) -> "Yesterday"
+                    else -> "Earlier"
+                }
+            }
+        }
+        val starts = days.mapIndexed { index, day -> if (index == 0 || days[index - 1] != day) day else null }
+        if (starts.filterNotNull().let { it.size != it.toSet().size }) return days.map { null }
+        return starts
     }
 }
 
@@ -251,69 +310,79 @@ private fun SwipeRow(item: InboxItem, onShow: () -> Unit, onOpen: () -> Unit, on
         },
     ) {
         Box {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .background(c.bgBase)
-                    .background(if (item.unread) c.accentSubtle else Color.Transparent)
-                    .heightIn(min = 56.dp)
-                    .combinedClickable(onClick = onShow, onLongClick = { menu = true })
-                    .padding(horizontal = FmSpace.x4, vertical = FmSpace.x3)
-                    .semantics(mergeDescendants = true) {
-                        contentDescription = buildString {
-                            append(if (item.unread) "Unread. " else "Read. ")
-                            append("${item.kindLabel}. ${item.title}")
-                            if (item.repo.isNotEmpty()) append(", ${item.repo}")
-                            if (instance != null) append(". From ${instance.label}")
-                        }
-                    },
-                verticalAlignment = Alignment.Top,
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(FmSpace.x1)) {
-                    FmIcon(item.icon, size = 22.dp, tint = if (item.unread) c.accent else c.textTertiary)
-                    if (instance != null) {
-                        Box(Modifier.testTag("inbox-row-instance-logo")) { ProjectIcon(instance, size = 16.dp) }
-                    }
-                }
-                Spacer(Modifier.width(FmSpace.x3))
-                Column(Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            listOf(item.kindLabel, item.repo).filter { it.isNotEmpty() }.joinToString(" · "),
-                            Modifier.weight(1f),
-                            style = Fm.text.labelSmall.copy(color = c.textTertiary),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+            FmHoldArea {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(c.bgBase)
+                        .heightIn(min = 56.dp)
+                        .combinedClickable(onClick = onShow, onLongClick = { menu = true })
+                        .padding(horizontal = FmSpace.x4, vertical = FmSpace.x3)
+                        .semantics(mergeDescendants = true) {
+                            contentDescription = buildString {
+                                append(if (item.unread) "Unread. " else "Read. ")
+                                append("${item.kindLabel}. ${item.title}")
+                                if (item.repo.isNotEmpty()) append(", ${item.repo}")
+                                if (instance != null) append(". From ${instance.label}")
+                            }
+                        },
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(FmSpace.x1)) {
+                        FmIcon(
+                            item.icon,
+                            size = 22.dp,
+                            tint = when (item.tone) {
+                                PingTone.Danger -> c.danger
+                                PingTone.Success -> c.success
+                                PingTone.Warning -> c.warning
+                                else -> c.textSecondary
+                            },
                         )
-                        Text(notificationTimeLabel(item.ts), style = Fm.text.labelSmall.copy(color = if (item.unread) c.accent else c.textTertiary))
+                        if (instance != null) {
+                            Box(Modifier.testTag("inbox-row-instance-logo")) { ProjectIcon(instance, size = 16.dp) }
+                        }
                     }
-                    Text(
-                        item.title,
-                        style = Fm.text.bodyLarge.copy(
-                            color = if (item.unread) c.textPrimary else c.textSecondary,
-                            fontWeight = if (item.unread) FontWeight.SemiBold else FontWeight.Normal,
-                        ),
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    if (item.body.isNotEmpty()) {
+                    Spacer(Modifier.width(FmSpace.x3))
+                    Column(Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                listOf(item.kindLabel, item.repo).filter { it.isNotEmpty() }.joinToString(" · "),
+                                Modifier.weight(1f),
+                                style = Fm.text.bodySmall.copy(color = c.textTertiary),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(notificationTimeLabel(item.ts), style = Fm.text.bodySmall.copy(color = c.textTertiary))
+                        }
                         Text(
-                            item.body,
-                            style = Fm.text.bodySmall.copy(color = if (item.unread) c.textSecondary else c.textTertiary),
+                            item.title,
+                            style = Fm.text.bodyLarge.copy(
+                                color = if (item.unread) c.textPrimary else c.textSecondary,
+                                fontWeight = if (item.unread) FontWeight.SemiBold else FontWeight.Normal,
+                            ),
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
+                        if (item.body.isNotEmpty()) {
+                            Text(
+                                item.body,
+                                style = Fm.text.bodySmall.copy(color = if (item.unread) c.textSecondary else c.textTertiary),
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        if (item.sync == InboxSyncState.Pending || item.sync == InboxSyncState.Failed) {
+                            Text(
+                                if (item.sync == InboxSyncState.Pending) "Waiting to sync" else "Could not sync",
+                                style = Fm.text.bodySmall.copy(color = if (item.sync == InboxSyncState.Failed) c.danger else c.textTertiary),
+                            )
+                        }
                     }
-                    if (item.sync == InboxSyncState.Pending || item.sync == InboxSyncState.Failed) {
-                        Text(
-                            if (item.sync == InboxSyncState.Pending) "Waiting to sync" else "Could not sync",
-                            style = Fm.text.labelSmall.copy(color = if (item.sync == InboxSyncState.Failed) c.danger else c.textTertiary),
-                        )
+                    if (item.unread) {
+                        Spacer(Modifier.width(FmSpace.x2))
+                        Box(Modifier.padding(top = 6.dp).size(10.dp).background(c.accent, CircleShape))
                     }
-                }
-                if (item.unread) {
-                    Spacer(Modifier.width(FmSpace.x2))
-                    Box(Modifier.padding(top = 6.dp).size(10.dp).background(c.accent, CircleShape))
                 }
             }
             FmDropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {

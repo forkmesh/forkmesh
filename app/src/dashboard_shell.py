@@ -224,6 +224,15 @@ PAGES = {
         "title": "Runners - ForkMesh",
         "description": "Agent runners and the sign-in of their Claude Code and Codex CLIs.",
     },
+    "pings": {
+        "view": "pings",
+        "section": "pings",
+        "nav": None,
+        "route": "/dashboard/pings",
+        "asset": "dashboard/pings/index.html",
+        "title": "Pings - ForkMesh",
+        "description": "Your ForkMesh pings: mentions, pull requests, assignments, shares, releases and host status changes, with unread filtering and mark as read.",
+    },
     "docs": {
         "view": "docs",
         "section": "docs",
@@ -402,6 +411,7 @@ CACHE_BUSTED_ASSETS = (
     # Rendered documentation library pages (app/tools/docs_site.py).
     "docs-page.js",
     "docs-page.css",
+    "docs-explore.js",
     # Per-page site bundles.
     "market-package.js",
     "market-package.css",
@@ -414,6 +424,7 @@ CACHE_BUSTED_ASSETS = (
     "security-report.js",
     "mirror-payouts.js",
     "start.js",
+    "start-discourse-mirror.js",
     "leaderboards.js",
     "ledger.js",
     "hackathon.js",
@@ -442,6 +453,7 @@ CACHE_BUSTED_ASSETS = (
     "dashboard-page-plugins.js",
     "dashboard-page-referrals.js",
     "dashboard-page-repo-activity.js",
+    "dashboard-page-repo-forum.js",
     "dashboard-page-tasks.js",
 )
 

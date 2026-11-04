@@ -1,6 +1,7 @@
 # Early iOS testers
 
-An administrator marks accounts as early iOS testers; every ad hoc iPhone
+Part of [the App docs](README.md). An administrator marks accounts as early
+iOS testers; every ad hoc iPhone
 build from the build Mac is emailed and pinged to them
 ([MAC_BUILD.md](../native/MAC_BUILD.md), "Publisher").
 
@@ -47,8 +48,7 @@ files one ping per flagged active account: kind `release_published`, `href`
 dedupe key `ios-build:<manifest-sha256>`. Accounts with Releases pings off
 report `not_filed`. A failed ping is printed and not retried.
 
-The ping is never emailed: the tester already has the build email, and a
-`release_published` ping would otherwise go out again through the ping email
-rail (instant or digest), so every build arrived twice. Pings with source
+The ping is never emailed: the tester already has the build email, and the
+ping email rail (instant or digest) would send every build twice. Pings with source
 `ios_build` are in `NOTIFICATION_EMAIL_SKIP_SOURCES` (`app/src/entry.py`) and
 stay in the bell and on the phone only.

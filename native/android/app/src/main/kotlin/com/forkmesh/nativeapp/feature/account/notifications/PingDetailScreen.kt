@@ -10,10 +10,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -36,13 +34,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.forkmesh.nativeapp.account.PING_DELETED_TEXT
-import com.forkmesh.nativeapp.account.PING_DETAIL_BACK
 import com.forkmesh.nativeapp.account.PING_DELETE_BODY
 import com.forkmesh.nativeapp.account.PING_DELETE_LABEL
 import com.forkmesh.nativeapp.account.PING_DELETE_TITLE
 import com.forkmesh.nativeapp.account.PING_DETAIL_TITLE
 import com.forkmesh.nativeapp.account.PingDetailFact
-import com.forkmesh.nativeapp.account.notificationIconForKind
+import com.forkmesh.nativeapp.account.notificationIcon
 import com.forkmesh.nativeapp.account.notificationPills
 import com.forkmesh.nativeapp.account.pingAgentPrompt
 import com.forkmesh.nativeapp.account.pingDeleteErrorText
@@ -210,7 +207,6 @@ class PingDetailScreen(
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = FmSpace.x4, vertical = FmSpace.x4),
             ) {
-                PingBackLink(PING_DETAIL_BACK, Modifier.padding(bottom = FmSpace.x2)) { navigator.pop() }
                 FmInlineStatus(deleteStatus, Modifier.padding(bottom = FmSpace.x3))
                 PingHero(ping)
                 if (openLabel != null) {
@@ -249,7 +245,7 @@ class PingDetailScreen(
                         )
                         FmRowDivider()
                         FmListRow(
-                            title = pingKindSettingsLabel(ping.kindLabel),
+                            title = pingKindSettingsLabel(ping.typeLabel),
                             leading = { FmIconTile(icon = "tune_rounded") },
                             onTap = { navigator.push(PingSettingsScreen(ping.kind)) },
                         )
@@ -293,7 +289,7 @@ private fun PingHero(ping: ForkNotification) {
                     .background(if (ping.isUnread) c.accentSubtle else c.bgRaised, CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
-                FmIcon(notificationIconForKind(ping.kind), size = 24.dp, tint = c.accent)
+                FmIcon(notificationIcon(ping.kind, ping.meta), size = 24.dp, tint = if (ping.isGoodNews) c.success else c.accent)
             }
             HGap(FmSpace.x3)
             FlowRow(
@@ -366,18 +362,5 @@ private fun sharePing(context: Context, ping: ForkNotification) {
         .putExtra(Intent.EXTRA_TEXT, pingAgentPrompt(ping))
     runCatching {
         context.startActivity(Intent.createChooser(send, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-    }
-}
-
-@Composable
-internal fun PingBackLink(label: String, modifier: Modifier = Modifier, onBack: () -> Unit) {
-    FmTextButton(
-        onClick = onBack,
-        modifier = modifier.offset(x = -FmSpace.x3).testTag("ping-detail-back"),
-        minHeight = 36.dp,
-    ) {
-        FmIcon("chevron_left", size = 18.dp)
-        Spacer(Modifier.width(FmSpace.x1))
-        Text(label)
     }
 }

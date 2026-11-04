@@ -104,6 +104,49 @@ class DataFolderTest {
         assertEq("chat", File(freshSupport, "chat-history/relay.json").readText())
     }
 
+    fun testTheAppFolderInsideFilesIsNeverCopiedIntoItself() {
+        val base = scratch()
+        val support = File(base, "app/files")
+        write(support, "chat-history/relay.json", "chat")
+        val root = File(support, DataFolder.DEFAULT_FOLDER_NAME)
+        val store = DataFolderStore(FileDataFolderIo(root))
+        val trees = listOf(DataFolderTree("support", support, setOf("projects")))
+        repeat(3) {
+            expect(store.prepare("android", 1L))
+            expect(store.prepareProject(DataFolderProject("forkmesh", "", "", "ForkMesh", "K")))
+            expect(store.writeSettings(DataFolder.exportSettings(mapOf("theme/mode" to "dark")), "forkmesh"))
+            expect(store.backup("forkmesh", trees).failed.isEmpty())
+        }
+        expect(!File(root, "forkmesh/data/core/support/${DataFolder.DEFAULT_FOLDER_NAME}").exists())
+        assertEq("chat", File(root, "forkmesh/data/chat/history/relay.json").readText())
+        expect(store.readSettings("forkmesh") != null)
+    }
+
+    fun testAnUpgradeKeepsTheOldNestedCopiesButStopsUsingThem() {
+        val base = scratch()
+        val support = File(base, "app/files")
+        val folder = DataFolder.DEFAULT_FOLDER_NAME
+        val root = File(support, folder)
+        val store = DataFolderStore(FileDataFolderIo(root))
+        expect(store.prepare("android", 1L))
+        write(root, "forkmesh/data/core/support/$folder/forkmesh/${DataFolder.SETTINGS_PATH}", "old")
+        write(root, "forkmesh/data/core/support/$folder/${DataFolder.MARKER_FILE}", "{}")
+        write(root, "forkmesh/data/chat/history/relay.json", "chat")
+        write(root, "forkmesh/${DataFolder.INDEX_PATH}",
+            """{"data/core/support/$folder/${DataFolder.MARKER_FILE}":{"local":"support/$folder/${DataFolder.MARKER_FILE}","sig":"1:1"},""" +
+                """"data/core/support/$folder/forkmesh/${DataFolder.SETTINGS_PATH}":{"local":"support/$folder/forkmesh/${DataFolder.SETTINGS_PATH}","sig":"1:1"},""" +
+                """"data/chat/history/relay.json":{"local":"support/chat-history/relay.json","sig":"1:1"}}""")
+
+        val fresh = File(base, "reinstalled/files")
+        assertEq(1, store.restore("forkmesh", listOf(DataFolderTree("support", fresh))).copied)
+        expect(!File(fresh, folder).exists())
+
+        write(support, "chat-history/relay.json", "chat")
+        store.backup("forkmesh", listOf(DataFolderTree("support", support)))
+        assertEq(listOf("data/chat/history/relay.json"), store.readIndex("forkmesh").keys.sorted())
+        assertEq("old", File(root, "forkmesh/data/core/support/$folder/forkmesh/${DataFolder.SETTINGS_PATH}").readText())
+    }
+
     fun testRestoreNeverLeavesTheProjectFolders() {
         val base = scratch()
         val root = File(base, DataFolder.DEFAULT_FOLDER_NAME)

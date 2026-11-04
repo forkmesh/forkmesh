@@ -203,6 +203,25 @@ def test_digest_mismatch_never_activates_or_migrates_a_package(tmp_path):
         ).fetchone() is None
 
 
+@pytest.mark.parametrize("claim", [
+    {"creator": {"id": "did:forkmesh:forkmesh", "handle": "forkmesh",
+                 "displayName": "ForkMesh", "verified": True}},
+    {"trust": {"signature": "verified-bundle"}},
+])
+def test_downloaded_package_cannot_claim_verified_trust(tmp_path, claim):
+    source = tmp_path / "source"
+    manifest = _package(source)
+    manifest.update(claim)
+    (source / "manifest.json").write_text(json.dumps(manifest))
+    archive = tmp_path / "demo.fmpkg"
+    digest, size = _archive(source, archive)
+    catalog = _catalog(tmp_path, archive, digest, size)
+    install_root = tmp_path / "installed"
+    with pytest.raises(MarketplaceError, match="cannot claim a verified"):
+        install_package(catalog, "demo-plugin", install_root, tmp_path / "device.sqlite")
+    assert not (install_root / "packages" / "demo-plugin").exists()
+
+
 def test_approved_manifest_digest_is_enforced_inside_valid_archive(tmp_path):
     source = tmp_path / "source"
     _package(source)
@@ -359,13 +378,13 @@ def test_desktop_packages_embed_only_named_repository_folders(tmp_path):
         "schemaVersion": 1,
         "sources": ["Plugin.cpp"],
         "mocHeaders": [],
-        "repositoryResources": ["www/docs"],
+        "repositoryResources": ["docs"],
     }
     (desktop / "build.json").write_text(json.dumps(descriptor))
     resources = generate_desktop_packages._descriptor(tmp_path)[6]
-    assert resources == [generate_desktop_packages.REPOSITORY_ROOT / "www" / "docs"]
+    assert resources == [generate_desktop_packages.REPOSITORY_ROOT / "docs"]
 
-    for bad in (["../etc"], ["/etc"], ["www/no-such-folder"], ["www/docs/README.md"], "www/docs"):
+    for bad in (["../etc"], ["/etc"], ["www/no-such-folder"], ["docs/README.md"], "docs"):
         descriptor["repositoryResources"] = bad
         (desktop / "build.json").write_text(json.dumps(descriptor))
         with pytest.raises(MarketplaceError):
@@ -376,11 +395,11 @@ def test_docs_package_bundles_the_web_library():
     repository = Path(__file__).resolve().parents[2]
     catalog = repository / "marketplace" / "catalog.json"
     qrc, cmake, _, plugin_qrcs = generate_desktop_packages.generate(catalog)
-    assert 'alias="packages/docs/repository/www/docs/README.md"' in plugin_qrcs["docs"]
-    assert 'alias="packages/docs/repository/www/docs/terminology.json"' in plugin_qrcs["docs"]
+    assert 'alias="packages/docs/repository/docs/README.md"' in plugin_qrcs["docs"]
+    assert 'alias="packages/docs/repository/docs/terminology.json"' in plugin_qrcs["docs"]
     assert "packages/docs/repository/" not in qrc
     assert 'alias="packages/docs/manifest.json"' in qrc
-    assert f'"{(repository / "www" / "docs").as_posix()}/*"' in cmake
+    assert f'"{(repository / "docs").as_posix()}/*"' in cmake
     manifest = load_manifest(repository / "marketplace" / "packages" / "docs" / "manifest.json")
     assert manifest["entrypoints"]["desktop"] == "builtin:docs"
     assert manifest["install"] == {

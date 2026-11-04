@@ -24,7 +24,7 @@ Kept: main, master, forkmesh/pulls, forkmesh/pull/*, --keep branches, the
 branches of open tasks in --tasks (the Tasks page list as JSON), the
 branches of agents that are running or have not finished, and worktrees with
 uncommitted files, a process inside them, or a path outside the worktree
-folders. Organization tasks are not touched (docs/tools/prune-merged.md).
+folders. Organization tasks are not touched (docs/tools/branch-cleanup.md).
 """
 MERGE_SUBJECT = re.compile(r"^Merge (?:branch )?'?([^' ]+)'? into main$")
 

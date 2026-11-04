@@ -144,7 +144,8 @@ sealed class Route {
     data object Docs : Route() { override val kind get() = Kind.Docs }
     data class Search(val query: String, val scope: SearchScope) : Route() { override val kind get() = Kind.Search }
     data object Notes : Route() { override val kind get() = Kind.Notes }
-    data class Note(val id: String) : Route() { override val kind get() = Kind.Note }
+    data class Note(val id: String, val comment: String? = null) : Route() { override val kind get() = Kind.Note }
+    data class NotePage(val id: String, val note: String? = null) : Route() { override val kind get() = Kind.NotePage }
     data class Tasks(val filter: String?) : Route() { override val kind get() = Kind.Tasks }
     data class Task(val id: String) : Route() { override val kind get() = Kind.Task }
     data class Calendar(val date: String?, val mode: CalendarMode) : Route() { override val kind get() = Kind.Calendar }
@@ -166,6 +167,8 @@ sealed class Route {
     data class Analytics(val section: String?) : Route() { override val kind get() = Kind.Analytics }
     data object Competitors : Route() { override val kind get() = Kind.Competitors }
     data class Invoices(val organization: String?, val invoice: String?) : Route() { override val kind get() = Kind.Invoices }
+    data class Surveys(val organization: String?, val survey: String?) : Route() { override val kind get() = Kind.Surveys }
+    data class Booking(val booking: String?) : Route() { override val kind get() = Kind.Booking }
     data object Ads : Route() { override val kind get() = Kind.Ads }
     data class Ledger(val section: String?) : Route() { override val kind get() = Kind.Ledger }
     data class Vault(val section: String?) : Route() { override val kind get() = Kind.Vault }
@@ -181,6 +184,7 @@ sealed class Route {
     data object Speech : Route() { override val kind get() = Kind.Speech }
     data object GlassesAlert : Route() { override val kind get() = Kind.GlassesAlert }
     data object PhoneSecurity : Route() { override val kind get() = Kind.PhoneSecurity }
+    data object SilentSpeech : Route() { override val kind get() = Kind.SilentSpeech }
     data class Ember(val repo: RepoRef?) : Route() { override val kind get() = Kind.Ember }
     data class Strata(val repo: RepoRef?) : Route() { override val kind get() = Kind.Strata }
     data class Synapse(val repo: RepoRef?) : Route() { override val kind get() = Kind.Synapse }
@@ -193,6 +197,7 @@ sealed class Route {
     data object VideoMixDjStudio : Route() { override val kind get() = Kind.VideoMixDjStudio }
     data class Poker(val table: String?) : Route() { override val kind get() = Kind.Poker }
     data class InstanceFeed(val post: String?) : Route() { override val kind get() = Kind.InstanceFeed }
+    data object Mastodon : Route() { override val kind get() = Kind.Mastodon }
     data object SecureDrive : Route() { override val kind get() = Kind.SecureDrive }
     data object Files : Route() { override val kind get() = Kind.Files }
     data object Nexus : Route() { override val kind get() = Kind.Nexus }
@@ -230,17 +235,17 @@ sealed class Route {
         Chat("chat", "WS13"), Channel("channel", "WS13"), Thread("thread", "WS13"), Dm("dm", "WS13"),
         Discord("discord", "WS13"),
         Profile("profile", "WS18"), People("people", "WS18"), Docs("docs", "existing"), Search("search", "WS8"),
-        Notes("notes", "WS15"), Note("note", "WS15"), Tasks("tasks", "WS15"), Task("task", "WS15"),
-        Calendar("calendar", "WS15"), Event("event", "WS15"), Timers("timers", "WS15"),
+        Notes("notes", "WS15"), Note("note", "WS15"), NotePage("notePage", "WS15"), Tasks("tasks", "WS15"), Task("task", "WS15"),
+        Calendar("calendar", "WS15"), Event("event", "WS15"), Booking("booking", "WS15"), Timers("timers", "WS15"),
         Desktops("desktops", "WS16"), Desktop("desktop", "WS16"), Hosts("hosts", "WS7"), Host("host", "WS7"),
         Provision("provision", "WS16"), Network("network", "WS20"), Node("node", "WS16"),
         Market("market", "WS19"), Package("package", "WS19"), Crm("crm", "WS19"), Contact("contact", "WS19"),
         CrmOrg("crmOrg", "WS19"), Marketing("marketing", "WS19"), Analytics("analytics", "WS19"),
-        Competitors("competitors", "WS19"), Invoices("invoices", "WS19"), Ads("ads", "WS19"), Ledger("ledger", "WS19"),
+        Competitors("competitors", "WS19"), Invoices("invoices", "WS19"), Surveys("surveys", "WS19"), Ads("ads", "WS19"), Ledger("ledger", "WS19"),
         Vault("vault", "WS21"), Coves("coves", "WS21"), Cove("cove", "WS21"), Calories("calories", "existing"),
         Steps("steps", "existing"), Water("water", "existing"), Sleep("sleep", "existing"), SugarBreak("sugarBreak", "existing"),
         Stretch("stretch", "existing"), FoodGuide("foodGuide", "existing"), Speech("speech", "existing"),
-        GlassesAlert("glassesAlert", "existing"), PhoneSecurity("phoneSecurity", "existing"), Ember("ember", "existing"), Strata("strata", "existing"), Synapse("synapse", "existing"), OpenWrtRouter("openWrtRouter", "existing"), FaceChanger("faceChanger", "existing"), AppStoreStatus("appStoreStatus", "WS20"), Runners("runners", "WS7"), VideoMixDjStudio("videoMixDjStudio", "S045"), Poker("poker", "S046"), Usage("usage", "WS10"), RssReader("rssReader", "WS20"), InstanceFeed("instanceFeed", "WS20"), SecureDrive("secureDrive", "WS23"), Files("files", "existing"), Nexus("nexus", "existing"), Workflows("workflows", "existing"),
+        GlassesAlert("glassesAlert", "existing"), PhoneSecurity("phoneSecurity", "existing"), SilentSpeech("silentSpeech", "existing"), Ember("ember", "existing"), Strata("strata", "existing"), Synapse("synapse", "existing"), OpenWrtRouter("openWrtRouter", "existing"), FaceChanger("faceChanger", "existing"), AppStoreStatus("appStoreStatus", "WS20"), Runners("runners", "WS7"), VideoMixDjStudio("videoMixDjStudio", "S045"), Poker("poker", "S046"), Usage("usage", "WS10"), RssReader("rssReader", "WS20"), InstanceFeed("instanceFeed", "WS20"), Mastodon("mastodon", "WS20"), SecureDrive("secureDrive", "WS23"), Files("files", "existing"), Nexus("nexus", "existing"), Workflows("workflows", "existing"),
         LocalAI("localAI", "existing"), Activity("activity", "WS20"), Logs("logs", "WS20"), Diagnostics("diagnostics", "WS20"),
         Stats("stats", "WS20"), Status("status", "WS20"), Admin("admin", "WS20"),
         Settings("settings", "WS18"), Orgs("orgs", "existing"), Org("org", "existing"), InstalledApps("installedApps", "WS22"),

@@ -1,19 +1,20 @@
 # Security findings register
 
-Reviewed through: `fc80139d04` on 2026-10-28 (full-system sweep, two rounds; S-38 to S-83)
+Reviewed through: `8b4a8a7598` on 2026-11-04 (full-system sweep, three rounds; S-38 to S-92)
 
 Sentinel ([sentinel.md](sentinel.md)) keeps this page: fixed findings with the
 test that guards each fix, and open items that are already public. Unfixed
 findings that are not public are tracked on the organization task board in
 the `security` department and appear here only once their fix is on main.
-Update the checkpoint line after each review.
+Update the checkpoint line after each review. Part of
+[Security](README.md).
 
 Status words: **Fixed** means the fix is on main and the Guard test fails
 without it, and the guard runs in a gate: the `security` suite of
 `tools/run_critical_tests.py` (CI, the quality gate and the auto-deploy
 must-pass set) holds the S-2, S-5 and C-H5 guards, the account TOTP gate and
 the destructive-delete contract; the Go guards run with `go test` in
-`server/` in the same gates. Until 2026-10-15 none of these ran in any gate.
+`server/` in the same gates.
 **Fixed, unguarded** means no test guards it yet. **Partial** and **Open** are
 used only for items already public. Add a finding as one row;
 the last cell names the guard test (paths must exist).
@@ -134,18 +135,27 @@ IDs: `C-` code audit, `I-` infrastructure audit, `S-<n>` later reviews.
 | S-81 | The shared package mail sender had no per-account cap and used a caller-chosen display name | Low | Fixed | `app/tests/test_mail_budget.py` |
 | S-82 | Commit-id reads could force unbounded graph walks on the gateway | Low | Fixed | `app/tests/test_mirror_gateway.py` |
 | S-83 | One request from a fleet runner could get its address probe-banned from the App | Low | Fixed | `deploy/tests/test_no_main_node.py` |
+| S-84 | A signature re-encoded in its last base64url character decoded to the same bytes and slipped past the issue-event replay checks | Medium | Fixed | `app/tests/test_signature_encoding.py`, `server/intake_test.go`, `desktop/tests/test_crypto.cpp` |
+| S-85 | The host decoded a static path twice, so `%255C` gave an off-site redirect and `%252F` skipped worker-first routes | Medium | Fixed | `app/tests/host/test_host_shim_units.py` |
+| S-86 | The admin database editor could write the autoscale tables, which add WireGuard peers and firewall sources on every core | High | Fixed | `app/tests/test_admin_database.py`, `deploy/tests/test_fleet_peers.py` |
+| S-87 | A platform admin could set `wantsAgent` on any owner's issue and start a coding agent on their desktop | Medium | Fixed | `app/tests/test_repo_agents.py` |
+| S-88 | Vault: an organization auditor could edit logins shared with write, and an owner who left an organization still saw its roster and filed grants to it | Medium | Fixed | `marketplace/packages/vault/tests/test_vault_api.py` |
+| S-89 | A downloaded package could declare its own verified creator and signature badges | Medium | Fixed | `marketplace/tests/test_marketplace_lifecycle.py` |
+| S-90 | Siri could tell, continue or stop agents from a locked iPhone; a minimized Android call kept the app over the lock screen; non-reply notification actions were mutable | Medium | Fixed, unguarded | |
+| S-91 | A catalog clone URL could name a local folder; the single-instance socket trusted another user's listener; the identity key was briefly written with the umask | Low | Fixed | `app/tests/test_catalog_clone_url.py` (socket and key file unguarded) |
+| S-92 | Log redaction missed encrypted private keys and later cookies on a `Cookie:` line | Low | Fixed | `deploy/tests/test_logread.py` |
 
 ## Open, already public
 
 | Item | Severity | Status | Where described | What remains |
 | --- | --- | --- | --- | --- |
-| TM-004 legacy issue, discussion and pull records bind no repository | High | Partial | protocol threat model, [README.md](README.md) | v1 intake closes at `EVENT_SIGNATURE_V1_INTAKE_UNTIL_MS` |
+| TM-004 legacy issue, discussion and pull records bind no repository | High | Partial | protocol threat model, [legacy event schemes](../protocol/signatures-and-authentication.md#repository-bound-legacy-event-schemes) | v1 intake closes at `EVENT_SIGNATURE_V1_INTAKE_UNTIL_MS` |
 | TM-006 catalog v1 signatures bind no visibility | High | Open | protocol threat model | v2 signing exists; v1 still accepted |
 | TM-008 a relay or mirror can withhold events | High | Open | protocol threat model | not started |
 | TM-014 tunnelled node traffic trusts the relay | High | Open | protocol threat model | not started |
 | TM-018 no account-key recovery protocol | High | Open | protocol threat model | not started |
-| Runner jobs share one uid; no private tmp or read-only system in the job scope | High | Partial | [RUNNERS.md](../RUNNERS.md) | job user, egress rules, owner opt-in and per-job grants are in |
-| Runner jobs run with the persistent HOME, not their session home | High | Open | [RUNNERS.md](../RUNNERS.md) | `HOME` must be set inside the scope after the uid switch |
+| Runner jobs share one uid; no private tmp or read-only system in the job scope | High | Partial | [runners](../operations/runners.md) | job user, egress rules, owner opt-in and per-job grants are in |
+| Runner jobs run with the persistent HOME, not their session home | High | Open | [runners](../operations/runners.md) | `HOME` must be set inside the scope after the uid switch |
 | Executable proof for agent boundaries | High | Partial | [agent-host-boundaries.md](agent-host-boundaries.md) | extend fixtures and checks |
 
 ## Private and operator-owned

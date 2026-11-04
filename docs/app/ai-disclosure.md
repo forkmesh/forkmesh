@@ -1,14 +1,15 @@
 # AI disclosure on pull requests and the issue AI prompt
 
-Two small features for repositories that take AI-assisted contributions:
+Part of [the App docs](README.md). Two features for repositories that take
+AI-assisted contributions:
 
 1. a pull request can say which AI model(s) helped write it, and a repository
    can make that statement required;
 2. every open issue shows a one-line prompt a contributor copies into their
    coding agent.
 
-Both are off-the-shelf: a repository opts in with files on its default branch,
-and nothing changes for a repository without them.
+A repository opts in with files on its default branch; nothing changes for a
+repository without them.
 
 ## Repository settings
 
@@ -17,7 +18,7 @@ and nothing changes for a repository without them.
 | `.forkmesh/pulls.json` | `"requireAiDisclosure": true` | A pull request must say which AI model was used (or `None`). Anything other than JSON `true` means optional. |
 | `.forkmesh/issues.json` | `"aiPromptTemplate": "..."` | Replaces the default issue prompt. At most 500 characters, folded to one line. |
 | `.forkmesh/pulls.json` | `"reviewPromptTemplate": "..."` | Replaces the default review prompt ("Copy review prompt") on open pull requests ([pull-review-prompt.md](pull-review-prompt.md)). |
-| `.forkmesh/issues.json` | `"assignmentHours": 24` | Shows each assignee a deadline bar ([issue-assignment-deadline.md](issue-assignment-deadline.md)). |
+| `.forkmesh/issues.json` | `"assignmentHours": 24` | Shows each assignee a deadline bar ([issue-assignment.md](issue-assignment.md#assignment-deadline)). |
 | `AI_POLICY.md` (repository root) | present or not | The composer links to it next to the AI model field. |
 
 Example:
@@ -58,11 +59,11 @@ aiModel: Claude Opus 5.5
 ```
 
 It is not part of the signed canonical (`title`, `base`, `head`, `patch`,
-`commits`). That canonical is verified by the browser, the relay
-(`events.py`), the mirror gateway and the Qt desktop, and adding a field would
-make every existing verifier reject new pull requests. The description is not
-signed either; the disclosure has the same standing as the description: the
-submitter's statement, bound to the submission by the relay that accepted it.
+`commits`): the browser, the relay (`events.py`), the mirror gateway and the
+Qt desktop all verify that canonical, and a new field would make every
+existing verifier reject new pull requests. Like the (also unsigned)
+description, it is the submitter's statement, bound to the submission by the
+relay that accepted it.
 
 Writers that carry the field: the Go mirror node (`server/intake.go`
 `pullMarkdown`, for direct intake and inbox drains) and the Qt desktop
@@ -102,14 +103,11 @@ the warning badge.
 
 ### Agent-created pull requests
 
-Agents get a refusal with an actionable message rather than a silently
-accepted pull request with a warning. A refusal arrives in the same call the
-agent made, so the agent can add `aiModel` and resend in the same session; a
-warning badge is invisible to the agent and leaves the follow-up to a human
-reviewer. The fallbacks make the refusal rare in practice: most coding agents
-already add a `Co-Authored-By:` trailer naming the model, and ForkMesh runner
-jobs add the attested `ForkMesh-Agent:` trailer, so their pull requests pass
-unchanged. The web routes that open pull requests for agents pass the model
+Agents get a refusal rather than an accepted pull request with a warning: the
+refusal arrives in the call the agent made, so it can add `aiModel` and
+resend, while a badge is invisible to it. The fallbacks make refusals rare:
+most coding agents add a `Co-Authored-By:` trailer naming the model, and
+runner jobs add the attested `ForkMesh-Agent:` trailer. The web routes that open pull requests for agents pass the model
 explicitly (`orgAgentOpenPull` sends the session's model or provider; a
 `.forkmesh/pull-batch.json` row or the whole file may carry `aiModel`).
 
@@ -143,11 +141,15 @@ none, and nothing otherwise.
 
 ## Issue AI prompt
 
-Open issues show a box under the title row with the prompt in one truncated
-line (full text in the tooltip) and a **Copy prompt** button. Copying uses the
-dashboard's shared `data-dashboard-copy` handler (Clipboard API with a
-textarea fallback) and swaps the label to **Copied**. Closed issues show no
-box. Signed-out visitors see and copy it too.
+Open issues show the prompt in the sidebar's **Agent** section, under the
+agent's status: the whole prompt in small monospaced text, then a compact
+**Copy prompt** button beside **Copy MCP prompt**. A separate AI prompt
+section repeated what the Agent section is for, so the two were folded into
+one. Copying uses the dashboard's shared `data-dashboard-copy` handler
+(Clipboard API with a textarea fallback) and swaps the label to **Copied**.
+Closed issues, and instances with the `issue-ai-prompt` plugin off, show no
+prompt and keep **Copy MCP prompt**. Signed-out visitors see and copy the
+prompt too.
 
 The default is agent-neutral:
 
@@ -168,16 +170,15 @@ button.
 ### First paint
 
 The issue page is server-rendered (`app/host/forkmesh_host/repo_ssr_issue.py`)
-and the dashboard keeps that markup until its own render, so both draw the box
-identically. `repo_views.plan_issue` reads the three settings files in the
-same `blobs` request the dashboard makes, so the template is in the bundle the
-dashboard seeds from, and the server renders with the template the dashboard
-will use. `repo_ssr.fetch` records the request's origin
+and the dashboard keeps that markup until its own render, so both must draw
+the box identically. `repo_views.plan_issue` reads the three settings files in
+the same `blobs` request the dashboard makes, so both render with the same
+template. `repo_ssr.fetch` records the request's origin
 (`x-forwarded-proto`-aware) so the server's URL and host match
 `publicSiteOrigin()`; the official service hosts map to `https://forkmesh.com`
-as in `02-helpers.js`. The copy-link button now uses the same absolute URL.
-The issue skeleton draws the box too, from cached settings, so in-app
-navigation does not shift the page either.
+as in `02-helpers.js`. The copy-link button uses the same absolute URL. The
+issue skeleton draws the box from cached settings, so in-app navigation does
+not shift the page.
 
 The issue list has no per-row copy button: rows are whole-row links, and a
 button inside them would need its own event handling and SSR parity for the

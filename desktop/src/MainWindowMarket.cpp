@@ -2321,6 +2321,10 @@ QPixmap MainWindow::marketPreviewPixmap(const QString &path, const QSize &box,
             (image.width() > box.width() || image.height() > box.height()))
             image = image.scaled(box, Qt::KeepAspectRatio,
                                  Qt::SmoothTransformation);
+        if (!image.isNull())
+            image.convertTo(image.hasAlphaChannel()
+                                ? QImage::Format_ARGB32_Premultiplied
+                                : QImage::Format_RGB32);
         return image;
     }));
     return QPixmap();
@@ -2329,7 +2333,8 @@ QPixmap MainWindow::marketPreviewPixmap(const QString &path, const QSize &box,
 void MainWindow::applyMarketPreview(const QString &key, const QImage &image)
 {
     const QPixmap pixmap =
-        image.isNull() ? QPixmap() : QPixmap::fromImage(image);
+        image.isNull() ? QPixmap()
+                       : QPixmap::fromImage(image, Qt::NoOpaqueDetection);
     m_marketPreviewCache.insert(key, pixmap);
     const bool flushQueued = !m_marketPreviewArrived.isEmpty();
     m_marketPreviewArrived.insert(key, pixmap);
@@ -4788,6 +4793,7 @@ forkmesh::market::NativePackageHost MainWindow::nativePackageHost(
     host.accountName = [this] {
         return AccountCapability::normalizedAccount(m_accountName);
     };
+    host.accountSignedIn = [this] { return hasActiveAccountSession(); };
     host.openDirectMessage = [this](const QString &account) {
         const QString name = account.trimmed().toLower();
         if (forkmesh::ui::isValidNodeName(name))
@@ -4834,6 +4840,8 @@ forkmesh::market::NativePackageHost MainWindow::nativePackageHost(
         openNetworkShareLocation(url, guest);
     };
     host.openWebPage = [this](const QString &path) {
+        if (openNativePackageWebPage(path))
+            return;
         const QUrl url = forkmesh::market::nativePackageWebPageUrl(
             catalogApiUrl(), path);
         if (!url.isValid()) {
@@ -4881,6 +4889,40 @@ forkmesh::market::NativePackageHost MainWindow::nativePackageHost(
                 done({false, false, QStringLiteral("No password manager is installed."), {}});
         };
     }
+    if (permissionIds.contains(QStringLiteral("social.mastodon.signin")))
+        host.mastodonSignIn = [this] {
+            const QString mastodon = QStringLiteral("mastodon");
+            if (!m_packageRegistry || !m_packageRegistry->isInstalledHere(mastodon))
+                return QJsonObject();
+            const QJsonArray accounts =
+                QJsonDocument::fromJson(m_packageRegistry
+                                            ->packageSetting(mastodon, QStringLiteral("accounts"))
+                                            .toString()
+                                            .toUtf8())
+                    .array();
+            const QString active =
+                m_packageRegistry->packageSetting(mastodon, QStringLiteral("active")).toString();
+            QJsonObject chosen;
+            for (const QJsonValue &value : accounts) {
+                const QJsonObject account = value.toObject();
+                const QString instance = account.value(QStringLiteral("instance")).toString();
+                const QString id = account.value(QStringLiteral("id")).toString();
+                const QString acct = account.value(QStringLiteral("acct")).toString();
+                if (instance.isEmpty() || acct.isEmpty() ||
+                    account.value(QStringLiteral("token")).toString().isEmpty())
+                    continue;
+                const bool isActive =
+                    instance + QLatin1Char('|') + (id.isEmpty() ? acct : id) == active;
+                if (chosen.isEmpty() || isActive)
+                    chosen = QJsonObject{
+                        {QStringLiteral("instance"), instance},
+                        {QStringLiteral("token"), account.value(QStringLiteral("token"))},
+                        {QStringLiteral("acct"), acct}};
+                if (isActive)
+                    break;
+            }
+            return chosen;
+        };
     if (permissionIds.contains(QStringLiteral("repository.read")) ||
         permissionIds.contains(QStringLiteral("repository.activity.read"))) {
         host.repositories = [this] { return nativePackageRepositories(); };
@@ -4949,8 +4991,15 @@ forkmesh::market::NativePackageHost MainWindow::nativePackageHost(
             if (url.scheme() != base.scheme() || url.host() != base.host() ||
                 url.port() != base.port())
                 return QString();
-            return accountSessionTokenForUrl(url);
+            const QString token = accountSessionTokenForUrl(url);
+            if (token.isEmpty() && hasActiveAccountSession())
+                QTimer::singleShot(0, this, [this] { ensureAccountSession(); });
+            return token;
         };
+        host.requestAccountSession =
+            [this](std::function<void(const QString &)> done) {
+                ensureAccountSession(std::move(done));
+            };
         host.signProof = [this, contributionCopy](
                              const QString &proof, const QString &resource,
                              QString *signer, QString *ts, QString *sig) {
@@ -5017,8 +5066,21 @@ void MainWindow::syncNativePackagePages()
     if (desired == m_nativePackagePagesWanted)
         return;
 
+    const auto built = [this](const QString &id, const QString &entrypoint) {
+        for (const NativePackagePage &page : std::as_const(m_nativePackagePages)) {
+            if (page.id == id && page.entrypoint == entrypoint)
+                return true;
+        }
+        return false;
+    };
+    QList<NativePackagePage> removed;
+    for (qsizetype i = m_nativePackagePages.size() - 1; i >= 0; --i) {
+        const NativePackagePage &page = m_nativePackagePages.at(i);
+        if (!desired.contains(qMakePair(page.id, page.entrypoint)))
+            removed.prepend(m_nativePackagePages.takeAt(i));
+    }
     bool removingCurrent = false;
-    for (const NativePackagePage &page : std::as_const(m_nativePackagePages)) {
+    for (const NativePackagePage &page : std::as_const(removed)) {
         removingCurrent = removingCurrent ||
             (page.widget && m_sectionStack->currentWidget() == page.widget) ||
             (page.placeholder &&
@@ -5026,7 +5088,7 @@ void MainWindow::syncNativePackagePages()
     }
     if (removingCurrent)
         showSection(kMarketSectionIndex);
-    for (const NativePackagePage &page : std::as_const(m_nativePackagePages)) {
+    for (const NativePackagePage &page : std::as_const(removed)) {
         if (page.window) {
             page.window->removeEventFilter(this);
             page.window->hide();
@@ -5046,16 +5108,24 @@ void MainWindow::syncNativePackagePages()
             page.widget->deleteLater();
         }
     }
-    m_nativePackagePages.clear();
     m_nativePackagePagesWanted = desired;
     const quint64 generation = ++m_nativePackagePagesGeneration;
-    if (m_staggerNativePackagePages) {
+    QList<QPair<QString, QString>> missing;
+    for (const auto &[id, entrypoint] : desired) {
+        if (!built(id, entrypoint))
+            missing.append({id, entrypoint});
+    }
+    if (m_staggerNativePackagePages ||
+        (missing.size() > 1 && !m_nativePackagePages.isEmpty())) {
+        if (!removed.isEmpty())
+            finishNativePackagePages();
         buildNextNativePackagePage(generation, 0);
         return;
     }
-    for (const auto &[id, entrypoint] : desired)
+    for (const auto &[id, entrypoint] : missing)
         addNativePackagePage(id, entrypoint);
-    finishNativePackagePages();
+    if (!removed.isEmpty() || !missing.isEmpty())
+        finishNativePackagePages();
 }
 
 void MainWindow::buildDeferredNativePackagePages()
@@ -5107,6 +5177,13 @@ void MainWindow::buildNextNativePackagePage(quint64 generation, int index)
         return;
     }
     const auto [id, entrypoint] = m_nativePackagePagesWanted.at(index);
+    bool built = false;
+    for (const NativePackagePage &page : std::as_const(m_nativePackagePages))
+        built = built || (page.id == id && page.entrypoint == entrypoint);
+    if (built) {
+        buildNextNativePackagePage(generation, index + 1);
+        return;
+    }
     addNativePackagePage(id, entrypoint);
     finishNativePackagePages();
     QTimer::singleShot(0, this, [this, generation, index] {
@@ -5244,6 +5321,22 @@ void MainWindow::openNativePackageLink(const QString &id)
         return;
     }
     QDesktopServices::openUrl(url);
+}
+
+bool MainWindow::openNativePackageWebPage(const QString &path)
+{
+    const QString command = QStringLiteral("webPage.open");
+    const QJsonObject args{{QStringLiteral("path"), path}};
+    QList<QPointer<forkmesh::market::NativePackageWidget>> widgets;
+    for (const NativePackagePage &page : std::as_const(m_nativePackagePages))
+        widgets.append(page.widget);
+    for (const QPointer<forkmesh::market::NativePackageWidget> &widget :
+         std::as_const(widgets)) {
+        if (widget && widget->acceptsHostCommand(command) &&
+            widget->hostCommand(command, args))
+            return true;
+    }
+    return false;
 }
 
 // The top search box answers from each package's loaded records, and a page
@@ -5607,6 +5700,12 @@ forkmesh::market::NativePackageWidget *MainWindow::quickAddPackagePromptTarget()
             return page.widget;
     }
     return nullptr;
+}
+
+bool MainWindow::quickAddPackageAppliesToOpen() const
+{
+    const forkmesh::market::NativePackageWidget *target = quickAddPackagePromptTarget();
+    return target && target->hostPromptTarget().appliesToOpen;
 }
 
 bool MainWindow::submitQuickAddToPackage()

@@ -49,6 +49,11 @@ PULL_APPROVALS = ("", "author", "workflows", "approved")
 WAITING_TTL_MS = 7 * 24 * 60 * 60 * 1000
 PULL_RUNS_LIMIT = 40
 PULL_JOBS_PER_HEAD = 16
+APPROVAL_KIND = "action_approval"
+APPROVAL_CATEGORY = "actions-approval"
+FAILED_KIND = "action_failed"
+FAILED_CATEGORY = "ci-failed"
+NOTIFY_WORKFLOWS = 4
 
 
 # refs/heads/pr/<account>/ is written by contributors without write access
@@ -300,7 +305,8 @@ async def sweep(runtime, now):
     await runtime.d1_run(
         "UPDATE repo_action_jobs SET status='expired',"
         "note='No runner took this job within a day.',updated_at=? "
-        "WHERE status='queued' AND created_at<?", now, now - QUEUED_TTL_MS)
+        "WHERE status='queued' AND MAX(created_at,updated_at)<?",
+        now, now - QUEUED_TTL_MS)
     await runtime.d1_run(
         "DELETE FROM repo_action_logs WHERE job_id IN (SELECT id FROM "
         "repo_action_jobs WHERE updated_at<? AND status NOT IN "
@@ -346,6 +352,67 @@ def _origin_host(origin):
     if "://" in text:
         text = text.split("://", 1)[1]
     return text.split("/", 1)[0].split(":", 1)[0].lower()
+
+
+def _workflow_label(path):
+    name = str(path or "").rsplit("/", 1)[-1]
+    return _line(name, 96) or "workflow"
+
+
+async def _notify(runtime, kind, owner, repo, title, body, href, dedupe,
+                  meta):
+    notify = getattr(runtime, "notify_actions", None)
+    if not callable(notify):
+        return 0
+    try:
+        return await notify(kind, owner, repo, title, body, href, dedupe,
+                            meta) or 0
+    except Exception:
+        return 0
+
+
+async def notify_approval(runtime, owner, repo, number, head, workflows,
+                          job_id, reason, author="", title=""):
+    labels = [_workflow_label(path) for path in workflows][:NOTIFY_WORKFLOWS]
+    if len(workflows) > NOTIFY_WORKFLOWS:
+        labels.append("%d more" % (len(workflows) - NOTIFY_WORKFLOWS))
+    why = ("it changes files under .forkmesh/" if reason == "workflows"
+           else (author or "the author") + " is not trusted to run code here")
+    lines = [_line(title, 160)] if _line(title, 160) else []
+    lines.append("Waiting: " + ", ".join(labels) + " (" + why + ").")
+    meta = {"category": APPROVAL_CATEGORY, "number": number, "head": head,
+            "runId": job_id * RUN_ID_STRIDE, "reason": reason}
+    if author:
+        meta["author"] = author
+    return await _notify(
+        runtime, APPROVAL_KIND, owner, repo, "Checks need your approval",
+        "\n".join(lines), "/%s/%s/pull/%d/checks" % (owner, repo, number),
+        "actions-approval:%s/%s:%d:%s" % (owner, repo.lower(), number, head),
+        meta)
+
+
+async def notify_failed(runtime, owner, repo, job_id, runs, branch, pull,
+                        commit):
+    failed = [run for run in runs if run.get("status") == "failed"]
+    run = failed[0] if failed else (runs[0] if runs else {})
+    run_id = _int(run.get("id")) or job_id * RUN_ID_STRIDE
+    workflow = _line(run.get("workflow"), 120) or "A workflow"
+    where = ("pull request #%d" % pull) if pull else (
+        _line(branch, 120) or "this repository")
+    body = "Failed on " + where
+    commit = str(commit or run.get("commit") or "")
+    if OID_RE.fullmatch(commit):
+        body += " at " + commit[:7]
+    if len(failed) > 1:
+        body += " (%d runs failed)" % len(failed)
+    meta = {"category": FAILED_CATEGORY, "runId": run_id,
+            "workflow": workflow}
+    if pull:
+        meta["number"] = pull
+    return await _notify(
+        runtime, FAILED_KIND, owner, repo, workflow + " failed", body + ".",
+        "/%s/%s/actions/runs/%d" % (owner, repo, run_id),
+        "actions-failed:%s/%s:%d" % (owner, repo.lower(), job_id), meta)
 
 
 def _event_payload(row, record, full_name):
@@ -655,7 +722,7 @@ async def report(runtime, runner, data):
     lease_id = str(data.get("leaseId") or "")[:64]
     row = await runtime.d1_first(
         "SELECT id,owner,repo,branch,status,event,payload,target_node,"
-        "token_hash,approval FROM "
+        "token_hash,approval,pull_number,commit_oid,workflow,actor FROM "
         "repo_action_jobs WHERE id=? AND runner=? AND lease_id=? "
         "AND lease_id!='' AND status IN " + _ACTIVE_SQL,
         job_id, runner["name"], lease_id) if job_id and lease_id else None
@@ -678,6 +745,15 @@ async def report(runtime, runner, data):
             "note=?,updated_at=? WHERE id=? AND lease_id=?",
             "This pull request changes files under .forkmesh/, so a "
             "maintainer has to approve the run.", now, job_id, lease_id)
+        pull = _int(row.get("pull_number"))
+        head = str(row.get("commit_oid") or "")
+        if pull and OID_RE.fullmatch(head):
+            owner, _public = await identity(
+                runtime, str(row["owner"]), str(row["repo"]))
+            await notify_approval(
+                runtime, owner, str(row["repo"]), pull, head,
+                [str(row.get("workflow") or "")], job_id, "workflows",
+                _line(row.get("actor"), 64))
         return runtime.response({"ok": True, "cancel": False})
     repo = str(row["repo"])
     owner, public = await identity(runtime, str(row["owner"]), repo)
@@ -727,6 +803,12 @@ async def report(runtime, runner, data):
     if terminal and row.get("token_hash"):
         await _admit_pushed_state(runtime, owner, repo,
                                   str(row.get("target_node") or ""))
+    if terminal and not cancelling and (status == "failed" or any(
+            run.get("status") == "failed" for run in runs)):
+        await notify_failed(
+            runtime, owner, repo, job_id, runs, str(row.get("branch") or ""),
+            _int(row.get("pull_number")),
+            stored["commit"] or str(row.get("commit_oid") or ""))
     return runtime.response({"ok": True, "cancel": cancelling})
 
 
@@ -1059,6 +1141,7 @@ async def enqueue_pull(runtime, owner, repo, number, head, head_ref,
         "Waiting for a maintainer to approve running this pull request's "
         "code.")
     queued = []
+    waiting = []
     for path in (await pull_workflows(runtime, owner, repo))[
             :PULL_JOBS_PER_HEAD]:
         if await runtime.d1_first(
@@ -1082,6 +1165,11 @@ async def enqueue_pull(runtime, owner, repo, number, head, head_ref,
             path)
         if row:
             queued.append(int(row["id"]))
+            waiting.append(path)
+    if status == "waiting" and queued:
+        await notify_approval(
+            runtime, owner, repo, number, head, waiting, queued[0], approval,
+            author, title)
     return queued
 
 

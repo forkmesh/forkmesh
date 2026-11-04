@@ -283,7 +283,9 @@ private:
     void saveSeen(const QString &room);
     void persist(const QString &key, std::function<std::function<QVariant()>()> snapshot,
                  bool immediately);
-    void refreshSafety(const QString &scope);
+    void refreshSafety(const QString &scope, bool quiet = false);
+    bool dropPredecessors(Scope &state, const QString &kid, const QString &acct,
+                          const QString &node, TrustRecord *heir);
     void notify(Event event, const QString &scope, const QString &kid);
 
     bool m_persistent = false;

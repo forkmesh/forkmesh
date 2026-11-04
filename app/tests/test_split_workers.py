@@ -72,7 +72,7 @@ def test_public_workers_and_consolidated_app_have_disjoint_runtime_roles():
         assert isinstance(manifest["assets"]["run_worker_first"], list)
         # World owns "/" as an application; www now also runs first on "/"
         # purely so acquisition attribution can observe the landing page
-        # server-side (docs/attribution.md) — it still serves the static
+        # server-side (docs/app/attribution.md) — it still serves the static
         # asset and stays free of every backend binding checked below.
         assert "/" in manifest["assets"]["run_worker_first"]
         assert [route["pattern"] for route in manifest.get("routes", [])] == hosts
@@ -133,7 +133,6 @@ def test_source_assets_are_physically_owned_by_their_worker():
     assert (REPOSITORY / "www/public/index.html").is_file()
     assert (REPOSITORY / "www/public/blog/one-app-one-mesh/index.html").is_file()
     assert (REPOSITORY / "www/public/docs/index.html").is_file()
-    assert (REPOSITORY / "www/docs/operations/worker-split.md").is_file()
     assert (REPOSITORY / "app/public/dashboard/repo.html").is_file()
     assert (REPOSITORY / "app/public/login.html").is_file()
     assert (REPOSITORY / "app/public/assets/file-icons/file_type_git.svg").is_file()

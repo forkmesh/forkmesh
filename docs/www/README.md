@@ -2,14 +2,37 @@
 
 The `forkmesh-www` Worker serves `forkmesh.com` and `www.forkmesh.com`: the
 landing page, marketing pages, the blog and RSS, the hosted documentation
-(including the Markdown library rendered from `www/docs/`), the installer
+(including the Markdown library rendered from `docs/`), the installer
 scripts, and shared site chrome. It is a small JavaScript Worker in front of
-Cloudflare Static Assets, deployed from `www/wrangler.production.toml`. The
-App (`app.forkmesh.com`) and World run on the core nodes; the Worker has no
-service binding and reaches the App over the public internet at
-`APP_ORIGIN`. Everything dynamic is proxied or redirected to the App (see
-[docs/app](../app/README.md)). `www/wrangler.toml` has no `name` and no
-route, so a deploy from it fails instead of creating a second Worker.
+Cloudflare Static Assets, the one part of the served stack still on
+Cloudflare; the App and World run on the core nodes, reached by DNS round
+robin, and everything dynamic is proxied or redirected to the App.
+
+| Page | Covers |
+| --- | --- |
+| [templates.md](templates.md) | Page templates, partials, logos and favicons, share images, the pre-push check |
+| [edge-client.md](edge-client.md) | The signed visitor header the Worker sends to the App, and how the host verifies it |
+| [page-performance.md](page-performance.md) | Load-time targets for repository pages and the techniques that meet them |
+| [auth-mesh.md](auth-mesh.md) | Auth pages: the dotted world map backdrop and the shared theme tokens |
+| [mobile-page.md](mobile-page.md) | The `/mobile` page and the landing page's phone section |
+| [investor-deck.md](investor-deck.md) | The investor deck's look, slides and page tracking |
+| [genie-spider.md](genie-spider.md) | The Genie spider guide on web pages |
+| [cloud-dragon.md](cloud-dragon.md) | The Cloud Dragon, a second mascot for web pages |
+| [site-crawler.md](site-crawler.md) | Crawler, the special agent that inspects the live site |
+| [docs-design.md](docs-design.md) | The docs look: one shell for the landing and library, the six pillars, interwoven navigation, theme-aware illustrations |
+| [docs-reader.md](docs-reader.md) | The docs library on phones: data views, diagrams, page map, dock, link previews and on-device suggestions |
+
+How the site fits the network: [architecture](../architecture.md) and
+[censorship resilience](../censorship-resilience.md); the App behind it:
+[app](../app/README.md) and [World](../world/README.md); deploys:
+[operations](../operations/README.md) and
+[auto-deploy](../operations/auto-deploy.md). Back to
+[all documentation](../README.md).
+
+The Worker has no service binding and reaches the App over the public
+internet at `APP_ORIGIN`. It is deployed from `www/wrangler.production.toml`;
+`www/wrangler.toml` has no `name` and no route, so a deploy from it fails
+instead of creating a second Worker.
 
 ## Code map
 
@@ -21,21 +44,24 @@ route, so a deploy from it fails instead of creating a second Worker.
 | `www/public/` | Static site: `index.html`, marketing pages, `blog/`, `docs/` (hand-written pages), `assets/`, `_redirects`, `_headers`. Every HTML page except `docs/git-compatibility/` is rendered from `www/templates/` |
 | `www/templates/`, `app/tools/site_templates.py` | Page templates with inheritance: `base.html`, `layouts/blog-post.html`, `partials/`, one child per page under `pages/`, and their renderer ([templates](templates.md)) |
 | `www/public/genie-spider.js` | The Genie spider on every website page and most App pages ([genie-spider](genie-spider.md)) |
+| `www/public/assets/cloud-dragon/` | The Cloud Dragon mascot, loaded only for those who choose it ([cloud-dragon](cloud-dragon.md)) |
 | `tools/site_crawler.py`, `.forkmesh/workflows/site-crawler.json` | Crawler, the special agent that crawls the live site read-only and reports broken links, SEO, accessibility and header issues ([site-crawler](site-crawler.md)) |
 | `www/public/site-header.js`, `home-header-auth.js`, `api-client.js` | Login state and the shared browser API client ([sessions](../app/auth-sessions.md)) |
 | `www/public/analytics.js`, `analytics-sdk.js` | Consent-gated first-party analytics ([analytics](../app/analytics.md)); the SDK is a generated copy. Conversion points (`data-forkmesh-product-action`) and markup experiments (`data-fm-experiment`) are listed under [conversion tracking](../app/analytics.md#conversion-tracking) |
 | `www/public/homepage-downloads.js` | The downloads card, fed by the signed release manifest |
 | `www/public/install.sh`, `uninstall.sh` | Desktop installer and uninstaller served at `forkmesh.com/install.sh` (default `FORKMESH_HOST` `https://forkmesh.com`) |
-| `www/public/auth-mesh.js`, `auth-mesh.css`, `assets/land-mask.png` | The dotted world map behind the login and signup pages, drawn from a generated Natural Earth land mask ([auth backdrop](auth-mesh.md)) |
-| `www/public/auth-page-theme.css` | Light and dark tokens shared by the auth pages ([auth theme](auth-theme.md)) |
+| `www/public/auth-mesh.js`, `auth-mesh.css`, `assets/land-mask.png` | The dotted world map behind the login and signup pages, drawn from a generated Natural Earth land mask ([auth pages](auth-mesh.md)) |
+| `www/public/auth-page-theme.css` | Light and dark tokens shared by the auth pages ([auth pages](auth-mesh.md#theme-tokens)) |
 | `www/public/ecosystem.html`, `#ecosystem` in `www/public/index.html` | The ForkMesh Ecosystem directory at `/ecosystem` and `/ecosystem/<slug>`, and its landing-page section, both read from `GET /api/ecosystem` ([docs/app/ecosystem.md](../app/ecosystem.md)) |
 | `www/public/features.html` | The `/features` catalog. Self-contained: its styles and an SVG icon sprite are inline and it runs no script of its own; see Traps |
 | `#everywhere` in `www/public/index.html`, `assets/everywhere/` | "Your mesh, wherever you work": the connection line, the three device mockups and their screenshots |
 | `www/public/mobile.html`, `mobile.css`, `assets/mobile/` | The `/mobile` page for the iPhone app in the landing page's style, built from real app screenshots ([mobile page](mobile-page.md)) |
 | `#mobile-app` in `www/public/index.html` | "Your mesh, now in your pocket": the landing page's call to action for the phone app ([mobile page](mobile-page.md#landing-page-section)) |
-| `www/docs/` | Public documentation library (Markdown and JSON schemas); see the note at the top of [www/docs/README.md](../../www/docs/README.md) |
+| `docs/` | Public documentation library (Markdown and JSON schemas); see the note at the top of [docs/README.md](../README.md) |
 | `app/tools/build_site_assets.py www` | Stages `www/dist` (the upload), rendering the docs library into it |
-| `app/tools/docs_site.py`, `docs_markdown.py`, `docs_history.py` | Render `www/docs/**/*.md` to `/docs/<path>/`, `/docs/library/`, `/docs/history/`, `/docs/documents/` |
+| `app/tools/docs_site.py`, `docs_markdown.py`, `docs_history.py` | Render `docs/**/*.md` to `/docs/<path>/`, `/docs/library/`, `/docs/history/`, `/docs/documents/` |
+| `app/tools/docs_art.py`, `www/templates/partials/docs-art/` | Theme-aware isometric illustrations and line icons for the docs ([docs design](docs-design.md)) |
+| `app/tools/docs_figures.py`, `www/public/docs-explore.js` | Figures from code blocks, the page map, the phone dock, link previews and suggestions ([docs reader](docs-reader.md)) |
 | `www/public/robots.txt`, `sitemap.xml` (built) | Crawler rules and the sitemap they point to; see Security |
 | `www/tests/` | Python and Node tests for routing, the docs library, headers and scripts |
 | `www/deploy.sh` | Calls `app/deploy.sh www`; see Traps |
@@ -56,10 +82,10 @@ Routing in `www/worker.js`, in order:
    redirect to the App.
 6. `/ecosystem/<slug>` serves `ecosystem.html`; `/market/<id>` serves the
    package page `market/<id>.html`, or `market.html` for an unknown id
-   ([package pages](../marketplace/README.md#share-links-and-package-pages));
+   ([package pages](../marketplace/market.md#share-links-and-package-pages));
    other `/<owner>/<repo>` paths redirect to the App.
 7. Everything else is a static asset, with first-party attribution captured
-   on page navigations (`fm_attr` cookie; `docs/attribution.md`).
+   on page navigations (`fm_attr` cookie; [attribution](../app/attribution.md)).
 
 Many redirects are also in `www/public/_redirects` so the asset router
 answers them without running the Worker. Static responses carry
@@ -73,42 +99,52 @@ answers them without running the Worker. Static responses carry
 - **Visitor identity.** Caddy on a core sees only a Cloudflare egress
   address for relayed requests, so the Worker signs the visitor's address
   and country into `x-forkmesh-edge-client` with `WWW_EDGE_SECRET`
-  (`deploy/core/edge_client.md`); the host verifies it before the App runs.
+  ([edge client](edge-client.md)); the host verifies it before the App runs.
   Without the secret no identity is forwarded.
 - **Downloads card.** `homepage-downloads.js` reads
   `.forkmesh/releases/<channel>/release.json`, its `.sig` and
   `desktop/CMakeLists.txt` from app.forkmesh.com, verifies the signature and
-  shows one card per platform. An asset missing from `latest` that is only
-  held back (Windows, macOS) does not drop straight to "Coming soon":
-  `earlierAsset` checks the signed
+  shows one card per platform ([release verification](../mirroring.md)).
+  An asset missing from `latest` that is only held back (Windows, macOS) does
+  not drop straight to "Coming soon": `earlierAsset` checks the signed
   `candidate-<major>.<minor>.<patch-1…patch-6>` manifests, newest first, and
-  links the first verified copy, labelled with that manifest's tag.
-  A per-platform rebuild (an asset with `build` above 1) shows `Build N` in
-  the card's details and in its title and label.
-  Two assets of one platform that share a `blob_sha256` render as one
-  "Universal" card. A newer `candidate-<version>` is named only when it
-  carries a verified asset the card offers.
-  Each card also shows how many times its blob was downloaded, and the status
-  line the total across every release, from
-  `/api/repo/forkmesh/forkmesh/releases/downloads`; when that call fails the
-  counts are simply left out.
-- **Hero install line.** A small Binary / Source switch sits inside the
-  homepage's install pill. Binary (the default) keeps the plain
-  `curl -fsSL https://forkmesh.com/install.sh | bash`; Source swaps the shown
-  and copied command to `… | FORKMESH_FROM_SOURCE=1 bash`, the installer's
-  explicit source build. The variable sits on the `bash` side of the pipe so
-  the installer, not `curl`, sees it. Both copies count as the same
+  links the first verified copy, labelled with that manifest's tag. A
+  per-platform rebuild (`build` above 1) shows `Build N` in the details, title
+  and label. Two assets of one platform that share a `blob_sha256` render as
+  one "Universal" card. A newer `candidate-<version>` is named only when it
+  carries a verified asset the card offers. Download counts per card and in
+  total come from `/api/repo/forkmesh/forkmesh/releases/downloads` and are
+  left out when that call fails.
+- **Hero install line.** A Binary / Source switch in the install pill.
+  Binary (default) shows `curl -fsSL https://forkmesh.com/install.sh | bash`;
+  Source shows `… | FORKMESH_FROM_SOURCE=1 bash` (the variable sits on the
+  `bash` side so the installer sees it). Both copies count as the
   `home-install-hero` product action.
 
 ## Protocols and interfaces
 
 - `/docs/library/` and every `/docs/<path>/` page are generated from
-  `www/docs/` by `app/tools/docs_site.py`. Relative links, heading anchors and
+  `docs/` by `app/tools/docs_site.py`. Relative links, heading anchors and
   schema references are resolved; Git history dates each page. Code and tests
-  reference many `www/docs/**` paths directly, so do not rename or move them.
+  reference many `docs/**` paths directly, so move or rename a page only
+  together with every reference ([writing docs](../README.md#writing-docs)).
+- Reading a docs page (`www/public/docs-page.js`): the "On this page" rail
+  highlights the section in view and slides a marker to it, highlights the
+  parent of an active subsection, and scrolls itself so the highlight stays
+  visible. The active section is the last heading above a line just below the
+  sticky toolbar, never above the headings' `scroll-margin-top`, so a clicked
+  link lands on its own entry; at the bottom of the page the last heading
+  visible wins, and a click holds its section for 900 ms while the smooth
+  scroll runs. The address follows with `history.replaceState` (no history
+  entries), `[` and `]` step between sections, a thin bar under the toolbar
+  shows reading progress, and below 1024 px, where the rail is hidden, a
+  sticky "On this page" bar names the current section and opens the outline.
+  A scroll listener batched to one `requestAnimationFrame` replaced the old
+  `IntersectionObserver` band, which only changed when a heading crossed it
+  and so went stale while scrolling up through a long section.
 - `/api/home-availability`: JSON for the homepage availability strip.
 - `x-forkmesh-edge-client: v1,<ip>,<country>,<ts>,<mac>`
-  (`deploy/core/edge_client.md`).
+  ([edge client](edge-client.md)).
 
 ## Configuration
 
@@ -130,79 +166,8 @@ python3 app/tools/build_site_assets.py www     # stage www/dist
 python3 -m pytest -q www/tests
 node --test www/tests/worker_routing.test.mjs
 node --test www/tests/genie_spider.test.mjs
+node --test www/tests/cloud_dragon.test.mjs
 ```
-
-## Logo files
-
-`logo.svg` at the repository root is the one source: `python3
-tools/render_logo.py` (pycairo, Pillow) rewrites every other logo file, then
-`python3 app/tools/embed_og_logo.py` re-bakes the og-card copy. Pages use
-`/assets/logo.svg` and list `/favicon/favicon.svg` after `favicon.ico`
-(`app/tests/test_favicon_metadata.py`); rasters stay where SVG is not accepted.
-
-That test holds every page under `app/public` and `www/public` to the same
-head: all four favicons, the manifest, `application-name`,
-`apple-mobile-web-app-title`, `theme-color` `#090909`, `color-scheme`
-`light dark` and a description. Only the www landing page may stay
-`color-scheme: dark`; the investor deck (`app/public/pitch-deck/deck.html`)
-may too, but since 19 Oct 2026 it advertises `light dark`. The
-deck's CSP (`PAGE_CSP` in `app/src/pitch_deck_runtime.py`) allows
-`manifest-src 'self'` so its manifest link loads. On 15 Oct 2026 the login
-page's `#0f0f0f` theme colour and the missing tags on the OAuth consent page,
-the deck and `ios-install.html` were the last failures.
-
-## Investor deck
-
-The deck a CRM contact opens (`/pitch-deck/<token>`, served by
-`app/src/pitch_deck_runtime.py`) was restyled on 19 Oct 2026 to match the
-homepage. It used to have its own violet-on-navy palette, and the deck goes
-out with every investor email. The wording of the 13 slides it had then did
-not change; a fourteenth was added on 20 Oct 2026 (below).
-
-- **Theme.** The tokens are the homepage's: white page, ink `#101012`, blue
-  accent, ABC Favorit headlines. Slides 3, 5, 7, 9 and 13 sit in the dark
-  rounded panel used by the homepage's feature section. Like the homepage,
-  the deck defaults to light. A choice saved under `forkmesh.theme` or
-  `forkmesh.dashboard.theme` wins, and the moon/sun button in the bar
-  writes both keys.
-- **Assets.** The cover and the closing slide draw the hero schematic
-  (copied from `www/public/index.html`, with moving pulses along its traces).
-  Images and the font load from `/assets/...` on the deck's own origin.
-  `PAGE_CSP` keeps `img-src 'self'` and `font-src 'self'`, so the deck must be
-  opened on forkmesh.com, which is where the CRM's `DECK_SITE_ORIGIN` links.
-  On app.forkmesh.com the screenshots and the font are missing.
-- **Product visuals.** The cover shows the desktop app on a laptop next to a
-  phone running the mobile app. On slide 4 a phone beside the six workflow
-  cards cycles through the matching mobile screens (prompt, model, agent,
-  inbox, diff, review). The cards themselves stay still: a highlight that
-  moved from card to card was taken out at the user's request. Slide 5 fans three phone screens. The
-  numbers count up, the use-of-funds bars fill and the ARR ladder steps in
-  when their slide scrolls into view. `prefers-reduced-motion` and print show
-  the final state.
-- **Beyond the desk (slide 7).** Added on 20 Oct 2026 after Roadmap to show
-  the watch app and the AR/XR glasses work, under the tagline the founders
-  chose. Three treatments were compared: a flat product shot, CSS 3D glasses
-  that turn with the pointer, and a view through the lenses. The last one won:
-  the workspace (the desktop app and a Claude Code session opening a pull
-  request) appears only inside the lenses of AOC Air Mega-style aviator AR
-  glasses, a blurred copy glows behind them, and the scene shifts a little
-  with the pointer. The watch beside them copies the watchOS agent list
-  (model disc, title, repository, status, context ring). Everything is inline
-  SVG and CSS: `PAGE_CSP` allows no external scripts, so a 3D library such as
-  three.js cannot load. The glasses are drawn on a fixed 600 by 240 stage that
-  a small script scales to the slide (`--fit` sets the share of the width).
-  The watch is labelled "In build" and the glasses "R&D"; the footer names the
-  pictured hardware. The watch classes are `.strap` and `.wrow.on` because the
-  deck already uses `.band` and `.live`.
-- **Page numbers moved.** Inserting slide 7 renumbered Customer &
-  go-to-market through Sources to 8 to 14, and `DECK_PAGE_TITLES` in the CRM
-  worker follows. Page views are stored by number, so seconds recorded before
-  20 Oct 2026 on old pages 7 to 13 now show against the title one place
-  earlier in the CRM's per-page table.
-- **Page tracking.** The current page is the slide that crosses the middle of
-  the viewport, not a slide that is 55% visible. On a phone a slide is
-  taller than the screen, so the old rule never changed page and every
-  second was counted against page 1.
 
 ## Operations
 
@@ -210,15 +175,17 @@ The node auto-deploy agent keeps forkmesh.com current: after each deploy
 check it compares the website fingerprint with the live
 `x-forkmesh-deploy-fingerprint` and, when they differ, runs `wrangler deploy
 --config wrangler.production.toml` from the pinned worktree
-([auto-deploy](../deploy/auto-deploy.md), "The website Worker"). By hand:
+([auto-deploy](../operations/auto-deploy.md), "The website Worker"). By hand:
 
 ```sh
-cd www && npx --yes wrangler@4.136.2 deploy --config wrangler.production.toml \
+cd www && npm ci --ignore-scripts && node_modules/.bin/wrangler deploy \
+  --config wrangler.production.toml \
   --var DEPLOY_FINGERPRINT:$(python3 ../app/tools/deploy_targets.py fingerprint www)
 ```
 
-Wrangler 4.136 needs Node 22 or newer. To roll back: `npx wrangler rollback
---name forkmesh-www`. See also `www/docs/operations/worker-split.md`.
+`www/package-lock.json` pins wrangler ([why](../operations/auto-deploy.md)).
+Wrangler 4.136 needs Node 22 or newer. To roll back:
+`node_modules/.bin/wrangler rollback --name forkmesh-www`.
 
 ## Security
 
@@ -230,7 +197,7 @@ Wrangler 4.136 needs Node 22 or newer. To roll back: `npx wrangler rollback
   `/dashboard/tailwind.css`, `/qr.js`) are proxied same-origin
   (`APP_SUBRESOURCES`).
 - `www/public/install.sh` and `uninstall.sh` refuse user-data wipes from an
-  AI agent shell or outside `HOME`; see `AGENTS.md`.
+  AI agent shell or outside `HOME`; see [AGENTS.md](../../AGENTS.md).
 - Product-action analytics are allowlisted; the build fails when a CTA is
   instrumented but not allowlisted.
 - The downloads card fetches the public release files with
@@ -251,7 +218,9 @@ Crawlers and scrapers:
 - `sitemap.xml` is written by `build_www_sitemap` in
   `app/tools/build_site_assets.py`: each staged `.html` page at its canonical
   URL, without `404.html`, `ios-install.html`, `noindex` pages, off-site
-  canonicals and redirected paths. Blog posts carry `<lastmod>`.
+  canonicals and redirected paths. Blog posts carry `<lastmod>`. Only
+  forkmesh.com has one: `app.` and `world.forkmesh.com/sitemap.xml` 308 to it
+  (`WWW_SITE_ROUTES`) instead of answering 404 to crawlers that guess the path.
 - `stamp_canonical_links` gives every staged page without one a
   `<link rel="canonical">` on forkmesh.com, so the `www.` copy is not indexed
   as a second site.
@@ -266,7 +235,7 @@ Crawlers and scrapers:
 - Blocked crawlers are the enabled rows of the `request_block_rules` table.
   `app/sync_request_block_rules.sh` (or `tools/forkmesh-sync-block-rules.sh`,
   `--dry-run` to print) publishes them as the zone's WAF rule; automatic probe
-  bans ([../app/probe-auto-ban.md](../app/probe-auto-ban.md)) are never
+  bans ([../app/not-found-tracking.md](../app/not-found-tracking.md#automatic-probe-bans)) are never
   published. `app/sync_request_rate_limit.sh` keeps the zone rate limit (120
   requests per 10 s per address and colo). The cores enforce the same table
   and limit for app and world ([host/README.md](../host/README.md)).
@@ -280,17 +249,26 @@ Crawlers and scrapers:
   editing a post.
 - A blog post whose hero image is not committed breaks the website build
   (`build_www_feeds` stats every post image for the RSS enclosure).
+- Cloudflare allows 100 dynamic `_redirects` rules and counts every rule after
+  the first `:placeholder` or `*` rule as dynamic, even an exact path. Add exact
+  redirects above the first dynamic rule. `wrangler deploy --dry-run` does not
+  catch this: only the real upload fails (`code: 100324`).
+- One unshrinkable child makes a phone lay out the whole page wider than the
+  screen and zoom out. In a grid write `minmax(0, 1fr)`, never `1fr`, and give a
+  wide table its own horizontal scroll, and let long paths and code break
+  (`overflow-wrap`). Check at 320 and 390 px wide.
+- `/docs/` pins the site header and the tab strip on phones (below 768 px), and
+  the strip scrolls sideways only. The strip's tabs are exactly its height, so
+  it has nothing to scroll vertically.
 - `www/deploy.sh` (`app/deploy.sh www`) deploys `wrangler.production.toml`;
   `www/wrangler.toml` must keep no name or route.
-- Many `www/docs/` pages still describe the Cloudflare deployment; check the
-  code before trusting a page.
 - Files in `SHARED_FILES` (`api-client.js`, `site-header.js`,
   `analytics.js`, `styles.css`, ...) are staged into the App upload too; a
   change reaches App pages only when the App is deployed.
 - `www/public/analytics-sdk.js` is generated by
   `marketplace/packages/analytics/tools/sync_assets.py`; edit the package.
 - Removed pages must also leave `_redirects`, `app/src/static_routes.py`,
-  `app/tools/deploy_targets.py` and `www/docs/external-dependency-map.md`.
+  `app/tools/deploy_targets.py` and `docs/external-dependency-map.md`.
 - `features.html` draws filled icons from an inline SVG sprite whose
   knockouts are masks; keep the `.fx-sprite mask > g` rule, and hide the
   sprite with zero size, not `display: none`. Its six-column grid's
@@ -301,7 +279,7 @@ Crawlers and scrapers:
   (`marketplace/catalog.json`, including the core switches in
   [core-plugins](../marketplace/core-plugins.md)) carries a `.fx-tag-plugin`
   chip, a link to `/market/<id>` with the package's name, and counts as a
-  plugin; built-in features have none. Removed features leave the page (issue bounties went 2026-10-22).
+  plugin; built-in features have none. Removed features leave the page.
 - The textured button recipe is copied as tokens into each stylesheet that
   owns buttons (`--btn-*`, `--button-*`, `--fm-btn-*`, `--mesh-btn-*`,
   `--bs-*`); `www/tests/test_button_texture.py` and the page tests check the
@@ -348,14 +326,3 @@ or another package, a title and its assets. Each package page documents
 itself; current ones include the Feed's public post page
 `forkmesh.com/feed?post=<id>` ([instance-feed.md](../marketplace/instance-feed.md)).
 Test: `app/tests/test_www_plugin_pages.py`.
-
-## Related docs
-
-- [docs/app/README.md](../app/README.md), [World](../world/README.md)
-- [OPERATIONS.md](../OPERATIONS.md), [auto-deploy](../deploy/auto-deploy.md)
-- [templates](templates.md), [genie spider](genie-spider.md),
-  [site crawler](site-crawler.md), [auth backdrop](auth-mesh.md),
-  [auth theme](auth-theme.md), [mobile page](mobile-page.md)
-- `www/docs/README.md` (public library index)
-- `www/docs/operations/worker-split.md`
-- `docs/attribution.md`

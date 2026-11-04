@@ -1,9 +1,81 @@
-# Mastodon on the desktop
+# Mastodon
 
-The `mastodon` package (entry point `builtin:mastodon`) is a native Qt Mastodon
-client on the desktop since 1.1.0. Before that the desktop entry only opened
-the web dashboard page, which keeps its token in one browser session. The web
-page (`content/web/`) is unchanged and still serves the web and phone apps.
+Part of [Marketplace](README.md). The `mastodon` package is a Mastodon client:
+a native Qt page on the desktop (entry point `builtin:mastodon`, since 1.1.0),
+native screens in the iPhone and Android apps ([On the phone](#on-the-phone)),
+and a web page (`content/web/`) for the web dashboard. This page covers all
+three.
+
+## On the web
+
+Mastodon registers a client with the HTTPS instance selected by the user and completes OAuth there. On the web its access token and client registration are kept in browser session storage, are not synchronized to ForkMesh, and are cleared by Logout or when the browser session ends. The desktop client keeps them in the package's desktop settings instead, also unsynchronized ([Signing in](#signing-in)). The package uses the standard Mastodon API for timelines, posts, profile edits, notifications, relationships, lists, and preferences.
+
+## On the phone
+
+Both phone apps draw the client natively. The dashboard page could not serve
+them: it signs in through a redirect back to
+`app.forkmesh.com/dashboard/mastodon` and keeps the token in that browser
+tab's session storage, which does not survive the round trip from the app to
+the browser and back. Both use package id `mastodon`, route `.mastodon` /
+`Route.Mastodon`, `/dashboard/mastodon`, `forkmesh://mastodon` and the
+Personal group, with the same labels and behaviour.
+
+| | iPhone | Android |
+| --- | --- | --- |
+| Core (tested) | `FMPackages/Mastodon{Core,Models,Client,Model}.swift` | `core/.../mastodon/` |
+| Screens | `Features/Packages/Mastodon{Screen,FeedViews,Pages}.swift` | `app/.../feature/mastodon/` |
+| Tests | `FMPackagesTests/MastodonTests.swift` | `MastodonTest.kt` |
+
+Signing in:
+
+1. The server is typed as `mastodon.social`, `https://…` or `@user@server`;
+   only HTTPS origins without a path are accepted.
+2. The app registers itself (`POST /api/v1/apps`, scopes `read write follow`)
+   with two redirect URIs, `forkmesh://mastodon/callback` and
+   `urn:ietf:wg:oauth:2.0:oob`, then opens `/oauth/authorize` with a random
+   `state` and a PKCE S256 challenge.
+3. The iPhone uses `ASWebAuthenticationSession` (the system sign-in sheet
+   that shares Safari's cookies), which hands the callback straight back.
+   Android opens the browser; the `forkmesh://mastodon/callback` intent is
+   caught before navigation, so the code never becomes a route. The pending
+   sign-in (server, client, `state`, verifier) is saved first, so Android can
+   finish it even if the system ended the app while the browser was open.
+4. The code is exchanged at `/oauth/token` with the verifier. A callback with
+   a different `state` is refused.
+5. "Paste a code instead" reopens the authorize page with the out-of-band
+   redirect for the user to paste the code (or the whole address). "Use an
+   access token instead" takes a token made under Preferences → Development.
+
+The sign-in (server, token, client id and secret, and the cached name and
+picture) is kept in the phone's secure store (Keychain on the iPhone, the
+encrypted store on Android) under `mastodon.session.v1`, scoped to the
+project like other secrets. One account per phone; it is not synced to
+ForkMesh. Signing out revokes the token on the server (`POST /oauth/revoke`).
+Losing the ForkMesh session (sign-out or expiry) also forgets and revokes the
+Mastodon sign-in, so the next account on the phone does not inherit it
+([why](../native/ARCHITECTURE.md)). A 401 anywhere forgets the sign-in and returns to sign-in with the server
+filled in.
+
+Every request goes from the phone straight to the user's server; nothing
+passes through ForkMesh.
+
+What the phone covers: Home, Notifications, Local, Federated, Bookmarks and
+Favourites; threads; profiles (follow, unfollow, follow requests shown as
+Requested); hashtag timelines; search (people, hashtags, posts, resolving
+remote addresses). Posts show boosts, content warnings, pictures (sensitive
+ones hidden until tapped), read-only poll results, and reply, boost,
+favourite and bookmark (applied at once and rolled back if the server
+refuses), plus open in browser, copy link and delete for your own posts.
+Mentions open the profile in the app, hashtags the tag timeline, other links
+the browser. The composer has a content warning, visibility, up to the
+server's picture limit (uploads wait for processing) and the server's
+character limit, counted as Mastodon does: a link counts as 23 characters and
+`@user@server` as `@user`. Replies mention the author and everyone they
+mentioned except you, and keep the parent's visibility and warning. The
+desktop's extras (lists, filters, profile editing, blocks, scheduled posts)
+stay on the desktop and the web page.
+
+## On the desktop
 
 Source: `marketplace/packages/mastodon/content/desktop/`.
 
@@ -16,7 +88,7 @@ Source: `marketplace/packages/mastodon/content/desktop/`.
 | `MastodonFeature.*`, `MastodonPages.cpp` | The page: sign-in, sidebar, history, actions and every section. |
 | `tests/test_mastodon.cpp` | `forkmesh-mastodon-tests`, driven by an in-process fake Mastodon server. |
 
-## Signing in
+### Signing in
 
 The user types their server (`mastodon.social`, `https://…` or a full
 `@user@server` handle; only HTTPS origins without a path are accepted).
@@ -44,7 +116,7 @@ to ForkMesh. Signing out revokes the token on the server (`POST /oauth/revoke`)
 and forgets it. A 401 from the server means the token was revoked elsewhere:
 the page forgets that account and returns to sign-in with the server filled in.
 
-## Network and the firewall
+### Network and the firewall
 
 All calls go to the chosen server, so the firewall asks once per server. A
 server cannot be listed in the endpoint catalog because the host is the user's
@@ -54,7 +126,22 @@ other host are marked as decoration (`markFaviconProbe`) so they are skipped
 silently instead of opening a firewall prompt per remote server, and a letter
 avatar is shown instead.
 
-## What the page covers
+The client holds the host's network manager and its in-flight replies through
+`QPointer`. The replies are children of that manager, and when the main window
+closes the manager is destroyed before the page, so `cancelAll()` from
+`~MastodonFeature` used to call `disconnect()` on freed replies (SIGSEGV in
+`Client::cancelAll`, report #23). `testClientOutlivesNetwork` deletes the
+manager with requests in flight and then cancels.
+
+`cancelAll()` disconnects a reply only from the client's own context, and
+touches no reply once the manager is gone. A bare `reply->disconnect()` also
+cut the network manager's `finished` and `destroyed` handlers, which close the
+reply's `net` ticket in the footer, so every cancelled read stayed listed as
+running, and it walked receivers the client does not own while the window was
+being torn down (report #24). `testCancelKeepsOtherObservers` checks that an
+outside observer still sees the reply finish and be deleted.
+
+### What the page covers
 
 - Timelines: Home (with a compose prompt), Local, Federated, Bookmarks,
   Favourites, each list, hashtag timelines, threads, profiles (posts, posts and
@@ -90,7 +177,7 @@ account deletion; Preferences links to those pages on the server.
 The page is one layout used by both layout modes (Control Tower and Focus):
 a fixed sidebar and a centred column at most 720 px wide.
 
-## Tests
+### Tests
 
 ```sh
 cmake --build desktop/build --target forkmesh-mastodon-tests
@@ -100,3 +187,14 @@ desktop/build/forkmesh-mastodon-tests
 The fake server records every request, so the test checks request bodies
 (post, profile form, filters, token exchange) as well as what the page shows,
 and that nothing is sent anywhere but the chosen server.
+
+```sh
+cd native/ios/ForkMeshCore && FM_ONLY=FMPackages swift test --filter Mastodon
+cd native/android && ./gradlew :core:coreTest -Pfilter=Mastodon
+```
+
+The phone tests check server parsing, PKCE (the RFC 7636 example), the
+callback `state` check, the character count, the HTML-to-text conversion of
+post content (mentions, hashtags, shortened links), Link-header paging, and,
+against a fake server, every request the sign-in, timelines, toggles,
+composer, uploads and follow buttons send.

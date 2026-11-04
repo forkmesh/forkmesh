@@ -57,7 +57,8 @@ object RouteCodec {
             is Route.Discord -> { put("guild", route.guild); put("channel", route.channel) }
             is Route.Profile -> put("name", route.name)
             is Route.Search -> { put("q", route.query); put("scope", route.scope.raw) }
-            is Route.Note -> put("id", route.id)
+            is Route.Note -> { put("id", route.id); put("comment", route.comment) }
+            is Route.NotePage -> { put("id", route.id); put("note", route.note) }
             is Route.Tasks -> put("filter", route.filter)
             is Route.Task -> put("id", route.id)
             is Route.Calendar -> { put("date", route.date); put("mode", route.mode.raw) }
@@ -76,6 +77,8 @@ object RouteCodec {
             is Route.Analytics -> put("section", route.section)
             is Route.Ledger -> put("section", route.section)
             is Route.Invoices -> { put("org", route.organization); put("id", route.invoice) }
+            is Route.Surveys -> { put("org", route.organization); put("id", route.survey) }
+            is Route.Booking -> put("id", route.booking)
             is Route.Vault -> put("section", route.section)
             is Route.InstanceFeed -> put("post", route.post)
             is Route.Poker -> put("table", route.table)
@@ -148,7 +151,8 @@ object RouteCodec {
             Route.Kind.Docs -> Route.Docs
             Route.Kind.Search -> Route.Search(s("q") ?: "", SearchScope.of(s("scope")) ?: SearchScope.Everything)
             Route.Kind.Notes -> Route.Notes
-            Route.Kind.Note -> Route.Note(s("id") ?: "")
+            Route.Kind.Note -> Route.Note(s("id") ?: "", s("comment")?.takeIf { it.isNotEmpty() })
+            Route.Kind.NotePage -> req("id")?.takeIf { it.isNotEmpty() }?.let { Route.NotePage(it, s("note")?.takeIf { n -> n.isNotEmpty() }) }
             Route.Kind.Tasks -> Route.Tasks(s("filter"))
             Route.Kind.Task -> req("id")?.let(Route::Task)
             Route.Kind.Calendar -> Route.Calendar(s("date"), CalendarMode.of(s("mode")) ?: CalendarMode.Month)
@@ -170,6 +174,8 @@ object RouteCodec {
             Route.Kind.Analytics -> Route.Analytics(s("section"))
             Route.Kind.Competitors -> Route.Competitors
             Route.Kind.Invoices -> Route.Invoices(s("org"), s("id"))
+            Route.Kind.Surveys -> Route.Surveys(s("org"), s("id"))
+            Route.Kind.Booking -> Route.Booking(s("id"))
             Route.Kind.Ads -> Route.Ads
             Route.Kind.Ledger -> Route.Ledger(s("section"))
             Route.Kind.Vault -> Route.Vault(s("section"))
@@ -185,6 +191,7 @@ object RouteCodec {
             Route.Kind.Speech -> Route.Speech
             Route.Kind.GlassesAlert -> Route.GlassesAlert
             Route.Kind.PhoneSecurity -> Route.PhoneSecurity
+            Route.Kind.SilentSpeech -> Route.SilentSpeech
             Route.Kind.Ember -> Route.Ember(repo)
             Route.Kind.Strata -> Route.Strata(repo)
             Route.Kind.Synapse -> Route.Synapse(repo)
@@ -197,6 +204,7 @@ object RouteCodec {
             Route.Kind.VideoMixDjStudio -> Route.VideoMixDjStudio
             Route.Kind.Poker -> Route.Poker(s("table"))
             Route.Kind.InstanceFeed -> Route.InstanceFeed(s("post"))
+            Route.Kind.Mastodon -> Route.Mastodon
             Route.Kind.SecureDrive -> Route.SecureDrive
             Route.Kind.Files -> Route.Files
             Route.Kind.Nexus -> Route.Nexus

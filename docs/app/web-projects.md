@@ -5,7 +5,7 @@ without the desktop app. A project is the desktop's `ProjectStore` record,
 `.forkmesh/projects/<n>/project-<n>.json`: metadata (title, description,
 status, start and end dates, milestone, linked issues) derived from the full
 signed event log stored beside it, so the desktop and every other reader see
-a web-made project unchanged.
+a web-made project unchanged. Part of [the App docs](README.md).
 
 ## Signing
 
@@ -33,8 +33,8 @@ list hides tombstoned projects.
 `authorName` is not part of the signed string, so the route does not trust
 the one the browser sends: every event goes through `_bind_session_author`
 with the signed-in account, which sets `authorName` to that account and
-refuses (403 `author_mismatch`) a key bound to a different account. A writer
-can no longer sign with a fresh key and file events under someone else's
+refuses (403 `author_mismatch`) a key bound to a different account, so a
+writer cannot sign with a fresh key and file events under someone else's
 name.
 
 ## Interface
@@ -42,8 +42,8 @@ name.
 **New project** in the tab header (writers): title, description, start and
 end dates, milestone and linked issues (`#12, #15`). In the List view each
 project has **Edit**, **Close**/**Reopen** and **Delete**. An edit sends only
-the fields that changed. Opening `/<owner>/<repo>/projects` directly now
-loads the tab (it stayed empty until the tab was clicked).
+the fields that changed. Opening `/<owner>/<repo>/projects` directly loads
+the tab.
 
 Tests: `app/tests/test_repository_projects.py` (real Git, signatures,
 numbering, permissions), `app/tests/test_web_projects_frontend.py` (browser

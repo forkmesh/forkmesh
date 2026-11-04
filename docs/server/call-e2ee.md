@@ -1,15 +1,19 @@
 # Group call end-to-end encryption (call e2ee v2)
 
-Status: v1 designed and built 2026-10-21 (commit fc5bdd5210); v2 built the
-same day on top of it. Live in group calls on the newer call engine: the
-browser's [fmm-browser.md](../app/fmm-browser.md) (`fmm-e2ee.js`) and the
-iPhone's native group call (`NativeGroupCall.swift`, `FmmVerifyViews.swift`)
-run the keys and the verification round. Idea 5 of "Beyond
-FaceTime" in [fm-media.md](fm-media.md). Media keys come from a hybrid
-X25519 + ML-KEM-768 exchange on every epoch, with a new epoch on every join
-and leave. A short verification code is made safe by a commit-then-reveal
-round, and every frame is authenticated to its sender by signed digest
-batches. The servers carry only ciphertext and headers.
+Live in group calls on the FM Media engine: the browser
+([fmm-browser.md](../app/fmm-browser.md), `app/public/fmm/fmm-e2ee.js`), the
+iPhone's native group call (`FmmGroupSession.swift`, `FmmVerifyViews.swift`)
+and the Go mobile binding (`server/rtc/fmmmobile`) run the keys and the
+verification round. Idea 5 of "Beyond FaceTime" in [fm-media.md](fm-media.md).
+Media keys come from a hybrid X25519 + ML-KEM-768 exchange on every epoch,
+with a new epoch on every join and leave. A short verification code is made
+safe by a commit-then-reveal round, and every frame is authenticated to its
+sender by signed digest batches. The servers carry only ciphertext and
+headers.
+
+Home: [Go daemon](README.md). The public summary of what is encrypted and
+signed is [encryption](../encryption.md); the adversaries are in
+the [threat model](../protocol/threat-model.md).
 
 | Part | Code |
 | --- | --- |
@@ -19,19 +23,19 @@ batches. The servers carry only ciphertext and headers.
 | Tests | `server/rtc/e2ee/*_test.go`, `app/tests/call_e2ee.test.mjs`, `app/tests/test_call_e2ee.py` |
 | Vectors | `server/rtc/e2ee/testdata/{go-vectors,js-vectors,fips203-mlkem768}.json` |
 
-What v1 replaced: today ([chat-group-calls.md](../app/chat-group-calls.md),
-"Frame encryption") each sender draws a random AES-128 key and sends the raw
-key to the channel in a `group-call-key` frame. That frame is sealed by chat
-protocol v3 ([chat-protocol-v3.md](../app/chat-protocol-v3.md)), so the
-relay cannot read it. But the key goes to every device of the channel,
-including members who are not in the call. It is wrapped under prekeys that
-live up to 8 days, nothing ties it to the call, and nobody can check who
-holds it.
+What this replaces: on the WebRTC engine
+([chat-group-calls.md](../app/chat-group-calls.md), "Frame encryption") each
+sender draws a random AES-128 key and sends the raw key to the channel in a
+`group-call-key` frame. That frame is sealed by chat protocol v3
+([chat-protocol-v3.md](../app/chat-protocol-v3.md)), so the chat relay cannot
+read it. But the key goes to every device of the channel, including members
+who are not in the call. It is wrapped under prekeys that live up to 8 days,
+nothing ties it to the call, and nobody can check who holds it. v1 of this
+design fixed that; v2 is v1 plus the two changes below.
 
 ## What v2 changes
 
-v1's own review left two gaps that kept it short of "better than FaceTime".
-v2 closes both and keeps everything else.
+v1's review left two gaps; v2 closes both and keeps everything else.
 
 | | v1 | v2 |
 | --- | --- | --- |
@@ -74,7 +78,7 @@ a second thing to verify. Call signatures use their own domain prefix,
 `forkmesh-chat-e2ee-` or `forkmesh-mesh-link-auth-v3`. So a call signature
 can never pass as a chat signature, nor the reverse. The signer refuses any
 other prefix (`signerFromSeed`; the seal store's call signer must do the same,
-see "Integration").
+see "Integration rules").
 
 **Pairwise sender-key wraps, not TreeKEM.** Each sender wraps its own
 32-byte epoch secret separately to each receiver's presence key.
@@ -162,8 +166,8 @@ can make at most one commitment per `(roster, gen)` (a second one is
 - Latency: both verify one interval after the frame. Batch signatures add
   no buffering at the sender.
 
-**Digests of the whole sealed frame, not GCM tags.** The brief suggested
-signing the frames' tags. That would not stop the attack it is meant to stop.
+**Digests of the whole sealed frame, not GCM tags.** Signing the frames'
+tags would not stop the attack it is meant to stop.
 A GCM tag is a polynomial MAC under `H = AES_K(0)`, and the colluding
 participant holds `K`. Given any target tag it can solve for a ciphertext
 block that produces exactly that tag (GHASH is linear in the ciphertext once
@@ -250,7 +254,7 @@ A receiver accepts it when:
    a higher epoch replaces the keys (`updated`). A new peer is `joined`.
 
 A peer not heard from for 60 s drops out (`Expire`), which releases its peer
-id, as the roster does today.
+id, as the call roster does.
 
 ## Key messages (`group-call-key`)
 
@@ -748,11 +752,12 @@ yet.
   someone holding Alice's identity key (they can sign a key message with
   their own auth key; the code cannot show that, see "Compromise").
 
-## Engine integration (FM Media, not done; no change to `server/rtc/fmm` in this work)
+## Engine integration (FM Media)
 
-Where auth messages travel: a third track kind, `TrackAuth = 3`, with one
-layer, carried in ordinary media datagrams (kind 0) and forwarded by the SFU
-like an audio track. Two options were rejected:
+Auth messages travel as a third track kind, `TrackAuth = 3`
+(`server/rtc/fmm/wire/control.go`, `app/public/fmm/wire.js`), with one layer,
+carried in ordinary media datagrams (kind 0) and forwarded by the SFU like an
+audio track. Two options were rejected:
 
 - The control stream (a new `MsgMediaAuth`): it is reliable, but a lost
   packet would block `Nack`, `Report` and `KeyframeRequest` behind it (head
@@ -874,13 +879,16 @@ digits, qr }`. The low-level functions (`parsePresence`, `parseCommit`,
 `roundId`, `computeSas`, `parseAuthMessage`, `frameDigest`, ...) are exported
 for the vector tests.
 
-## Integration (not done yet)
+## Integration rules
 
-1. **Signer.** Add a `signCall(bytes)` method to `createRoomSealStore`
-   (`chat-seal.js`). It loads the identity inside `ctx.exclusive`, refuses
-   bytes that do not start with `forkmesh-call-e2ee-`, and returns the
-   Ed25519 signature. The phones and the desktop add the same method to
-   their keyring.
+The clients follow these rules (browser: `chat-group-calls.js`,
+`fmm/fmm-e2ee.js`, `chat.js`; Android: `GroupCalls.kt`; iPhone: the native
+group call). Item 9 is still open.
+
+1. **Signer.** `createRoomSealStore` (`chat-seal.js`) has `signCall(bytes)`.
+   It loads the identity inside `ctx.exclusive`, refuses bytes that do not
+   start with `forkmesh-call-e2ee-`, and returns the Ed25519 signature. The
+   phones and the desktop have the same method on their keyring.
    `signer = { idk: b64u decode of store.identity().idk, sign: store.signCall }`.
    Media auth keys do not go through it.
 2. **Session.** In `chat-group-calls.js`, after `joined` gives the peer id:
@@ -899,7 +907,7 @@ for the vector tests.
    `openKeys` success, give the key to the worker (`{op: "key", ...}`) and
    to the media verifier. After a rekey, post `send-key` 1 s later and swap
    the media signer. On `recipient-epoch`, rotate (rate-limited).
-5. **Verification.** A new `group-call-verify` frame type carries
+5. **Verification.** The `group-call-verify` frame type carries
    `{e2ee: commit}` or `{e2ee: reveal}` (`t` tells them apart). The sealed
    frame's sender identity must equal the commit's `idk`, and for a reveal
    the identity of the member named. After every roster change, call
@@ -913,13 +921,13 @@ for the vector tests.
 7. **Code and media state in the UI.** As in "UI text" and the media state
    table. iOS and Android both show it (Android: `GroupCallFmm.kt`,
    `GroupCallViews.kt`).
-8. **No fallback.** Every client switches at once, as chat v3 did. A client
-   that speaks call e2ee ignores `group-call-key` frames without `e2ee` and
-   any message with another version, so nobody can be downgraded.
-9. **Native.** `native/webrtc/fm/fm_frame_crypto.h` has
+8. **No fallback.** A client in an FM Media call ignores `group-call-key`
+   frames without `e2ee` and any message with another version, so nobody can
+   be downgraded.
+9. **Native WebRTC (open).** `native/webrtc/fm/fm_frame_crypto.h` has
    `kFrameKeyBytes = 16`; it must take 32-byte keys (AES-256-GCM) before the
-   phones install these keys. The FM Media engine core uses `FrameSender`
-   and `FrameReceiver` directly, as in "Engine integration".
+   libwebrtc path can install these keys. The FM Media engine core uses
+   `FrameSender` and `FrameReceiver` directly, as in "Engine integration".
 
 ## Threat model and review
 
@@ -1095,8 +1103,8 @@ A join in a 16-person call moves about 16 × 24 KB of key messages through the
 chat channel. Each one is a chat v3 frame whose body (about 32 KB once
 base64'd) is sealed again to every device in the channel (about 2.2 KB per
 device, up to 64). So a frame can reach about 175 KB: well under
-`MAX_TEXT_BYTES` (4 MiB), but worth checking against the relay limits when
-wiring ([chat-private-rooms.md](../app/chat-private-rooms.md)). A join costs
+`MAX_TEXT_BYTES` (4 MiB) and the chat relay limits
+([chat-private-rooms.md](../app/chat-private-rooms.md)). A join costs
 each participant one presence, one or two key messages, one commit and one
 reveal: inside the 20-frames-per-10-s message budget
 (`ROOM_MSG_MAX_PER_WINDOW`).

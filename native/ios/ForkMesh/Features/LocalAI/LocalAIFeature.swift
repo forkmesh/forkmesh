@@ -1,6 +1,6 @@
 // Wiring for the Local AI feature: the MLX engine, the model manager and the
 // mesh-node request handler, created once and registered in `Services`. New
-// for the native app; see docs/FMLocalAI.md.
+// for the native app; see docs/native/ios/FMLocalAI.md.
 
 import FMApi
 import FMAssistant

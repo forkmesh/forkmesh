@@ -3,19 +3,20 @@
 What a desktop coding agent can read, execute and reach for each provider and
 mode, which secrets it can see, what limits its network, how injected
 instructions are handled, and what limits spend. Each claim is proven by a
-named check.
+named check. Part of [Security](README.md); the wider attacker model is in
+the [threat model](../protocol/threat-model.md).
 
 ## Run the checks
 
 ```sh
-cmake -S desktop -B /tmp/fm-build -G Ninja
-cmake --build /tmp/fm-build --target forkmesh-agent-boundary-tests \
+cmake -S desktop -B desktop/build -G Ninja
+cmake --build desktop/build --target forkmesh-agent-boundary-tests \
   forkmesh-codex-tests forkmesh-vm-runtime-tests forkmesh-agent-access-tests \
   forkmesh-agent-transport-tests
-/tmp/fm-build/forkmesh-agent-boundary-tests
+desktop/build/forkmesh-agent-boundary-tests
 ```
 
-`desktop/tests/test_agent_host_boundaries.cpp` prints one `PASS`/`FAIL` line
+[`desktop/tests/test_agent_host_boundaries.cpp`](../../desktop/tests/test_agent_host_boundaries.cpp) prints one `PASS`/`FAIL` line
 per check. It runs in a temporary `HOME` and XDG tree, drops `FORKMESH_HOME`
 and `FORKMESH_PROJECTS_DIR`, and plants canary secrets. Stand-in `claude` and
 `codex` executables go through the real launch paths (login shell, jail,
@@ -64,7 +65,34 @@ shell commands that name a non-local destination and web fetch/search tools,
 and asks, blocks or allows per the project rule (default Ask). Commands that
 hide their destination (encoded payloads, self-written programs, binaries with
 their own HTTP client) are not seen. Server runners have their own egress
-rules ([../RUNNERS.md](../RUNNERS.md)).
+rules ([runners](../operations/runners.md)).
+
+Every part of a command counts. The gate collects every destination, every
+destructive kind and every teammate permission across all the simple commands
+in a line (`curl allowed ; curl evil`, two URLs in one `curl`,
+`git reset --hard && rm -rf ~`), denies if any one is blocked or denied, and
+asks unless all are allowed. The prompt lists each destination still waiting
+in a scrolling box, with the full command, so padding cannot push a host out
+of view; "Allow for this run" and "Always allow" cover exactly the listed
+hosts or kinds. Before this, only the first of each was checked.
+
+Other ways out are held to the same rules:
+
+- **Browser windows.** `open_browser_window` and a `navigate` action go
+  through `agentrules::decideUrl` (ask, block or allow like a shell call), and
+  the page's request interceptor refuses every request the rules would not
+  run, so a page cannot load a blocked host either.
+- **Terminal tabs.** A terminal runs outside the hook and the folder lock, so
+  an agent whose commands are checked, or whose folders are locked, can read
+  terminals but not open, type into or close them
+  (`agentTerminalWritesAllowed`).
+- **New agents.** `create_agent` starts the new agent at most at the caller's
+  mode (`agenthub::cappedAgentMode`) and with the caller's denied teammate
+  permissions, stored on the session.
+
+Tests: `testEveryPartIsChecked` in the boundary test, the
+`tool-output-second-host` and `skill-chained-merge` fixtures, and
+`test_agent_hub.cpp` for the mode cap.
 
 ## Prompt injection
 

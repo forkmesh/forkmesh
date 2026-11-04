@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Portable social signals v1: signed stars, follows, endorsements, revocation.
 
-Reference Python implementation of www/docs/social-signals.md. It uses only the
+Reference Python implementation of docs/social-signals.md. It uses only the
 standard library so a third party can copy this one file. The JavaScript
 implementation (app/public/social-signals.js) is written separately against the
 same document; both must agree on every vector in
@@ -945,7 +945,7 @@ def build_vectors() -> dict[str, Any]:
     return {
         "schema": VECTORS_SCHEMA,
         "version": "1.0.0",
-        "specification": "www/docs/social-signals.md",
+        "specification": "docs/social-signals.md",
         "note": "Test keys only. Seeds are SHA-256 of 'forkmesh-social-signal-test-key\\n' + name.",
         "keys": {name: {"seed": seeds[name].hex(), "publicKey": keys[name]} for name in names},
         "records": records,

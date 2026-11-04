@@ -208,7 +208,7 @@ class DocsLibrary(
         const val SCHEMA = "forkmesh-docs-library-v1"
         const val GITHUB = "https://github.com/"
         const val DEPENDENCIES_AREA = "dependencies"
-        const val REPOSITORY_PREFIX = "www/docs/"
+        const val REPOSITORY_PREFIX = "docs/"
         const val PUBLIC_PREFIX = "www/public/"
         const val TOP_AUTHORS = 3
         private const val DESCRIPTION_LIMIT = 180

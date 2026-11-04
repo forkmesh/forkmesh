@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Stable repository identity, verified dependency routes, and stock-client
-recipes (issue #495, www/docs/dependency-workflows.md)."""
+recipes (issue #495, docs/dependency-workflows.md)."""
 
 import copy
 import importlib.util
@@ -186,7 +186,7 @@ def test_contract_validation_catches_drift():
         lambda value: value["scenarios"].pop(),
         lambda value: value["routeReasons"].reverse(),
         lambda value: value["clients"][0].update(id="svn"),
-        lambda value: value.update(documentation="www/docs/missing.md"),
+        lambda value: value.update(documentation="docs/missing.md"),
         lambda value: value["scenarios"][0].update(expect="maybe"),
     ):
         broken = copy.deepcopy(contract)
@@ -195,12 +195,12 @@ def test_contract_validation_catches_drift():
 
 
 def test_quality_gate_and_docs_index_include_the_suite():
-    config = json.loads((ROOT / "www" / "docs" / "engineering" / "quality-gates.json").read_text(encoding="utf-8"))
+    config = json.loads((ROOT / "docs" / "engineering" / "quality-gates.json").read_text(encoding="utf-8"))
     gate = next(item for item in config["gates"] if item["id"] == "dependency-workflow-conformance")
     assert "app/tests/test_dependency_workflows.py" in gate["command"]
     assert "dependency-workflow-conformance" in config["profiles"]["core"]
-    assert "(dependency-workflows.md)" in (ROOT / "www" / "docs" / "README.md").read_text(encoding="utf-8")
-    assert "`identity`" in (ROOT / "www" / "docs" / "repository-index.md").read_text(encoding="utf-8")
+    assert "(dependency-workflows.md)" in (ROOT / "docs" / "README.md").read_text(encoding="utf-8")
+    assert "`identity`" in (ROOT / "docs" / "repository-index.md").read_text(encoding="utf-8")
 
 
 def test_probe_rejects_unknown_clients():

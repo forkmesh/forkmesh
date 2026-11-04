@@ -1,19 +1,17 @@
 # Updating a pull request (revisions)
 
-Contributors could not update a pull request. A pull opened from the web, from
-a fork or from a `pr/<account>/` branch is a signed snapshot of a patch, and
-nothing linked it back to its branch; the contributor guide said to open a new
-pull request after pushing more commits. People who rewrote their branch the
-GitHub way (amend, rebase) also hit "force push not allowed". Branches on
-repositories the cores hold or host can now be force-pushed by whoever may
-write them, keeping every replaced tip ([CORE_PUSH.md](../CORE_PUSH.md#force-pushes));
-revisions cover the rest: a pull sent as a patch series from someone's own
-copy, which has no branch on the cores to push to.
+Part of the [App](README.md). A pull opened from the web, from a fork or from
+a `pr/<account>/` branch is a signed snapshot of a patch, with nothing linking
+it back to its branch. Branches on repositories the cores hold or host can be
+force-pushed by whoever may write them, keeping every replaced tip
+([core push](../operations/core-push.md#force-pushes)); revisions cover the rest: a
+pull sent as a patch series from someone's own copy, which has no branch on
+the cores to push to.
 
-A pull now has revisions. The author signs the branch's current state again and
-sends it as a new revision of the same number; comments, reviews and the number
-stay. Because the revision is compared fresh, rewritten history needs no force
-push: push it to a new branch and update the pull from that branch.
+The author signs the branch's current state again and sends it as a new
+revision of the same number; comments, reviews and the number stay. Because
+the revision is compared fresh, rewritten history (amend, rebase) needs no
+force push: push it to a new branch and update the pull from that branch.
 
 ## Wire format
 
@@ -68,11 +66,11 @@ nobody reviewed. Review threads anchor to `creationHeadOid`, which the
 revision changes, so threads on changed lines show as outdated.
 
 An accepted revision also dismisses every approval in the relay's review
-ledger (`branch_protection.dismiss_approvals`); requests for changes stay.
-Without that, an author could collect an owner's approval on a harmless
-patch, send a revision with different code, and merge into a protected
-branch on the old approval, because the ledger's latest state per account
-is not tied to a head. A merge already in flight is still caught by
+ledger (`branch_protection.dismiss_approvals`,
+[branch-protection.md](branch-protection.md)); requests for changes stay. The
+ledger's latest state per account is not tied to a head, so otherwise an
+author could collect approval on a harmless patch, revise it, and merge into a
+protected branch on the old approval. A merge already in flight is still caught by
 `stale_pull_metadata`. Signed review events in the pull's own ledger are not
 rewritten; reviews made before the revision show as on an older version.
 
@@ -82,9 +80,32 @@ The pull page shows the author of an open patch-backed pull an **Update pull
 request** row above the review form, with the source branch prefilled
 (`renderPullRevisionPanel`, `submitWebPullRevision` in
 `03-issues-profile-io.js`). It compares base against that branch (on the fork
-for a fork pull), refuses when nothing changed (`no_new_commits`), signs both
+for a fork pull), refuses when neither the head nor the base changed (`no_new_commits`), signs both
 signatures and posts the revision. The timeline shows "updated this pull
 request to revision N".
+
+### Fork pulls compare against the parent
+
+The mirror's `compare` diffs from `merge-base(base, head)`, and a fork pull is
+compared on the fork. Comparing against the base branch's name therefore used
+the fork's own `main`. When that `main` was behind the parent, the patch carried
+every parent change since then, the commit series came back empty (`compare`
+drops it when the range holds a merge commit, and the parent's `main` is made of
+them), and `creationBaseOid` named the fork's old tip, so the pull showed
+dozens of files, no commits and conflicts. Updating it from the same branch
+then failed as `no_new_commits`, because the bad revision had already recorded
+that head.
+
+Opening and revising a fork pull (`fetchPullComparison` in
+`03-issues-profile-io.js`) now read the parent's base tip from its branch list
+and compare the fork's branch against that commit id; `resolve_commit` accepts
+it because it is an ancestor of a branch that was rebased onto the parent. When
+the fork cannot see that commit (the branch was not rebased onto the parent's
+current tip) the comparison falls back to the base branch name as before. `no_new_commits`
+now needs both the head and the base to match the stored `creationHeadOid` and
+`creationBaseOid`, so a pull left wrong by the old comparison is fixed by
+updating it again from the same branch: the head is unchanged but the base is
+now the parent's tip.
 
 Tests: `app/tests/test_pull_revisions.py` (including the browser code run in
 node and verified by the relay), `server/pull_revision_test.go`.

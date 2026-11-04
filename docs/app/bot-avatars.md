@@ -5,7 +5,7 @@ an initial, wherever avatars render: issue and pull request timelines and
 comments, assignees, reactions, the AI review card, contributor avatars and
 insights, the activity page, the latest-commit row on the code page,
 notifications, Actions runs ("Triggered by" and each run row), and the
-profile page.
+profile page. Part of [the App docs](README.md).
 
 ## Kinds
 
@@ -26,7 +26,7 @@ The dashboard also knows the instance's platform name and git node
 (`platformName`, `platformAccount`), which the server does not.
 
 The glyphs are 24x24 stroke drawings in `currentColor`, drawn in the
-`muted-foreground` role on the usual `bg-secondary` circle, so they follow the
+`muted-foreground` role ([dashboard-colors.md](dashboard-colors.md)) on the usual `bg-secondary` circle, so they follow the
 light and dark themes. The same glyph strings live in the three places above;
 `app/tests/test_bot_avatars.py` keeps them identical.
 

@@ -271,7 +271,7 @@ void checkFleetAutoscaleModel()
               defaults.app.plan == QStringLiteral("vc2-1c-1gb") &&
               defaults.app.region == QStringLiteral("ewr") &&
               defaults.app.monthlyCapCents + defaults.runner.monthlyCapCents == 2500,
-          "the defaults match docs/fleet/AUTOSCALING.md");
+          "the defaults match docs/operations/autoscaling.md");
     check(as::validateSettings(defaults).isEmpty(), "the defaults validate");
 
     as::Settings round = defaults;

@@ -40,6 +40,7 @@ public final class InboxModel {
     public private(set) var items: [InboxItem] = []
     public private(set) var loading = false
     public private(set) var errors: [String] = []
+    public private(set) var signedOut: Bool = false
     public private(set) var pauseUntilMs: Int64 = 0
     public private(set) var loaded = false
     public var filter: InboxFilter
@@ -148,9 +149,11 @@ public final class InboxModel {
         let me = account
         guard !me.isEmpty else {
             items = localPings.items
+            signedOut = true
             errors = ["Sign in to see your inbox."]
             return
         }
+        signedOut = false
         loading = true
         defer {
             loading = false

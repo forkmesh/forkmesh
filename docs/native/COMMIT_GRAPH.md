@@ -1,5 +1,6 @@
 # Commit graph (iOS Commits screen, Graph tab)
 
+Part of [the native docs](README.md).
 A third tab on a repository's Commits screen, beside History and Branches,
 draws the git history as a lane graph like the desktop's and marks the commit
 each ForkMesh app is running: Desktop, Web and Mobile.

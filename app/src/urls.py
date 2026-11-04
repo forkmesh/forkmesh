@@ -97,7 +97,7 @@ REPO_BRANCH_DELETE_RE = re.compile(
 REPO_ACTION_RUNS_RE = re.compile(
     r"^/api/repo/([^/]+)/([^/]+)/actions/runs$")
 # Owner/write-authorized control request couriered to the one mirror Actions
-# executor the browser names (www/docs/operations/mirror-actions-control.md).
+# executor the browser names (docs/operations/mirror-actions-control.md).
 REPO_ACTION_CONTROL_RE = re.compile(
     r"^/api/repo/([^/]+)/([^/]+)/actions/control$")
 REPO_ACTION_RUN_LOG_RE = re.compile(
@@ -183,7 +183,7 @@ REPO_OWNER_AGENT_SESSION_ATTACHMENT_RE = re.compile(
 # The same owner queue read across every repository the account owns, so a
 # desktop or a phone can see that a mirror is running something without asking
 # one repository at a time (no client polls; see
-# www/docs/operations/polling-elimination.md).
+# docs/operations/polling-elimination.md).
 ACCOUNT_AGENT_SESSIONS_RE = re.compile(r"^/api/account/agent-sessions$")
 REPO_OWNER_AGENT_SESSION_STREAM_RE = re.compile(
     r"^/api/repo/([^/]+)/([^/]+)/agent-sessions/([^/]+)/(?:stream|live)$")
@@ -245,7 +245,7 @@ REPO_RELEASE_DOWNLOADS_RE = re.compile(
 # Git smart-HTTP clone endpoints: git clone https://host/<node>/<repo>. The
 # repository group never includes a trailing ".git", so /<node>/<repo>.git (the
 # spelling Go module paths, Cargo, and the published ssh:// URL use) routes to
-# the same repository (issue #495, www/docs/dependency-workflows.md).
+# the same repository (issue #495, docs/dependency-workflows.md).
 GIT_INFO_RE = re.compile(r"^/([^/]+)/([^/]+?)(?:\.git)?/info/refs$")
 GIT_PACK_RE = re.compile(r"^/([^/]+)/([^/]+?)(?:\.git)?/git-upload-pack$")
 # Reserved receive-pack path. It fails closed until a direct-HTTPS write
@@ -400,8 +400,7 @@ REPO_AP_POSTS_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/ap-posts$")
 REPO_WEBHOOKS_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/webhooks$")
 REPO_PROVIDER_MIRROR_RE = re.compile(
     r"^/api/repo/([^/]+)/([^/]+)/provider-mirror$")
-REPO_ARCHIVE_SYNC_RE = re.compile(
-    r"^/api/repo/([^/]+)/([^/]+)/archive-sync$")
+REPO_FORUM_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/forum$")
 # Owner-uploaded repo branding (logo/banner PNG) served publicly — referenced
 # by the repo's fediverse actor document as its avatar/header.
 REPO_MEDIA_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/media/(logo|banner)\.png$")

@@ -16,7 +16,7 @@ public struct TrustListError: Error, Equatable, CustomStringConvertible {
 /// Scoped, community-operated trust lists (forkmesh-trust-list-v1).
 ///
 /// An independent port of the reference resolver in `app/src/trust_lists.py` (see
-/// `www/docs/design/scoped-trust-lists.md`). The tests pin it to
+/// `docs/design/scoped-trust-lists.md`). The tests pin it to
 /// `conformance/trust-lists/v1/vectors.json`, which the Worker, web, desktop and Android
 /// implementations also pass: every resolution, rejection code, ordering and telemetry count must
 /// be identical.

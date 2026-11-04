@@ -5,7 +5,9 @@ Phase 4 of [FM Media](fm-media.md): the SFU forwarding core of
 `forkmesh-calls`, beside the WebRTC SFU of [rtc.md](rtc.md), with the same
 room model: the same tickets and room ids, at most 4 places per account in a
 room, one server-wide cap for both engines, and the same browser origin
-list. Built 2026-10-21.
+list. Home: [Go daemon](README.md). Media stays end-to-end encrypted
+([call-e2ee.md](call-e2ee.md), [encryption](../encryption.md));
+the server sees only ciphertext and headers.
 
 | Package | Role |
 | --- | --- |
@@ -14,7 +16,7 @@ list. Built 2026-10-21.
 | `server/rtc/signal` | Tickets (two new optional fields) and `RoomEngines`, the room registry both engines share |
 | `server/cmd/forkmesh-calls` | Starts the listener when `FORKMESH_CALLS_FMM` names an address, and adds the FM Media block to `/calls/health` |
 
-Deploy settings: [../deploy/calls.md](../deploy/calls.md#fm-media). The app's
+Deploy settings: [../deploy/calls.md](../operations/call-servers.md#fm-media). The app's
 side (the ticket response): [../app/chat-group-calls.md](../app/chat-group-calls.md#fm-media-tickets).
 
 ## One UDP port, two ways in
@@ -44,7 +46,8 @@ interface). On every connection:
    - `RoomEngines.Join(room, "fmm")` enforces the server cap (400 people over
      both engines) and the one-engine-per-room rule;
    - the room's per-account count enforces at most 4 places per account;
-   - the room's `sfu.Room` is created on first use, with its own worker.
+   - the room's `sfu.Room` is created on first use, with its own goroutine
+     (the room worker).
 3. The server creates the hop state (`sfu.Room.Connect`, with the
    connection's transport) and replays the `Join` into it. `Admit` returns
    the ticket's peer id, which the server registered under that exact ticket
@@ -170,33 +173,28 @@ browsers stay single-path (and still get migration).
 
 ### Datagrams and QUIC's own congestion control
 
-The first three-person run over 5% random loss collapsed the lossy
-participant's link: RTT 1.87 s, almost nothing delivered. The cause was
-QUIC's NewReno. It halves the window on every loss event, and at 5% random
-loss there is one every round trip, so the window sat at its 2-packet
-minimum. About 26 kB/s got through, and the media queued behind it in the
-datagram send queue for seconds. The engine's own controller (delay
-gradient plus loss, with FEC and DRED, [fmm-protocol.md](fmm-protocol.md))
-never got a chance to act.
+QUIC's NewReno halves the window on every loss event. At 5% random loss
+there is one every round trip, so the window sits at its 2-packet minimum
+(about 26 kB/s), media queues for seconds (a three-person run measured an RTT
+of 1.87 s), and the engine's own controller (delay gradient plus loss, with
+FEC and DRED, [fmm-protocol.md](fmm-protocol.md)) never gets to act.
 
-Both ends now set `quic.Config.DatagramLossExempt`
+Both ends therefore set `quic.Config.DatagramLossExempt`
 ([quic.md](quic.md#datagram-loss-and-the-media-layer)). When a lost packet
 carried only DATAGRAM, ACK or PING frames, the window is not reduced: the
 media layer's controller answers media loss. Stream data (the control
 stream) still backs off as usual, and persistent congestion still collapses
-the window. Same run afterwards: RTT 92 to 117 ms, and 83 to 97% of the
+the window. The same run then measured RTT 92 to 117 ms with 83 to 97% of the
 audio played.
 
 ### Standby core: rejoin on the second rendezvous choice
 
-Rooms stay per core. That leaves two ways to survive a core's death:
-
-1. Rooms that span cores, with a core-to-core relay (cascade).
-2. Every client keeps a warm connection to the next core, and everyone moves
-   there together.
-
-We built option 2. It needs no inter-core protocol and no shared room state.
-It works because rendezvous ordering is the same for every participant: the
+Rooms stay per core. Instead of rooms that span cores (a core-to-core
+cascade), every client keeps a warm connection to the next core and everyone
+moves there together. That needs no inter-core protocol and no shared room
+state ([architecture](../architecture.md) covers core failover in
+general). It works because rendezvous ordering is the same for every
+participant: the
 app ranks the cores for a room by SHA-256(room + node) over the healthy ones.
 The first is the core for the room (the same core the WebRTC ticket names),
 and the second is the standby. With highest-random-weight hashing, removing
@@ -238,8 +236,8 @@ joins. Two ways to kill the primary: **silent**, where its relay drops
 everything both ways (power loss, network partition), and **closed**, where
 the process stops and sends CONNECTION_CLOSE (crash, restart, `systemctl
 stop`). The gap is the time from the death to the first audio frame the
-listener's jitter buffer plays from that speaker on the new core. Runs on
-2026-10-21 on the i9-10980XE (load 5), plain and `-race`, 3 to 4 runs each:
+listener's jitter buffer plays from that speaker on the new core. Measured on
+an i9-10980XE (load 5), plain and `-race`, 3 to 4 runs each:
 
 | Death | Judged dead after | Audio back after (all 6 listener-speaker pairs) | Longest silence |
 | --- | --- | --- | --- |
@@ -271,8 +269,7 @@ cores would close it for both engines; not built.
 
 ## WebRTC and FM Media in one room: later
 
-Decided 2026-10-21: no bridge in this phase. A room runs on one engine at a
-time, and **the first joiner's engine holds it until the room empties**.
+No bridge in this phase. A room runs on one engine at a time, and **the first joiner's engine holds it until the room empties**.
 `signal.RoomEngines` is shared by both servers in the process:
 
 - each join claims the room for its engine;
@@ -288,7 +285,7 @@ with the WebRTC ticket from the same response, with no second request. Old
 clients ask for nothing and get the old response unchanged.
 
 The cost: an old WebRTC-only client cannot join a call that started on FM
-Media. FM Media ships disabled ([../deploy/calls.md](../deploy/calls.md#fm-media)),
+Media. FM Media ships disabled ([../deploy/calls.md](../operations/call-servers.md#fm-media)),
 so this cannot happen until it is switched on. A bridge before then would
 need, for every mixed pair:
 
@@ -359,9 +356,9 @@ FORKMESH_TEST_CHROMIUM=/path/to/chrome-headless-shell go test -run Chromium -v .
   WebTransport session to `/calls/fmm` with both published hashes. A
   minimal page joins with a ticket, publishes an audio stream, subscribes to
   the `TrackAdded` it gets for a native Go peer in the same room, and sends
-  120 media datagrams. Both sides must receive: in the first run the
-  browser got 137 media datagrams and 48 feedback datagrams, and the native
-  peer played 70 of the browser's frames. The origin check saw the page's
+  120 media datagrams. Both sides must receive (typically the browser gets
+  about 137 media and 48 feedback datagrams, and the native peer plays about
+  70 of the browser's frames), and the origin check must see the page's
   origin. It skips when no Chromium is found.
 - `cmd/forkmesh-calls`: `/calls/health` without and with the listener (port,
   path, ALPN, two hashes, `no-store`), the state directory from
@@ -370,8 +367,9 @@ FORKMESH_TEST_CHROMIUM=/path/to/chrome-headless-shell go test -run Chromium -v .
   the WebRTC ticket bytes unchanged by the new fields; the standby ticket
   vector shared with `app/tests/test_chat_call_fm_media.py`.
 - `rtc/sfu`: `TestAWebRTCRoomRefusesTheOtherEngineUntilItEmpties`.
-- `rtc/quic`: `TestDatagramLossExemptKeepsTheWindowOpen` (10% loss: the
-  window stays 12,000 bytes instead of 2,400) and
+- `rtc/quic`: `TestDatagramLossExemptKeepsTheWindowOpen` (10% loss: without
+  the exemption the window falls to half its start or less; with it the
+  window never shrinks) and
   `TestDatagramLossExemptStillBacksOffForStreams`.
 
 ## Not done yet

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Production's identity values into the Next vault's source (docs/CUTOVER.md)."""
+"""Production's identity values into the Next vault's source (docs/operations/served-stack.md)."""
 
 from __future__ import annotations
 

@@ -13,7 +13,7 @@
 A release is ``/opt/forkmesh-next/app/releases/<rev>`` holding the built app
 (``app/host``, ``app/src_build``, ``app/dist``, ``app/wrangler.toml``), the
 built World (``world/dist``, api-origin meta injected; the app host answers
-world.next ``/health/mobile`` from these files), a ``.venv`` installed offline from the bundled wheelhouse,
+world.forkmesh.com ``/health/mobile`` from these files), a ``.venv`` installed offline from the bundled wheelhouse,
 the Caddy route snippets for that release, ``BUILD_REV`` and
 ``release.env``. ``current`` is a symlink; the previous target is kept in
 ``/opt/forkmesh-next/app/previous``.
@@ -455,7 +455,7 @@ done
            current=CURRENT, previous=PREVIOUS, keep_n=KEEP_RELEASES + 1)
 
 
-# Vault on (docs/VAULT.md): DATA_KEY arrives as the first stdin line, is kept
+# Vault on (docs/operations/vault.md): DATA_KEY arrives as the first stdin line, is kept
 # in an unexported shell variable (printf is a bash builtin: never an argv or
 # the environment) and is handed to the restarted app's unseal socket.
 VAULT_READ_KEY = """
@@ -875,7 +875,7 @@ def skipped_cores(fleet, ssh, runner, explicit=None, environ=None, dns=None,
                              len(left), len(cores), need))
     for name, why in sorted(reasons.items()):
         runner.say("%s: skipped (%s); it catches up when it is back "
-                   "(docs/deploy/auto-deploy.md)" % (name, why))
+                   "(docs/operations/auto-deploy.md)" % (name, why))
     return reasons
 
 
@@ -958,6 +958,12 @@ def half_activated(state):
             and state.get("current") != state.get("running"))
 
 
+def say_activation_output(runner, name, stderr, limit=20):
+    text = (stderr or b"").decode("utf-8", "replace")
+    for line in [line for line in text.splitlines() if line.strip()][-limit:]:
+        runner.say("%s: activation: %s" % (name, line[:300]))
+
+
 def activate_node(fleet, node, rev, ssh, runner, vault, key):
     ip = node["public_ipv4"]
     script = activate_script(rev, node_host(fleet, node["name"]), vault=vault)
@@ -966,6 +972,8 @@ def activate_node(fleet, node, rev, ssh, runner, vault, key):
             completed = ssh.run(ip, script, input_bytes=key, check=False,
                                 timeout=1200)
             code = completed.returncode
+            if code != 0:
+                say_activation_output(runner, node["name"], completed.stderr)
         except (ToolError, subprocess.TimeoutExpired) as error:
             runner.say("%s: activation session ended early (%s); checking the "
                        "node" % (node["name"], error))

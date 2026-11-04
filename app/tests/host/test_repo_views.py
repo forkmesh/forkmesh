@@ -638,6 +638,29 @@ def test_pull_text_folds_edits_deletes_and_review_states():
     assert "## Comments and reviews (3)" in text
 
 
+def test_pull_text_shows_the_authors_newest_description_edit():
+    conversation = [
+        {"type": "comment-edit", "target": "description", "authorKey": "ka",
+         "ts": "1790000002000", "body": "Second description"},
+        {"type": "comment-edit", "target": "description", "authorKey": "ka",
+         "ts": "1790000001000", "body": "First description"},
+        {"type": "comment-edit", "target": "description", "authorKey": "kb",
+         "authorName": "bo", "ts": "1790000003000", "body": "Hijacked description"},
+    ]
+    pull = {"number": 9, "title": "T", "author": "ann", "authorKey": "ka",
+            "authorName": "ann", "state": "open", "base": "main", "head": "f",
+            "body": "Original description", "patch": "", "conversation": conversation}
+    text = repo_views.pull_text(types.SimpleNamespace(model={"pull": pull}))
+    assert "## Description\n\nSecond description\n" in text
+    assert "Original description" not in text and "Hijacked" not in text
+    assert "## Comments and reviews (0)" in text
+    by_name = dict(pull, conversation=[{"type": "comment-edit", "target": "description",
+                                        "authorKey": "kz", "authorName": "ANN", "body": "From the desktop"}])
+    assert "From the desktop" in repo_views.pull_text(types.SimpleNamespace(model={"pull": by_name}))
+    untouched = dict(pull, conversation=[])
+    assert "Original description" in repo_views.pull_text(types.SimpleNamespace(model={"pull": untouched}))
+
+
 SHORT_META = ('<meta name="forkmesh-repo-short" content="forkmesh">'
               '<meta name="forkmesh-repo-owner" content="forkmesh">'
               '<meta name="forkmesh-repo-canonical" content="forkmesh">')
@@ -752,6 +775,22 @@ def test_issue_list_rows_show_recent_commenters_with_imported_pictures(monkeypat
             '&amp;ref=main"') in faces
     assert "github.com" not in faces.replace('href="https://github.com/', "")
     assert faces.count("<img") == 1
+
+
+def test_pull_list_rows_stack_everyone_latest_first_author_last():
+    from types import SimpleNamespace
+    assert repo_views.pull_people(["carol", "Dave", "ann"], "ann") == ["carol", "Dave", "ann"]
+    assert repo_views.pull_people(None, "ann") == ["ann"]
+    assert repo_views.pull_people(["carol", "", 5, "dave"], "") == ["carol", "5", "dave"]
+    rows = [{"number": 4, "title": "Fix", "state": "open", "ts": "", "author": "ann",
+             "people": ["carol", "dave", "ann"]}]
+    bundle = SimpleNamespace(owner="o", repo="r", view="pulls", number=0, ref="main",
+                             model={"rows": rows})
+    html = repo_views._render(bundle)
+    faces = html.split("data-repo-pull-row-people", 1)[1].split("</span><a ", 1)[0]
+    assert 'title="Latest first: carol, dave, ann"' in faces
+    assert faces.count("h-5 w-5") == 3
+    assert [int(z) for z in re.findall(r"z-index:(\d+)", faces)] == [3, 2, 1]
 
 
 def test_the_server_list_is_newest_created_first_with_forum_lists_on(monkeypatch):

@@ -130,6 +130,7 @@ enum NavigationRoutes {
         fallback(routes, .glassesAlert) { _ in AnyView(GlassesAlertScreen()) }
         fallback(routes, .phoneSecurity) { _ in AnyView(PhoneSecurityScreen()) }
         fallback(routes, .eyeControl) { _ in AnyView(EyeControlScreen()) }
+        fallback(routes, .silentSpeech) { _ in AnyView(SilentSpeechScreen()) }
         fallback(routes, .ember) { route in
             guard case let .ember(repo) = route else { return AnyView(RoutePlaceholderView(route: route)) }
             return AnyView(CodeInsightScreen(plugin: .ember, repo: repo) { EmberPage(context: $0) })
@@ -161,6 +162,7 @@ enum NavigationRoutes {
             guard case let .instanceFeed(post) = route else { return AnyView(FeedScreen()) }
             return AnyView(FeedScreen(post: post))
         }
+        fallback(routes, .mastodon) { _ in AnyView(MastodonScreen()) }
         fallback(routes, .secureDrive) { _ in AnyView(SecureDriveScreen()) }
         fallback(routes, .spiderRoom) { _ in AnyView(SpiderRoomScreen()) }
         fallback(routes, .workflows) { _ in AnyView(WorkflowsScreen()) }

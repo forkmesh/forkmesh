@@ -1,5 +1,5 @@
 #!/usr/bin/python3 -I
-"""fmnext-ids: host intrusion detection for ForkMesh Next nodes (docs/IDS.md).
+"""fmnext-ids: host intrusion detection for ForkMesh Next nodes (docs/operations/intrusion-detection.md).
 
 Runs as root (``fmnext-ids.service``) on the three core nodes and the
 runner; Python stdlib only, plus ``cryptography`` for the rare Ed25519
@@ -227,7 +227,8 @@ class SshMonitor:
         self.pending = {}
 
     def feed(self, entry):
-        if entry.get("SYSLOG_IDENTIFIER") not in SSHD_IDENTIFIERS:
+        if entry.get("SYSLOG_IDENTIFIER") not in SSHD_IDENTIFIERS or \
+                str(entry.get("_UID")) != "0":
             return []
         text = str(entry.get("MESSAGE") or "")
         match = ACCEPTED_RE.match(text)

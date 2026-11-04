@@ -1,6 +1,6 @@
 package mirrornode
 
-// Per-job resource containment for runner agent jobs (docs/RUNNERS.md).
+// Per-job resource containment for runner agent jobs (docs/operations/runners.md).
 //
 // When systemd-run is usable, each provider CLI runs in its own transient
 // scope with MemoryMax and CPUQuota, and as runner.jobUid when the daemon is
@@ -398,7 +398,7 @@ func (b jobSandbox) openJobTmp(unit string) (string, error) {
 		return "", err
 	}
 	tmp := filepath.Join(root, unit)
-	if err := removeTreeUnder(root, tmp); err != nil {
+	if err := removeJobOwnedUnder(root, tmp); err != nil {
 		return "", err
 	}
 	if err := os.Mkdir(tmp, 0o700); err != nil {
@@ -406,7 +406,7 @@ func (b jobSandbox) openJobTmp(unit string) (string, error) {
 	}
 	if b.uid != 0 {
 		if err := os.Lchown(tmp, b.uid, b.gidOrUID()); err != nil {
-			_ = removeTreeUnder(root, tmp)
+			_ = removeJobOwnedUnder(root, tmp)
 			return "", err
 		}
 	}
@@ -415,7 +415,7 @@ func (b jobSandbox) openJobTmp(unit string) (string, error) {
 
 func (b jobSandbox) closeJobTmp(tmp string) {
 	if tmp != "" {
-		_ = removeTreeUnder(filepath.Dir(tmp), tmp)
+		_ = removeJobOwnedUnder(filepath.Dir(tmp), tmp)
 	}
 }
 
@@ -457,7 +457,9 @@ func (b jobSandbox) sweepSharedTmp() {
 		root := filepath.Join(b.workRoot, jobTmpDir)
 		if entries, err := os.ReadDir(root); err == nil {
 			for _, entry := range entries {
-				_ = removeTreeUnder(root, filepath.Join(root, entry.Name()))
+				if err := removeJobOwnedUnder(root, filepath.Join(root, entry.Name())); err != nil {
+					log.Printf("runner: %v", err)
+				}
 			}
 		}
 	}
@@ -476,7 +478,9 @@ func (b jobSandbox) sweepSharedTmp() {
 				continue
 			}
 			if stat, ok := info.Sys().(*syscall.Stat_t); ok && int(stat.Uid) == b.uid {
-				_ = removeTreeUnder(dir, path)
+				if err := removeJobOwnedUnder(dir, path); err != nil {
+					log.Printf("runner: %v", err)
+				}
 			}
 		}
 	}

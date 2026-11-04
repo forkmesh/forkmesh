@@ -10,6 +10,7 @@ const APP_PATHS = new Set([
   "/reset-password",
   "/signup",
   "/start",
+  "/start-discourse-mirror",
 ]);
 
 // /@name is the one App-rendered document WWW proxies instead of redirecting,
@@ -58,7 +59,7 @@ const RSS_HEADERS = {
   "cache-control": "public, max-age=1800",
   "content-type": "application/rss+xml; charset=utf-8",
 };
-// Acquisition attribution (docs/attribution.md). Marketing HTML is served
+// Acquisition attribution (docs/app/attribution.md). Marketing HTML is served
 // from static assets, so the only server-side place a landing page can be
 // observed is here. The cookie holds one opaque random id and nothing else;
 // UTM parsing, allowlisting and storage all happen in the App Worker, which
@@ -123,7 +124,7 @@ function redirect(origin, url, pathname = url.pathname, status = 308) {
 // the connecting peer's address, which for this Worker is a Cloudflare egress
 // address. The visitor's real address and country therefore travel in one
 // HMAC-signed header, x-forkmesh-edge-client, which the App trusts only with a
-// valid signature (deploy/core/edge_client.md):
+// valid signature (docs/www/edge-client.md):
 //   x-forkmesh-edge-client: v1,<ip>,<country>,<unix seconds>,<base64url mac>
 //   mac = HMAC-SHA256(WWW_EDGE_SECRET,
 //         "v1\n<ip>\n<country>\n<ts>\n<METHOD>\n<pathname>")

@@ -106,7 +106,7 @@ def test_world_web_native_and_qt_render_provenance_backlinks_as_non_native():
 
 
 def test_documentation_states_context_and_signature_boundaries():
-    docs = text(ROOT / "www" / "docs" / "lemmy-threaded-collaboration.md")
+    docs = text(ROOT / "docs" / "fediverse.md")
     assert "A remote object cannot select a ForkMesh context" in docs
     assert "does not make the reply a ForkMesh native event" in docs
     assert "Undo(Remove)" in docs

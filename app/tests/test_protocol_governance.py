@@ -250,7 +250,7 @@ def test_register_is_searchable_and_links_disclosures_to_records(tmp_path):
 
 
 def test_gate_is_wired_into_quality_profiles_and_ci():
-    config = json.loads((ROOT / "www/docs/engineering/quality-gates.json").read_text(encoding="utf-8"))
+    config = json.loads((ROOT / "docs/engineering/quality-gates.json").read_text(encoding="utf-8"))
     gate = next(item for item in config["gates"] if item["id"] == "protocol-governance")
     assert gate["command"] == ["{python}", "tools/protocol_governance.py", "gate"]
     assert "protocol-governance" in config["profiles"]["core"]

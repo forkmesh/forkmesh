@@ -85,7 +85,9 @@
     },
     notifications: [],
     notificationUnread: 0,
-    selectedNotificationId: "",
+    notificationTotal: 0,
+    notificationsLoaded: false,
+    notificationsFailed: false,
     issuesView: {
       filter: "open",
       items: [],
@@ -124,6 +126,10 @@
     // parsed from /blog/rss.xml. null until the feed read resolves so the card
     // can tell "loading" apart from "feed unavailable".
     homeBlogPosts: null,
+    homeChangelogNotes: null,
+    homeWork: null,
+    homeWorkSignature: "",
+    homeRepoSearchOpen: false,
     repoRemoteForks: { key: "", forks: [], canManage: false, loaded: false },
     // Organization aliases are not duplicate catalog publications: load the
     // signed-in viewer's linked aliases separately so Top repositories can
@@ -681,6 +687,10 @@
     const ready = typeof genie?.isOff === "function";
     toggle.setAttribute("aria-checked", ready && genie.isOff() ? "false" : "true");
     toggle.disabled = !ready;
+    const mascot = $("[data-genie-mascot]");
+    if (!mascot) return;
+    mascot.disabled = typeof genie?.setMascot !== "function";
+    if (!mascot.disabled) mascot.value = genie.mascot();
   }
 
   function saveGenieSetting(shown) {
@@ -692,6 +702,10 @@
 
   function watchGenieSetting() {
     window.addEventListener("forkmesh:genie", renderGenieSetting);
+    document.addEventListener("change", (event) => {
+      const mascot = event.target.closest?.("[data-genie-mascot]");
+      if (mascot) window.ForkMeshGenie?.setMascot?.(mascot.value);
+    });
     if (document.readyState !== "complete") {
       document.addEventListener("DOMContentLoaded", renderGenieSetting, { once: true });
     }
@@ -881,9 +895,13 @@
       const nodeName = String(account?.nodeName || "").trim();
       if (!payload?.portable || !nodeName) return null;
 
+      const stored = readSession();
+      const storedCase = String(stored?.nodeName || "").toLowerCase() === nodeName.toLowerCase()
+        ? stored?.nameCase : "";
       const hydrated = {
         ...account,
         nodeName,
+        nameCase: account.nameCase || storedCase || "",
         sessionToken: "cookie",
         portable: true,
         controllerIndependent: payload.controllerIndependent === true,
@@ -943,6 +961,7 @@
       "forkmesh.analyticsConsent.v1",
       "forkmesh.apiOrigin",
       "forkmesh.dashboard.theme",
+      "forkmesh.genie.mascot",
       "forkmesh.genie.off",
       "forkmesh.theme",
     ]);
@@ -2030,6 +2049,11 @@
     if (repoKey(repo).toLowerCase() === wanted || repoCanonicalKey(repo).toLowerCase() === wanted) {
       return true;
     }
+    const name = String(repo?.name || "").trim().toLowerCase();
+    if (name && repoLogicalOwners(repo).some((value) =>
+      value.kind === "organization" && `${value.owner.toLowerCase()}/${name}` === wanted)) {
+      return true;
+    }
     return Array.isArray(repo?._repoAliases) && repo._repoAliases.includes(wanted);
   }
 
@@ -2051,6 +2075,15 @@
     const currentName = String(repo?.name || "").trim().toLowerCase();
     if (owner === currentOwner && name === currentName) return null;
     return { owner, name, key: `${owner}/${name}` };
+  }
+
+  function repoForkParentRepository(parent) {
+    if (!parent?.key || typeof findRepository !== "function") return null;
+    try {
+      return findRepository(parent.key);
+    } catch (_) {
+      return null;
+    }
   }
 
   function repoMirrorOf(repo) {
@@ -2107,8 +2140,11 @@
     if (!mirrorOf && !parent) return "";
     const linkClass = "dashboard-accent-link min-w-0 truncate font-medium hover:underline";
     if (!mirrorOf) {
-      const contribute = `<button type="button" data-repo-contribute title="Open a pull request from this fork to ${escapeHtml(repoDisplayName(parent.key))}" class="fm-btn fm-btn-sm shrink-0"><i data-lucide="git-pull-request"></i>Contribute: Open pull request</button>`;
-      return `<span data-repo-provenance-line="fork" class="inline-flex min-w-0 items-center gap-1.5"><i data-lucide="git-fork" aria-hidden="true" class="h-3.5 w-3.5 shrink-0 text-muted-foreground"></i><span class="shrink-0">forked from</span><a data-repo-provenance-link href="${escapeHtml(repoLinkUrl({ owner: parent.owner, name: parent.name }))}" class="${linkClass}">${escapeHtml(repoDisplayName(parent.key))}</a></span>${contribute}`;
+      const parentRepo = repoForkParentRepository(parent);
+      const parentLabel = parentRepo ? repoDisplayName(parentRepo) : repoDisplayName(parent.key);
+      const parentHref = repoLinkUrl(parentRepo || { owner: parent.owner, name: parent.name });
+      const contribute = `<button type="button" data-repo-contribute title="Open a pull request from this fork to ${escapeHtml(parentLabel)}" class="fm-btn fm-btn-sm shrink-0"><i data-lucide="git-pull-request"></i>Contribute: Open pull request</button>`;
+      return `<span data-repo-provenance-line="fork" class="inline-flex min-w-0 items-center gap-1.5"><i data-lucide="git-fork" aria-hidden="true" class="h-3.5 w-3.5 shrink-0 text-muted-foreground"></i><span class="shrink-0">forked from</span><a data-repo-provenance-link href="${escapeHtml(parentHref)}" class="${linkClass}">${escapeHtml(parentLabel)}</a></span>${contribute}`;
     }
     const syncedAt = repoMirrorSyncedAt(repo);
     const commit = String(repo?.upstreamCommit || "").trim();
@@ -2592,7 +2628,7 @@
 
   // Feature-tab route segments (mirrors 404.html's `featureTabs` list) - tells
   // a tab route (e.g. /owner/repo/issues) apart from a tree/blob code deep link.
-  const REPO_TAB_ROUTES = ["branches", "commits", "insights", "sizemap", "releases", "issues", "projects", "pulls", "discussions", "mirrors", "actions", "security"];
+  const REPO_TAB_ROUTES = ["branches", "commits", "insights", "sizemap", "releases", "issues", "projects", "pulls", "discussions", "forum", "mirrors", "actions", "security"];
   const REPO_ROUTE_SEGMENTS = [...REPO_TAB_ROUTES, "pull", "agents", "settings", "tree", "blob", "compare"];
 
   // Owner/admin Agents and owner-only Settings are only recognized for an
@@ -4467,7 +4503,7 @@
     const signedHead = parent
       ? `${repoDisplayOwner(repo) || repo.owner}:${head}`
       : head;
-    const pull = withPullAiModel(await signWebPull(repo, targetRepo, title, body, base, head, signedHead), aiModel);
+    const pull = withPullAiModel(await signWebPull(repo, targetRepo, title, body, base, head, signedHead, "", parent ? targetRepo : null), aiModel);
     const payload = { owner: targetRepo.owner, repo: targetRepo.name, pull };
     try {
       const data = await fetchRepoMutation(targetRepo, "pulls", payload);
@@ -4521,7 +4557,27 @@
     return { ...data, pull, remote };
   }
 
-  async function signWebPull(repo, signingRepo, title, body, base, head, signedHead, compareBase = "") {
+  async function pullParentBaseOid(parentRepo, base) {
+    try {
+      const branches = await fetchRepoBranches(parentRepo, { refresh: true });
+      const tip = String(branches.find((branch) => branch.name === base)?.commit || "").toLowerCase();
+      return /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(tip) ? tip : "";
+    } catch (_) {
+      return "";
+    }
+  }
+
+  async function fetchPullComparison(repo, base, head, parentRepo = null) {
+    const parentBase = parentRepo ? await pullParentBaseOid(parentRepo, base) : "";
+    if (parentBase) {
+      try {
+        return await fetchRepoJson(repoLiveUrl(repo, "compare", { base: parentBase, head, ref: "" }));
+      } catch (_) {}
+    }
+    return fetchRepoJson(repoLiveUrl(repo, "compare", { base, head, ref: "" }));
+  }
+
+  async function signWebPull(repo, signingRepo, title, body, base, head, signedHead, compareBase = "", parentRepo = null) {
     // The comparison is the first thing that can fail, and it fails BEFORE
     // anything is signed or sent - a mirror answers 404 for a branch name it
     // cannot resolve yet, which is the common case for a branch that was just
@@ -4531,11 +4587,7 @@
     // which reads as a rejected submission and invites a pointless resend.
     let comparison;
     try {
-      comparison = await fetchRepoJson(repoLiveUrl(repo, "compare", {
-        base: compareBase || base,
-        head,
-        ref: "",
-      }));
+      comparison = await fetchPullComparison(repo, compareBase || base, head, compareBase ? null : parentRepo);
     } catch (cause) {
       const error = new Error("comparison_unavailable");
       error.status = Number(cause?.status) || 0;
@@ -4839,7 +4891,7 @@
       detail.number,
       detail.parsed,
     ));
-    mountIssueStickyHeader(container);
+    mountRecordStickyHeader(container);
     decorateIssueModeration(container, detail.repo, detail.number, detail.parsed);
     window.lucide?.createIcons();
   }
@@ -4950,6 +5002,40 @@
     refreshPullConversationProjection();
     refreshRepoPullDiff();
     if (action !== "delete") restoreCommentEditFocus(target, "[data-repo-pull-comment-edit]", "repoPullCommentEdit");
+  }
+
+  async function handleWebPullDescriptionEdit() {
+    const detail = state.repoRecordDetail;
+    const repo = detail?.repo;
+    const number = Number(detail?.number || 0);
+    if (!repo || detail?.kind !== "pulls" || !number) return;
+    if (!state.session?.nodeName) {
+      location.href = "/login?next="
+        + encodeURIComponent(`${location.pathname}${location.search}`);
+      return;
+    }
+    const parsed = detail.parsed || {};
+    const values = parsed.values || {};
+    if (!pullDescriptionEditable(values)) return;
+    const edit = pullDescriptionEdit(values, parsed.pullConversation);
+    const current = String(edit ? edit.body || "" : parsed.body || "");
+    const nextBody = await openIssueCommentEditor(
+      PULL_DESCRIPTION_TARGET, current,
+      "[data-repo-pull-description-edit]", "repoPullDescriptionEdit");
+    if (nextBody === null) return;
+    const trimmed = String(nextBody).replace(/[\r\n]+$/, "");
+    if (trimmed === current.replace(/[\r\n]+$/, "")) return;
+    let result;
+    try {
+      result = await submitWebPullCommentEdit(repo, number, PULL_DESCRIPTION_TARGET, trimmed);
+    } catch (error) {
+      showErrorNotice(webIssueActionError(error, "edit-comment"));
+      return;
+    }
+    if (state.repoRecordDetail !== detail) return;
+    parsed.pullConversation = [...(parsed.pullConversation || []), result.event];
+    paintPullDescription(repo, trimmed);
+    restoreCommentEditFocus(PULL_DESCRIPTION_TARGET, "[data-repo-pull-description-edit]", "repoPullDescriptionEdit");
   }
 
   async function handleWebIssueAction(action, target = "") {
@@ -6343,7 +6429,7 @@
     const base = String(values.base || "");
     let comparison;
     try {
-      comparison = await fetchRepoJson(repoLiveUrl(sourceRepo, "compare", { base, head: branch, ref: "" }));
+      comparison = await fetchPullComparison(sourceRepo, base, branch, source.owner ? repo : null);
     } catch (_) {
       throw new Error("comparison_unavailable");
     }
@@ -6354,7 +6440,8 @@
     const validOid = (value) => /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(value);
     if (!validOid(baseOid) || !validOid(headOid)) throw new Error("invalid_comparison");
     if (!patch.trim()) throw new Error("no_changes");
-    if (headOid === String(values.creationHeadOid || "").toLowerCase()) throw new Error("no_new_commits");
+    if (headOid === String(values.creationHeadOid || "").toLowerCase()
+      && baseOid === String(values.creationBaseOid || "").toLowerCase()) throw new Error("no_new_commits");
     const signedHead = source.owner ? `${source.owner}:${branch}` : branch;
     const revision = await signWebPullContent(
       repo, String(values.title || ""), "", base, signedHead, patch, commits);
@@ -9884,6 +9971,7 @@
         : "Verify email in profile";
     }
     applyAvatar(avatar, session);
+    renderHomeAccount(session);
     const publicProfileLink = $("[data-account-menu-public-profile]");
     if (publicProfileLink && session?.nodeName) {
       publicProfileLink.href = publicProfileUrl(session.nodeName);
@@ -10542,17 +10630,35 @@
       : range?.from;
     const missing = (Array.isArray(coverage?.missing) ? coverage.missing : [])
       .map((item) => String(item || "").trim()).filter(Boolean).slice(0, 4);
+    const hasForge = Boolean(profileContributionCount(coverage?.forge?.repositories));
     const missingLabels = missing.map((item) => ({
       commits: "commit history",
-      collaboration: "collaboration events",
+      collaboration: hasForge ? "collaboration events outside hosted repositories" : "collaboration events",
       languages: "language footprint",
       history: "earlier history",
     })[item] || item);
+    const forgeNote = profileContributionForgeNote(coverage?.forge);
     if (coverage?.status === "partial") {
-      return `Partial verified history from ${verifiedLabel || "the available sources"}${missingLabels.length ? `. Missing ${missingLabels.join(", ")}.` : "."}`;
+      return `Partial verified history from ${verifiedLabel || "the available sources"}${missingLabels.length ? `. Missing ${missingLabels.join(", ")}.` : "."}${forgeNote}`;
     }
-    if (coverage?.status === "unavailable") return "Verified contribution history is not available yet.";
-    return `Complete verified public history for ${range?.label || "this period"}.`;
+    if (coverage?.status === "unavailable") {
+      return forgeNote
+        ? `${forgeNote.trim()} Desktop-published contribution history is not available yet.`
+        : "Verified contribution history is not available yet.";
+    }
+    return `Complete verified public history for ${range?.label || "this period"}.${forgeNote}`;
+  }
+
+  function profileContributionForgeNote(forge) {
+    const repositories = profileContributionCount(forge?.repositories);
+    if (!repositories) return "";
+    const labels = { issues: "issues", pulls: "pull requests", reviews: "reviews" };
+    const kinds = (Array.isArray(forge?.kinds) ? forge.kinds : [])
+      .map((kind) => labels[kind]).filter(Boolean);
+    const what = kinds.length > 1
+      ? `${kinds.slice(0, -1).join(", ")} and ${kinds[kinds.length - 1]}`
+      : (kinds[0] || "collaboration");
+    return ` Includes ${what} recorded on ${formatCount(repositories)} public hosted repositor${repositories === 1 ? "y" : "ies"} in the last year.`;
   }
 
   function renderProfileContributionStatus(status, { hasData = false } = {}) {
@@ -11036,6 +11142,7 @@
       { kind: "device_added", label: "New device signed in", email: false },
       { kind: "timer_finished", label: "Timers and alarms", email: false },
       { kind: "desktop_ping", label: "Pings from your desktop", email: false },
+      { kind: "agent_approval", label: "Agent approvals from your desktop", email: false },
       { kind: "plugin_activity", label: "App package activity", email: false },
     ] },
   ];
@@ -11573,7 +11680,7 @@
     $$("[data-notification-bell-on]").forEach((el) => { el.classList.toggle("hidden", Boolean(until)); });
     $$("[data-notification-bell-off]").forEach((el) => { el.classList.toggle("hidden", !until); });
     const toggle = $("#notificationToggle");
-    if (toggle) toggle.title = until ? label : "Ping notifications";
+    if (toggle) toggle.title = until ? label : "Pings";
     // The status line right above already says how long, so while a pause runs
     // this only has to offer the way to change it.
     $$("[data-ping-pause-toggle]").forEach((el) => {
@@ -11899,7 +12006,7 @@
     if (locationInput && document.activeElement !== locationInput) {
       locationInput.value = session?.profileLocation || "";
     }
-    if (nameCaseInput && document.activeElement !== nameCaseInput) {
+    if (nameCaseInput && document.activeElement !== nameCaseInput && !nameCaseInput.dataset.edited) {
       nameCaseInput.value = session?.nameCase || session?.nodeName || "";
       nameCaseInput.placeholder = session?.nodeName || "username";
     }
@@ -12535,6 +12642,11 @@
         followersPublic: Boolean($("[data-profile-page-followers-public]")?.checked),
         profileLinks: collectProfileLinks(),
       });
+      const nameCaseInput = $("[data-profile-page-name-case]");
+      if (nameCaseInput) {
+        delete nameCaseInput.dataset.edited;
+        nameCaseInput.value = state.session?.nameCase || state.session?.nodeName || "";
+      }
       setProfilePageHint("[data-profile-public-hint]", "Public profile saved.", "good");
     } catch (error) {
       const messages = {
@@ -14271,9 +14383,43 @@
       : null;
   }
 
+  const REPOSITORY_FORK_COUNTS_STORE = "forkmesh.repoForkCounts.v1";
+  const REPOSITORY_FORK_COUNTS_TTL_MS = 120000;
+
+  function loadStoredRepositoryForkCounts() {
+    const counts = new Map();
+    try {
+      const stored = JSON.parse(sessionStorage.getItem(REPOSITORY_FORK_COUNTS_STORE) || "{}");
+      if (Date.now() - Number(stored.at || 0) < REPOSITORY_FORK_COUNTS_TTL_MS) {
+        Object.entries(stored.counts || {}).forEach(([key, value]) => {
+          const found = repositoryForkCountsValue(value);
+          if (isRepoKey(key) && found) counts.set(key, found);
+        });
+        return { counts, asked: new Set((stored.asked || []).filter(isRepoKey)) };
+      }
+    } catch (_) {}
+    return { counts, asked: new Set() };
+  }
+
+  function storeRepositoryForkCounts() {
+    try {
+      const stored = JSON.parse(sessionStorage.getItem(REPOSITORY_FORK_COUNTS_STORE) || "{}");
+      const fresh = Date.now() - Number(stored.at || 0) < REPOSITORY_FORK_COUNTS_TTL_MS;
+      sessionStorage.setItem(REPOSITORY_FORK_COUNTS_STORE, JSON.stringify({
+        at: fresh ? Number(stored.at) : Date.now(),
+        counts: Object.fromEntries(state.repositoryForkCounts),
+        asked: [...state.repositoryForkCountsAsked],
+      }));
+    } catch (_) {}
+  }
+
   async function hydrateRepositoryForkCounts(root) {
+    if (!state.repositoryForkCounts) {
+      const stored = loadStoredRepositoryForkCounts();
+      state.repositoryForkCounts = stored.counts;
+      state.repositoryForkCountsAsked = stored.asked;
+    }
     const nodes = applyRepositoryForkCounts(root);
-    if (!state.repositoryForkCounts) state.repositoryForkCounts = new Map();
     if (!state.repositoryForkCountsAsked) state.repositoryForkCountsAsked = new Set();
     const wanted = [...new Set(nodes.map((node) => node.getAttribute("data-repo-fork-counts")))]
       .filter((key) => isRepoKey(key) && !state.repositoryForkCountsAsked.has(key));
@@ -14295,6 +14441,7 @@
         });
       } catch (_) {}
     }
+    storeRepositoryForkCounts();
     applyRepositoryForkCounts(document);
   }
 
@@ -14403,7 +14550,7 @@
       : [];
     const entries = [
       ...organizationRepositories.map((repo) => ({
-        repo,
+        repo: organizationEntryRepository(repo),
         key: repoHasShortAddress(repo) ? String(repo.name) : `${repo.owner}/${repo.name}`,
         href: repoPathUrl(repo),
         organization: true,
@@ -14480,12 +14627,22 @@
     loadHomeRepositoryViews(keys, signature);
   }
 
+  function organizationEntryRepository(repo) {
+    const node = String(repo?.linkedNode || "").trim().toLowerCase();
+    const name = String(repo?.name || "").trim().toLowerCase();
+    if (!node || !name) return repo;
+    return (Array.isArray(state.repositories) ? state.repositories : []).find((candidate) =>
+      String(candidate?.owner || "").toLowerCase() === node
+      && String(candidate?.name || "").toLowerCase() === name) || repo;
+  }
+
   function homeRepositoryEntries() {
     return [
       ...(Array.isArray(state.homeOrganizationRepositories)
         ? state.homeOrganizationRepositories
         : []).map((repo) => ({
-          repo,
+          repo: organizationEntryRepository(repo),
+          label: repoDisplayName(repo),
           href: repoPathUrl(repo),
           organization: true,
         })),
@@ -14496,7 +14653,8 @@
     ].map((entry) => ({ ...entry, label: entry.label || repoDisplayName(entry.repo) }))
       .filter((entry, index, values) =>
         values.findIndex((candidate) =>
-          candidate.label.toLowerCase() === entry.label.toLowerCase()) === index)
+          candidate.label.toLowerCase() === entry.label.toLowerCase()
+          || (candidate.organization && repoKey(candidate.repo).toLowerCase() === repoKey(entry.repo).toLowerCase())) === index)
       .sort((a, b) => homeRepositoryLastViewedAt(b) - homeRepositoryLastViewedAt(a));
   }
 
@@ -14511,25 +14669,25 @@
     const status = live
       ? (repoServedByMirror(repo) ? "served by mirror" : "live host")
       : "offline";
-    const statusHtml = dashboardOnInstance() ? "" : `<span data-home-repo-served-by class="inline-flex items-center gap-1.5"><span class="h-2 w-2 shrink-0 rounded-full ${live ? "bg-success" : "bg-muted-foreground/40"}"></span>${status}</span>`;
-    const logo = nativeRepositoryLogoMarkup(repo, "h-8 w-8")
-      || '<span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-border bg-secondary text-muted-foreground"><i data-lucide="book-marked" class="h-4 w-4"></i></span>';
+    const statusHtml = dashboardOnInstance() ? "" : `<span data-home-repo-served-by title="${status}" class="ml-auto h-1.5 w-1.5 shrink-0 rounded-full ${live ? "bg-success" : "bg-muted-foreground/40"}"><span class="sr-only">${status}</span></span>`;
+    const logo = nativeRepositoryLogoMarkup(repo, "h-5 w-5")
+      || '<span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border bg-secondary text-muted-foreground"><i data-lucide="book-marked" class="h-3 w-3"></i></span>';
+    const label = entry.label || repoDisplayName(repo);
     const description = String(repo.description || "").trim();
     const views = Number(homeRepositoryViewTotals(repo)?.views) || 0;
     const forks = Math.max(Number(repo.forkCount) || 0, Number(nestedForks) || 0);
-    return `<a href="${escapeHtml(entry.href)}" data-home-repo-row class="flex min-w-0 items-start gap-2.5 rounded-md px-2 py-2 text-left text-sm text-muted-foreground hover:bg-secondary hover:text-foreground">
+    const hint = [
+      label,
+      description,
+      views ? `${formatCount(views)} ${views === 1 ? "view" : "views"}` : "",
+      forks ? `${formatCount(forks)} ${forks === 1 ? "fork" : "forks"}` : "",
+    ].filter(Boolean).join(" · ");
+    return `<a href="${escapeHtml(entry.href)}" data-home-repo-row title="${escapeHtml(hint)}" class="flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-foreground hover:bg-secondary">
       ${logo}
-      <span class="min-w-0 flex-1">
-        <span class="block truncate font-medium text-foreground" title="${escapeHtml(entry.label || repoDisplayName(repo))}">${homeRepositoryLabelHtml(entry.label || repoDisplayName(repo))}</span>
-        ${description ? `<span data-user-content class="mt-0.5 block line-clamp-2 text-xs leading-5 text-muted-foreground">${escapeHtml(description)}</span>` : ""}
-        <span class="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          ${statusHtml}
-          ${entry.organization ? '<span class="shrink-0 text-[9px] uppercase text-muted-foreground">organization</span>' : ""}
-          ${views ? `<span data-home-repo-views class="inline-flex items-center gap-1"><i data-lucide="eye" class="h-3 w-3"></i>${escapeHtml(formatCount(views))} ${views === 1 ? "view" : "views"}</span>` : ""}
-          ${forks ? `<span data-home-repo-fork-count class="inline-flex items-center gap-1" title="${escapeHtml(`${formatCount(forks)} ${forks === 1 ? "fork" : "forks"}`)}"><i data-lucide="git-fork" class="h-3 w-3"></i>${escapeHtml(formatCount(forks))} ${forks === 1 ? "fork" : "forks"}</span>` : ""}
-          ${repositoryTermsBadge(repo, true)}
-        </span>
-      </span>
+      <span class="min-w-0 flex-1 truncate font-medium">${homeRepositoryLabelHtml(label)}</span>
+      ${entry.organization ? '<span class="shrink-0 text-[9px] uppercase text-muted-foreground">organization</span>' : ""}
+      ${repositoryTermsBadge(repo, true)}
+      ${statusHtml}
     </a>`;
   }
 
@@ -14561,11 +14719,15 @@
     const all = homeRepositoryEntries();
     refreshHomeRepositoryViews(all);
     const searchField = $("[data-home-repo-search-field]");
+    const searchToggle = $("[data-home-repo-search-toggle]");
     const searchable = all.length >= HOME_REPO_SEARCH_MIN_REPOSITORIES;
-    searchField?.classList.toggle("hidden", !searchable);
-    searchField?.classList.toggle("flex", searchable);
     const search = $("[data-home-repo-search]");
     if (!searchable && search?.value) search.value = "";
+    const searchOpen = searchable && (state.homeRepoSearchOpen || Boolean(search?.value));
+    searchToggle?.classList.toggle("hidden", !searchable);
+    searchToggle?.setAttribute("aria-expanded", String(searchOpen));
+    searchField?.classList.toggle("hidden", !searchOpen);
+    searchField?.classList.toggle("flex", searchOpen);
     const query = (search?.value || "").trim().toLowerCase();
     const matches = all.filter((entry) => repositoryMatchesPageFilter(entry.repo, query));
     const groups = nestRepositoryForks(matches, (entry) => homeRepositoryViewTotals(entry.repo)?.views);
@@ -14592,6 +14754,185 @@
     window.lucide?.createIcons();
     hydrateNativeRepositoryLogos(container);
     hydrateRepositoryForkCounts(container);
+    refreshHomeWork(all);
+  }
+
+  function homeGreeting(date = new Date()) {
+    const hour = date.getHours();
+    if (hour < 5 || hour >= 18) return "Good evening";
+    return hour < 12 ? "Good morning" : "Good afternoon";
+  }
+
+  function renderHomeAccount(session = state.session) {
+    const account = $("[data-home-account]");
+    if (!account) return;
+    const name = session?.nodeName ? userDisplayName(session.nodeName) : (session?.email || "");
+    const nameEl = $("[data-home-account-name]");
+    if (nameEl) nameEl.textContent = name || "Your account";
+    applyAvatar($("[data-home-account-avatar]"), session);
+    const greeting = $("[data-home-greeting]");
+    if (greeting) greeting.textContent = name ? `${homeGreeting()}, ${name}!` : `${homeGreeting()}!`;
+  }
+
+  function setHomeTab(tab) {
+    const active = tab === "feed" ? "feed" : "home";
+    $$("[data-home-tab]").forEach((button) => {
+      button.setAttribute("aria-pressed", String(button.dataset.homeTab === active));
+    });
+    $$("[data-home-tab-panel]").forEach((panel) => {
+      panel.hidden = panel.dataset.homeTabPanel !== active;
+    });
+  }
+
+  const HOME_WORK_REPO_LIMIT = 6;
+  const HOME_WORK_ROW_LIMIT = 5;
+
+  function homeWorkStamp(value) {
+    let stamp = Number(value) || Date.parse(String(value || "")) || 0;
+    if (stamp > 0 && stamp < 10_000_000_000) stamp *= 1000;
+    return Number.isFinite(stamp) ? stamp : 0;
+  }
+
+  function homeWorkRepositories(entries) {
+    const aliases = profileRepositoryAliases(state.session);
+    if (!aliases.size) return [];
+    return entries
+      .filter((entry) => entry.repo && !entry.repo.isPrivate
+        && (entry.organization || repoBelongsToProfile(entry.repo, aliases)))
+      .slice(0, HOME_WORK_REPO_LIMIT);
+  }
+
+  async function loadHomeRepositoryWork(entry) {
+    const repo = entry.repo;
+    const label = entry.label;
+    const pullCount = repoCount(repo, ["openPulls", "pullCount", "pulls", "pullsCount"]);
+    const issueCount = repoCount(repo, ["openIssues", "issueCount", "issues", "issuesCount"]);
+    const [pulls, issues] = await Promise.all([
+      pullCount === 0 ? [] : loadRepoRecordsFromMirror(repo, repoCollectionConfig.pulls).catch(() => []),
+      issueCount === 0 ? null : fetchRepoIssueIndex(repo),
+    ]);
+    return {
+      pulls: pulls
+        .filter((pull) => String(pull.state || "").toLowerCase() === "open")
+        .map((pull) => ({
+          kind: "pull",
+          number: pull.number,
+          title: pull.title,
+          author: pull.author,
+          updatedAt: homeWorkStamp(pull.updatedAtMs || pull.createdAtMs),
+          href: `${entry.href}/pull/${pull.number}`,
+          repoLabel: label,
+        })),
+      issues: (Array.isArray(issues?.issues) ? issues.issues : [])
+        .map(issueFromIndex)
+        .filter((issue) => issue.status !== "closed" && !issue.deleted && Number.isFinite(issue.number))
+        .map((issue) => ({
+          kind: "issue",
+          number: issue.number,
+          title: issue.title,
+          author: issue.author,
+          comments: Number(issue.commentCount) || 0,
+          updatedAt: homeWorkStamp(issue.dateValue),
+          href: `${entry.href}/issues/${issue.number}`,
+          repoLabel: label,
+        })),
+    };
+  }
+
+  function refreshHomeWork(entries) {
+    if (!$("[data-home-pulls]") || state.repositoriesLoading) return;
+    const repos = homeWorkRepositories(entries);
+    const signature = repos.map((entry) => entry.href).sort().join("\n");
+    if (signature === state.homeWorkSignature) return;
+    state.homeWorkSignature = signature;
+    if (!repos.length) {
+      state.homeWork = { pulls: [], issues: [] };
+      renderHomeWork();
+      return;
+    }
+    Promise.all(repos.map((entry) => loadHomeRepositoryWork(entry).catch(() => ({ pulls: [], issues: [] }))))
+      .then((results) => {
+        if (state.homeWorkSignature !== signature) return;
+        const byRecent = (a, b) => b.updatedAt - a.updatedAt;
+        state.homeWork = {
+          pulls: results.flatMap((result) => result.pulls).sort(byRecent),
+          issues: results.flatMap((result) => result.issues).sort(byRecent),
+        };
+        renderHomeWork();
+      });
+  }
+
+  function homeWorkRow(item) {
+    const icon = item.kind === "pull"
+      ? pullStateIconHtml("open")
+      : '<i data-lucide="circle-dot" class="h-4 w-4 text-[var(--dashboard-open)]"></i>';
+    const meta = [
+      `${escapeHtml(item.repoLabel)}#${escapeHtml(String(item.number))}`,
+      item.author ? `Opened by ${issuePersonNameHtml(item.author, "", { inLink: true })}` : "",
+      item.updatedAt ? `Updated ${escapeHtml(formatTimeAgo(item.updatedAt))}` : "",
+    ].filter(Boolean).join(" · ");
+    return `<a href="${escapeHtml(item.href)}" data-home-work-row="${item.kind}" class="fm-home-row">
+        <span class="fm-home-row-icon">${icon}</span>
+        <span class="min-w-0 flex-1">
+          <span class="fm-home-row-title">${escapeHtml(item.title)}</span>
+          <span class="fm-home-row-meta">${meta}</span>
+        </span>
+        ${item.comments ? `<span class="fm-home-row-end" title="${formatCount(item.comments)} comment${item.comments === 1 ? "" : "s"}"><i data-lucide="message-square" class="h-4 w-4"></i>${formatCount(item.comments)}</span>` : ""}
+      </a>`;
+  }
+
+  function renderHomeWork() {
+    const work = state.homeWork || { pulls: [], issues: [] };
+    [["pulls", work.pulls, "open pull request"], ["issues", work.issues, "open issue"]].forEach(([key, items, noun]) => {
+      const section = $(`[data-home-${key}-section]`);
+      const list = $(`[data-home-${key}]`);
+      const count = $(`[data-home-${key}-count]`);
+      if (!section || !list) return;
+      section.hidden = !items.length;
+      list.innerHTML = items.slice(0, HOME_WORK_ROW_LIMIT).map(homeWorkRow).join("");
+      if (count) count.textContent = items.length ? `${formatCount(items.length)} ${noun}${items.length === 1 ? "" : "s"}` : "";
+    });
+    window.lucide?.createIcons();
+  }
+
+  const HOME_CHANGELOG_NOTE_LIMIT = 4;
+  const HOME_CHANGELOG_URL = "/changelog.json";
+
+  function homeChangelogDate(value) {
+    const text = String(value || "");
+    const parsed = /^\d{4}-\d{2}-\d{2}$/.test(text) ? new Date(`${text}T00:00:00`) : null;
+    if (!parsed || Number.isNaN(parsed.getTime())) return text;
+    return parsed.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  }
+
+  function renderHomeChangelog() {
+    const container = $("[data-home-changelog-list]");
+    if (!container) return;
+    const notes = state.homeChangelogNotes;
+    if (notes === null) return;
+    container.innerHTML = notes.length
+      ? notes.map((note) => `<li>
+          <time datetime="${escapeHtml(note.date)}">${escapeHtml(homeChangelogDate(note.date))}</time>
+          <a href="/changelog" class="line-clamp-2">${escapeHtml(note.text)}</a>
+        </li>`).join("")
+      : '<li><p class="text-muted-foreground">The changelog is unavailable right now.</p></li>';
+  }
+
+  async function loadHomeChangelog() {
+    if (!$("[data-home-changelog-list]")) return;
+    try {
+      const response = await fetch(HOME_CHANGELOG_URL, { credentials: "omit", headers: { accept: "application/json" } });
+      if (!response.ok) throw new Error(`changelog returned ${response.status}`);
+      const data = await response.json();
+      state.homeChangelogNotes = (Array.isArray(data?.notes) ? data.notes : [])
+        .filter((note) => note && note.text && note.date)
+        .map((note) => ({ date: String(note.date), text: String(note.text) }))
+        .sort((a, b) => b.date.localeCompare(a.date))
+        .slice(0, HOME_CHANGELOG_NOTE_LIMIT);
+    } catch (_) {
+      state.homeChangelogNotes = [];
+    }
+    renderHomeChangelog();
   }
 
   const HOME_FEED_CARD_LIMIT = 8;
@@ -14641,12 +14982,12 @@
       item.repo ? escapeHtml(repoPublicKey(item.repo)) : "",
     ].filter(Boolean).join(" · ");
     return `
-      <${tag}${hrefAttr} data-home-feed-kind="activity" class="flex min-w-0 items-start gap-2.5 rounded-md border border-border bg-background px-3 py-2.5 hover:bg-secondary">
-        <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"></i>
+      <${tag}${hrefAttr} data-home-feed-kind="activity" class="fm-home-row">
+        <span class="fm-home-row-icon"><i data-notification-kind-icon data-lucide="${notificationItemIcon(item)}" class="${notificationItemIconTone(item) || "text-muted-foreground"}"></i></span>
         <span class="min-w-0 flex-1">
-          <span class="block break-words text-sm font-medium text-foreground">${escapeHtml(repoPublicText(item.title) || `${platformName()} activity`)}</span>
-          ${item.body ? `<span class="mt-0.5 block line-clamp-2 text-xs leading-5 text-muted-foreground">${escapeHtml(repoPublicText(item.body))}</span>` : ""}
-          <span class="mt-1 block break-words text-xs text-muted-foreground">${meta}</span>
+          <span class="fm-home-row-title">${escapeHtml(repoPublicText(item.title) || `${platformName()} activity`)}</span>
+          ${item.body ? `<span class="fm-home-row-meta line-clamp-2">${escapeHtml(repoPublicText(item.body))}</span>` : ""}
+          <span class="fm-home-row-meta">${meta}</span>
         </span>
       </${tag}>
     `;
@@ -14661,13 +15002,13 @@
     container.innerHTML = cards.length
       ? cards.join("")
       : seasonActive("halloween")
-        ? `<div class="flex items-center gap-3 rounded-md border border-border bg-background px-3 py-3 text-sm text-muted-foreground">${HALLOWEEN_PUMPKIN}<span>Nothing from others yet. It's quiet in here. Too quiet.</span></div>`
-        : '<div class="rounded-md border border-border bg-background px-3 py-3 text-sm text-muted-foreground">Nothing from others yet. Mentions, pull requests and pushes by other people show up here.</div>';
+        ? `<div class="fm-home-empty flex items-center gap-3">${HALLOWEEN_PUMPKIN}<span>Nothing from others yet. It's quiet in here. Too quiet.</span></div>`
+        : '<div class="fm-home-empty">Nothing from others yet. Mentions, pull requests and pushes by other people show up here.</div>';
     window.lucide?.createIcons();
   }
 
   // Home right-rail "Latest from the blog" (adhoc #381): the newest feature
-  // posts with their artwork, read from the blog's own RSS document. The feed
+  // posts, read from the blog's own RSS document. The feed
   // is derived from the shipped blog index and edge-cached for thirty minutes
   // (see blog_feed.py), so this is one cheap same-origin read per dashboard
   // load rather than a second hand-maintained copy of the post list.
@@ -14688,30 +15029,6 @@
     }
   }
 
-  // Artwork cannot take that shortcut: the blog images live in the WWW
-  // worker's asset bundle only (build_site_assets.shared_assets deliberately
-  // skips assets/blog for App and World), so a path-only src 404s on the
-  // dashboard's own origin and every card paints a broken image. Keep the
-  // feed's absolute URL, but only for ForkMesh's own sites, so a rewritten
-  // feed can still never make the dashboard fetch a foreign host.
-  const HOME_BLOG_IMAGE_HOSTS = new Set(["forkmesh.com", "www.forkmesh.com"]);
-
-  function homeBlogImageUrl(value) {
-    const raw = String(value || "").trim();
-    if (!raw) return "";
-    try {
-      const parsed = new URL(raw, window.location.origin);
-      if (parsed.origin === window.location.origin) {
-        return parsed.pathname + parsed.search;
-      }
-      if (parsed.protocol !== "https:") return "";
-      if (!HOME_BLOG_IMAGE_HOSTS.has(parsed.hostname.toLowerCase())) return "";
-      return parsed.href;
-    } catch (_) {
-      return "";
-    }
-  }
-
   function parseHomeBlogFeed(xml) {
     const doc = new DOMParser().parseFromString(String(xml || ""), "application/xml");
     if (doc.querySelector("parsererror")) return [];
@@ -14720,22 +15037,17 @@
         title: (item.querySelector("title")?.textContent || "").trim(),
         href: homeBlogUrl(item.querySelector("link")?.textContent),
         meta: (item.querySelector("category")?.textContent || "").trim(),
-        image: homeBlogImageUrl(item.querySelector("enclosure")?.getAttribute("url")),
       }))
       .filter((post) => post.title && post.href)
       .slice(0, HOME_BLOG_POST_LIMIT);
   }
 
-  function homeBlogPostCard(post) {
-    return `
-      <a href="${escapeHtml(post.href)}"${/^https:/.test(post.href) ? ' target="_blank" rel="noopener"' : ""} class="group block overflow-hidden rounded-md border border-border hover:bg-secondary">
-        ${post.image ? `<img src="${escapeHtml(post.image)}" alt="" loading="lazy" class="block aspect-[16/9] w-full object-cover" />` : ""}
-        <span class="block px-3 py-2.5">
-          ${post.meta ? `<span class="block truncate font-mono text-[10px] uppercase text-muted-foreground">${escapeHtml(post.meta)}</span>` : ""}
-          <span class="mt-1 block text-sm font-semibold leading-5 text-foreground group-hover:text-accent">${escapeHtml(post.title)}</span>
-        </span>
-      </a>
-    `;
+  function homeBlogPostItem(post) {
+    const external = /^https:/.test(post.href) ? ' target="_blank" rel="noopener"' : "";
+    return `<li>
+        ${post.meta ? `<span class="fm-home-kicker">${escapeHtml(post.meta)}</span>` : ""}
+        <a href="${escapeHtml(post.href)}"${external} class="line-clamp-2">${escapeHtml(post.title)}</a>
+      </li>`;
   }
 
   function renderHomeBlogPosts() {
@@ -14743,32 +15055,24 @@
     if (!container) return;
     const posts = state.homeBlogPosts;
     if (posts === null) {
-      container.innerHTML = '<div class="text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading blog posts...</div>';
+      container.innerHTML = '<li><span class="text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading blog posts...</span></li>';
       return;
     }
     container.innerHTML = posts.length
-      ? posts.map(homeBlogPostCard).join("")
-      : '<div class="text-sm text-muted-foreground">Blog posts are unavailable right now.</div>';
+      ? posts.map(homeBlogPostItem).join("")
+      : '<li><p class="text-muted-foreground">Blog posts are unavailable right now.</p></li>';
   }
-
-  const HOME_DEVTO_IMAGE_HOSTS = new Set(["media2.dev.to", "dev-to-uploads.s3.amazonaws.com"]);
 
   function homeDevtoPost(article) {
     let href = "";
-    let image = "";
     try {
       const link = new URL(String(article?.url || ""));
       if (link.protocol === "https:" && link.hostname === "dev.to") href = link.href;
-    } catch (_) {}
-    try {
-      const cover = new URL(String(article?.cover_image || article?.social_image || ""));
-      if (cover.protocol === "https:" && HOME_DEVTO_IMAGE_HOSTS.has(cover.hostname)) image = cover.href;
     } catch (_) {}
     const when = Date.parse(String(article?.published_at || ""));
     return {
       title: String(article?.title || "").trim(),
       href,
-      image,
       meta: Number.isFinite(when) ? relativeTimeLabel(when) : "",
     };
   }
@@ -14776,7 +15080,7 @@
   async function loadHomeDevtoPosts(user) {
     const card = $("[data-home-blog-card]");
     card?.removeAttribute("data-instance-plugin");
-    const viewAll = card?.querySelector("a[href]");
+    const viewAll = card?.querySelector(".fm-home-more");
     if (viewAll) {
       viewAll.href = `https://dev.to/${encodeURIComponent(user)}`;
       viewAll.target = "_blank";
@@ -14849,7 +15153,6 @@
           return (Array.isArray(data?.repos) ? data.repos : []).map((item) => ({
             owner,
             name: String(item?.repo || "").trim(),
-            linkedNode: String(item?.node || "").trim(),
             source: "organization-alias",
             organizationOwned: true,
             cloneOnline: true,
@@ -14866,7 +15169,18 @@
     renderHomeRepositories();
   }
 
-  const HOME_AGENT_LIMIT = 10;
+  const HOME_AGENT_LIMIT = 5;
+
+  function homeAgentStatusIcon(status) {
+    const key = String(status || "").toLowerCase();
+    if (["completed", "succeeded", "done", "merged"].includes(key)) {
+      return '<i data-lucide="check" class="text-success"></i>';
+    }
+    if (["failed", "error", "cancelled", "canceled", "stopped"].includes(key)) {
+      return '<i data-lucide="x" class="text-destructive"></i>';
+    }
+    return `<span class="h-2 w-2 rounded-full ${orgAgentStatusDotClass(status)}"></span>`;
+  }
 
   function homeAgentRow(session, account) {
     const owner = String(session.org || account || "").trim();
@@ -14880,21 +15194,20 @@
     const status = String(session.displayStatus || session.status || "unknown");
     const title = String(session.title || "").trim()
       || (session.issueNumber ? `Issue #${session.issueNumber}` : `${orgAgentProviderLabel(session)} session`);
+    const started = session.createdAt || session.updatedAt;
     const meta = [
       repoLabel,
       orgAgentProviderLabel(session),
       session.targetNode ? `on ${session.targetNode}` : "",
-      notificationTimeLabel(session.updatedAt || session.createdAt),
+      started ? `Started ${notificationTimeLabel(started)}` : "",
     ].filter(Boolean).map(escapeHtml);
+    const statusLabel = status.replace(/_/g, " ");
     return `
-      <${tag}${hrefAttr} data-home-agent="${escapeHtml(String(session.id || ""))}" class="flex min-w-0 items-start gap-3 rounded-lg border border-border bg-card px-4 py-3 hover:bg-secondary/40">
-        <span class="mt-1.5 h-2 w-2 shrink-0 rounded-full ${orgAgentStatusDotClass(session.status)}"></span>
+      <${tag}${hrefAttr} data-home-agent="${escapeHtml(String(session.id || ""))}" class="fm-home-row">
+        <span class="fm-home-row-icon">${homeAgentStatusIcon(session.status)}</span>
         <span class="min-w-0 flex-1">
-          <span class="flex min-w-0 items-start justify-between gap-3">
-            <span class="min-w-0 break-words text-sm font-medium text-foreground">${escapeHtml(title)}</span>
-            <span class="shrink-0 font-mono text-xs ${repoAgentStatusTone(session.status)}">${escapeHtml(status.replace(/_/g, " "))}</span>
-          </span>
-          <span class="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">${meta.map((part) => `<span>${part}</span>`).join("")}</span>
+          <span class="fm-home-row-title">${escapeHtml(title)}</span>
+          <span class="fm-home-row-meta">${meta.join(" · ")} · <span class="${repoAgentStatusTone(session.status)}">${escapeHtml(statusLabel.charAt(0).toUpperCase() + statusLabel.slice(1))}</span></span>
         </span>
       </${tag}>`;
   }
@@ -14910,14 +15223,15 @@
       count.textContent = data?.activeCount ? `${formatCount(data.activeCount)} running` : "";
     }
     if (data?.error) {
-      container.innerHTML = `<div class="rounded-lg border border-border bg-card px-4 py-6 text-sm text-muted-foreground">${escapeHtml(data.error)}</div>`;
+      container.innerHTML = `<div class="fm-home-empty">${escapeHtml(data.error)}</div>`;
       return;
     }
     container.innerHTML = sessions.length
       ? sessions.slice(0, HOME_AGENT_LIMIT).map((session) => homeAgentRow(session, data.account)).join("")
       : seasonActive("halloween")
-        ? `<div class="flex items-center gap-4 rounded-lg border border-border bg-card px-4 py-4 text-sm text-muted-foreground">${HALLOWEEN_PUMPKIN}<span>No agents yet. Type a prompt above and press new to summon one.</span></div>`
-        : '<div class="rounded-lg border border-border bg-card px-4 py-6 text-sm text-muted-foreground">No agents yet. Type a prompt above and press new to start one.</div>';
+        ? `<div class="fm-home-empty flex items-center gap-4">${HALLOWEEN_PUMPKIN}<span>No agent sessions.</span></div>`
+        : '<div class="fm-home-empty">No agent sessions.</div>';
+    window.lucide?.createIcons();
   }
 
   async function loadHomeAgentSessions() {
@@ -15396,7 +15710,7 @@
   let newRepoSetupStartedAt = 0;
 
   // What this relay's own nodes can host (GET /api/hosted-repositories,
-  // docs/HOSTED_REPOS.md): "core" = the Next core nodes keep a replica each,
+  // docs/operations/core-hosted-repositories.md): "core" = the Next core nodes keep a replica each,
   // so private repositories, a first commit, an import from a public forge and
   // an organization owner are offered, within the account's quota.
   let hostedSettings = null;
@@ -15456,16 +15770,146 @@
     fillSelect($("[data-new-repo-license]"), hostedSettings?.licenseTemplates, {
       mit: "MIT", "bsd-3-clause": "BSD 3-Clause", isc: "ISC", unlicense: "Unlicense",
     });
+    renderNewRepoQuota();
+    renderNewRepoNodeStatus();
+    setNewRepoSource(newRepoSource());
+  }
+
+  function newRepoSizeLabel(bytes) {
+    const megabytes = Math.round(Number(bytes || 0) / 1048576);
+    if (megabytes >= 1024 && megabytes % 1024 === 0) return `${megabytes / 1024} GB`;
+    return `${megabytes} MB`;
+  }
+
+  function newRepoMoveGuideUrl() {
+    const path = "/docs/hosted-repositories/#moving-to-your-own-device";
+    return dashboardOnInstance() ? `https://forkmesh.com${path}` : path;
+  }
+
+  function serverCountLabel(count) {
+    return count === 1 ? "1 server" : `${count} servers`;
+  }
+
+  function newRepoCopiesWarning(count) {
+    return count === 1
+      ? `${escapeHtml(platformName())} runs on one server, so it keeps one copy of this repository. Keep your own clone as a backup, or <a href="${escapeHtml(newRepoMoveGuideUrl())}">move it to your own device</a>.`
+      : "";
+  }
+
+  function renderNewRepoQuota() {
+    const core = hostedCoreMode();
+    const limits = hostedSettings?.limits || {};
+    const perAccount = Number(limits.repositoriesPerAccount || 0);
+    const used = Number(hostedSettings?.used || 0);
+    const size = newRepoSizeLabel(limits.repositoryBytes);
+    const servers = Number(hostedSettings?.coreNodeCount || 0);
     const quota = $("[data-new-repo-quota]");
-    if (quota) {
-      const limits = hostedSettings?.limits || {};
-      const perAccount = Number(limits.repositoriesPerAccount || 0);
-      const megabytes = Math.round(Number(limits.repositoryBytes || 0) / 1048576);
+    if (quota && quota.classList.contains("nr-meter")) {
+      if (core && perAccount) {
+        const percent = Math.min(100, Math.round((used / perAccount) * 100));
+        quota.classList.toggle("nr-meter-high", used / perAccount >= 0.8);
+        quota.innerHTML = `<div class="nr-meter-bar" role="img" aria-label="${used} of ${perAccount} repositories used"><i style="width:${percent}%"></i></div>`
+          + `<div class="nr-meter-row"><span><b>${used} of ${perAccount}</b> repositories used</span>`
+          + `<span>Each up to <b>${escapeHtml(size)}</b></span>`
+          + `<a href="${escapeHtml(newRepoMoveGuideUrl())}" class="text-accent hover:underline">Need more?</a></div>`;
+      } else {
+        quota.textContent = "";
+      }
+    } else if (quota) {
       quota.textContent = core && perAccount
-        ? `${platformName()} hosts up to ${perAccount} repositories per account (${Number(hostedSettings.used || 0)} used), ${megabytes} MB each, on every core node. Move one to your own node any time to grow past that.`
+        ? `You have used ${used} of your ${perAccount} repositories on ${platformName()}. Each one can be up to ${size}.`
         : "";
     }
-    setNewRepoSource(newRepoSource());
+    const meta = $("[data-new-repo-hosted-meta]");
+    if (meta) {
+      meta.textContent = core && perAccount
+        ? [servers ? serverCountLabel(servers) : "", `${used} of ${perAccount} used`, `up to ${size} each`].filter(Boolean).join(" · ")
+        : "";
+    }
+    const copies = $("[data-new-repo-copies]");
+    if (copies) {
+      const warning = core ? newRepoCopiesWarning(servers) : "";
+      copies.innerHTML = warning;
+      copies.classList.toggle("hidden", !warning);
+    }
+  }
+
+  function renderNewRepoNodeStatus() {
+    const status = $("[data-new-repo-node-status]");
+    if (!status) return;
+    const nodes = Array.isArray(state.session?.nodes)
+      ? [...new Set(state.session.nodes.map((node) => String(node || "").trim()).filter(Boolean))]
+      : [];
+    status.textContent = nodes.length
+      ? `Linked: ${nodes.slice(0, 2).join(", ")}${nodes.length > 2 ? ` and ${nodes.length - 2} more` : ""}`
+      : "Desktop or phone app · no device linked yet";
+  }
+
+  function newRepoLocation() {
+    return $('[data-new-repo-location][aria-checked="true"]')?.dataset.newRepoLocation || "hosted";
+  }
+
+  function setNewRepoLocation(where) {
+    const buttons = $$("[data-new-repo-location]");
+    if (!buttons.length) return;
+    buttons.forEach((button) => {
+      const active = button.dataset.newRepoLocation === where;
+      button.setAttribute("aria-checked", active ? "true" : "false");
+      button.tabIndex = active ? 0 : -1;
+    });
+    const node = where === "node";
+    $("[data-new-repo-node-guide]")?.classList.toggle("hidden", !node);
+    $("[data-new-repo-hosted-form]")?.classList.toggle("hidden", node);
+    $("[data-new-repo-submit]")?.classList.toggle("hidden", node);
+    const name = $("[data-new-repo-name]");
+    if (name) name.required = !node && newRepoSource() !== "provider";
+    setNewRepoHint("");
+  }
+
+  function initialNewRepoLocation() {
+    const requested = new URLSearchParams(location.search).get("where") || "";
+    if (requested === "node" || requested === "hosted") return requested;
+    return Array.isArray(state.session?.nodes) && state.session.nodes.length ? "node" : "hosted";
+  }
+
+  function newRepoImportChoice() {
+    const code = $("[data-new-repo-import-code]");
+    const issues = $("[data-new-repo-import-issues]");
+    if (!code && !issues) return null;
+    return { code: code?.checked !== false, issues: Boolean(issues?.checked) };
+  }
+
+  function renderNewRepoImportChoice() {
+    const choice = newRepoImportChoice();
+    if (!choice) return;
+    $("[data-new-repo-provider-token-wrap]")?.classList.toggle("hidden", !choice.issues);
+    const issuesOnly = choice.issues && !choice.code;
+    $("[data-new-repo-name-row]")?.parentElement?.classList.toggle("hidden", issuesOnly);
+    $("[data-new-repo-description-wrap]")?.classList.toggle("hidden", issuesOnly);
+    $("[data-new-repo-visibility-wrap]")?.classList.toggle("hidden", issuesOnly);
+    const name = $("[data-new-repo-name]");
+    if (name) name.required = !issuesOnly;
+    renderNewRepoNameCheck();
+  }
+
+  function newRepoNameProblem(name) {
+    if (!name) return "";
+    if (name.length > 64) return "Use at most 64 characters.";
+    if (!/^[A-Za-z0-9._-]+$/.test(name)) return "Use letters, numbers, dots, dashes, or underscores in the name.";
+    if (name.startsWith(".") || /\.git$/i.test(name)) return "A name can't start with a dot or end in .git.";
+    const owner = String($("[data-new-repo-owner]")?.value || state.session?.nodeName || "").toLowerCase();
+    const taken = (Array.isArray(state.repositories) ? state.repositories : []).some((repo) =>
+      String(repo?.name || "").toLowerCase() === name.toLowerCase()
+      && [String(repo?.owner || "").toLowerCase(), String(repoPublicOwner(repo) || "").toLowerCase()].includes(owner));
+    return taken ? `You already have a repository called ${name}.` : "";
+  }
+
+  function renderNewRepoNameCheck() {
+    const check = $("[data-new-repo-name-check]");
+    if (!check) return;
+    const field = $("[data-new-repo-name]");
+    const visible = field && !field.closest(".hidden");
+    check.textContent = visible ? newRepoNameProblem(String(field.value || "").trim()) : "";
   }
 
   function hostedImportAllowed(url) {
@@ -15498,10 +15942,15 @@
     // field visibility, hint, and submit label before the form is seen,
     // instead of waiting for the first click on a tab.
     setNewRepoSource(requestedNewRepoSource() || newRepoSource());
+    setNewRepoLocation(initialNewRepoLocation());
+    renderNewRepoNodeStatus();
     setNewRepoHint("");
     loadHostedSettings();
     $(`[data-new-repo-migration-status]`)?.classList.add("hidden");
-    window.setTimeout(() => $("[data-new-repo-name]")?.focus(), 0);
+    window.setTimeout(() => {
+      const name = $("[data-new-repo-name]");
+      if (name && !name.closest(".hidden")) name.focus();
+    }, 0);
     window.lucide?.createIcons();
   }
 
@@ -15547,7 +15996,7 @@
   // The empty source needs neither a node nor another provider, so it must
   // not repeat the desktop-handoff sentence (issue #676).
   const NEW_REPO_EMPTY_SUBTITLE =
-    `A repository holds your project's files and history. ${platformName()} keeps a copy on every core node.`;
+    "A repository holds your project's files and history.";
 
   const NEW_REPO_BACKUP_GUIDE =
     `<a href="/docs/back-up-a-github-repository/" class="text-accent hover:underline">how to back up a GitHub repository</a>`;
@@ -15569,6 +16018,7 @@
   }
 
   function newRepoSubtitleFor(source) {
+    if ($("[data-new-repo-page]")) return NEW_REPO_EMPTY_SUBTITLE;
     if (source === "provider") return NEW_REPO_PROVIDER_SUBTITLE;
     if (source === "empty") return NEW_REPO_EMPTY_SUBTITLE;
     if (source === "remote" && hostedCoreMode()) {
@@ -15650,7 +16100,7 @@
     const name = $("[data-new-repo-name]");
     if (name) name.required = !provider;
     const submitLabel = $("[data-new-repo-submit-label]");
-    if (submitLabel) submitLabel.textContent = provider ? "Start resumable import" : "Create & mirror";
+    if (submitLabel) submitLabel.textContent = source === "empty" || source === "local" ? "Create repository" : "Import repository";
     const subtitle = $("[data-new-repo-subtitle]");
     if (subtitle) subtitle.textContent = newRepoSubtitleFor(source);
     // Switching tabs starts a different flow, so a previous run's steps panel
@@ -15665,7 +16115,6 @@
     // path or URL the flow never reads (issue #676).
     const empty = source === "empty";
     if (value) value.classList.toggle("hidden", empty);
-    if (submitLabel && empty) submitLabel.textContent = "Create empty repository";
     // A single hosted write node cannot hold a private repository (only a node
     // holding the account key can seal one). The Next core nodes can: they
     // serve it only to the owner and the organization's readers.
@@ -15677,7 +16126,7 @@
     if (privateOption) {
       privateOption.disabled = privateBlocked;
       const privateText = core && hostedHere
-        ? "Only you and your organization's readers can see and clone it."
+        ? "Only you and your organization's readers can see and clone it. The servers can read its contents."
         : "Encrypted mirror, contents stay hidden.";
       const privateDesc = $("[data-new-repo-private-desc]");
       if (privateDesc) privateDesc.textContent = privateText;
@@ -15691,14 +16140,17 @@
     const importing = source === "remote" && core;
     $("[data-new-repo-readme-wrap]")?.classList.toggle("hidden", importing);
     $("[data-new-repo-init-wrap]")?.classList.toggle("hidden", importing);
-    if (submitLabel && empty && core) submitLabel.textContent = "Create repository";
-    if (submitLabel && importing) submitLabel.textContent = "Import & host";
+    const importOptions = $("[data-new-repo-import-options]");
+    importOptions?.classList.toggle("hidden", source !== "remote");
     if (empty) {
       if (hint) {
         hint.textContent = core
           ? "Start empty and push with git over HTTPS."
           : "Start empty and push with git. It is public and stays empty until your first push.";
       }
+    } else if (importing && importOptions) {
+      if (value) value.placeholder = "https://github.com/owner/repo";
+      if (hint) hint.innerHTML = `Paste a link to a public repository on ${escapeHtml((hostedSettings.importHosts || []).join(", "))}. ${escapeHtml(platformName())} copies it once; later changes there are not brought over. A private repository needs your own device: clone it there and add the folder in the app.`;
     } else if (importing) {
       if (value) value.placeholder = "https://github.com/owner/repo.git";
       if (hint) hint.innerHTML = `${escapeHtml(platformName())} makes a one-time copy of a public repository from ${escapeHtml((hostedSettings.importHosts || []).join(", "))} and hosts it on its core nodes. The copy is not updated when the original changes. Private repositories and other URLs need the ${escapeHtml(desktopBrand())}desktop app: see ${NEW_REPO_BACKUP_GUIDE}.`;
@@ -15712,7 +16164,10 @@
       if (value) value.placeholder = "https://github.com/owner/repo.git";
       if (hint) hint.innerHTML = NEW_REPO_CLONE_HINT;
     }
+    if (source === "remote") renderNewRepoImportChoice();
+    else if (importOptions) $("[data-new-repo-name-row]")?.parentElement?.classList.remove("hidden");
     renderNewRepoVisibilityNote();
+    renderNewRepoNameCheck();
   }
 
   function setNewRepoHint(text, cls) {
@@ -15975,6 +16430,31 @@
             ? `on ${hosting.nodes?.length || 3} core nodes and it stays empty until your first push. Run these in your project folder; git asks for the credential below.`
             : "and it stays empty until your first push. Run these in your project folder; git asks for the credential below.";
     }
+    const servers = Number(hosting?.nodes?.length || hostedSettings?.coreNodeCount || 0);
+    const where = $("[data-new-repo-push-where]");
+    if (where) {
+      const stored = hosting?.mode === "core" && servers
+        ? `Stored on ${serverCountLabel(servers)} of ${platformName()}`
+        : `Hosted by ${platformName()}`;
+      where.textContent = hosting?.importing
+        ? `${stored}. The import is running now, so clone it once it finishes.`
+        : hosting?.initialized
+          ? `${stored}, with a first commit.`
+          : `${stored}. It stays empty until your first push.`;
+    }
+    const cloneTitle = $("[data-new-repo-push-clone-title]");
+    if (cloneTitle) {
+      cloneTitle.textContent = hosting?.initialized || hosting?.importing
+        ? "Clone it" : "Run these in your project folder";
+    }
+    const copies = $("[data-new-repo-push-copies]");
+    if (copies) {
+      const warning = hosting?.mode === "core" ? newRepoCopiesWarning(servers) : "";
+      copies.innerHTML = warning;
+      copies.classList.toggle("hidden", !warning);
+    }
+    $("[data-new-repo-push-issues]")?.classList.add("hidden");
+    $$("[data-new-repo-push-copy-field]").forEach((button) => { button.textContent = "Copy"; });
     const terms = $("[data-new-repo-push-visibility]");
     if (terms) {
       terms.textContent = repository?.visibility === "private"
@@ -15992,7 +16472,8 @@
     const expiry = $("[data-new-repo-push-expiry]");
     if (expiry) {
       expiry.textContent = push?.expiresAt
-        ? new Date(Number(push.expiresAt)).toLocaleString() : "soon";
+        ? new Date(Number(push.expiresAt)).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
+        : "soon";
     }
     const link = $("[data-new-repo-push-open]");
     if (link && repository) link.href = repoLinkUrl(repository);
@@ -16045,6 +16526,7 @@
       forgetDeletedRepository(body.repository);
       renderNewRepoPush(body.repository, body.push, body.hosting);
       await loadRepositories({ fresh: true });
+      return true;
     } catch (error) {
       const code = String(error?.message || "");
       if (code === "hosted_git_unavailable") {
@@ -16056,17 +16538,61 @@
           title: "Finish creating your repository",
           subtitle: "This relay hosts no ForkMesh git node, so the repository has to come from a node you run.",
         });
-        return;
+        return false;
       }
       setNewRepoHint(newRepoHostedErrorText(code), "bad");
     } finally {
       if (submit) submit.disabled = false;
     }
+    return false;
+  }
+
+  async function startNewRepoIssuesImport(sourceUrl, providerToken) {
+    const line = $("[data-new-repo-push-issues]");
+    const say = (text) => {
+      if (!line) return;
+      line.textContent = text;
+      line.classList.remove("hidden");
+    };
+    say("Importing issues and pull requests…");
+    try {
+      const response = await fetch("/api/repository-imports/migrations", {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify({
+          sourceUrl,
+          providerToken,
+          mode: "import",
+          setupDurationMs: Math.max(0, Math.round(
+            (window.performance?.now?.() || Date.now()) - newRepoSetupStartedAt)),
+          sessionToken: state.session.sessionToken,
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body.migration) throw new Error(body.error || `HTTP ${response.status}`);
+      const finished = await advanceRepositoryMigration(body.migration, providerToken, (current) =>
+        say(`Importing issues and pull requests: ${current.processed || 0} items so far…`));
+      say(finished?.status === "completed"
+        ? "Issues and pull requests are imported. For now they are listed under External repositories."
+        : "The issues import paused at a checkpoint. Continue it from External repositories.");
+      await loadExternalRepositories({ fresh: true });
+    } catch (error) {
+      say(String(error?.message || "") === "provider_rate_limited"
+        ? "The provider's rate limit stopped the issues import. Try again later with only Issues and pull requests ticked."
+        : "The issues and pull requests could not be imported. Try again with only Issues and pull requests ticked.");
+    }
   }
 
   async function handleNewRepoSubmit() {
-    const source = newRepoSource();
+    if ($("[data-new-repo-location]") && newRepoLocation() === "node") return;
+    let source = newRepoSource();
     const sourceValue = String($("[data-new-repo-source-value]")?.value || "").trim();
+    const importChoice = source === "remote" ? newRepoImportChoice() : null;
+    if (importChoice && !importChoice.code && !importChoice.issues) {
+      setNewRepoHint("Tick Code, Issues and pull requests, or both.", "bad");
+      return;
+    }
+    if (importChoice?.issues && !importChoice.code) source = "provider";
     if (source === "provider") {
       if (!state.session?.sessionToken) {
         setNewRepoHint("Sign in to import a GitHub, GitLab, Codeberg, or Gitea repository.", "bad");
@@ -16194,13 +16720,23 @@
       $("[data-new-repo-name]")?.focus();
       return;
     }
+    const nameProblem = $("[data-new-repo-name-check]") ? newRepoNameProblem(name) : "";
+    if (nameProblem) {
+      setNewRepoHint(nameProblem, "bad");
+      $("[data-new-repo-name]")?.focus();
+      return;
+    }
     if (source === "empty") {
       await createHostedRepository({ name, visibility, description, ...hostedCreateExtras() });
       return;
     }
     if (source === "remote" && hostedImportAllowed(sourceValue)) {
       const { organization } = hostedCreateExtras();
-      await createHostedRepository({ name, visibility, description, organization, importUrl: sourceValue });
+      const providerToken = String($("[data-new-repo-provider-token]")?.value || "").trim();
+      const created = await createHostedRepository({ name, visibility, description, organization, importUrl: sourceValue });
+      const token = $("[data-new-repo-provider-token]");
+      if (token) token.value = "";
+      if (created && importChoice?.issues) void startNewRepoIssuesImport(sourceValue, providerToken);
       return;
     }
     if (!sourceValue) {
@@ -16328,6 +16864,7 @@
     // Runs are live executor state, never a load-once cache.
     if (tab === "actions") void loadRepoActions(state.selectedRepo);
     if (tab === "security") void loadRepoSecurity(state.selectedRepo);
+    if (tab === "forum") loadRepoForum(state.selectedRepo);
     if (tab === "settings") {
       renderRepoSettingsRail();
       loadRepoFediverse(state.selectedRepo);
@@ -16336,7 +16873,6 @@
       loadRepoDigestPreview(state.selectedRepo);
       void loadRepoWebhooks(state.selectedRepo);
       void loadRepoProviderMirror(state.selectedRepo);
-      void loadRepoArchiveSync(state.selectedRepo);
       void loadRepoPullRulesSettings(state.selectedRepo);
       mountActionsSecrets($("[data-actions-secrets]"));
     }
@@ -17829,7 +18365,7 @@
   // reads that executor's bounded summary (GET actions/runs) and, when the
   // answering node advertises it, sends control requests back to the same node
   // (POST actions/control). Wire contract:
-  // www/docs/operations/mirror-actions-control.md.
+  // docs/operations/mirror-actions-control.md.
   //
   // The workflow list needs no session: it is read from .forkmesh/ in the
   // repository tree like any other file. Who sees runs, logs and controls:
@@ -18697,8 +19233,15 @@
       }[action];
       // Approval executes code nobody has run here before; make that a
       // deliberate second step rather than a stray click.
-      if (action === "approve" && !window.confirm(
-        `Approve run ${runId} of "${run.workflow}" at ${run.commit.slice(0, 10)}? It will execute on ${view.local ? (view.host || "this server") : view.node}${run.pullNumber ? " without secrets or write access" : ""}.`)) {
+      if (action === "approve") {
+        void confirmAccountAction({
+          title: `Approve run ${runId}?`,
+          body: `Approve run ${runId} of "${run.workflow}" at ${run.commit.slice(0, 10)}? It will execute on ${view.local ? (view.host || "this server") : view.node}${run.pullNumber ? " without secrets or write access" : ""}.`,
+          confirmLabel: "Approve and run",
+          danger: false,
+        }).then((approved) => {
+          if (approved) void sendRepoActionsControl(repo, action, { runId }, label);
+        });
         return true;
       }
       void sendRepoActionsControl(repo, action, { runId }, label);
@@ -19324,6 +19867,37 @@
     return match ? `${match[1] || ""}${match[2]} data-md-figure ${match[3]}${match[4] || ""}` : html;
   }
 
+  const NOTE_SVG_MAX_BYTES = 262144;
+  const NOTE_PAGE_BREAK_LINE = /^\s*<!--\s*pagebreak\s*-->\s*$/i;
+  const NOTE_LAYOUT_LINE = /^\s*<!--\s*page:([\s\S]*?)-->\s*$/i;
+
+  function noteSvgFigure(info, code) {
+    const words = /^\s*(\S+)\s*([\s\S]*?)\s*$/.exec(String(info || ""));
+    if (!words || words[1].toLowerCase() !== "svg") return null;
+    const svg = String(code || "");
+    const start = svg.replace(/^(?:\s+|<\?xml[\s\S]*?\?>|<!--[\s\S]*?-->)*/, "");
+    if (!/^<svg[\s>/]/i.test(start)) return null;
+    if (new TextEncoder().encode(svg).length > NOTE_SVG_MAX_BYTES) return null;
+    return { caption: words[2], svg };
+  }
+
+  function noteSvgDataUrl(svg) {
+    const bytes = new TextEncoder().encode(svg);
+    let binary = "";
+    for (let at = 0; at < bytes.length; at += 8192) {
+      binary += String.fromCharCode(...bytes.subarray(at, at + 8192));
+    }
+    return `data:image/svg+xml;base64,${btoa(binary)}`;
+  }
+
+  function noteFigureHtml(figure) {
+    const caption = figure.caption ? `<figcaption>${escapeHtml(figure.caption)}</figcaption>` : "";
+    return `<figure class="note-figure"><img src="${noteSvgDataUrl(figure.svg)}" alt="${escapeHtml(figure.caption || "Diagram")}" decoding="async" />${caption}</figure>`;
+  }
+
+  const NOTE_PAGE_BREAK_HTML =
+    '<div class="note-page-break" role="separator" aria-label="Page break"><span>Page break</span></div>';
+
   // Small, dependency-free markdown renderer: headings, fenced code blocks,
   // block quotes, nested ordered/unordered lists, tables, hr, raw HTML blocks,
   // and paragraphs, with basic inline formatting, links and images. Not a full
@@ -19400,14 +19974,22 @@
     let i = 0;
     while (i < lines.length) {
       const line = lines[i];
-      const fence = line.match(/^\s*(```|~~~)/);
+      if (context?.noteDocument && (NOTE_LAYOUT_LINE.test(line) || NOTE_PAGE_BREAK_LINE.test(line))) {
+        closeLists();
+        if (NOTE_PAGE_BREAK_LINE.test(line)) out.push(NOTE_PAGE_BREAK_HTML);
+        i++;
+        continue;
+      }
+      const fence = line.match(/^\s*(```|~~~)(.*)$/);
       if (fence) {
         closeLists();
         const code = [];
         i++;
         while (i < lines.length && !new RegExp(`^\\s*${fence[1]}`).test(lines[i])) { code.push(lines[i]); i++; }
         i++;
-        out.push(`<pre class="my-3 overflow-auto rounded-md border border-border bg-secondary/40 p-3 text-xs"><code class="font-mono">${escapeHtml(code.join("\n"))}</code></pre>`);
+        const figure = context?.noteDocument ? noteSvgFigure(fence[2], code.join("\n")) : null;
+        out.push(figure ? noteFigureHtml(figure)
+          : `<pre class="my-3 overflow-auto rounded-md border border-border bg-secondary/40 p-3 text-xs"><code class="font-mono">${escapeHtml(code.join("\n"))}</code></pre>`);
         continue;
       }
       const heading = line.match(/^(#{1,6})\s+(.*)$/);
@@ -19835,7 +20417,7 @@
       navigateHistory(repoCodeLinkUrl(repo, "blob", path));
       window.lucide?.createIcons();
     } catch (_) {
-      // A markdown link to a folder ("[docs](www/docs)") has no trailing slash
+      // A markdown link to a folder ("[docs](docs)") has no trailing slash
       // to say so. When the path lists as a tree, show that folder instead of
       // a dead file view.
       if (!repoPreviewKindFromPath(path)) {
@@ -20451,7 +21033,7 @@
         Object.assign(parsed, relations);
         const draft = String(container.querySelector("[data-repo-issue-comment-body]")?.value || "");
         paintRepoIssueDetail(container, renderRepoRecordDetail(repo, "issues", number, parsed));
-        mountIssueStickyHeader(container);
+        mountRecordStickyHeader(container);
         if (draft) {
           const body = container.querySelector("[data-repo-issue-comment-body]");
           if (body) body.value = draft;
@@ -22042,6 +22624,10 @@
       && tree.pullReviews && typeof tree.pullReviews === "object"
       ? tree.pullReviews
       : null;
+    const pullPeople = config.dir === ".forkmesh/pulls"
+      && tree.pullPeople && typeof tree.pullPeople === "object"
+      ? tree.pullPeople
+      : null;
     const records = dirs.concat(branchOnlyDirs).map((entry) => {
       const number = Number(entry.name);
       const blob = blobs[recordPath(entry)];
@@ -22079,6 +22665,10 @@
         review: pullReviews && indexedNames.has(String(entry.name))
           ? pullListReviewState(pullReviews[String(entry.name)] || [], values.author || "",
             values.status || values.state || "open", pullListIsDraft(values))
+          : null,
+        people: pullPeople && indexedNames.has(String(entry.name))
+          && Array.isArray(pullPeople[String(entry.name)])
+          ? pullPeople[String(entry.name)]
           : null,
       };
     });
@@ -22148,6 +22738,20 @@
     if (!names.length) return "";
     const shown = names.map((name) => forgeIdentity(name) ? `@${forgeIdentity(name).login}` : name);
     return `<span data-repo-issue-row-commenters class="flex items-center justify-end [&>span]:-ml-1.5 [&>span]:ring-2 [&>span]:ring-[rgb(var(--dashboard-canvas-rgb))]" title="${escapeHtml(`Recent comments: ${shown.join(", ")}`)}">${names.map((name) => issueActorAvatarHtml(name, name, "h-5 w-5", false, false)).join("")}</span>`;
+  }
+
+  function renderPullRowPeople(item) {
+    const names = [];
+    const seen = new Set();
+    for (const raw of [...(Array.isArray(item.people) ? item.people : []), item.author]) {
+      const name = String(raw || "").trim();
+      if (!name || name === "unknown" || seen.has(name.toLowerCase())) continue;
+      seen.add(name.toLowerCase());
+      names.push(name);
+    }
+    if (!names.length) return "";
+    const shown = names.map((name) => forgeIdentity(name) ? `@${forgeIdentity(name).login}` : name);
+    return `<span data-repo-pull-row-people class="flex items-center justify-end [&>span]:-ml-1.5 [&>span]:ring-2 [&>span]:ring-[rgb(var(--dashboard-canvas-rgb))]" title="${escapeHtml(`Latest first: ${shown.join(", ")}`)}">${names.map((name, index) => `<span class="relative rounded-full" style="z-index:${names.length - index}">${issueActorAvatarHtml(name, name, "h-5 w-5", false, false)}</span>`).join("")}</span>`;
   }
 
   function pullStateIconHtml(stateLabel, extra = "") {
@@ -22256,6 +22860,7 @@
           </span>
           <span class="flex shrink-0 items-start pt-0.5 text-[12px] text-muted-foreground">
             ${item.wantsAgent ? '<i data-lucide="bot" class="h-4 w-4" title="Assigned to agent"></i>' : ""}
+            <span class="hidden justify-end sm:flex">${renderPullRowPeople(item)}</span>
           </span>`;
       const rowGrid = "grid-cols-[1rem_minmax(0,1fr)_auto]";
       if (item.unavailable) {
@@ -25304,6 +25909,44 @@
     return Boolean(name) && name === String(target.authorName || "").trim().toLowerCase();
   }
 
+  const PULL_DESCRIPTION_TARGET = "description";
+
+  function pullDescriptionEditApplies(change, values) {
+    if (!change || change.type !== "comment-edit" || String(change.target || "") !== PULL_DESCRIPTION_TARGET) return false;
+    if (change.author && change.author === values?.author) return true;
+    const name = String(change.authorName || "").trim().toLowerCase();
+    return Boolean(name) && name === String(values?.authorName || "").trim().toLowerCase();
+  }
+
+  function pullDescriptionEdit(values, conversation) {
+    let latest = null;
+    for (const ev of Array.isArray(conversation) ? conversation : []) {
+      if (!pullDescriptionEditApplies(ev, values)) continue;
+      if (!latest || pullTimestamp(latest.ts) <= pullTimestamp(ev.ts)) latest = ev;
+    }
+    return latest;
+  }
+
+  function pullDescriptionEditable(values) {
+    if (String(values?.status || "open").trim().toLowerCase() === "deleted") return false;
+    return webSessionAuthored({ author: values?.author, authorName: values?.authorName });
+  }
+
+  function recordOpeningBodyHtml(repo, body) {
+    return String(body || "").trim()
+      ? `<div data-repo-record-body data-repo-record-opening-text class="px-4 py-4 ${MD_BODY_CLASS}">${renderRecordMarkdown(body, repo)}</div>`
+      : `<p data-repo-record-opening-text class="px-4 py-4 text-[14px] italic text-muted-foreground">No description provided.</p>`;
+  }
+
+  function paintPullDescription(repo, body) {
+    const card = document.querySelector("[data-repo-pull-description-card]");
+    const text = card?.querySelector("[data-repo-record-opening-text]");
+    if (!text) return;
+    text.outerHTML = recordOpeningBodyHtml(repo, body);
+    card.dataset.repoRecordDescription = String(body || "").trim() ? "body" : "empty";
+    card.querySelector("[data-repo-pull-description-edited]")?.removeAttribute("hidden");
+  }
+
   function pullReviewKeepsVerdict(target) {
     return target?.type === "review" && (target.state === "approved" || target.state === "changes_requested");
   }
@@ -25442,6 +26085,7 @@
         parsed.pullMetadataCommit = servedCommit;
         const freshParsed = parseFrontMatter(blobText(record));
         const freshValues = freshParsed.values || {};
+        if (parsed.pullMerge?.state === "merged") freshValues.status = "merged";
         const statusChanged =
           (freshValues.status || "open") !== (values.status || "open");
         parsed.values = freshValues;
@@ -25451,6 +26095,7 @@
           const container = $("[data-repo-pulls]");
           if (container) {
             container.innerHTML = renderRepoRecordDetail(repo, "pulls", number, parsed);
+            mountRecordStickyHeader(container);
             window.lucide?.createIcons();
           }
         }
@@ -25468,13 +26113,7 @@
     parsed.pullCommits = commits;
     parsed.pullAgents = agents;
     parsed.pullTimeline = buildRepoPullTimeline(values, conversation, commits, agents);
-    const timeline = $("[data-repo-pull-conversation]");
-    if (timeline) {
-      timeline.dataset.empty = parsed.pullTimeline.length ? "false" : "true";
-      timeline.innerHTML = renderRepoPullConversation(parsed.pullTimeline);
-    }
-    const count = $("[data-repo-pull-timeline-count]");
-    if (count) count.textContent = formatCount(parsed.pullTimeline.length);
+    paintRepoPullTimeline(parsed);
     // An agent pushing to the head branch also grows the Commits tab, which
     // stays mounted (hidden) behind the conversation.
     const commitList = $("[data-repo-pull-commits]");
@@ -25509,6 +26148,26 @@
     if (!pullDetailIsCurrent(repo, number)) return;
     parsed.pullRequiredChecks = await loadRepoPullRequiredChecks(repo, values, readiness);
     if (!pullDetailIsCurrent(repo, number)) return;
+    paintRepoPullChecks(repo, parsed);
+    updateRepoPullMergePanel(repo, number, parsed);
+    void hydrateRepoPullAttention(repo, number, parsed);
+    window.lucide?.createIcons();
+    scheduleRepoPullActivityRefresh(repo, number,
+      agents.some((event) => pullAgentStatusIsActive(event.status)));
+  }
+
+  function paintRepoPullTimeline(parsed) {
+    const events = parsed.pullTimeline || [];
+    const timeline = $("[data-repo-pull-conversation]");
+    if (timeline) {
+      timeline.dataset.empty = events.length ? "false" : "true";
+      timeline.innerHTML = renderRepoPullConversation(events);
+    }
+    const count = $("[data-repo-pull-timeline-count]");
+    if (count) count.textContent = formatCount(events.length);
+  }
+
+  function paintRepoPullChecks(repo, parsed) {
     const rulesSlot = $("[data-repo-pull-rules-slot]");
     if (rulesSlot) rulesSlot.innerHTML = renderRepoPullRules(parsed.pullRules);
     const checkList = $("[data-repo-pull-checks]");
@@ -25519,11 +26178,116 @@
     if (checkCount) {
       checkCount.textContent = formatCount((parsed.pullChecks?.runs || []).length);
     }
+  }
+
+  function loadRepoPullLiveState(repo, number, values) {
+    const readiness = loadRepoPullReadiness(repo, number, values);
+    const mergeAuthorized = loadRepoPullMergeAuthorization(repo);
+    const live = Promise.all([
+      loadRepoPullAgentActivity(repo, number, values),
+      mergeAuthorized,
+      mergeAuthorized.then((authorized) => loadRepoPullUpdateAuthorization(repo, values, authorized)),
+      loadRepoPullMergeBase(repo, values),
+      readiness,
+      readiness.then((result) => loadRepoPullChecks(repo, values, result)),
+      readiness.then((result) => loadRepoPullRules(repo, number, result)),
+      readiness.then((result) => loadRepoPullRequiredChecks(repo, values, result)),
+    ]);
+    live.catch(() => {});
+    return live;
+  }
+
+  async function finishRepoPullLiveState(repo, number, parsed, live) {
+    let rows = null;
+    try {
+      rows = await live;
+    } catch (_) {
+      rows = null;
+    }
+    if (state.repoRecordDetail?.parsed !== parsed) return;
+    if (rows) {
+      const [agents, mergeAuthorized, updateAuthorized, mergeBase, readiness, checks, rules, requiredChecks] = rows;
+      parsed.pullAgents = agents;
+      parsed.pullTimeline = buildRepoPullTimeline(
+        parsed.values || {}, parsed.pullConversation || [], parsed.pullCommits || [], agents);
+      parsed.pullMergeAuthorized = mergeAuthorized;
+      parsed.pullUpdateAuthorized = updateAuthorized;
+      parsed.pullMergeBase = mergeBase;
+      parsed.pullReadiness = readiness;
+      parsed.pullChecks = checks;
+      parsed.pullRules = rules;
+      parsed.pullRequiredChecks = requiredChecks;
+    }
+    parsed.pullPending = false;
+    paintRepoPullTimeline(parsed);
+    paintRepoPullChecks(repo, parsed);
     updateRepoPullMergePanel(repo, number, parsed);
+    if (rows) storeRepoPullSnapshot(repo, number, parsed);
     void hydrateRepoPullAttention(repo, number, parsed);
+    if (state.session?.sessionToken) {
+      scheduleRepoPullActivityRefresh(repo, number, (parsed.pullAgents || []).some(
+        (event) => pullAgentStatusIsActive(event.status)));
+    }
+  }
+
+  const REPO_PULL_SNAPSHOT_STORE = "forkmesh.pullSnapshots.v1";
+  const REPO_PULL_SNAPSHOT_LIMIT = 12;
+  const REPO_PULL_SNAPSHOT_PATCH_MAX = 400000;
+  const REPO_PULL_SNAPSHOT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+  const REPO_PULL_SNAPSHOT_FIELDS = [
+    "values", "body", "pullMetadataCommit", "pullPatch", "pullConversation", "pullCommits",
+    "pullAgents", "pullChecks", "pullRules", "pullRequiredChecks", "repoCollabSettings",
+  ];
+
+  function repoPullSnapshotKey(repo, number) {
+    return `${String(repoKey(repo) || "").toLowerCase()}#${Number(number) || 0}`;
+  }
+
+  function readRepoPullSnapshots() {
+    try {
+      const rows = JSON.parse(localStorage.getItem(REPO_PULL_SNAPSHOT_STORE) || "[]");
+      return Array.isArray(rows) ? rows.filter((row) => row && typeof row.key === "string") : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function storeRepoPullSnapshot(repo, number, parsed) {
+    if (!repo || repo.isPrivate || !parsed?.values) return;
+    if (String(parsed.pullPatch?.patch || "").length > REPO_PULL_SNAPSHOT_PATCH_MAX) return;
+    const key = repoPullSnapshotKey(repo, number);
+    const snapshot = { key, at: Date.now(), parsed: {} };
+    REPO_PULL_SNAPSHOT_FIELDS.forEach((field) => {
+      if (parsed[field] !== undefined) snapshot.parsed[field] = parsed[field];
+    });
+    const rows = [snapshot, ...readRepoPullSnapshots().filter((row) => row.key !== key)];
+    for (let size = Math.min(rows.length, REPO_PULL_SNAPSHOT_LIMIT); size > 0; size = Math.floor(size / 2)) {
+      try {
+        localStorage.setItem(REPO_PULL_SNAPSHOT_STORE, JSON.stringify(rows.slice(0, size)));
+        return;
+      } catch (_) {}
+    }
+    try { localStorage.removeItem(REPO_PULL_SNAPSHOT_STORE); } catch (_) {}
+  }
+
+  function showRepoPullSnapshot(repo, number, container) {
+    if (!repo || repo.isPrivate || !container) return false;
+    const key = repoPullSnapshotKey(repo, number);
+    const entry = readRepoPullSnapshots().find((row) => row.key === key);
+    if (!entry?.parsed?.values || Date.now() - Number(entry.at || 0) > REPO_PULL_SNAPSHOT_MAX_AGE_MS) return false;
+    const parsed = { ...entry.parsed, pullPending: true, pullMergeAuthorized: false, pullUpdateAuthorized: false };
+    parsed.pullTimeline = buildRepoPullTimeline(parsed.values, parsed.pullConversation || [],
+      parsed.pullCommits || [], parsed.pullAgents || []);
+    try {
+      const html = renderRepoRecordDetail(repo, "pulls", number, parsed);
+      state.repoRecordDetail = { repo, kind: "pulls", number, parsed };
+      container.innerHTML = html;
+    } catch (_) {
+      return false;
+    }
+    mountRecordStickyHeader(container);
     window.lucide?.createIcons();
-    scheduleRepoPullActivityRefresh(repo, number,
-      agents.some((event) => pullAgentStatusIsActive(event.status)));
+    return true;
   }
 
   function scheduleRepoPullActivityRefresh(repo, number, active) {
@@ -26174,11 +26938,11 @@
   function openIssueCommentEditor(target, body, selector = "[data-repo-issue-comment-edit]", key = "repoIssueCommentEdit") {
     const button = visibleCommentEditButton(target, selector, key);
     const inline = button?.closest("[data-repo-pull-inline-comment-card]");
-    const card = inline || button?.closest("[data-repo-issue-comment]");
+    const card = inline || button?.closest("[data-repo-issue-comment], [data-repo-pull-description-card]");
     const panel = inline ? inline.querySelector("[data-repo-pull-inline-comment-text]")?.parentElement : card?.querySelector(".rounded-md.border");
     if (!panel) return Promise.resolve(window.prompt("Edit comment", body));
     panel.querySelector("[data-repo-issue-comment-editor]")?.remove();
-    const text = panel.querySelector("[data-repo-issue-comment-text], [data-repo-pull-inline-comment-text]");
+    const text = panel.querySelector("[data-repo-issue-comment-text], [data-repo-pull-inline-comment-text], [data-repo-record-opening-text]");
     const form = document.createElement("form");
     form.dataset.repoIssueCommentEditor = "";
     form.className = "grid gap-2 p-3";
@@ -27324,7 +28088,10 @@
       .filter((run) => pullCheckStateMeta(run.status).outcome === "passed")
       .map((run) => run.workflow));
     const missingRequired = requiredNames.filter((name) => !passedNames.has(name));
-    if (summary.tone === "bad") {
+    if (parsed?.pullPending === true) {
+      checksRow.tone = "pending";
+      checksRow.title = "Loading checks…";
+    } else if (summary.tone === "bad") {
       checksRow.tone = "bad";
       checksRow.title = "Some checks failed";
     } else if (summary.tone === "pending") {
@@ -27350,8 +28117,13 @@
     checksRow.actions.push({ kind: "actions", label: runs.length ? "Open Actions" : "Run checks" });
     rows.push(checksRow);
 
+    const pending = parsed?.pullPending === true;
     const branchRow = { id: "branch", actions: [] };
-    if (!readiness.available) {
+    if (pending) {
+      branchRow.tone = "pending";
+      branchRow.title = "Checking mergeability…";
+      branchRow.detail = "Asking an online mirror for a merge trial of this pull request.";
+    } else if (!readiness.available) {
       branchRow.tone = "muted";
       branchRow.title = "Mergeability unknown";
       branchRow.detail = "No mirror answered a merge trial for this pull request just now. It is re-tried while the page is open.";
@@ -27433,6 +28205,9 @@
     if (status !== "open" && !merged) {
       footer.tone = "muted";
       footer.text = "This pull request is closed.";
+    } else if (pending && !merged && !busy) {
+      footer.tone = "pending";
+      footer.text = "Loading merge readiness from the live mirror…";
     } else if (merged) {
       footer.tone = "good";
       footer.text = `Merged into ${baseBranch}. The merged state is pinned as current and every mirror is syncing it.`;
@@ -27472,8 +28247,9 @@
       footer.tone = "good";
       footer.text = `Ready to merge into ${baseBranch}. An online mirror lands the exact reviewed commits with a merge commit.`;
     }
-    const canAct = authorized && status === "open" && !merged && Boolean(context) && !hardBlocked;
+    const canAct = authorized && status === "open" && !merged && Boolean(context) && !hardBlocked && !pending;
     return {
+      pending,
       open: status === "open",
       authorized,
       merged,
@@ -27651,28 +28427,30 @@
 
   function patchRepoPullMutationProgress(repo, number, parsed, kind) {
     if (!pullDetailIsCurrent(repo, number)) return;
-    const slot = document.querySelector("[data-repo-pull-merge-slot]");
-    const block = slot?.querySelector?.(`[data-repo-pull-merge-progress="${kind}"]`);
-    const model = block ? repoPullMergeModel(repo, number, parsed) : null;
+    const slots = [...document.querySelectorAll("[data-repo-pull-merge-slot], [data-repo-pull-files-merge-slot]")];
+    const blocks = slots.map((slot) => slot.querySelector(`[data-repo-pull-merge-progress="${kind}"]`));
+    const model = blocks.length && blocks.every(Boolean) ? repoPullMergeModel(repo, number, parsed) : null;
     const progress = kind === "merge"
       ? model?.footer.progress
       : model?.rows.find((row) => row.id === "branch")?.progress;
-    if (!block || !progress) {
+    if (!progress) {
       updateRepoPullMergePanel(repo, number, parsed);
       return;
     }
     const scratch = document.createElement("div");
     scratch.innerHTML = renderRepoPullMutationProgress(progress);
     const fresh = scratch.firstElementChild;
-    const now = block.querySelector("[data-repo-pull-merge-now]");
     const freshNow = fresh.querySelector("[data-repo-pull-merge-now]");
-    if (now.textContent !== freshNow.textContent) now.textContent = freshNow.textContent;
-    ["data-late-after", "data-late-since", "data-late-text"].forEach((name) => {
-      if (freshNow.hasAttribute(name)) now.setAttribute(name, freshNow.getAttribute(name));
-      else now.removeAttribute(name);
+    blocks.forEach((block) => {
+      const now = block.querySelector("[data-repo-pull-merge-now]");
+      if (now.textContent !== freshNow.textContent) now.textContent = freshNow.textContent;
+      ["data-late-after", "data-late-since", "data-late-text"].forEach((name) => {
+        if (freshNow.hasAttribute(name)) now.setAttribute(name, freshNow.getAttribute(name));
+        else now.removeAttribute(name);
+      });
+      block.dataset.state = fresh.dataset.state;
+      block.querySelector("[data-repo-pull-merge-progress-body]").innerHTML = fresh.querySelector("[data-repo-pull-merge-progress-body]").innerHTML;
     });
-    block.dataset.state = fresh.dataset.state;
-    block.querySelector("[data-repo-pull-merge-progress-body]").innerHTML = fresh.querySelector("[data-repo-pull-merge-progress-body]").innerHTML;
     window.lucide?.createIcons();
     startRepoPullMutationTicker();
   }
@@ -27783,6 +28561,15 @@
           ${actions ? `<div class="fm-merge-row-actions">${actions}</div>` : ""}
         </div>`;
     }).join("");
+    return `
+      <section data-repo-pull-merge-box class="fm-merge-box" aria-label="Merge readiness">
+        ${rows}
+        ${model.open ? renderRepoPullQuickReplies(repo, number, parsed) : ""}
+        ${renderRepoPullMergeFooter(model)}
+      </section>`;
+  }
+
+  function renderRepoPullMergeFooter(model) {
     const footer = model.footer;
     const changes = footer.changes?.length
       ? `<ul class="fm-merge-changes">${footer.changes.map((change) => `<li>${escapeHtml(change)}</li>`).join("")}</ul>`
@@ -27805,14 +28592,30 @@
       ? `<button type="button" data-repo-pull-merge-override class="fm-btn fm-btn-danger"><i data-lucide="shield-alert"></i>Merge without review</button>`
       : "";
     return `
-      <section data-repo-pull-merge-box class="fm-merge-box" aria-label="Merge readiness">
-        ${rows}
-        ${model.open ? renderRepoPullQuickReplies(repo, number, parsed) : ""}
         <div data-repo-pull-merge-panel ${footer.progress ? "" : 'role="status" aria-live="polite" aria-atomic="true" '}aria-busy="${model.busy ? "true" : "false"}" class="fm-merge-footer" data-tone="${escapeHtml(footer.tone)}">
           ${footer.progress ? renderRepoPullMutationProgress(footer.progress) : `<p class="fm-merge-footer-text">${escapeHtml(footer.text)}</p>`}
           ${changes}
           ${showControls || model.merged ? `<div class="fm-merge-footer-actions">${method}<div class="fm-merge-buttons">${override}${mergeButton}</div></div>` : ""}
-        </div>
+        </div>`;
+  }
+
+  function renderRepoPullFilesMergeBar(repo, number, parsed) {
+    const model = repoPullMergeModel(repo, number, parsed);
+    if (!model.open && !model.merged) return "";
+    if (!model.authorized && !model.merged && !model.pending) return "";
+    const status = repoPullMergeStatus(model);
+    const blockers = model.merged || model.busy ? [] : model.rows.filter((row) => ["bad", "warn", "pending"].includes(row.tone));
+    const chips = blockers.length
+      ? `<ul class="fm-merge-files-blockers">${blockers.map((row) => `<li data-tone="${escapeHtml(row.tone)}"><i data-lucide="${PULL_MERGE_ROW_ICONS[row.tone] || PULL_MERGE_ROW_ICONS.muted}"${row.tone === "pending" ? ' class="animate-spin"' : ""}></i>${escapeHtml(row.title)}</li>`).join("")}</ul>`
+      : "";
+    const details = status && !model.busy
+      ? `<button type="button" data-repo-pull-merge-status class="fm-btn fm-btn-sm"><i data-lucide="list-checks"></i>Merge details</button>`
+      : "";
+    return `
+      <section data-repo-pull-files-merge class="fm-merge-box fm-merge-files" aria-label="Merge this pull request">
+        <div class="fm-merge-files-head"><span class="fm-merge-files-title"><i data-lucide="git-merge"></i>Merge this pull request</span>${details}</div>
+        ${chips}
+        ${renderRepoPullMergeFooter(model)}
       </section>`;
   }
 
@@ -27835,6 +28638,9 @@
     const detail = blocking.map((row) => row.title);
     if (model.busy) {
       return { tone: "pending", icon: "loader-circle", label: "Merging…", detail: [model.footer.text] };
+    }
+    if (model.pending) {
+      return { tone: "pending", icon: "loader-circle", label: "Checking…", detail: [model.footer.text] };
     }
     if (failing.length || model.footer.tone === "bad") {
       const first = failing[0];
@@ -27885,6 +28691,8 @@
     const banner = document.querySelector("[data-repo-pull-conflict-slot]");
     const status = document.querySelector("[data-repo-pull-merge-status-slot]");
     if (status) status.innerHTML = renderRepoPullMergeStatus(repo, number, parsed);
+    const filesSlot = document.querySelector("[data-repo-pull-files-merge-slot]");
+    if (filesSlot) filesSlot.innerHTML = renderRepoPullFilesMergeBar(repo, number, parsed);
     if (banner) {
       const html = renderRepoPullConflictBanner(repo, number, parsed);
       if (banner.dataset.rendered !== html) {
@@ -28539,7 +29347,28 @@
     }
     parsed.pullMerge = outcome;
     updateRepoPullMergePanel(repo, number, parsed);
-    if (outcome?.state === "merged") refreshRepoPullActivity(repo, number);
+    if (outcome?.state === "merged") {
+      celebrateRepoPullMerge(repo, number, parsed);
+      refreshRepoPullActivity(repo, number);
+    }
+  }
+
+  function celebrateRepoPullMerge(repo, number, parsed) {
+    if (!pullDetailIsCurrent(repo, number)) return;
+    parsed.values = { ...(parsed.values || {}), status: "merged" };
+    const article = document.querySelector('[data-repo-record-detail="pulls"]');
+    article?.querySelectorAll("[data-repo-record-state], [data-repo-record-sticky-state]").forEach((pill) => {
+      pill.classList.remove("bg-success", "bg-destructive", "bg-[#6e7681]");
+      pill.classList.add("bg-primary");
+      const size = pill.hasAttribute("data-repo-record-sticky-state") ? "h-3.5 w-3.5" : "h-4 w-4";
+      pill.innerHTML = `<i data-lucide="git-merge" class="${size}"></i>Merged`;
+    });
+    updateRepoPullMergePanel(repo, number, parsed);
+    window.lucide?.createIcons();
+    if (!commentReactionMotionOk()) return;
+    const origin = [...document.querySelectorAll("[data-repo-pull-merge-panel]")]
+      .find((panel) => panel.getClientRects().length) || article?.querySelector("[data-repo-record-state]");
+    if (origin) commentReactionConfetti(origin.getBoundingClientRect());
   }
 
   async function handleRepoPullMergeOverride(repo) {
@@ -28704,8 +29533,18 @@
   async function handleRepoPullCheckDecision(repo, action, value, button) {
     const detail = state.repoRecordDetail;
     if (!repo || detail?.kind !== "pulls" || !value) return;
-    if (action === "approve" && !window.confirm(`Run this pull request's checks on commit ${value.slice(0, 10)}? Its code runs on the runner without secrets or write access.`)) return;
-    if (action === "trust" && !window.confirm(`Always run checks for @${value} without asking? You can stop this from the Checks tab.`)) return;
+    if (action === "approve" && !await confirmAccountAction({
+      title: "Approve and run checks?",
+      body: `Run this pull request's checks on commit ${value.slice(0, 10)}? Its code runs on the runner without secrets or write access.`,
+      confirmLabel: "Approve and run",
+      danger: false,
+    })) return;
+    if (action === "trust" && !await confirmAccountAction({
+      title: `Always run checks for @${value}?`,
+      body: "Checks for this contributor's pull requests will run without asking. You can stop this from the Checks tab.",
+      confirmLabel: "Always run",
+      danger: false,
+    })) return;
     if (button) button.disabled = true;
     try {
       await orgAgentRequest("POST", `${repoApiBase(repo)}/pulls/${detail.number}/checks`,
@@ -29051,7 +29890,9 @@
     // An empty description stays empty (issue #651): substituting placeholder
     // copy here guaranteed the opening block always had a padded body to show,
     // so a title-only issue rendered a large card saying nothing.
-    const body = parsed.body || "";
+    const descriptionEdit = kind === "pulls" ? pullDescriptionEdit(values, parsed.pullConversation) : null;
+    const body = descriptionEdit ? String(descriptionEdit.body || "") : parsed.body || "";
+    const canEditDescription = kind === "pulls" && pullDescriptionEditable(values);
     const recordLabel = `#${escapeHtml(number)}`;
     const isPulls = kind === "pulls";
     const isDiscussions = kind === "discussions";
@@ -29084,18 +29925,17 @@
     // keep a slim "opened" line because their hero spends that row naming the
     // merge refs instead.
     const isOwner = String(repo.owner || "").toLowerCase() === String(values.author || author).toLowerCase();
-    const openingBody = hasBody
-      ? `<div data-repo-record-body class="px-4 py-4 ${MD_BODY_CLASS}">${renderRecordMarkdown(displayBody, repo)}</div>`
-      : `<p class="px-4 py-4 text-[14px] italic text-muted-foreground">No description provided.</p>`;
+    const openingBody = recordOpeningBodyHtml(repo, displayBody);
     const openingBlock = `
-                <div data-repo-record-description="${hasBody ? "body" : "empty"}" class="grid min-w-0 gap-4 sm:grid-cols-[40px_minmax(0,1fr)]">
+                <div data-repo-record-description="${hasBody ? "body" : "empty"}"${isPulls ? " data-repo-pull-description-card" : ""} class="grid min-w-0 gap-4 sm:grid-cols-[40px_minmax(0,1fr)]">
                   <span class="hidden sm:block">${issueActorAvatarHtml(author, values.author, "h-10 w-10")}</span>
                   <div class="relative min-w-0 overflow-hidden rounded-md border border-border bg-background">
                     <div class="flex min-w-0 flex-wrap items-center gap-1.5 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] py-1.5 pl-4 pr-2 text-[14px] text-muted-foreground">
-                      <span class="min-w-0 truncate">${issueCardAuthorHtml(author, values.author)} commented <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time></span>
+                      <span class="min-w-0 truncate">${issueCardAuthorHtml(author, values.author)} commented <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time>${isPulls ? `<span data-repo-pull-description-edited${descriptionEdit ? "" : " hidden"}> · edited</span>` : ""}</span>
                       <span class="ml-auto flex shrink-0 items-center gap-1">
                         <span class="rounded-full border border-border px-2 text-[12px] font-medium leading-5">${isOwner ? "Owner" : "Contributor"}</span>
                         <span class="rounded-full border border-border px-2 text-[12px] font-medium leading-5">Author</span>
+                        ${canEditDescription ? `<button type="button" data-repo-pull-description-edit="${PULL_DESCRIPTION_TARGET}" aria-label="Edit description" title="Edit description" class="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="pencil" class="h-4 w-4"></i></button>` : ""}
                       </span>
                     </div>
                     ${openingBody}
@@ -29190,6 +30030,17 @@
       ...(parsed.discussionConversation || []).map((ev) => ev.authorName || ev.author).filter(Boolean)]));
     return `
       <article data-repo-record-detail="${escapeHtml(kind)}" class="min-w-0 bg-background">
+        ${isPulls ? `<div data-repo-record-sticky aria-hidden="true" class="pointer-events-none sticky top-0 z-20 -mx-3 mb-0 flex h-0 items-start overflow-visible sm:-mx-5">
+          <div data-repo-record-sticky-bar class="flex w-full -translate-y-full flex-col gap-1 border-b border-border bg-background/95 px-3 pt-2 opacity-0 backdrop-blur transition duration-150 sm:px-5">
+            <div class="flex min-w-0 items-center gap-2">
+              <span data-repo-record-sticky-state class="inline-flex h-6 shrink-0 items-center gap-1 rounded-full ${statePillTone} px-2 text-[12px] font-medium text-white"><i data-lucide="${stateIcon}" class="h-3.5 w-3.5"></i>${escapeHtml(stateLabel)}</span>
+              <span class="min-w-0 truncate text-[14px] font-semibold text-foreground">${escapeHtml(title)} <span class="font-normal text-muted-foreground">${recordLabel}</span></span>
+            </div>
+            <nav class="flex min-w-0 items-end overflow-x-auto" aria-label="Pull request sections">
+              ${[["conversation", "Conversation"], ["commits", "Commits"], ["checks", "Checks"], ["files", "Files changed"], ["badge", "Badge"]].map(([name, label]) => `<button type="button" data-repo-record-sticky-tab="${name}" aria-selected="${name === activeSection ? "true" : "false"}" class="-mb-px inline-flex h-8 shrink-0 items-center border-b-2 border-transparent px-3 text-[13px] text-muted-foreground hover:text-foreground aria-selected:border-[var(--dashboard-link)] aria-selected:text-foreground">${label}</button>`).join("")}
+            </nav>
+          </div>
+        </div>` : ""}
         <header data-repo-record-hero class="${isPulls ? "" : "border-b border-border pb-4"}">
           <div class="flex flex-wrap items-start justify-between gap-3">
             <h1 class="min-w-0 flex-1 text-[26px] font-normal leading-tight text-foreground [overflow-wrap:anywhere] sm:text-[32px]">${escapeHtml(title)} <span class="font-light text-muted-foreground">${recordLabel}</span></h1>
@@ -29207,7 +30058,6 @@
               : `${issuePersonNameHtml(author)} started this conversation in <span class="font-semibold text-foreground">${escapeHtml(discussionCategory)}</span> <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time> · ${formatCount(discussionConversation.length)} ${discussionConversation.length === 1 ? "reply" : "replies"}`}</span>
             ${isPulls ? renderPullAiModelChip(values, body, parsed.repoCollabSettings) : ""}
           </div>
-          ${isPulls && stateKey === "open" ? renderPullReviewPrompt(pullReviewPromptFields(repo, number, values, parsed.pullPatch), number, parsed.repoCollabSettings?.reviewPromptTemplate || "") : ""}
           ${recordTabs}
         </header>
         ${isPulls ? `<div data-repo-pull-conflict-slot class="fm-conflict-slot">${renderRepoPullConflictBanner(repo, number, parsed)}</div>` : ""}
@@ -29240,7 +30090,7 @@
                   <div data-repo-pull-checks class="divide-y divide-border">${renderRepoPullChecks(parsed.pullChecks, repo)}</div>
                 </section>
               </div>
-              <div data-repo-record-panel="files" class="${recordPanelClass("files")}">${pullFilesSection}</div>
+              <div data-repo-record-panel="files" class="${recordPanelClass("files")}">${pullFilesSection}<div data-repo-pull-files-merge-slot class="min-w-0">${renderRepoPullFilesMergeBar(repo, number, parsed)}</div></div>
               <div data-repo-record-panel="badge" class="${recordPanelClass("badge")}">
                 <section class="overflow-hidden rounded-md border border-border">
                   <div class="flex items-center gap-2 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-2 text-[14px] font-semibold text-foreground"><i data-lucide="fingerprint" class="h-4 w-4 text-muted-foreground"></i>Badge</div>
@@ -29249,8 +30099,9 @@
               </div>` : ""}
           </div>
           <aside data-repo-record-sidebar class="${activeSection === "conversation" ? "" : "hidden "}min-w-0 self-start">
-            ${isPulls ? sidebarSection("Reviewers", `<span data-repo-pull-reviewers class="grid gap-1">${renderPullReviewers(pullConversation, values.author || "", values.authorName || "")}</span>`) : ""}
+            ${isPulls ? sidebarSection("Reviewers", `<span data-repo-pull-reviewers class="grid gap-0.5">${renderPullReviewers(pullConversation, values.author || "", values.authorName || "")}</span>`) : ""}
             ${isPulls ? renderPullAiReviewSidebar(repo, number) : ""}
+            ${isPulls && stateKey === "open" ? sidebarSection("Diff and files", renderPullReviewPrompt(pullReviewPromptFields(repo, number, values, parsed.pullPatch), number, parsed.repoCollabSettings?.reviewPromptTemplate || "")) : ""}
             ${isPulls ? sidebarSection("Assignees", `<span class="text-muted-foreground">No one assigned</span>`) : sidebarSection("Category", `<span class="inline-flex items-center gap-1.5 font-semibold"><span aria-hidden="true">${discussionCategoryEmoji(discussionCategory)}</span>${escapeHtml(discussionCategory)}</span>`)}
             ${sidebarSection("Labels", labelValue)}
             ${rewardValue ? sidebarSection("Reward", rewardValue) : ""}
@@ -29531,12 +30382,11 @@
       .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ").replace(/\s+/g, " ").trim();
   }
 
-  function renderIssueAiPrompt(repo, number, title, template = "") {
+  function renderIssueAiPrompt(repo, number, title, template = "", extraButtons = "") {
     const prompt = issueAiPromptText(repo, number, title, template);
-    return `<div data-repo-issue-ai-prompt class="mt-3 flex min-w-0 items-start gap-2 rounded-md border border-border bg-[rgb(var(--dashboard-subtle-rgb))] py-1 pl-3 pr-1 text-[12px] text-muted-foreground">
-            <i data-lucide="bot" class="h-4 w-4 shrink-0"></i>
-            <code data-repo-issue-ai-prompt-text title="${escapeHtml(prompt)}" class="min-w-0 flex-1 break-words font-mono text-foreground">${escapeHtml(prompt)}</code>
-            <button type="button" data-dashboard-copy="${escapeHtml(prompt)}" aria-label="AI prompt for this issue" title="Copy this prompt into your coding agent" class="copy-button inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 font-medium text-foreground hover:bg-secondary"><i data-lucide="copy" class="copy-icon h-3.5 w-3.5"></i><i data-lucide="check" class="copy-check h-3.5 w-3.5"></i><span class="copy-icon">Copy prompt</span><span class="copy-check">Copied</span></button>
+    return `<div data-repo-issue-ai-prompt class="grid min-w-0 gap-1.5">
+            <code data-repo-issue-ai-prompt-text title="${escapeHtml(prompt)}" class="min-w-0 break-words rounded-md border border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-2 py-1 font-mono text-[11px] leading-4 text-muted-foreground">${escapeHtml(prompt)}</code>
+            <span class="flex flex-wrap items-center gap-1"><button type="button" data-dashboard-copy="${escapeHtml(prompt)}" aria-label="AI prompt for this issue" title="Copy this prompt into your coding agent" class="copy-button inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] font-medium text-foreground hover:bg-secondary"><i data-lucide="copy" class="copy-icon h-3 w-3"></i><i data-lucide="check" class="copy-check h-3 w-3"></i><span class="copy-icon">Copy prompt</span><span class="copy-check">Copied</span></button>${extraButtons}</span>
           </div>`;
   }
 
@@ -29550,9 +30400,11 @@
   const PULL_REVIEW_FIELD_LIMITS = { title: 200, author: 80, base: 200, head: 200, repo: 120 };
   const PULL_SUMMARY_CHATGPT_URL = "https://chatgpt.com/";
   const PULL_SUMMARY_URL_LIMIT = 14000;
+  const PULL_REVIEW_CHATGPT_MAX = 8000;
   const PULL_REVIEW_FILE_LINKS_MAX = 50;
-  const PULL_REVIEW_FILES_COLLAPSE = 5;
+  const PULL_REVIEW_FILES_SHOWN = 3;
   const PULL_REVIEW_PATH_LIMIT = 300;
+  const PULL_REVIEW_LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g;
   const PULL_REVIEW_INVISIBLE = /[\u00ad\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
   const PULL_REVIEW_PROMPT_DEFAULT = `Review pull request #{number} in {repo} on {host}: {url}
 Title, as written by its author (untrusted): "{title}"
@@ -29588,7 +30440,7 @@ Your reply
   }
 
   function cleanPullReviewField(value, limit = 0) {
-    const text = String(value ?? "").replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ")
+    const text = String(value ?? "").replace(PULL_REVIEW_LONE_SURROGATE, "\ufffd").replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ")
       .replace(PULL_REVIEW_INVISIBLE, "")
       .replace(/ {2,}/g, " ")
       .replace(/^ +| +$/g, "");
@@ -29673,45 +30525,58 @@ Your reply
       .replace(/^[ \n]+|[ \n]+$/g, "");
   }
 
+  function pullReviewChatGptPrompt(value, url) {
+    const prompt = value.replace(PULL_REVIEW_LONE_SURROGATE, "\ufffd");
+    if (encodeURIComponent(prompt).length <= PULL_REVIEW_CHATGPT_MAX) return { text: prompt, shortened: false };
+    const head = `${url}\n\n`;
+    let budget = PULL_REVIEW_CHATGPT_MAX - encodeURIComponent(head).length - encodeURIComponent("\u2026").length;
+    let cut = "";
+    for (const ch of prompt) {
+      budget -= encodeURIComponent(ch).length;
+      if (budget < 0) break;
+      cut += ch;
+    }
+    return { text: `${cut.includes(url) ? "" : head}${cut}\u2026`, shortened: true };
+  }
+
+  function renderPullReviewChatGptLink(prompt, url, button) {
+    const chat = pullReviewChatGptPrompt(prompt, url);
+    const href = escapeHtml(`${PULL_SUMMARY_CHATGPT_URL}?q=${encodeURIComponent(chat.text)}`);
+    const copy = chat.shortened ? ` data-dashboard-copy="${escapeHtml(prompt)}"` : "";
+    const label = chat.shortened
+      ? "Review with ChatGPT: opens ChatGPT with the start of the review prompt and copies the full prompt"
+      : "Review with ChatGPT: opens ChatGPT with the review prompt filled in";
+    const title = chat.shortened
+      ? "The prompt is too long for a link: ChatGPT opens with its start, and the full prompt is copied to paste instead"
+      : "Open ChatGPT in a new tab with this prompt";
+    return `<a href="${href}" target="_blank" rel="noopener noreferrer"${copy} data-repo-pull-review-chatgpt aria-label="${label}" title="${title}" class="${button}"><i data-lucide="bot" class="h-3.5 w-3.5"></i></a>`;
+  }
+
   function renderPullReviewPrompt(fields, number, template = "") {
-    const prompt = escapeHtml(pullReviewPromptText(fields, template));
-    const files = fields.files || [];
+    const text = pullReviewPromptText(fields, template);
+    const prompt = escapeHtml(text);
+    const files = (fields.files || []).slice(0, PULL_REVIEW_FILES_SHOWN);
     const more = (fields.fileCount || 0) - files.length;
-    const toggle = files.length + (more > 0 ? 1 : 0) > PULL_REVIEW_FILES_COLLAPSE;
-    const boxId = `repo-pull-review-prompt-${Number(number)}`;
     const raw = fields.rawDiffUrl || "";
     const link = "font-medium text-[var(--dashboard-link)] hover:underline";
+    const button = "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground";
     const diffLinks = raw
       ? `<a href="${escapeHtml(raw)}" data-repo-pull-diff-link class="${link}">Diff</a><a href="${escapeHtml(fields.patchUrl)}" data-repo-pull-patch-link class="${link}">Patch</a>`
       : "";
-    const toggleButton = toggle
-      ? `<button type="button" data-repo-pull-review-prompt-toggle aria-expanded="false" aria-controls="${boxId}" class="inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-2 font-medium text-foreground hover:bg-secondary"><i data-lucide="chevron-down" class="h-3.5 w-3.5"></i><span data-repo-pull-review-prompt-toggle-label>Show all</span></button>`
-      : "";
-    let rows = files.map(([path, href]) => (href
-      ? `<li class="truncate"><a href="${escapeHtml(href)}" title="${escapeHtml(path)}" class="text-[var(--dashboard-link)] hover:underline">${escapeHtml(path)}</a></li>`
-      : `<li class="truncate" title="${escapeHtml(path)}">${escapeHtml(path)}</li>`)).join("");
-    if (more > 0) rows += `<li class="text-muted-foreground">and ${more} more</li>`;
+    let rows = files.map(([path, href]) => {
+      const name = escapeHtml(path.split("/").pop() || path);
+      return href
+        ? `<li class="truncate"><a href="${escapeHtml(href)}" title="${escapeHtml(path)}" class="text-[var(--dashboard-link)] hover:underline">${name}</a></li>`
+        : `<li class="truncate" title="${escapeHtml(path)}">${name}</li>`;
+    }).join("");
+    if (more > 0) rows += `<li><a href="${escapeHtml(fields.filesUrl)}" data-repo-record-tab="files" data-repo-pull-files-more class="font-sans text-muted-foreground hover:text-foreground hover:underline">+${more} more ${more === 1 ? "file" : "files"}</a></li>`;
     const listing = rows
       ? `
-            <ul id="${boxId}" data-repo-pull-review-files class="${toggle ? "max-h-28" : "max-h-none"} overflow-hidden border-t border-border bg-background px-3 py-2 font-mono text-[12px] leading-5 text-foreground">${rows}</ul>`
+            <ul data-repo-pull-review-files class="min-w-0 font-mono text-[11px] leading-5 text-foreground">${rows}</ul>`
       : "";
-    return `<section data-repo-pull-review-prompt aria-label="Diff and files" class="mt-3 min-w-0 overflow-hidden rounded-md border border-border bg-[rgb(var(--dashboard-subtle-rgb))] text-[12px] text-muted-foreground">
-            <div class="flex min-w-0 flex-wrap items-center gap-2 py-1 pl-3 pr-1">
-              <i data-lucide="code" class="h-4 w-4 shrink-0"></i><span class="whitespace-nowrap font-semibold text-foreground">Diff and files</span>${diffLinks}
-              <span class="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1">${toggleButton}<a href="${escapeHtml(pullSummaryChatGptUrl(fields))}" target="_blank" rel="noopener noreferrer" data-repo-pull-chatgpt-summary title="Open ChatGPT with a request to summarize this pull request" class="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 font-medium text-foreground hover:bg-secondary"><i data-lucide="external-link" class="h-3.5 w-3.5"></i>Summarize in ChatGPT</a><button type="button" data-dashboard-copy="${prompt}" aria-label="Copy the review prompt for this pull request" title="Copy a review prompt for your coding agent" class="copy-button inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 font-medium text-foreground hover:bg-secondary"><i data-lucide="copy" class="copy-icon h-3.5 w-3.5"></i><i data-lucide="check" class="copy-check h-3.5 w-3.5"></i><span class="copy-icon">Copy review prompt</span><span class="copy-check">Copied</span></button></span>
-            </div>${listing}
-          </section>`;
-  }
-
-  function togglePullReviewPrompt(button) {
-    const box = document.getElementById(button.getAttribute("aria-controls") || "");
-    if (!box) return;
-    const expand = button.getAttribute("aria-expanded") !== "true";
-    button.setAttribute("aria-expanded", expand ? "true" : "false");
-    box.classList.toggle("max-h-28", !expand);
-    box.classList.toggle("max-h-none", expand);
-    const label = button.querySelector("[data-repo-pull-review-prompt-toggle-label]");
-    if (label) label.textContent = expand ? "Show less" : "Show all";
+    return `<div data-repo-pull-review-prompt aria-label="Diff and files" class="grid min-w-0 gap-1 text-[12px]">
+            <span class="flex min-w-0 items-center gap-3">${diffLinks}<span class="ml-auto flex items-center gap-0.5"><button type="button" data-dashboard-copy="${prompt}" aria-label="Copy the review prompt for this pull request" title="Copy a review prompt for your coding agent" class="copy-button ${button}"><i data-lucide="copy" class="copy-icon h-3.5 w-3.5"></i><i data-lucide="check" class="copy-check h-3.5 w-3.5"></i></button>${renderPullReviewChatGptLink(text, fields.url, button)}<a href="${escapeHtml(pullSummaryChatGptUrl(fields))}" target="_blank" rel="noopener noreferrer" data-repo-pull-chatgpt-summary aria-label="Summarize in ChatGPT" title="Open ChatGPT with a request to summarize this pull request" class="${button}"><i data-lucide="external-link" class="h-3.5 w-3.5"></i></a></span></span>${listing}
+          </div>`;
   }
 
   function renderRepoIssueDetail(repo, number, parsed) {
@@ -29726,6 +30591,8 @@ Your reply
     const hasBody = Boolean(String(body).trim());
     const canManage = Boolean(parsed.issueMutationAuthorized);
     const events = Array.isArray(parsed.issueEvents) ? parsed.issueEvents : [];
+    const openEvent = events.find((ev) => ev?.type === "open" && String(ev.id || "") === String(parsed.issueOpenEventId || ""));
+    const canEditText = canManage || webSessionAuthored(openEvent || { author: values.author, authorName: values.authorName });
     const commentCount = issueCommentCount(events);
     const participants = issueParticipants(parsed);
     const labels = parseFrontMatterList(values.labels);
@@ -29759,10 +30626,10 @@ Your reply
                       </form>`;
     const description = hasBody
       ? `<div data-repo-record-description="body">
-                      <div data-repo-record-body data-repo-issue-task-list class="px-4 py-4 ${MD_BODY_CLASS}">${renderRecordMarkdown(issueDescriptionWithoutDependencies(body), repo, { issueTasks: true, interactiveTasks: canManage })}</div>
+                      <div data-repo-record-body data-repo-issue-task-list class="px-4 py-4 ${MD_BODY_CLASS}">${renderRecordMarkdown(issueDescriptionWithoutDependencies(body), repo, { issueTasks: true, interactiveTasks: canEditText })}</div>
                       ${reactionRow}
-                    </div>${canManage ? descriptionForm : ""}`
-      : canManage
+                    </div>${canEditText ? descriptionForm : ""}`
+      : canEditText
         ? `<div data-repo-record-description="add" class="px-4 py-2"><button type="button" data-repo-issue-description-edit class="inline-flex h-7 items-center gap-1.5 rounded-md px-1 text-[14px] text-muted-foreground hover:text-[var(--dashboard-link)]"><i data-lucide="plus" class="h-4 w-4"></i>Add a description</button></div>${descriptionForm}`
         : `<p data-repo-record-description="empty" class="px-4 py-2 text-[14px] italic text-muted-foreground">No description provided.</p>`;
 
@@ -29773,7 +30640,7 @@ Your reply
                     <div class="flex min-w-0 items-center gap-1.5 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] py-1.5 pl-4 pr-2 text-[14px] text-muted-foreground">
                       <span class="min-w-0 truncate">${issueCardAuthorHtml(author, values.author)} opened <time datetime="${escapeHtml(opened.iso)}" title="${escapeHtml(opened.label)}">${escapeHtml(formatTimeAgo(openedAt))}</time></span>
                       <span class="ml-auto shrink-0 rounded-full border border-border px-2 text-[12px] font-medium leading-5">${isOwner ? "Owner" : "Contributor"}</span>
-                      ${canManage && hasBody ? `<button type="button" data-repo-issue-description-edit aria-label="Edit description" title="Edit description" class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="pencil" class="h-4 w-4"></i></button>` : ""}
+                      ${canEditText && hasBody ? `<button type="button" data-repo-issue-description-edit aria-label="Edit description" title="Edit description" class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="pencil" class="h-4 w-4"></i></button>` : ""}
                     </div>
                     ${description}
                   </div>
@@ -29805,7 +30672,7 @@ Your reply
     // Self-assignment is open to every visitor, not only issue managers
     // (issue #570): a claim moves only the caller's own name. Signed-out
     // clicks route through /login.
-    const selfAssignControl = `<button type="button" data-repo-issue-claim="${viewerAssigned ? "release" : "claim"}" class="mt-2 inline-flex items-center gap-1.5 text-[12px] text-muted-foreground hover:text-[var(--dashboard-link)]"><i data-lucide="${viewerAssigned ? "user-minus" : "user-plus"}" class="h-3.5 w-3.5"></i>${viewerAssigned ? "Unassign yourself" : "Assign yourself"}</button>`;
+    const selfAssignControl = `<button type="button" data-repo-issue-claim="${viewerAssigned ? "release" : "claim"}" class="mt-2 flex w-fit items-center gap-1.5 text-[12px] text-muted-foreground hover:text-[var(--dashboard-link)]"><i data-lucide="${viewerAssigned ? "user-minus" : "user-plus"}" class="h-3.5 w-3.5"></i>${viewerAssigned ? "Unassign yourself" : "Assign yourself"}</button>`;
     const assigneeValue = `${issueAssignees.length
       ? `<div class="grid gap-1.5">${issueAssignees.map((assignee) => {
         const row = `<span class="inline-flex min-w-0 items-center gap-2">${issueActorAvatarHtml(assignee, assignee, "h-5 w-5")}${issuePersonNameHtml(assignee, "truncate font-semibold")}</span>`;
@@ -29816,10 +30683,14 @@ Your reply
       }).join("")}</div>`
       : `<span class="text-muted-foreground">No one assigned</span>`}${selfAssignControl}`;
     const latestAgentEvent = events.slice().reverse().find((event) => event?.type === "agent");
-    const agentValue = `${latestAgentEvent && Number(latestAgentEvent.agentSessionId) > 0 && latestAgentEvent.agentStatus !== "cleared"
+    const agentStatusValue = `${latestAgentEvent && Number(latestAgentEvent.agentSessionId) > 0 && latestAgentEvent.agentStatus !== "cleared"
       ? `<span class="inline-flex items-center gap-2">${issueActorAvatarHtml(latestAgentEvent.agentProvider || "Agent", "", "h-5 w-5", true)}<span class="font-semibold">${escapeHtml(latestAgentEvent.agentProvider || "Agent")}</span><span class="text-muted-foreground">session #${escapeHtml(latestAgentEvent.agentSessionId)}</span>${latestAgentEvent.agentStatus ? `<span class="rounded-full border border-attention/40 px-1.5 font-mono text-[11px] leading-[18px] text-attention">${escapeHtml(latestAgentEvent.agentStatus)}</span>` : ""}</span>`
-      : `<span class="text-muted-foreground">No agent assigned</span>`}
-        <button type="button" data-repo-issue-mcp-prompt title="${state.session?.sessionToken ? "Copy a ready-to-paste agent prompt that works this issue end to end, MCP server configuration and a generated connector token included (shift-click to paste a token this node already published)" : "Sign in to copy the agent prompt for this issue"}" class="mt-2 flex items-center gap-1.5 text-[12px] text-muted-foreground hover:text-[var(--dashboard-link)]"><i data-lucide="copy" class="h-3.5 w-3.5"></i>Copy MCP prompt</button>`;
+      : `<span class="text-muted-foreground">No agent assigned</span>`}`;
+    const issueMcpButton = `<button type="button" data-repo-issue-mcp-prompt title="${state.session?.sessionToken ? "Copy a ready-to-paste agent prompt that works this issue end to end, MCP server configuration and a generated connector token included (shift-click to paste a token this node already published)" : "Sign in to copy the agent prompt for this issue"}" class="inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] font-medium text-foreground hover:bg-secondary"><i data-lucide="copy" class="h-3 w-3"></i>Copy MCP prompt</button>`;
+    const agentValue = `${agentStatusValue}
+        <div class="mt-2">${closed || instancePluginOff("issue-ai-prompt")
+          ? `<span class="flex flex-wrap items-center gap-1">${issueMcpButton}</span>`
+          : renderIssueAiPrompt(repo, number, title, parsed.repoCollabSettings?.aiPromptTemplate || "", issueMcpButton)}</div>`;
     const labelValue = labels.length
       ? `<div class="flex flex-wrap gap-1">${labels.map((label) => renderIssueLabelChip(label)).join("")}</div>`
       : `<span class="text-muted-foreground">No labels</span>`;
@@ -29868,13 +30739,13 @@ Your reply
         <header data-repo-record-hero class="border-b border-border pb-4">
           <div class="flex flex-wrap items-start justify-between gap-3">
             <h1 data-repo-issue-title-heading class="min-w-0 flex-1 text-[26px] font-normal leading-tight text-foreground [overflow-wrap:anywhere] sm:text-[32px]">${escapeHtml(title)} <span class="font-light text-muted-foreground">${recordLabel}</span></h1>
-            ${canManage ? `<form data-repo-issue-title-form class="hidden min-w-0 basis-full flex-wrap items-center gap-2 sm:flex-1 sm:flex-nowrap">
+            ${canEditText ? `<form data-repo-issue-title-form class="hidden min-w-0 basis-full flex-wrap items-center gap-2 sm:flex-1 sm:flex-nowrap">
               <input data-repo-issue-title-input value="${escapeHtml(title)}" maxlength="240" aria-label="Issue title" class="h-11 min-w-0 basis-full rounded-md border border-border bg-background px-3 text-[20px] text-foreground outline-none focus:border-[var(--dashboard-link)] sm:flex-1" />
               <button type="submit" class="h-8 rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground">Save</button>
               <button type="button" data-repo-issue-title-cancel class="h-8 rounded-md px-3 text-[14px] text-[var(--dashboard-link)] hover:underline">Cancel</button>
             </form>` : ""}
             <div class="flex shrink-0 items-center gap-2 pt-1">
-              ${canManage ? `<button type="button" data-repo-issue-title-edit class="inline-flex h-8 items-center rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground hover:bg-secondary/70">Edit</button>` : ""}
+              ${canEditText ? `<button type="button" data-repo-issue-title-edit class="inline-flex h-8 items-center rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground hover:bg-secondary/70">Edit</button>` : ""}
               ${renderIssueSourceLink(parsed.issueSourceUrl)}<button type="button" data-repo-issue-new class="inline-flex h-8 items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">New issue</button>
               <button type="button" data-dashboard-copy="${escapeHtml(issueUrl)}" aria-label="Copy link to this issue" title="Copy link" class="copy-button inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="link" class="copy-icon h-4 w-4"></i><i data-lucide="check" class="copy-check h-4 w-4"></i></button>
             </div>
@@ -29887,7 +30758,6 @@ Your reply
             <span>${formatCount(participants.length)} ${participants.length === 1 ? "participant" : "participants"}</span>
             ${issueViewsHtml(repo, number)}
           </p>
-          ${closed || instancePluginOff("issue-ai-prompt") ? "" : renderIssueAiPrompt(repo, number, title, parsed.repoCollabSettings?.aiPromptTemplate || "")}
         </header>
         <div data-repo-record-layout class="mt-6 grid gap-8 lg:grid-cols-[minmax(0,1fr)_18.5rem]">
           <div class="grid min-w-0 gap-4 self-start">
@@ -29962,7 +30832,6 @@ Your reply
               ? `<span class="inline-flex h-8 items-center gap-1.5 rounded-full ${closed ? "bg-[#6e7681]" : "bg-success"} px-3 font-medium text-white"><i data-lucide="${closed ? "circle-check" : "circle-dot"}" class="h-4 w-4"></i>${closed ? "Closed" : "Open"}</span><span>${formatCount(Number(item.commentCount) || 0)} ${Number(item.commentCount) === 1 ? "comment" : "comments"}</span>`
               : `${bar("w-20", "h-8 rounded-full")}${bar("w-24")}`}
           </p>
-          ${item && !closed && !instancePluginOff("issue-ai-prompt") ? renderIssueAiPrompt(repo, number, item.title, cachedSettings?.aiPromptTemplate || "") : ""}
         </header>
         <div class="mt-6 grid gap-8 lg:grid-cols-[minmax(0,1fr)_18.5rem]">
           <div class="grid min-w-0 gap-4 self-start">
@@ -29986,7 +30855,7 @@ Your reply
           </div>
           <aside class="min-w-0 self-start">
             ${section("Assignees", item ? (assignees.length ? `<div class="grid gap-1.5">${assignees.map((name) => `<span class="inline-flex items-center gap-2">${issueActorAvatarHtml(name, name, "h-5 w-5")}${issuePersonNameHtml(name, "font-semibold")}</span>`).join("")}</div>` : `<span class="text-muted-foreground">No one assigned</span>`) : bar("w-1/2"))}
-            ${section("Agent", bar("w-2/3"))}
+            ${section("Agent", item && !closed && !instancePluginOff("issue-ai-prompt") ? `${bar("w-2/3")}<div class="mt-2">${renderIssueAiPrompt(repo, number, item.title, cachedSettings?.aiPromptTemplate || "")}</div>` : bar("w-2/3"))}
             ${section("Labels", item ? (labels.length ? `<div class="flex flex-wrap gap-1">${labels.map((label) => renderIssueLabelChip(label)).join("")}</div>` : `<span class="text-muted-foreground">No labels</span>`) : bar("w-3/4"))}
             ${section("Fields", item && Number(item.priority) > 0 ? `<span class="rounded-md border border-border px-1.5 font-mono text-[12px] leading-[18px]">P${Number(item.priority)}</span>` : bar("w-1/2"))}
             ${section("Milestone", item ? (item.milestone ? `<span class="font-semibold">${escapeHtml(item.milestone)}</span>` : `<span class="text-muted-foreground">No milestone</span>`) : bar("w-2/3"))}
@@ -30011,6 +30880,30 @@ Your reply
   function takeRepoFirstViewIssue(repo, number) {
     const kept = repoFirstViewIssue;
     repoFirstViewIssue = null;
+    if (!kept || !repo || kept.number !== String(number) || kept.path !== location.pathname) return null;
+    return kept.node;
+  }
+
+  let repoFirstViewPull = null;
+  function keepRepoFirstViewPull(detail) {
+    repoFirstViewPull = null;
+    const heading = detail?.querySelector?.("[data-repo-ssr] h2.fm-ssr-h1");
+    const match = /\/pulls?\/(\d+)(?:\/|$)/.exec(location.pathname);
+    if (!heading || !match) return;
+    const view = document.createElement("div");
+    view.className = "fm-ssr";
+    view.dataset.repoSsrPull = match[1];
+    for (let node = heading; node;) {
+      const next = node.nextSibling;
+      view.appendChild(node);
+      node = next;
+    }
+    repoFirstViewPull = { number: match[1], path: location.pathname, node: view };
+  }
+
+  function takeRepoFirstViewPull(repo, number) {
+    const kept = repoFirstViewPull;
+    repoFirstViewPull = null;
     if (!kept || !repo || kept.number !== String(number) || kept.path !== location.pathname) return null;
     return kept.node;
   }
@@ -30493,9 +31386,9 @@ Your reply
   }
 
   // The compact title bar slides in once the full header scrolls away.
-  function mountIssueStickyHeader(container) {
-    const hero = container?.querySelector?.('[data-repo-record-detail="issues"] [data-repo-record-hero]');
-    const bar = container?.querySelector?.("[data-repo-issue-sticky-bar]");
+  function mountRecordStickyHeader(container) {
+    const hero = container?.querySelector?.('[data-repo-record-detail="issues"] [data-repo-record-hero], [data-repo-record-detail="pulls"] [data-repo-record-hero]');
+    const bar = container?.querySelector?.("[data-repo-issue-sticky-bar], [data-repo-record-sticky-bar]");
     state.issueStickyObserver?.disconnect?.();
     if (!hero || !bar || typeof IntersectionObserver !== "function") return;
     state.issueStickyObserver = new IntersectionObserver(([entry]) => {
@@ -30879,9 +31772,10 @@ Your reply
     const html = renderRepoRecordDetail(repo, kind, number, parsed);
     if (kind === "issues") paintRepoIssueDetail(container, html);
     else container.innerHTML = html;
-    if (kind === "issues") mountIssueStickyHeader(container);
+    if (kind === "issues" || kind === "pulls") mountRecordStickyHeader(container);
     window.lucide?.createIcons();
     if (typeof loadCommentTipWallets === "function") void loadCommentTipWallets(commentReactionSubject(kind, number));
+    if (typeof scheduleCommentReactionCheer === "function") scheduleCommentReactionCheer(commentReactionSubject(kind, number));
   }
 
   async function loadRepoIssueDependencies(repo, body, currentNumber, known = []) {
@@ -30948,8 +31842,12 @@ Your reply
     const recordPath = `${config.dir}/${number}/${recordFile}`;
     const staleMark = repoStaleReadMark();
     const reconnect = { key: viewKey, container, retry: () => loadRepoRecordDetail(repo, kind, number, preferMirror) };
-    if (!quietRefresh && !reconnecting) {
-      const firstView = kind === "issues" ? takeRepoFirstViewIssue(repo, number) : null;
+    const snapshotShown = kind === "pulls" && !quietRefresh && !reconnecting
+      && showRepoPullSnapshot(repo, number, container);
+    let pullLive = null;
+    if (!quietRefresh && !reconnecting && !snapshotShown) {
+      const firstView = kind === "issues" ? takeRepoFirstViewIssue(repo, number)
+        : kind === "pulls" ? takeRepoFirstViewPull(repo, number) : null;
       if (firstView) {
         container.replaceChildren(firstView);
       } else {
@@ -31031,30 +31929,18 @@ Your reply
       if (kind === "pulls") {
         parsed.pullMetadataCommit = pullMetadataCommit;
         const values = parsed.values || {};
-        const readiness = loadRepoPullReadiness(repo, number, values);
-        const [pullPatch, conversation, commits, agents, mergeAuthorized, mergeBase, checks, rules, requiredChecks] = await Promise.all([
+        pullLive = loadRepoPullLiveState(repo, number, values);
+        const [pullPatch, conversation, commits] = await Promise.all([
           loadRepoPullPatch(repo, number, pullMetadataCommit, values),
           loadRepoPullConversation(repo, number, pullMetadataCommit),
           loadRepoPullCommits(repo, number, pullMetadataCommit, values),
-          loadRepoPullAgentActivity(repo, number, values),
-          loadRepoPullMergeAuthorization(repo),
-          loadRepoPullMergeBase(repo, values),
-          readiness.then((result) => loadRepoPullChecks(repo, values, result)),
-          readiness.then((result) => loadRepoPullRules(repo, number, result)),
-          readiness.then((result) => loadRepoPullRequiredChecks(repo, values, result)),
         ]);
         if (pullPatch) parsed.pullPatch = pullPatch;
         parsed.pullConversation = conversation;
         parsed.pullCommits = commits;
-        parsed.pullAgents = agents;
-        parsed.pullTimeline = buildRepoPullTimeline(values, conversation, commits, agents);
-        parsed.pullMergeAuthorized = mergeAuthorized;
-        parsed.pullUpdateAuthorized = await loadRepoPullUpdateAuthorization(repo, values, mergeAuthorized);
-        parsed.pullReadiness = await readiness;
-        parsed.pullMergeBase = mergeBase;
-        parsed.pullChecks = checks;
-        parsed.pullRules = rules;
-        parsed.pullRequiredChecks = requiredChecks;
+        parsed.pullAgents = [];
+        parsed.pullTimeline = buildRepoPullTimeline(values, conversation, commits, []);
+        parsed.pullPending = true;
       }
       if (kind === "issues") {
         const [mutationAuthorized, subscription] = await issueAccess;
@@ -31077,9 +31963,9 @@ Your reply
       }
       if (optimistic) forgetOptimisticRepoRecord(repo, kind, number);
       // The reader may have left the optimistic detail while this poll ran.
-      if (quietRefresh && !repoRecordDetailOnScreen(repo, kind, number, container)) return;
+      if ((quietRefresh || snapshotShown) && !repoRecordDetailOnScreen(repo, kind, number, container)) return;
       if (quietRefresh && container.querySelector("[data-repo-issue-comment-editor]")) return;
-      const commentDraft = quietRefresh
+      const commentDraft = quietRefresh || snapshotShown
         ? String(container.querySelector("[data-repo-issue-comment-body]")?.value || "")
         : "";
       state.repoRecordDetail = { repo, kind, number, parsed };
@@ -31087,8 +31973,9 @@ Your reply
       if (kind === "issues") paintRepoIssueDetail(container, html);
       else container.innerHTML = html;
       finishRepoRead(staleMark, reconnect);
-      if (kind === "issues") mountIssueStickyHeader(container);
+      if (kind === "issues" || kind === "pulls") mountRecordStickyHeader(container);
       if (typeof loadCommentTipWallets === "function") void loadCommentTipWallets(commentReactionSubject(kind, number));
+      if (typeof scheduleCommentReactionCheer === "function") scheduleCommentReactionCheer(commentReactionSubject(kind, number));
       if (kind === "issues") decorateIssueModeration(container, repo, number, parsed);
       if (commentDraft) {
         const commentBody = container.querySelector("[data-repo-issue-comment-body]");
@@ -31098,14 +31985,8 @@ Your reply
       if (issueRelations) void showRepoIssueRelationsLater(repo, number, parsed, container, issueRelations);
       if (kind === "issues") recordIssueView(repo, number);
       void refreshRepoRecordDevelopment(repo, kind, number);
-      if (kind === "pulls") void hydrateRepoPullAttention(repo, number, parsed);
       if (kind === "pulls") void loadPullAiReview(repo, number);
-      // Members watch an open pull for agent activity; signed-out visitors
-      // cannot read organization sessions at all, so they get no timer.
-      if (kind === "pulls" && state.session?.sessionToken) {
-        scheduleRepoPullActivityRefresh(repo, number, (parsed.pullAgents || []).some(
-          (event) => pullAgentStatusIsActive(event.status)));
-      }
+      if (kind === "pulls") void finishRepoPullLiveState(repo, number, parsed, pullLive);
     } catch (error) {
       // The relay already accepted this numbered record. Keep its complete
       // detail visible while the mirror commit converges, then retry quietly.
@@ -34258,8 +35139,8 @@ Your reply
     probe.src = url;
   }
 
-  const REPO_FEATURE_TABS = ["issues", "pulls", "discussions", "actions"];
-  const REPO_FEATURE_SWITCHES = [...REPO_FEATURE_TABS, "protectDefaultBranch"];
+  const REPO_FEATURE_TABS = ["issues", "pulls", "discussions", "forum", "actions"];
+  const REPO_FEATURE_SWITCHES = [...REPO_FEATURE_TABS, "protectDefaultBranch", "stalePulls", "stalePullsDeleteBranch"];
 
   function repoFirstViewSeed(repo) {
     let seed = null;
@@ -35173,268 +36054,6 @@ Your reply
         : "Mirror saved.", "good");
     } catch (error) {
       setRepoForgeMirrorStatus(repoForgeMirrorErrorText(error), "bad");
-    } finally {
-      if (submit) submit.disabled = false;
-    }
-    return true;
-  }
-
-  function repoArchiveSyncState(repo) {
-    const key = repoKey(repo).toLowerCase();
-    if (!state.repoArchiveSync || state.repoArchiveSync.key !== key) {
-      state.repoArchiveSync = { key, body: null, editing: false };
-    }
-    return state.repoArchiveSync;
-  }
-
-  async function repoArchiveSyncRequest(repo, payload) {
-    const response = await fetch(`${repoApiBase(repo)}/archive-sync`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ownerAccount: state.session?.nodeName || "",
-        sessionToken: state.session?.sessionToken || "",
-        ...payload,
-      }),
-    });
-    const body = await response.json().catch(() => ({}));
-    if (body?.error) {
-      const error = new Error(body.error);
-      error.detail = body.message || "";
-      throw error;
-    }
-    if (!response.ok) throw new Error("archive_request_failed");
-    return body;
-  }
-
-  function repoArchiveSyncErrorText(error) {
-    if (error?.detail) return error.detail;
-    switch (String(error?.message || "")) {
-      case "invalid_identifier":
-        return "Enter an item identifier of 5 to 100 letters, digits, dots, dashes or underscores.";
-      case "invalid_access_key":
-        return "Paste the S3 access key from your archive.org account.";
-      case "invalid_secret":
-        return "The secret key has letters and digits only.";
-      case "secret_required":
-        return "Paste the S3 secret key that goes with this access key.";
-      case "invalid_interval":
-        return "Choose every day, every week or every month.";
-      case "private_repository":
-        return "Only public repositories can be archived: everything on archive.org is public.";
-      case "sync_too_soon":
-        return "A backup was requested a moment ago. Try again in ten minutes.";
-      case "not_authorized":
-        return "Only the repository owner can manage its archive.";
-      case "not_configured":
-        return "This repository is not archived yet.";
-      default:
-        return "The archive settings could not be updated. Try again in a moment.";
-    }
-  }
-
-  function setRepoArchiveSyncStatus(message, tone = "") {
-    const status = $("[data-repo-archive-sync-status]");
-    if (!status) return;
-    status.textContent = message || "";
-    status.className = `text-[11px] ${tone === "bad" ? "text-destructive" : tone === "good" ? "text-success" : "text-muted-foreground"}`;
-  }
-
-  function repoArchiveSyncIntervalLabel(body, key) {
-    const entry = (body?.catalog?.intervals || []).find((item) => item.key === key);
-    return entry?.label || "Every week";
-  }
-
-  function renderRepoArchiveSyncForm(body) {
-    const archive = body?.archive || null;
-    const interval = archive?.interval || body?.catalog?.defaultInterval || "weekly";
-    const options = (body?.catalog?.intervals || []).map((item) =>
-      `<option value="${escapeHtml(item.key)}"${item.key === interval ? " selected" : ""}>${escapeHtml(item.label)}</option>`).join("");
-    const keepsSecret = Boolean(archive?.secretHint);
-    return `<form data-repo-archive-sync-form class="grid gap-4">
-      <div class="grid gap-3 sm:grid-cols-2">
-        <label class="grid gap-1 text-[11px] font-medium text-foreground">Item identifier
-          <span class="flex h-8 min-w-0 items-center rounded-md bg-secondary text-xs">
-            <span class="shrink-0 pl-2 font-mono text-muted-foreground">archive.org/details/</span>
-            <input data-repo-archive-sync-identifier type="text" autocomplete="off" spellcheck="false" required value="${escapeHtml(archive?.identifier || "")}" placeholder="${escapeHtml(state.selectedRepo ? repoKey(state.selectedRepo).replace("/", "-") : "owner-name")}" class="h-8 min-w-0 flex-1 bg-transparent px-1 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground" />
-          </span>
-        </label>
-        <label class="grid gap-1 text-[11px] font-medium text-foreground">How often
-          <select data-repo-archive-sync-interval class="h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none focus:border-accent">${options}</select>
-        </label>
-        <label class="grid gap-1 text-[11px] font-medium text-foreground">S3 access key
-          <input data-repo-archive-sync-access type="text" autocomplete="off" spellcheck="false" required value="${escapeHtml(archive?.accessKey || "")}" class="h-8 w-full rounded-md bg-secondary px-2 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground" />
-        </label>
-        <label class="grid gap-1 text-[11px] font-medium text-foreground">S3 secret key
-          <input data-repo-archive-sync-secret type="password" autocomplete="new-password" spellcheck="false"${keepsSecret ? "" : " required"} placeholder="${keepsSecret ? `Saved (${escapeHtml(archive.secretHint)}). Leave blank to keep it` : ""}" class="h-8 w-full rounded-md bg-secondary px-2 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground" />
-        </label>
-      </div>
-      <p class="text-[11px] leading-5 text-muted-foreground">The item is created on the first upload if it does not exist yet. <a href="${escapeHtml(body?.catalog?.keysUrl || "https://archive.org/account/s3.php")}" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline">Get your S3 keys on archive.org</a>. They are stored encrypted, used only for this backup, and the secret is never shown again.</p>
-      <div class="flex flex-wrap items-center justify-end gap-2">
-        ${archive ? `<button type="button" data-repo-archive-sync-cancel class="inline-flex h-8 items-center rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary">Cancel</button>` : ""}
-        <button type="submit" class="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90"><i data-lucide="archive" class="h-3.5 w-3.5"></i>${archive ? "Save backup" : "Start backing up"}</button>
-      </div>
-    </form>`;
-  }
-
-  function repoArchiveSyncUploadLine(archive, body) {
-    const upload = archive.status?.upload || {};
-    const every = repoArchiveSyncIntervalLabel(body, archive.interval).toLowerCase();
-    if (!body?.codeHosted) return { tone: "", text: `Waiting for this repository to be hosted on ${platformName()}.` };
-    if (!upload.at) return { tone: "", text: "The first upload starts within a few minutes." };
-    if (!upload.ok) return { tone: "bad", text: `Last upload failed ${relativeTimeLabel(upload.at)}: ${upload.error || "unknown error"}` };
-    const size = Number(upload.bytes || 0);
-    const sizeText = size >= 1048576 ? `${(size / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(size / 1024))} KB`;
-    return { tone: "good", text: `Uploaded ${archive.file} (${sizeText}) ${relativeTimeLabel(upload.at)}. Next upload ${every}, once something changes.` };
-  }
-
-  function renderRepoArchiveSyncOverview(body) {
-    const archive = body.archive;
-    const status = archive.status || {};
-    const upload = repoArchiveSyncUploadLine(archive, body);
-    const connectionTone = status.error ? "bad" : status.username ? "good" : "";
-    const history = (archive.history || []).slice(0, 6).map((entry) =>
-      `<li class="flex min-w-0 items-start gap-2">${repoForgeMirrorDot(entry.ok ? "good" : "bad")}<span class="min-w-0 flex-1 break-words">${escapeHtml(entry.message || entry.kind || "")}</span><span class="shrink-0 text-[10px]">${escapeHtml(relativeTimeLabel(entry.at) || "just now")}</span></li>`).join("");
-    return `<div class="grid gap-4">
-      <div class="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
-        <div class="grid min-w-0">
-          <a href="${escapeHtml(archive.itemUrl)}" target="_blank" rel="noopener noreferrer" class="truncate font-mono text-xs font-semibold text-foreground hover:underline">archive.org/details/${escapeHtml(archive.identifier)}</a>
-          <span class="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">${repoForgeMirrorDot(connectionTone)}${status.error ? escapeHtml(status.error) : `As ${escapeHtml(status.username || "unknown")} · ${escapeHtml(repoArchiveSyncIntervalLabel(body, archive.interval))}`}</span>
-        </div>
-        <span class="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">${repoForgeMirrorDot(archive.active ? "good" : "")}${archive.active ? "Backing up" : "Paused"}</span>
-      </div>
-      <p class="flex items-start gap-2 text-[11px] text-muted-foreground">${repoForgeMirrorDot(upload.tone)}<span>${escapeHtml(upload.text)}</span></p>
-      ${body.private ? `<p class="text-[11px] text-destructive">${escapeHtml(repoArchiveSyncErrorText({ message: "private_repository" }))} Nothing is uploaded while it is private.</p>` : ""}
-      <div class="flex flex-wrap items-center gap-2">
-        <button type="button" data-repo-archive-sync-sync class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[11px] font-medium text-foreground hover:bg-secondary"><i data-lucide="upload-cloud" class="h-3.5 w-3.5 text-muted-foreground"></i>Back up now</button>
-        <button type="button" data-repo-archive-sync-edit class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[11px] font-medium text-foreground hover:bg-secondary"><i data-lucide="sliders-horizontal" class="h-3.5 w-3.5 text-muted-foreground"></i>Change settings</button>
-        <button type="button" data-repo-archive-sync-verify class="inline-flex h-7 items-center rounded-md border border-border px-2.5 text-[11px] font-medium text-foreground hover:bg-secondary">Check keys</button>
-        <button type="button" data-repo-archive-sync-toggle data-repo-archive-sync-active="${archive.active ? "1" : "0"}" class="inline-flex h-7 items-center rounded-md border border-border px-2.5 text-[11px] font-medium text-foreground hover:bg-secondary">${archive.active ? "Pause" : "Resume"}</button>
-        <button type="button" data-repo-archive-sync-disconnect class="inline-flex h-7 items-center rounded-md border border-destructive/60 px-2.5 text-[11px] font-semibold text-destructive hover:bg-destructive/10">Stop backing up</button>
-      </div>
-      ${history ? `<div class="grid gap-2"><span class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Recent activity</span><ul class="grid gap-1.5 text-[11px] text-muted-foreground">${history}</ul></div>` : ""}
-    </div>`;
-  }
-
-  function renderRepoArchiveSync() {
-    const holder = $("[data-repo-archive-sync-body]");
-    const archiveState = state.repoArchiveSync;
-    if (!holder || !archiveState?.body) return;
-    const body = archiveState.body;
-    const summary = $("[data-repo-archive-sync-summary]");
-    if (summary) {
-      summary.innerHTML = body.archive
-        ? `${repoForgeMirrorDot(body.archive.status?.error || body.archive.status?.upload?.ok === false ? "bad" : body.archive.active ? "good" : "")}<span>${escapeHtml(body.archive.identifier)}</span>`
-        : "Off";
-    }
-    if (!body.archive && body.private) {
-      holder.innerHTML = `<p class="text-[11px] leading-5 text-muted-foreground">${escapeHtml(repoArchiveSyncErrorText({ message: "private_repository" }))} Make the repository public to back it up there.</p>`;
-      return;
-    }
-    holder.innerHTML = body.archive && !archiveState.editing
-      ? renderRepoArchiveSyncOverview(body)
-      : renderRepoArchiveSyncForm(body);
-    window.lucide?.createIcons();
-  }
-
-  async function loadRepoArchiveSync(repo) {
-    const holder = $("[data-repo-archive-sync-body]");
-    if (!holder || !sessionAdministersRepo(repo)) return;
-    const archiveState = repoArchiveSyncState(repo);
-    try {
-      const body = await repoArchiveSyncRequest(repo, { action: "get" });
-      if (!repoAboutStillCurrent(repo)) return;
-      archiveState.body = body;
-      renderRepoArchiveSync();
-    } catch (error) {
-      if (!repoAboutStillCurrent(repo)) return;
-      holder.innerHTML = `<p class="text-[11px] text-destructive">${escapeHtml(repoArchiveSyncErrorText(error))}</p>`;
-    }
-  }
-
-  async function handleRepoArchiveSyncClick(event) {
-    const card = event.target.closest("[data-repo-archive-sync-card]");
-    const repo = state.selectedRepo;
-    if (!card || !repo || !sessionAdministersRepo(repo)) return false;
-    const archiveState = repoArchiveSyncState(repo);
-    if (event.target.closest("[data-repo-archive-sync-edit]")) {
-      archiveState.editing = true;
-      renderRepoArchiveSync();
-      return true;
-    }
-    if (event.target.closest("[data-repo-archive-sync-cancel]")) {
-      archiveState.editing = false;
-      renderRepoArchiveSync();
-      return true;
-    }
-    const button = event.target.closest("button");
-    const actions = [
-      ["[data-repo-archive-sync-sync]", "sync"],
-      ["[data-repo-archive-sync-verify]", "verify"],
-      ["[data-repo-archive-sync-toggle]", "toggle"],
-      ["[data-repo-archive-sync-disconnect]", "disconnect"],
-    ];
-    const match = button && actions.find(([selector]) => button.matches(selector));
-    if (!match) return false;
-    const action = match[1];
-    if (action === "disconnect" && !window.confirm(
-      "Stop backing up this repository to the Internet Archive? The stored keys are deleted. Nothing already uploaded is removed from archive.org.",
-    )) return true;
-    const payload = { action };
-    if (action === "toggle") payload.active = button.dataset.repoArchiveSyncActive !== "1";
-    const pending = {
-      sync: "Requesting a backup…",
-      verify: "Checking the keys…",
-      toggle: payload.active ? "Resuming…" : "Pausing…",
-      disconnect: "Stopping…",
-    }[action];
-    button.disabled = true;
-    setRepoArchiveSyncStatus(pending);
-    try {
-      const body = await repoArchiveSyncRequest(repo, payload);
-      if (!repoAboutStillCurrent(repo)) return true;
-      archiveState.body = body;
-      if (action === "disconnect") archiveState.editing = false;
-      renderRepoArchiveSync();
-      setRepoArchiveSyncStatus({
-        sync: "Backup requested. The upload starts within a few minutes.",
-        verify: body.archive?.status?.error ? body.archive.status.error : "The keys work.",
-        toggle: payload.active ? "Backups resumed." : "Backups paused.",
-        disconnect: "Stopped backing up.",
-      }[action], action === "verify" && body.archive?.status?.error ? "bad" : "good");
-    } catch (error) {
-      setRepoArchiveSyncStatus(repoArchiveSyncErrorText(error), "bad");
-    } finally {
-      button.disabled = false;
-    }
-    return true;
-  }
-
-  async function handleRepoArchiveSyncSubmit(event) {
-    const form = event.target.closest("[data-repo-archive-sync-form]");
-    if (!form) return false;
-    event.preventDefault();
-    const repo = state.selectedRepo;
-    if (!repo || !sessionAdministersRepo(repo)) return true;
-    const archiveState = repoArchiveSyncState(repo);
-    const submit = form.querySelector('button[type="submit"]');
-    if (submit) submit.disabled = true;
-    setRepoArchiveSyncStatus("Checking the keys with archive.org…");
-    try {
-      const body = await repoArchiveSyncRequest(repo, {
-        action: "save",
-        identifier: form.querySelector("[data-repo-archive-sync-identifier]")?.value || "",
-        accessKey: form.querySelector("[data-repo-archive-sync-access]")?.value || "",
-        secret: form.querySelector("[data-repo-archive-sync-secret]")?.value || "",
-        interval: form.querySelector("[data-repo-archive-sync-interval]")?.value || "",
-      });
-      if (!repoAboutStillCurrent(repo)) return true;
-      archiveState.body = body;
-      archiveState.editing = false;
-      renderRepoArchiveSync();
-      setRepoArchiveSyncStatus("Backup saved.", "good");
-    } catch (error) {
-      setRepoArchiveSyncStatus(repoArchiveSyncErrorText(error), "bad");
     } finally {
       if (submit) submit.disabled = false;
     }
@@ -43777,6 +44396,9 @@ Your reply
     } else if (active === "insights") {
       state.loadedRepoTabs.insights = true;
       loadRepoInsights(repo);
+    } else if (active === "forum") {
+      state.loadedRepoTabs.forum = true;
+      loadRepoForum(repo);
     } else if (active === "sizemap") {
       state.loadedRepoTabs.sizemap = true;
       loadRepoSizeMapTab(repo);
@@ -47485,8 +48107,8 @@ Your reply
             ? pullBatchUrl(repo)
           : routeKind === "issues" && routeParts[3] === "new" && state.session?.nodeName
             ? issueComposeUrl(repo)
-          : routeKind === "security"
-            ? `${repoLinkUrl(repo)}/security${routeParts.slice(3).map((part) => `/${part}`).join("")}`
+          : routeKind === "security" || routeKind === "forum"
+            ? `${repoLinkUrl(repo)}/${routeKind}${routeParts.slice(3).map((part) => `/${part}`).join("")}${routeKind === "forum" ? location.search : ""}`
           : routeKind === "insights"
             ? `${repoLinkUrl(repo)}/insights${repoInsightsRouteQuery()}`
             : repoTabRoutesFor(repo).includes(routeKind)
@@ -47512,6 +48134,7 @@ Your reply
       actions: { label: "Actions", icon: "workflow", count: "" },
       security: { label: "Security", icon: "shield", count: "" },
       discussions: { label: "Discussions", icon: "message-square", count: discussionsCount },
+      forum: { label: "Forum", icon: "messages-square", count: "" },
       agents: { label: "Agents", icon: "bot", count: "" },
       settings: { label: "Settings", icon: "settings", count: "" },
     };
@@ -47564,8 +48187,11 @@ Your reply
               <label class="inline-flex items-start gap-2"><input data-repo-feature="issues" type="checkbox" class="mt-0.5 h-3.5 w-3.5" checked />Issues</label>
               <label class="inline-flex items-start gap-2"><input data-repo-feature="pulls" type="checkbox" class="mt-0.5 h-3.5 w-3.5" checked />Pull requests</label>
               <label class="inline-flex items-start gap-2"><input data-repo-feature="discussions" type="checkbox" class="mt-0.5 h-3.5 w-3.5" checked />Discussions</label>
+              <label class="inline-flex items-start gap-2"><input data-repo-feature="forum" type="checkbox" class="mt-0.5 h-3.5 w-3.5" />Forum (a Discourse-style forum kept in <code>.forkmesh/forum</code>)</label>
               <label class="inline-flex items-start gap-2"><input data-repo-feature="actions" type="checkbox" class="mt-0.5 h-3.5 w-3.5" checked />Actions (run this repository's workflows)</label>
               <label class="inline-flex items-start gap-2"><input data-repo-feature="protectDefaultBranch" type="checkbox" class="mt-0.5 h-3.5 w-3.5" />Protect the default branch: it changes only by merging a pull request an organization owner or admin approved</label>
+              <label class="inline-flex items-start gap-2"><input data-repo-feature="stalePulls" type="checkbox" class="mt-0.5 h-3.5 w-3.5" />Close stale pull requests: when a maintainer's comment or change request gets no reply from the author, ForkBot reminds them after 1, 3 and 7 days and closes the pull request after 8</label>
+              <label class="inline-flex items-start gap-2"><input data-repo-feature="stalePullsDeleteBranch" type="checkbox" class="mt-0.5 h-3.5 w-3.5" />When ForkBot closes a stale pull request, also delete its head branch if that branch is in this repository and is not the default or a protected branch</label>
             </fieldset>
             <fieldset class="grid gap-2 rounded-md border border-border p-3 text-xs text-muted-foreground">
               <legend class="px-1 text-[11px] font-semibold uppercase tracking-wide">ActivityPub federation</legend>
@@ -47636,7 +48262,7 @@ Your reply
             <span class="font-mono text-[10px] text-muted-foreground">forkmesh-webhook-v1 · signed</span>
           </div>
           <div class="grid gap-4 p-4">
-            <p class="text-[11px] leading-5 text-muted-foreground">${escapeHtml(platformName())} POSTs a signed JSON event to each endpoint when this repository moves. Every delivery carries <span class="font-mono">ForkMesh-Webhook-Signature</span> (<span class="font-mono">v1=</span>HMAC-SHA256 over the raw body) so a receiver can prove it came from here. The scheme, the retry rules and a verification snippet are in the repository&rsquo;s <span class="font-mono">www/docs/integrations.md</span>.</p>
+            <p class="text-[11px] leading-5 text-muted-foreground">${escapeHtml(platformName())} POSTs a signed JSON event to each endpoint when this repository moves. Every delivery carries <span class="font-mono">ForkMesh-Webhook-Signature</span> (<span class="font-mono">v1=</span>HMAC-SHA256 over the raw body) so a receiver can prove it came from here. The scheme, the retry rules and a verification snippet are in the repository&rsquo;s <span class="font-mono">docs/integrations.md</span>.</p>
             <div data-repo-webhooks-list class="grid gap-2 text-xs text-muted-foreground">Loading webhooks…</div>
             <form data-repo-webhook-form class="grid gap-3 rounded-md border border-border p-3">
               <label class="grid gap-1 text-[11px] font-medium text-foreground">Payload URL
@@ -47678,15 +48304,13 @@ Your reply
             <span data-repo-forge-mirror-status class="text-[11px] text-muted-foreground"></span>
           </div>
         </div>
-        <div data-repo-archive-sync-card id="archive" data-repo-settings-section="Internet Archive backup" class="mt-5 scroll-mt-4 overflow-hidden rounded-lg border border-border bg-background">
-          <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-4 py-3">
-            <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="archive" class="h-3.5 w-3.5 text-muted-foreground"></i>Back up to the Internet Archive</span>
-            <span data-repo-archive-sync-summary class="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">Loading…</span>
-          </div>
-          <div class="grid gap-4 p-4">
-            <p class="text-[11px] leading-5 text-muted-foreground">Upload a copy of this repository to archive.org every day, week or month with your own archive.org S3 keys. Each upload is a git bundle of every branch and tag that anyone can clone, and it is skipped when nothing has changed. Only public repositories can be archived.</p>
-            <div data-repo-archive-sync-body class="text-xs text-muted-foreground">Loading archive settings…</div>
-            <span data-repo-archive-sync-status class="text-[11px] text-muted-foreground"></span>
+        <div data-repo-archive-link-card id="archive" data-repo-settings-section="Internet Archive backup" class="mt-5 scroll-mt-4 overflow-hidden rounded-lg border border-border bg-background">
+          <div class="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+            <div class="grid min-w-0 gap-0.5">
+              <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="archive" class="h-3.5 w-3.5 text-muted-foreground"></i>Back up to the Internet Archive</span>
+              <span class="text-[11px] leading-5 text-muted-foreground">Backups to archive.org, and checking each mirror against them, are in the Internet Archive plugin.</span>
+            </div>
+            <a href="/dashboard/internet-archive?repo=${encodeURIComponent(repoKey(repo))}" class="fm-btn fm-btn-sm">Open Internet Archive</a>
           </div>
         </div>
         <div data-repo-danger-zone id="settings-danger" data-repo-settings-section="Danger zone" class="mt-5 scroll-mt-4 overflow-hidden rounded-lg border border-destructive/50 bg-background">
@@ -47706,12 +48330,13 @@ Your reply
        </div>
       </section>` : "";
     keepRepoFirstViewIssue(detail);
+    keepRepoFirstViewPull(detail);
     const tabStripScroll = detail.querySelector("[data-repo-github-header] [role=\"tablist\"]")?.scrollLeft || 0;
     detail.innerHTML = `
       <div data-repo-layout="github-like" class="min-w-0">
         <div data-repo-github-header class="border-b border-border">
           <div data-repo-tabs class="flex w-full min-w-0 gap-1 overflow-x-auto px-3 sm:px-6" role="tablist" aria-label="Repository sections">
-            ${["code", "issues", "pulls", "discussions", "insights", "projects", "actions", "security", ...(canSeeAgentsTab ? ["agents"] : []), ...(canSeeSettingsTab ? ["settings"] : [])].map((tab) => {
+            ${["code", "issues", "pulls", "discussions", "forum", "insights", "projects", "actions", "security", ...(canSeeAgentsTab ? ["agents"] : []), ...(canSeeSettingsTab ? ["settings"] : [])].map((tab) => {
               const meta = tabMeta[tab];
               const isDiscussions = tab === "discussions";
               const discussionCount = Number(meta.count);
@@ -47737,7 +48362,7 @@ Your reply
               // ctrl/cmd-click open it in a new browser tab; a plain click is
               // routed in-app by the document click handler.
               const tabHref = tab === "code" ? repoLinkUrl(repo) : `${repoLinkUrl(repo)}/${tab}`;
-              const pluginEntry = { code: "code", issues: "issues", pulls: "pull-requests", discussions: "discussions", actions: "actions", agents: "agents" }[tab];
+              const pluginEntry = { code: "code", issues: "issues", pulls: "pull-requests", discussions: "discussions", forum: "forum", actions: "actions", agents: "agents" }[tab];
               return `<a href="${escapeHtml(tabHref)}" role="tab" data-dashboard-repo-tab="${tab}"${pluginEntry ? ` data-plugin-entry="${pluginEntry}"` : ""} aria-selected="${tab === "code" ? "true" : "false"}" class="group relative inline-flex h-12 shrink-0 items-center px-1 text-[14px] font-normal text-foreground"><span class="inline-flex h-8 items-center gap-2 rounded-md px-2 transition-colors group-hover:bg-secondary"><i ${iconAttr} class="h-4 w-4 text-muted-foreground"></i><span data-repo-tab-label="${escapeHtml(meta.label)}">${meta.label}</span>${showTabCount ? `<span data-dashboard-repo-tab-count="${tab}" style="min-width:1.75rem" class="rounded-full bg-[var(--dashboard-counter)] px-1.5 text-center text-[12px] font-medium leading-[18px] text-foreground tabular-nums${hideDiscussionsBadge ? " hidden" : reserveDiscussionsBadge ? " invisible" : ""}">${tabCountLabel(meta.count)}</span>` : ""}</span></a>`;
             }).join("")}
           </div>
@@ -47818,6 +48443,7 @@ Your reply
             ${renderRepoCollectionPanel("issues", repo, issuesCount, repoCount(repo, ["closedIssues", "closedIssueCount"]))}
             <section data-dashboard-repo-tab-panel="projects" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="chart-gantt" class="h-3.5 w-3.5 text-muted-foreground"></i>Projects</span><button type="button" data-repo-project-new hidden class="inline-flex h-7 items-center gap-1.5 rounded-md bg-cta px-2.5 text-[11px] font-medium text-cta-foreground hover:bg-cta/90"><i data-lucide="plus" class="h-3.5 w-3.5"></i>New project</button></div><div data-repo-projects></div></div></section>
             <section data-dashboard-repo-tab-panel="security" class="hidden"><div data-repo-security class="min-w-0"></div></section>
+            <section data-dashboard-repo-tab-panel="forum" class="hidden"><div data-repo-forum class="mt-4 min-w-0 lg:mt-0"></div></section>
             ${renderRepoCollectionPanel("pulls", repo, pullsCount, repoCount(repo, ["closedPulls", "closedPullCount"]))}
             ${renderRepoDiscussionsPanel(repo)}
             <section data-dashboard-repo-tab-panel="actions" class="hidden"><div data-repo-actions class="mt-4 min-w-0 lg:mt-0"></div></section>
@@ -47922,6 +48548,7 @@ Your reply
           <aside data-repo-dir-about aria-label="Folder details" class="hidden min-w-0 self-start rounded-lg border border-border bg-background p-4"></aside>
         </div>
       </div>`;
+    if (routeKind !== "forum") detail.querySelector('[data-dashboard-repo-tab="forum"]')?.classList.add("hidden");
     applyRepoFirstViewAbout(repo);
     // Restore whichever tab the URL points at (e.g. a refresh on
     // /owner/repo/issues) instead of always defaulting back to Code. This
@@ -48102,6 +48729,9 @@ Your reply
     article.querySelectorAll("[data-repo-record-tab]").forEach((button) => {
       const active = button.dataset.repoRecordTab === tab;
       button.setAttribute("aria-selected", active ? "true" : "false");
+    });
+    article.querySelectorAll("[data-repo-record-sticky-tab]").forEach((button) => {
+      button.setAttribute("aria-selected", button.dataset.repoRecordStickyTab === tab ? "true" : "false");
     });
     article.querySelectorAll("[data-repo-record-panel]").forEach((panel) => {
       panel.classList.toggle(
@@ -48651,6 +49281,9 @@ Your reply
       plugin_activity: "puzzle",
       timer_finished: "timer",
       desktop_ping: "monitor",
+      agent_approval: "hand",
+      action_approval: "shield-check",
+      action_failed: "circle-x",
       hackathon_squad: "users",
       hackathon_reward: "gift",
       badge: "award",
@@ -48658,6 +49291,19 @@ Your reply
       pull_attention: "git-pull-request-arrow",
     };
     return icons[String(kind || "").trim().toLowerCase()] || "bell";
+  }
+
+  function pingIsGoodNews(item) {
+    return String(item?.kind || "").trim().toLowerCase() === "operational_alert"
+      && String(item?.meta?.state || "").trim().toLowerCase() === "up";
+  }
+
+  function notificationItemIcon(item) {
+    return pingIsGoodNews(item) ? "circle-check" : notificationIcon(item?.kind);
+  }
+
+  function notificationItemIconTone(item) {
+    return pingIsGoodNews(item) ? "text-success" : "";
   }
 
   function notificationInstanceLogoHtml() {
@@ -48677,44 +49323,62 @@ Your reply
     return formatDate(value);
   }
 
-  function renderNotificationPreview() {
-    const countEl = $("[data-notification-count]");
-    const badge = $("[data-notification-badge]");
-    const list = $("[data-notification-preview-list]");
+  function renderNotificationBadge() {
     const unread = Number(state.notificationUnread) || 0;
-    if (countEl) countEl.textContent = unread === 1 ? "1 new" : `${unread} new`;
-    badge?.classList.toggle("hidden", unread <= 0);
-    if (!list) return;
-    const items = state.notifications.slice(0, 5);
-    if (!items.length) {
-      list.innerHTML = '<div class="px-3 py-4 text-xs text-muted-foreground">No pings yet. Mentions, PRs, assignments, shares, bounties, releases, and host status changes will appear here.</div>';
-      return;
-    }
-    list.innerHTML = items.map((item) => {
-      const lead = notificationLead(item);
-      const unreadItem = !item.readAt;
-      const icon = `<i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="${lead.actor ? "h-2.5 w-2.5" : "h-3.5 w-3.5"}"></i>`;
-      const avatar = lead.actor
-        ? `<span class="flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-xs font-semibold uppercase text-foreground">${botAvatarKind(lead.actor.replace(/^@/, "")) ? botAvatarSvg(botAvatarKind(lead.actor.replace(/^@/, "")), "h-4 w-4") : escapeHtml(lead.actor.replace(/^@/, "").charAt(0) || "?")}</span>
+    $("[data-notification-badge]")?.classList.toggle("hidden", unread <= 0);
+    $$("[data-notification-count]").forEach((el) => {
+      el.textContent = String(unread);
+    });
+    const bell = $("#notificationToggle");
+    if (bell) bell.setAttribute("aria-label", unread > 0 ? `Pings, ${unread} unread` : "Pings");
+  }
+
+  function notificationAvatarHtml(item, lead) {
+    const icon = `<i data-notification-kind-icon data-lucide="${notificationItemIcon(item)}" class="${lead.actor ? "h-2.5 w-2.5" : "h-3.5 w-3.5"} ${notificationItemIconTone(item)}"></i>`;
+    const login = lead.actor.replace(/^@/, "");
+    return lead.actor
+      ? `<span class="flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-xs font-semibold uppercase text-foreground">${botAvatarKind(login) ? botAvatarSvg(botAvatarKind(login), "h-4 w-4") : escapeHtml(login.charAt(0) || "?")}</span>
           <span class="absolute bottom-0 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full border border-border bg-background text-muted-foreground">${icon}</span>`
-        : `<span class="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-secondary text-muted-foreground">${icon}</span>`;
-      return `
-      <button type="button" data-notification-open="${escapeHtml(item.id || "")}" class="w-full rounded-md px-2.5 py-2 text-left hover:bg-secondary transition-colors">
-        <div class="flex items-start gap-2.5">
-          <span class="mt-0.5 flex shrink-0 flex-col-reverse items-center gap-1 sm:flex-row">${notificationInstanceLogoHtml()}<span class="relative">${avatar}</span></span>
-          <div class="min-w-0 flex-1">
-            <div class="flex items-center gap-2">
-              <p class="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">${notificationLeadHeadHtml(lead)}${lead.where ? ` · ${escapeHtml(lead.where)}` : ""}</p>
-              <span class="shrink-0 text-[10px] text-muted-foreground">${escapeHtml(notificationTimeLabel(item.ts))}</span>
-              ${unreadItem ? '<span data-notification-unread-dot class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary"></span>' : ""}
-            </div>
-            <p class="mt-0.5 line-clamp-2 break-words text-xs leading-5 ${unreadItem ? "text-foreground" : "text-muted-foreground"}">${escapeHtml(lead.text)}</p>
-          </div>
+      : `<span class="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-secondary text-muted-foreground">${icon}</span>`;
+  }
+
+  function notificationTargetHref(item) {
+    return item?.href ? repoPublicHref(homeFeedHref(item)) : "";
+  }
+
+  function notificationRowHtml(item, { expanded = false } = {}) {
+    const id = escapeHtml(item.id || "");
+    const lead = notificationLead(item);
+    const unreadItem = !item.readAt;
+    const href = notificationTargetHref(item);
+    const tag = href ? "a" : "button";
+    const target = href ? `href="${escapeHtml(href)}"` : `type="button" aria-expanded="${expanded ? "true" : "false"}" aria-controls="ping-detail-${id}"`;
+    const kindLabel = pingKindLabel(item.kind);
+    const settingsTitle = kindLabel ? `${kindLabel}: ping settings` : "Ping settings";
+    const when = Number(item.ts) || 0;
+    return `
+      <li data-notification-row data-ping-id="${id}" data-ping-unread="${unreadItem ? "true" : "false"}" class="${unreadItem ? "bg-background" : "bg-card"}">
+        <div class="flex items-start gap-1 px-2 py-2">
+          <${tag} ${target} data-notification-open="${id}" class="flex min-w-0 flex-1 items-start gap-3 rounded-md px-1 py-1 text-left">
+            <span class="mt-0.5 flex shrink-0 flex-col-reverse items-center gap-1 sm:flex-row">${notificationInstanceLogoHtml()}<span class="relative">${notificationAvatarHtml(item, lead)}</span></span>
+            <span class="min-w-0 flex-1">
+              <span class="flex items-center gap-2">
+                <span class="min-w-0 flex-1 truncate text-xs text-muted-foreground">${notificationLeadHeadHtml(lead)}${lead.where ? ` · ${escapeHtml(lead.where)}` : ""}</span>
+                <time ${when ? `datetime="${escapeHtml(new Date(when).toISOString())}"` : ""} class="shrink-0 text-xs text-muted-foreground">${escapeHtml(notificationTimeLabel(item.ts))}</time>
+                ${unreadItem ? '<span data-notification-unread-dot class="h-2 w-2 shrink-0 rounded-full bg-primary" aria-label="Unread" role="img"></span>' : ""}
+              </span>
+              <span class="mt-0.5 block line-clamp-2 break-words text-sm leading-5 ${unreadItem ? "font-medium text-foreground" : "text-muted-foreground"}">${escapeHtml(lead.text)}</span>
+            </span>
+          </${tag}>
+          <span class="flex shrink-0 items-center">
+            ${unreadItem ? `<button type="button" data-ping-mark-read="${id}" title="Mark as read" aria-label="Mark as read" class="fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon"><i data-lucide="check" aria-hidden="true"></i></button>` : ""}
+            <button type="button" data-ping-row-toggle="${id}" aria-expanded="${expanded ? "true" : "false"}" aria-controls="ping-detail-${id}" title="${expanded ? "Hide details" : "Show details"}" aria-label="${expanded ? "Hide details" : "Show details"}" class="fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon"><i data-lucide="${expanded ? "chevron-up" : "chevron-down"}" aria-hidden="true"></i></button>
+            <a href="${escapeHtml(pingSettingsHref(item.kind))}" data-ping-settings-link="${escapeHtml(kindLabel ? item.kind : "")}" title="${escapeHtml(settingsTitle)}" aria-label="${escapeHtml(settingsTitle)}" class="fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon"><i data-lucide="settings" aria-hidden="true"></i></a>
+          </span>
         </div>
-      </button>
+        ${expanded ? `<div id="ping-detail-${id}" data-ping-row-detail class="border-t border-border px-4 py-4">${notificationDetailHtml(item)}</div>` : ""}
+      </li>
     `;
-    }).join("");
-    window.lucide?.createIcons();
   }
 
   function notificationLead(item) {
@@ -48734,32 +49398,26 @@ Your reply
       : `<span class="font-semibold text-foreground">${escapeHtml(lead.head)}</span>`;
   }
 
-  function renderNotificationDetail(item) {
-    const detail = $("[data-notification-modal-detail]");
-    if (!detail) return;
-    if (!item) {
-      detail.innerHTML = '<div class="text-sm text-muted-foreground">Select a ping to read it.</div>';
-      return;
-    }
-    detail.innerHTML = `
+  function notificationDetailHtml(item) {
+    const href = notificationTargetHref(item);
+    return `
       <div class="flex items-start gap-3">
         <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border bg-secondary text-muted-foreground">
-          <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="h-4 w-4"></i>
+          <i data-notification-kind-icon data-lucide="${notificationItemIcon(item)}" class="h-4 w-4 ${notificationItemIconTone(item)}"></i>
         </span>
         <div class="min-w-0 flex-1">
           <p class="text-sm font-semibold text-foreground">${textWithMentionsHtml(repoPublicText(item.title) || "Ping")}</p>
           <p class="mt-1 text-xs text-muted-foreground">${escapeHtml(notificationTimeLabel(item.ts))}${item.repo ? ` · ${escapeHtml(repoPublicKey(item.repo))}` : ""}</p>
         </div>
       </div>
-      <p class="mt-5 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">${textWithMentionsHtml(repoPublicText(item.body) || `${platformName()} notification`)}</p>
+      <p class="mt-4 whitespace-pre-wrap break-words text-sm leading-6 text-muted-foreground">${textWithMentionsHtml(repoPublicText(item.body) || `${platformName()} notification`)}</p>
       ${organizationTaskDetailsHtml(item)}
       ${mirrorRequestActionsHtml(item)}
-      <div class="mt-5 flex flex-wrap items-center gap-2">
-        ${item.href ? `<a href="${escapeHtml(repoPublicHref(homeFeedHref(item)))}" class="inline-flex h-9 items-center justify-center rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary transition-colors">Open context</a>` : ""}
+      <div class="mt-4 flex flex-wrap items-center gap-2">
+        ${href ? `<a href="${escapeHtml(href)}" data-notification-open="${escapeHtml(item.id || "")}" class="fm-btn fm-btn-sm">Open context</a>` : ""}
         ${pingTurnOffLinkHtml(item)}
       </div>
     `;
-    window.lucide?.createIcons();
   }
 
   // Where a ping's settings live: its own row on the Pings settings page when
@@ -48931,56 +49589,15 @@ Your reply
     form.hidden = !isRepoOwner(repo);
   }
 
-  function renderNotificationModal() {
-    const list = $("[data-notification-modal-list]");
-    if (!list) return;
-    if (!state.notifications.length) {
-      list.innerHTML = '<div class="p-3 text-xs text-muted-foreground">No pings yet.</div>';
-      renderNotificationDetail(null);
-      return;
-    }
-    const selected = state.notifications.find((item) => item.id === state.selectedNotificationId)
-      || state.notifications[0];
-    state.selectedNotificationId = selected?.id || "";
-    list.innerHTML = state.notifications.map((item) => {
-      const active = item.id === state.selectedNotificationId;
-      const lead = notificationLead(item);
-      const settingsTitle = pingKindLabel(item.kind)
-        ? `${pingKindLabel(item.kind)}: ping settings`
-        : "Ping settings";
-      // The trailing gear is the "settings" column: it opens this kind's row
-      // on the Pings settings page, where it can be switched off.
-      return `
-        <div data-notification-row class="mb-1 flex items-stretch gap-1 rounded-md ${active ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"}">
-          <button type="button" data-notification-open="${escapeHtml(item.id || "")}" class="min-w-0 flex-1 rounded-md px-3 py-2 text-left transition-colors">
-            <span class="flex min-w-0 items-start gap-2">
-              <span class="mt-0.5 flex shrink-0 flex-col-reverse items-center gap-1 sm:flex-row">
-                ${notificationInstanceLogoHtml()}
-                <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border bg-background text-muted-foreground">
-                  <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="h-3.5 w-3.5"></i>
-                </span>
-              </span>
-              <span class="min-w-0 flex-1">
-                <span class="block truncate text-[11px]">${notificationLeadHeadHtml(lead)}${lead.where ? ` · ${escapeHtml(lead.where)}` : ""}</span>
-                <span class="mt-0.5 block truncate text-xs">${escapeHtml(lead.text)}</span>
-              </span>
-            </span>
-          </button>
-          <a href="${escapeHtml(pingSettingsHref(item.kind))}" data-ping-settings-link="${escapeHtml(pingKindLabel(item.kind) ? item.kind : "")}" title="${escapeHtml(settingsTitle)}" aria-label="${escapeHtml(settingsTitle)}" class="flex w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-background/60 hover:text-foreground transition-colors">
-            <i data-lucide="settings" class="h-3.5 w-3.5"></i>
-          </a>
-        </div>
-      `;
-    }).join("");
-    renderNotificationDetail(selected);
-  }
-
   async function loadNotifications() {
     const node = state.session?.nodeName || "";
     if (!node) {
       state.notifications = [];
       state.notificationUnread = 0;
-      renderNotificationPreview();
+      state.notificationTotal = 0;
+      state.notificationsLoaded = true;
+      renderNotificationBadge();
+      renderPingsPage();
       renderHomeFeed();
       return;
     }
@@ -48988,6 +49605,8 @@ Your reply
       const data = await fetchJson(`/api/notifications?node=${encodeURIComponent(node)}`);
       state.notifications = Array.isArray(data.notifications) ? data.notifications : [];
       state.notificationUnread = Number(data.unread) || 0;
+      state.notificationTotal = Number(data.total) || state.notifications.length;
+      state.notificationsFailed = false;
       // The relay owns the pause deadline, so this refresh is how a pause set
       // on another surface (the desktop app) reaches an open dashboard.
       state.session = {
@@ -48998,9 +49617,12 @@ Your reply
     } catch (_) {
       state.notifications = [];
       state.notificationUnread = 0;
+      state.notificationTotal = 0;
+      state.notificationsFailed = true;
     }
-    renderNotificationPreview();
-    renderNotificationModal();
+    state.notificationsLoaded = true;
+    renderNotificationBadge();
+    renderPingsPage();
     renderPingPause();
     renderHomeFeed();
     celebrateNewPings(state.notifications);
@@ -49014,30 +49636,11 @@ Your reply
       .catch(() => {});
   }
 
-  function setNotificationDropdownOpen(open) {
-    const toggle = $("#notificationToggle");
-    const dropdown = $("#notificationDropdown");
-    dropdown?.classList.toggle("hidden", !open);
-    toggle?.setAttribute("aria-expanded", open ? "true" : "false");
-    // The pause presets are a submenu of this dropdown, so they collapse with
-    // it rather than being left open behind the next thing that opens.
-    if (!open) setPingPauseMenuOpen(false);
-  }
-
   function setAccountMenuOpen(open) {
     const toggle = $("#accountMenuToggle");
     const dropdown = $("#accountMenuDropdown");
     dropdown?.classList.toggle("hidden", !open);
     toggle?.setAttribute("aria-expanded", open ? "true" : "false");
-  }
-
-  function setNotificationModalOpen(open) {
-    if (open) ensureDeferredMarkup("dialogs");
-    const modal = $("#notificationModal");
-    if (!modal) return;
-    modal.classList.toggle("hidden", !open);
-    modal.classList.toggle("flex", open);
-    if (open) renderNotificationModal();
   }
 
   async function markNotificationsRead(ids = [], all = false) {
@@ -49046,6 +49649,7 @@ Your reply
     try {
       await fetch("/api/notifications", {
         method: "POST",
+        keepalive: true,
         headers: { "content-type": "application/json", accept: "application/json" },
         body: JSON.stringify({
           node, ids, all,
@@ -49054,18 +49658,6 @@ Your reply
       });
     } catch (_) {}
     await loadNotifications();
-  }
-
-  async function openNotification(id, modal = false) {
-    const item = state.notifications.find((candidate) => candidate.id === id);
-    if (!item) return;
-    state.selectedNotificationId = id;
-    renderNotificationModal();
-    if (!item.readAt) await markNotificationsRead([id]);
-    if (modal) {
-      setNotificationDropdownOpen(false);
-      setNotificationModalOpen(true);
-    }
   }
 
   // Each page is its own document (marked <body data-page="...">). Boot runs
@@ -49098,7 +49690,7 @@ Your reply
       return SECTION_PATHS[section] + (rest ? `?${rest}` : "");
     }
     const repo = (params.get("repo") || "").trim();
-    if (repo.includes("/")) {
+    if (/^[^/\\]+\/[^/\\]+$/.test(repo)) {
       return "/" + repo.split("/").map(encodeURIComponent).join("/");
     }
     return "";
@@ -49356,7 +49948,9 @@ Your reply
   }
 
   function initHomePage() {
+    renderHomeAccount();
     renderHomeBlogPosts();
+    void loadHomeChangelog();
     // The blog card fills in from the edge-cached feed; the baked markup
     // already shows its loading state.
     void loadHomeBlogPosts();
@@ -49716,15 +50310,6 @@ Your reply
       return;
     }
 
-    const notificationToggle = event.target.closest("#notificationToggle");
-    if (notificationToggle) {
-      event.stopPropagation();
-      const dropdown = $("#notificationDropdown");
-      setNotificationDropdownOpen(dropdown?.classList.contains("hidden"));
-      if (state.session?.nodeName) loadNotifications();
-      return;
-    }
-
     const accountMenuToggle = event.target.closest("#accountMenuToggle");
     if (accountMenuToggle) {
       event.stopPropagation();
@@ -49790,29 +50375,15 @@ Your reply
       return;
     }
 
-    // Ping settings gear (bell footer, pings modal header, each modal row, the
-    // detail pane): a real link to /dashboard/settings/notifications, switched
-    // in place when this already is the settings page.
     const pingSettingsLink = event.target.closest("[data-ping-settings-link]");
     if (pingSettingsLink) {
       if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
-      setNotificationDropdownOpen(false);
-      setNotificationModalOpen(false);
       if (openPingSettingsInPlace(pingSettingsLink)) event.preventDefault();
       return;
     }
 
     if (handlePingSettingsClick(event)) {
       event.stopPropagation();
-      return;
-    }
-
-    const notificationOpen = event.target.closest("[data-notification-open]");
-    if (notificationOpen) {
-      await openNotification(
-        notificationOpen.dataset.notificationOpen || "",
-        !event.target.closest("#notificationModal"),
-      );
       return;
     }
 
@@ -49843,17 +50414,6 @@ Your reply
     if (pauseToggle) {
       event.stopPropagation();
       setPingPauseMenuOpen($("[data-ping-pause-menu]")?.hidden !== false);
-      return;
-    }
-
-    if (event.target.closest("[data-show-all-notifications]")) {
-      setNotificationDropdownOpen(false);
-      setNotificationModalOpen(true);
-      return;
-    }
-
-    if (event.target.closest("[data-close-notification-modal], [data-notification-modal-backdrop]")) {
-      setNotificationModalOpen(false);
       return;
     }
 
@@ -50028,8 +50588,8 @@ Your reply
       $("[data-profile-popover]")?.classList.add("hidden");
       $("[data-profile-toggle]")?.setAttribute("aria-expanded", "false");
     }
-    if (!event.target.closest("#notificationToggle, #notificationDropdown")) {
-      setNotificationDropdownOpen(false);
+    if (!event.target.closest("[data-ping-pause-form]")) {
+      setPingPauseMenuOpen(false);
     }
     if (!event.target.closest("#accountMenuToggle, #accountMenuDropdown")) {
       setAccountMenuOpen(false);
@@ -50223,7 +50783,6 @@ Your reply
       }
 
       if (await handleRepoForgeMirrorClick(event)) return;
-      if (await handleRepoArchiveSyncClick(event)) return;
 
       const webhookRow = event.target.closest("[data-repo-webhook-row]");
       if (
@@ -51062,6 +51621,11 @@ Your reply
         return;
       }
 
+      if (event.target.closest("[data-repo-pull-description-edit]")) {
+        void handleWebPullDescriptionEdit();
+        return;
+      }
+
       const pullCommentEditButton = event.target.closest("[data-repo-pull-comment-edit]");
       if (pullCommentEditButton) {
         void handleWebPullCommentAction("edit", pullCommentEditButton.dataset.repoPullCommentEdit || "");
@@ -51259,12 +51823,6 @@ Your reply
         return;
       }
 
-      const reviewPromptToggle = event.target.closest("[data-repo-pull-review-prompt-toggle]");
-      if (reviewPromptToggle) {
-        togglePullReviewPrompt(reviewPromptToggle);
-        return;
-      }
-
       const mergeStatusButton = event.target.closest("[data-repo-pull-merge-status]");
       if (mergeStatusButton) {
         showRepoPullMergeBox(mergeStatusButton.closest("[data-repo-record-detail]"));
@@ -51273,11 +51831,12 @@ Your reply
 
       // PR detail section tabs are isolated panels, matching the GitHub review
       // surface: only the selected section is visible at a time.
-      const recordTabButton = event.target.closest("[data-repo-record-tab]");
+      const recordTabButton = event.target.closest("[data-repo-record-tab], [data-repo-record-sticky-tab]");
       if (recordTabButton) {
         const article = recordTabButton.closest("[data-repo-record-detail]");
         if (article) {
-          setRepoRecordSection(recordTabButton.dataset.repoRecordTab || "", article);
+          event.preventDefault();
+          setRepoRecordSection(recordTabButton.dataset.repoRecordTab || recordTabButton.dataset.repoRecordStickyTab || "", article);
           // Sections are addressable: put the open tab in the address bar so
           // the link a reviewer copies from "Files changed" reopens there for
           // whoever they send it to (and survives a refresh).
@@ -51322,7 +51881,7 @@ Your reply
           copyButton.classList.add("copied");
           if (copyButton.closest("[data-repo-code-wrap]")) {
             window.ForkMeshAnalytics?.recordProductAction?.("repository-clone-copied");
-            // First-party acquisition signal (docs/attribution.md). The
+            // First-party acquisition signal (docs/app/attribution.md). The
             // server joins it to the HttpOnly fm_attr session cookie; only
             // the repository name travels, never the URL that was copied.
             try {
@@ -51505,7 +52064,6 @@ Your reply
       return;
     }
     if (await handleRepoForgeMirrorSubmit(event)) return;
-    if (await handleRepoArchiveSyncSubmit(event)) return;
     const settingsLogoForm = event.target.closest("[data-repo-settings-logo-form]");
     if (settingsLogoForm && state.selectedRepo) {
       event.preventDefault();
@@ -51926,6 +52484,16 @@ Your reply
     state.homeRepositoriesExpanded = !state.homeRepositoriesExpanded;
     renderHomeRepositories();
   });
+  $("[data-home-repo-search-toggle]")?.addEventListener("click", () => {
+    const search = $("[data-home-repo-search]");
+    state.homeRepoSearchOpen = !state.homeRepoSearchOpen;
+    if (!state.homeRepoSearchOpen && search) search.value = "";
+    renderHomeRepositories();
+    if (state.homeRepoSearchOpen) search?.focus();
+  });
+  $$("[data-home-tab]").forEach((button) => {
+    button.addEventListener("click", () => setHomeTab(button.dataset.homeTab));
+  });
   document.addEventListener("click", (event) => {
     const toggle = event.target?.closest?.("[data-repo-forks-toggle]");
     if (!toggleRepositoryForks(toggle)) return;
@@ -51961,6 +52529,37 @@ Your reply
   });
   $$("[data-new-repo-visibility]").forEach((input) => {
     input.addEventListener("change", renderNewRepoVisibilityNote);
+  });
+  $$("[data-new-repo-location]").forEach((button) => {
+    button.addEventListener("click", () => setNewRepoLocation(button.dataset.newRepoLocation));
+    button.addEventListener("keydown", (event) => {
+      if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+      event.preventDefault();
+      const next = newRepoLocation() === "node" ? "hosted" : "node";
+      setNewRepoLocation(next);
+      $(`[data-new-repo-location="${next}"]`)?.focus();
+    });
+  });
+  $$("[data-new-repo-import-code], [data-new-repo-import-issues]").forEach((input) => {
+    input.addEventListener("change", renderNewRepoImportChoice);
+  });
+  $("[data-new-repo-name]")?.addEventListener("input", renderNewRepoNameCheck);
+  $("[data-new-repo-owner]")?.addEventListener("change", renderNewRepoNameCheck);
+  $$("[data-new-repo-push-copy-field]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const field = $(`[data-new-repo-push-${button.dataset.newRepoPushCopyField}]`);
+      try {
+        await navigator.clipboard.writeText(field?.textContent || "");
+        button.textContent = "Copied";
+      } catch (_) {
+        const range = document.createRange();
+        if (field) range.selectNodeContents(field);
+        window.getSelection()?.removeAllRanges();
+        window.getSelection()?.addRange(range);
+        button.textContent = "Selected";
+      }
+      window.setTimeout(() => { button.textContent = "Copy"; }, 1600);
+    });
   });
   $("[data-new-repo-form]")?.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -52029,6 +52628,9 @@ Your reply
     state.nodeNameAvailability.timer = window.setTimeout(checkNodeNameAvailability, 250);
   });
   $("[data-profile-rename-password]")?.addEventListener("input", updateRenameButton);
+  $("[data-profile-page-name-case]")?.addEventListener("input", (event) => {
+    event.target.dataset.edited = "1";
+  });
   $("[data-profile-delete-confirm]")?.addEventListener("input", () => {
     const button = $("[data-profile-delete-account]");
     if (!button) return;
@@ -52157,8 +52759,7 @@ Your reply
 	    }
 	    if (event.key === "Escape") {
 	      setProfileModalOpen(false);
-	      setNotificationDropdownOpen(false);
-	      setNotificationModalOpen(false);
+	      setPingPauseMenuOpen(false);
 	      setAgentModalOpen(false);
 	      setNewRepoModalOpen(false);
 	      closeRepoBranchMenus();
@@ -52248,6 +52849,7 @@ Your reply
           // records since they cache in state.
           setRepoTab(kind);
           if (kind === "security") void loadRepoSecurity(repo);
+          if (kind === "forum") loadRepoForum(repo);
           if (kind === "commits") {
             const commitHash = parts[3] ? safeDecodeURIComponent(parts[3]) : "";
             if (/^[0-9a-f]{7,64}$/i.test(commitHash)) loadRepoCommitDetail(repo, commitHash);
@@ -53778,6 +54380,7 @@ Your reply
     const form = section.querySelector("[data-ai-review-settings-form]");
     form.querySelector("[data-ai-review-enabled]").checked = data.enabled === true;
     form.querySelector("[data-ai-review-default-on]").checked = data.defaultOn === true;
+    form.querySelector("[data-ai-review-notes]").checked = data.notesAssist !== false;
     form.querySelector("[data-ai-review-account]").value = data.accountId || "";
     const select = form.querySelector("[data-ai-review-model]");
     select.innerHTML = (data.models || []).map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.label)}${item.default ? " (default)" : ""}</option>`).join("");
@@ -53815,6 +54418,7 @@ Your reply
         const reply = await aiReviewPost("/api/ai-review/settings", {
           enabled: form.querySelector("[data-ai-review-enabled]").checked,
           defaultOn: form.querySelector("[data-ai-review-default-on]").checked,
+          notesAssist: form.querySelector("[data-ai-review-notes]").checked,
           accountId: form.querySelector("[data-ai-review-account]").value.trim(),
           model: form.querySelector("[data-ai-review-model]").value,
           dailyCap: number("[data-ai-review-daily-cap]"),
@@ -54428,9 +55032,16 @@ Your reply
     "--dashboard-accent-rgb", "--dashboard-attention-rgb", "--dashboard-destructive-rgb",
     "--dashboard-success-rgb", "--dashboard-primary-rgb",
   ]);
+  const COMMENT_REACTION_CHEER_KEY = "forkmesh.reactionCheer.v1";
+  const COMMENT_REACTION_CHEER_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
+  const COMMENT_REACTION_CHEER_KEEP = 400;
+  const COMMENT_REACTION_CHEER_COMMENTS = 3;
+  const COMMENT_REACTION_CHEER_BITS = 54;
+  const COMMENT_REACTION_CHEER_NOTE_MS = 4200;
   const commentReactionUi = {
     inflight: new Set(),
     confetti: new Set(),
+    cheering: false,
     picker: null,
     who: null,
     whoChip: null,
@@ -54496,12 +55107,16 @@ Your reply
         const data = await fetchJson(`${repoApiBase(repo)}/reactions?kind=${parts.kind}&number=${parts.number}`, { fresh: signedIn });
         if (!data || data.ok === false || !data.reactions || typeof data.reactions !== "object") return null;
         if (!state.commentReactions) state.commentReactions = {};
-        state.commentReactions[subject] = { base, reactions: data.reactions, signedIn: data.signedIn === true };
+        state.commentReactions[subject] = {
+          base, reactions: data.reactions, signedIn: data.signedIn === true,
+          reactedAt: data.reactedAt && typeof data.reactedAt === "object" ? data.reactedAt : null,
+        };
         if (data.tips && typeof data.tips === "object") {
           if (!state.commentTips) state.commentTips = {};
           state.commentTips[subject] = data.tips;
         }
         refreshCommentReactionBars(subject);
+        scheduleCommentReactionCheer(subject);
         if (typeof loadCommentTipWallets === "function") void loadCommentTipWallets(subject);
         return data;
       } catch (_) {
@@ -54706,6 +55321,190 @@ Your reply
       ], { duration: 1100 + Math.random() * 500, easing: "cubic-bezier(.2,.7,.4,1)", fill: "forwards" })
         .finished.catch(() => {}).then(() => piece.remove());
     }
+  }
+
+  function commentReactionCheerSeen(me) {
+    try {
+      const seen = JSON.parse(localStorage.getItem(`${COMMENT_REACTION_CHEER_KEY}:${me}`) || "{}");
+      return seen && typeof seen === "object" && !Array.isArray(seen) ? seen : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function commentReactionCheerRemember(me, cheers) {
+    const seen = commentReactionCheerSeen(me);
+    for (const cheer of cheers) seen[cheer.key] = Math.max(Number(seen[cheer.key]) || 0, cheer.latest);
+    const kept = Object.entries(seen)
+      .filter(([, at]) => Number.isFinite(Number(at)))
+      .sort((a, b) => Number(b[1]) - Number(a[1]))
+      .slice(0, COMMENT_REACTION_CHEER_KEEP);
+    try {
+      localStorage.setItem(`${COMMENT_REACTION_CHEER_KEY}:${me}`, JSON.stringify(Object.fromEntries(kept)));
+    } catch (_) {}
+  }
+
+  function commentReactionCheers(subject, now = Date.now()) {
+    const me = String(state.session?.nodeName || "").toLowerCase();
+    const entry = state.commentReactions?.[subject];
+    const detail = state.repoRecordDetail;
+    if (!me || !entry?.reactedAt || !detail?.parsed
+      || commentReactionSubject(detail.kind, detail.number) !== subject) return [];
+    const seen = commentReactionCheerSeen(me);
+    const cheers = [];
+    for (const [comment, emojis] of Object.entries(entry.reactedAt)) {
+      if (!emojis || typeof emojis !== "object") continue;
+      if (commentReactionAuthor(subject, comment).toLowerCase() !== me) continue;
+      const key = `${entry.base}|${subject}|${comment}`;
+      const since = Math.max(Number(seen[key]) || 0, now - COMMENT_REACTION_CHEER_WINDOW_MS);
+      const times = Object.entries(emojis).filter(([emoji, at]) => commentReactionKnown(emoji) && Number.isFinite(Number(at)));
+      const fresh = new Set(times.filter(([, at]) => Number(at) > since).map(([emoji]) => emoji));
+      const tallies = (Array.isArray(entry.reactions?.[comment]) ? entry.reactions[comment] : [])
+        .filter((tally) => fresh.has(tally.emoji));
+      if (!tallies.length) continue;
+      const bar = document.querySelector(`[data-comment-reactions="${CSS.escape(subject)}"][data-comment-id="${CSS.escape(comment)}"]`);
+      if (!bar) continue;
+      cheers.push({ comment, key, bar, tallies, latest: Math.max(...times.map(([, at]) => Number(at))) });
+    }
+    return cheers.sort((a, b) => (a.bar.compareDocumentPosition(b.bar) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
+  }
+
+  function scheduleCommentReactionCheer(subject) {
+    if (commentReactionUi.cheering) return;
+    if (document.hidden) {
+      document.addEventListener("visibilitychange", () => scheduleCommentReactionCheer(subject), { once: true });
+      return;
+    }
+    const cheers = commentReactionCheers(subject).slice(0, COMMENT_REACTION_CHEER_COMMENTS);
+    if (!cheers.length) return;
+    commentReactionCheerRemember(String(state.session.nodeName).toLowerCase(), cheers);
+    commentReactionUi.cheering = true;
+    void (async () => {
+      try {
+        for (const cheer of cheers) await playCommentReactionCheer(subject, cheer);
+      } finally {
+        commentReactionUi.cheering = false;
+      }
+    })();
+  }
+
+  function commentReactionCheerText(subject, cheer) {
+    const me = String(state.session?.nodeName || "").toLowerCase();
+    const names = [];
+    for (const tally of cheer.tallies) {
+      for (const person of Array.isArray(tally.people) ? tally.people : []) {
+        const name = String(person?.name || "");
+        if (name && name.toLowerCase() !== me && !names.some((seen) => seen.toLowerCase() === name.toLowerCase())) names.push(name);
+      }
+    }
+    const kind = commentReactionParts(subject)?.kind;
+    const what = cheer.comment !== "body" ? "comment"
+      : ({ issue: "issue", pull: "pull request", discussion: "discussion" })[kind] || "post";
+    const rest = names.length - 2;
+    const who = !names.length ? "People"
+      : rest > 0 ? `${names.slice(0, 2).join(", ")} and ${rest} other${rest === 1 ? "" : "s"}`
+        : names.join(" and ");
+    return { who, what };
+  }
+
+  function showCommentReactionCheerNote(subject, cheer) {
+    const { who, what } = commentReactionCheerText(subject, cheer);
+    const glyphs = cheer.tallies.slice(0, 6).map((tally) => commentReactionGlyph(tally.emoji, tally.custom)).join("");
+    const note = document.createElement("div");
+    note.className = "fm-reaction-cheer-note";
+    note.setAttribute("role", "status");
+    note.setAttribute("aria-live", "polite");
+    note.innerHTML = `<span class="fm-reaction-cheer-glyphs" aria-hidden="true">${glyphs}</span><span><strong>${escapeHtml(who)}</strong> reacted to your ${escapeHtml(what)}</span>`;
+    document.querySelectorAll(".fm-reaction-cheer-note").forEach((old) => old.remove());
+    document.body.append(note);
+    setTimeout(() => note.remove(), COMMENT_REACTION_CHEER_NOTE_MS);
+  }
+
+  function commentReactionCheerWait(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  async function playCommentReactionCheer(subject, cheer) {
+    const motion = commentReactionMotionOk();
+    let bar = cheer.bar.isConnected ? cheer.bar
+      : document.querySelector(`[data-comment-reactions="${CSS.escape(subject)}"][data-comment-id="${CSS.escape(cheer.comment)}"]`);
+    if (!bar) return;
+    let rect = bar.getBoundingClientRect();
+    if (rect.bottom < 0 || rect.top > window.innerHeight) {
+      bar.scrollIntoView({ behavior: motion ? "smooth" : "auto", block: "center" });
+      if (motion) await commentReactionCheerWait(650);
+      rect = bar.getBoundingClientRect();
+    }
+    showCommentReactionCheerNote(subject, cheer);
+    const card = bar.parentElement || bar;
+    card.classList.remove("fm-reaction-cheer-glow");
+    void card.offsetWidth;
+    card.classList.add("fm-reaction-cheer-glow");
+    setTimeout(() => card.classList.remove("fm-reaction-cheer-glow"), 2600);
+    if (!motion || typeof Element.prototype.animate !== "function") {
+      await commentReactionCheerWait(1200);
+      return;
+    }
+    for (const tally of cheer.tallies) {
+      const chip = bar.querySelector(`[data-reaction="${CSS.escape(tally.emoji)}"]`);
+      if (!chip) continue;
+      chip.classList.remove("fm-reaction-pop");
+      void chip.offsetWidth;
+      chip.classList.add("fm-reaction-pop");
+      chip.addEventListener("animationend", () => chip.classList.remove("fm-reaction-pop"), { once: true });
+    }
+    const originX = Math.min(Math.max(rect.left + Math.min(rect.width, 160) / 2, 16), window.innerWidth - 16);
+    const originY = Math.min(Math.max(rect.top + rect.height / 2, 16), window.innerHeight - 16);
+    const layer = document.createElement("div");
+    layer.className = "fm-reaction-cheer";
+    layer.setAttribute("aria-hidden", "true");
+    document.body.append(layer);
+    const ring = document.createElement("span");
+    ring.className = "fm-reaction-cheer-ring";
+    ring.style.left = `${originX}px`;
+    ring.style.top = `${originY}px`;
+    layer.append(ring);
+    ring.animate([
+      { transform: "scale(.2)", opacity: .9 },
+      { transform: `scale(${Math.max(window.innerWidth, window.innerHeight) / 30})`, opacity: 0 },
+    ], { duration: 1100, easing: "cubic-bezier(.15,.7,.3,1)", fill: "forwards" });
+    const weights = cheer.tallies.map((tally) => Math.max(1, Number(tally.count) || 1));
+    const total = weights.reduce((sum, weight) => sum + weight, 0);
+    const pool = [];
+    cheer.tallies.forEach((tally, index) => {
+      const share = Math.max(4, Math.round((COMMENT_REACTION_CHEER_BITS * weights[index]) / total));
+      for (let n = 0; n < share; n += 1) pool.push(commentReactionGlyph(tally.emoji, tally.custom));
+    });
+    const reach = Math.hypot(window.innerWidth, window.innerHeight);
+    const flights = pool.map((glyph, index) => {
+      const bit = document.createElement("span");
+      bit.className = "fm-reaction-cheer-bit";
+      bit.innerHTML = glyph;
+      bit.style.fontSize = `${Math.round(20 + Math.random() * 26)}px`;
+      layer.append(bit);
+      const angle = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 1.7;
+      const distance = reach * (0.28 + Math.random() * 0.42);
+      const dx = Math.cos(angle) * distance;
+      const dy = Math.sin(angle) * distance;
+      const spin = (Math.random() - 0.5) * 720;
+      const at = (x, y) => `translate(calc(${originX + x}px - 50%), calc(${originY + y}px - 50%))`;
+      return bit.animate([
+        { transform: `${at(0, 0)} scale(.2) rotate(0deg)`, opacity: 0 },
+        { transform: `${at(dx * 0.18, dy * 0.18)} scale(1.15) rotate(${spin * 0.2}deg)`, opacity: 1, offset: 0.1 },
+        { transform: `${at(dx, dy)} scale(1) rotate(${spin * 0.7}deg)`, opacity: 1, offset: 0.6 },
+        { transform: `${at(dx * 1.1, dy + reach * 0.35)} scale(.8) rotate(${spin}deg)`, opacity: 0 },
+      ], {
+        duration: 1700 + Math.random() * 1100,
+        delay: (index % 3) * 140 + Math.random() * 220,
+        easing: "cubic-bezier(.12,.75,.35,1)",
+        fill: "both",
+      }).finished.catch(() => {});
+    });
+    const origin = { left: originX, top: originY, width: 0, height: 0 };
+    commentReactionConfetti(origin);
+    setTimeout(() => commentReactionConfetti(origin), 260);
+    await Promise.all(flights);
+    layer.remove();
   }
 
   function commentReactionPlace(el, anchor, prefer = "below") {
@@ -56592,6 +57391,224 @@ Your reply
     return loadDashboardChunk("notes").then((chunk) => chunk.initNotesPage(...args));
   }
 
+  const PINGS_PAGE_SIZE = 40;
+  const pingsView = {
+    filter: "all",
+    older: [],
+    expanded: new Set(),
+    loadingMore: false,
+    moreFailed: false,
+    wired: false,
+  };
+
+  function pingsPageItems() {
+    const seen = new Set();
+    const items = [];
+    for (const item of [...state.notifications, ...pingsView.older]) {
+      const id = String(item?.id || "");
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      items.push(item);
+    }
+    return items.sort((a, b) => (Number(b.ts) || 0) - (Number(a.ts) || 0));
+  }
+
+  function pingsPageVisible(items) {
+    return pingsView.filter === "unread" ? items.filter((item) => !item.readAt) : items;
+  }
+
+  function pingsPageHasMore(items) {
+    const total = Number(state.notificationTotal) || 0;
+    return items.length < total;
+  }
+
+  function pingsBlankslateHtml(icon, title, desc, action = "") {
+    return `
+      <div class="fm-blankslate">
+        <i data-lucide="${icon}" aria-hidden="true"></i>
+        <p class="fm-blankslate-title">${escapeHtml(title)}</p>
+        <p class="fm-blankslate-desc">${escapeHtml(desc)}</p>
+        ${action}
+      </div>
+    `;
+  }
+
+  function renderPingsFilter() {
+    $$("[data-pings-filter]").forEach((button) => {
+      button.setAttribute("aria-pressed", button.dataset.pingsFilter === pingsView.filter ? "true" : "false");
+    });
+  }
+
+  function renderPingsPage() {
+    const list = $("[data-pings-list]");
+    if (!list) return;
+    renderPingsFilter();
+    const signedIn = Boolean(state.session?.nodeName);
+    const controls = $("[data-pings-account-controls]");
+    const toolbar = $("[data-pings-toolbar]");
+    const more = $("[data-pings-more]");
+    if (controls) controls.hidden = !signedIn;
+    if (toolbar) toolbar.hidden = !signedIn;
+    if (!signedIn) {
+      if (more) more.hidden = true;
+      const next = encodeURIComponent(`${location.pathname}${location.search}`);
+      list.innerHTML = pingsBlankslateHtml(
+        "bell",
+        "Sign in to see your pings",
+        "Mentions, pull requests, assignments, shares and host status changes for your account show up here.",
+        `<a href="/login?next=${next}" class="fm-btn fm-btn-sm mt-3">Log in</a>`,
+      );
+      window.lucide?.createIcons();
+      return;
+    }
+    if (!state.notificationsLoaded) {
+      if (more) more.hidden = true;
+      list.innerHTML = '<p class="px-4 py-6 text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading pings...</p>';
+      return;
+    }
+    const items = pingsPageItems();
+    const visible = pingsPageVisible(items);
+    const markAll = $("[data-pings-mark-all]");
+    if (markAll) markAll.disabled = !((Number(state.notificationUnread) || 0) > 0 || items.some((item) => !item.readAt));
+    if (state.notificationsFailed && !items.length) {
+      list.innerHTML = pingsBlankslateHtml("triangle-alert", "Pings could not be loaded", "Check your connection and reload the page.");
+    } else if (!visible.length) {
+      list.innerHTML = pingsView.filter === "unread"
+        ? pingsBlankslateHtml("check-check", "You're all caught up", "No unread pings. Switch to All to see the ones you have read.")
+        : pingsBlankslateHtml("bell", "No pings yet", "Mentions, pull requests, assignments, shares, bounties, releases and host status changes will appear here.");
+    } else {
+      list.innerHTML = `<ul class="divide-y divide-border">${visible.map((item) => notificationRowHtml(item, {
+        expanded: pingsView.expanded.has(String(item.id || "")),
+      })).join("")}</ul>`;
+    }
+    if (more) {
+      more.hidden = !pingsPageHasMore(items);
+      const button = more.querySelector("[data-pings-load-more]");
+      if (button) {
+        button.disabled = pingsView.loadingMore;
+        button.textContent = pingsView.loadingMore
+          ? "Loading..."
+          : pingsView.moreFailed ? "Could not load more. Try again" : "Load more";
+      }
+    }
+    window.lucide?.createIcons();
+  }
+
+  async function loadMorePings() {
+    const node = state.session?.nodeName || "";
+    if (!node || pingsView.loadingMore) return;
+    pingsView.loadingMore = true;
+    pingsView.moreFailed = false;
+    renderPingsPage();
+    try {
+      const offset = pingsPageItems().length;
+      const data = await fetchJson(`/api/notifications?node=${encodeURIComponent(node)}&limit=${PINGS_PAGE_SIZE}&offset=${offset}`);
+      const page = Array.isArray(data.notifications) ? data.notifications : [];
+      pingsView.older = pingsView.older.concat(page);
+      if (Number(data.total)) state.notificationTotal = Number(data.total);
+      if (!page.length) state.notificationTotal = pingsPageItems().length;
+    } catch (_) {
+      pingsView.moreFailed = true;
+    }
+    pingsView.loadingMore = false;
+    renderPingsPage();
+  }
+
+  function markPingsReadLocally(ids, all = false) {
+    const now = Date.now();
+    const wanted = new Set(ids.map(String));
+    for (const item of [...state.notifications, ...pingsView.older]) {
+      if (!item.readAt && (all || wanted.has(String(item.id || "")))) item.readAt = now;
+    }
+  }
+
+  async function markPingsRead(ids, all = false) {
+    const fresh = all
+      ? (Number(state.notificationUnread) || 0)
+      : pingsPageItems().filter((item) => ids.includes(String(item.id || "")) && !item.readAt).length;
+    markPingsReadLocally(ids, all);
+    state.notificationUnread = all ? 0 : Math.max(0, (Number(state.notificationUnread) || 0) - fresh);
+    renderNotificationBadge();
+    renderPingsPage();
+    await markNotificationsRead(all ? [] : ids, all);
+    markPingsReadLocally(ids, all);
+    renderPingsPage();
+  }
+
+  function setPingsFilter(filter) {
+    pingsView.filter = filter === "unread" ? "unread" : "all";
+    const url = new URL(location.href);
+    if (pingsView.filter === "unread") url.searchParams.set("filter", "unread");
+    else url.searchParams.delete("filter");
+    history.replaceState(history.state, "", `${url.pathname}${url.search}${url.hash}`);
+    renderPingsPage();
+  }
+
+  function focusPingControl(selector) {
+    $(selector)?.focus();
+  }
+
+  async function handlePingsPageClick(event) {
+    const page = event.target.closest("[data-pings-page]");
+    if (!page) return;
+    const filter = event.target.closest("[data-pings-filter]");
+    if (filter) {
+      setPingsFilter(filter.dataset.pingsFilter);
+      return;
+    }
+    if (event.target.closest("[data-pings-mark-all]")) {
+      await markPingsRead([], true);
+      return;
+    }
+    if (event.target.closest("[data-pings-load-more]")) {
+      await loadMorePings();
+      return;
+    }
+    const markRead = event.target.closest("[data-ping-mark-read]");
+    if (markRead) {
+      const id = markRead.dataset.pingMarkRead || "";
+      await markPingsRead([id]);
+      focusPingControl(`[data-ping-row-toggle="${CSS.escape(id)}"]`);
+      return;
+    }
+    const toggle = event.target.closest("[data-ping-row-toggle]");
+    if (toggle) {
+      const id = toggle.dataset.pingRowToggle || "";
+      if (pingsView.expanded.has(id)) pingsView.expanded.delete(id);
+      else pingsView.expanded.add(id);
+      renderPingsPage();
+      focusPingControl(`[data-ping-row-toggle="${CSS.escape(id)}"]`);
+      return;
+    }
+    const open = event.target.closest("[data-notification-open]");
+    if (open) {
+      const id = open.dataset.notificationOpen || "";
+      const item = pingsPageItems().find((candidate) => String(candidate.id || "") === id);
+      if (!item) return;
+      if (open.tagName === "BUTTON") {
+        if (pingsView.expanded.has(id)) pingsView.expanded.delete(id);
+        else pingsView.expanded.add(id);
+        renderPingsPage();
+        focusPingControl(`button[data-notification-open="${CSS.escape(id)}"]`);
+        if (!item.readAt) await markPingsRead([id]);
+        return;
+      }
+      if (!item.readAt) setTimeout(() => { void markPingsRead([id]); }, 0);
+    }
+  }
+
+  function initPingsPage() {
+    if (!$("[data-pings-page]")) return;
+    const bell = $("#notificationToggle");
+    bell?.setAttribute("aria-current", "page");
+    pingsView.filter = new URLSearchParams(location.search).get("filter") === "unread" ? "unread" : "all";
+    if (!pingsView.wired) {
+      pingsView.wired = true;
+      document.addEventListener("click", (event) => { void handlePingsPageClick(event); });
+    }
+    renderPingsPage();
+    renderPingPause();
+  }
   const pluginMenuState = { plugin: null, account: null, loading: null };
 
   function currentPluginPage() {
@@ -58655,6 +59672,11 @@ Your reply
     return loadDashboardChunk("repo-activity").then((chunk) => chunk.loadRepoActivity(...args));
   }
 
+  // loadRepoForum lives in 09-repo-forum.js (a per-page chunk).
+  function loadRepoForum(...args) {
+    return loadDashboardChunk("repo-forum").then((chunk) => chunk.loadRepoForum(...args));
+  }
+
   // ---------------------------------------------------------------------------
   // /dashboard/runners: list the agent runners this account may manage and
   // sign their provider CLIs in from the browser (app/src/runner_logins.py).
@@ -60165,18 +61187,23 @@ Your reply
     "docs": "/dashboard-page-docs.js?v=1f739446a623",
     "hackathon": "/dashboard-page-hackathon.js?v=22656013417d",
     "links": "/dashboard-page-links.js?v=d86c45ee2e66",
-    "notes": "/dashboard-page-notes.js?v=9c271809708a",
+    "notes": "/dashboard-page-notes.js?v=3b0bd7907872",
     "plugins": "/dashboard-page-plugins.js?v=cd8a0dcf3338",
     "referrals": "/dashboard-page-referrals.js?v=9e46b4b9d5e8",
     "repo-activity": "/dashboard-page-repo-activity.js?v=38ff59fc7239",
-    "tasks": "/dashboard-page-tasks.js?v=06cd84632de4",
-    "workflows": "/dashboard-page-workflows.js?v=275c0c09e245",
+    "repo-forum": "/dashboard-page-repo-forum.js?v=e5892a79b3e7",
+    "tasks": "/dashboard-page-tasks.js?v=1a9a370415a1",
+    "workflows": "/dashboard-page-workflows.js?v=e8c203201e89",
   };
   const dashboardChunkScope = {
     $,
     $$,
+    ISSUE_TEXT_ENCODER,
     MD_BODY_CLASS,
+    NOTE_LAYOUT_LINE,
+    applyRepoFeatures,
     blobText,
+    bytesToB64url,
     copyTextToClipboard,
     desktopBrand,
     desktopControlErrorText,
@@ -60184,10 +61211,12 @@ Your reply
     dropBrokenContributorAvatars,
     escapeHtml,
     fetchJson,
+    fetchRepoBlobs,
     fetchRepoJson,
     formatCount,
     formatDate,
     formatTimeAgo,
+    getWebIssueKey,
     groupDisplayOwner,
     groupRepositories,
     hydrateRepoActivityGraphs,
@@ -60214,20 +61243,25 @@ Your reply
     repoApiBase,
     repoContributorAvatar,
     repoDataVersion,
+    repoDefaultBranch,
     repoIsLive,
     repoKey,
     repoLinkUrl,
     repoLiveUrl,
     repoPathUrl,
     repoPublicKey,
+    repoRawUrl,
     repoRecordUrl,
+    repoRouteParts,
     repoSelectedBranch,
     runnerUsageRow,
     runnersEl,
+    safeDecodeURIComponent,
     sendTextToPrompt,
     setAgentLoginStatus,
     setNavWorking,
     setRepoTab,
+    sha256HexLower,
     showAgentLoginModal,
     shownAccountName,
     sourceOfTruth,
@@ -60294,7 +61328,7 @@ Your reply
   // DEFERRED_MARKUP); ensureDeferredMarkup adds it on first use.
   function deferredMarkup(name) {
     return {
-      "dialogs": { marker: "#notificationModal", after: null, html: "    <div\n      data-profile-modal\n      class=\"hidden fixed inset-0 z-[90] items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm\"\n      role=\"dialog\"\n      aria-modal=\"true\"\n      aria-labelledby=\"profileModalTitle\"\n    >\n      <button data-profile-modal-backdrop type=\"button\" aria-label=\"Close profile settings\" class=\"absolute inset-0 cursor-default\"></button>\n      <div class=\"fm-dialog relative z-10 w-full max-w-lg\">\n        <div class=\"fm-dialog-header\">\n          <div class=\"fm-dialog-heading\">\n            <h2 id=\"profileModalTitle\" class=\"fm-dialog-title\">Profile settings</h2>\n            <p class=\"fm-dialog-desc\">Verify email and optionally add a public Solana address for mirror rewards or direct community donations.</p>\n          </div>\n          <button data-profile-modal-close type=\"button\" aria-label=\"Close profile settings\" class=\"fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0\">\n            <i data-lucide=\"x\" aria-hidden=\"true\"></i>\n          </button>\n        </div>\n        <div class=\"fm-dialog-body grid gap-4\">\n          <div class=\"flex items-start justify-between gap-3 border-b border-border pb-4\">\n            <div class=\"min-w-0\">\n              <p class=\"text-sm font-medium text-foreground\">Email verification</p>\n              <p data-profile-email-status class=\"mt-1 text-xs text-muted-foreground\">Sign in to view email status.</p>\n            </div>\n            <button data-profile-verify-email type=\"button\" class=\"fm-btn fm-btn-sm shrink-0\">\n              Send link\n            </button>\n          </div>\n\n          <label class=\"grid gap-1.5 text-xs text-muted-foreground\">\n            Solana payout address\n            <input data-profile-solana type=\"text\" inputmode=\"latin\" autocomplete=\"off\" placeholder=\"Your public Solana address\" class=\"h-control rounded-control border border-border bg-background px-3 text-control text-foreground outline-none placeholder:text-muted-foreground\" />\n            <span class=\"text-xs leading-5 text-muted-foreground\">Used only for optional mirror rewards and direct community donations. Legacy bounty custody is disabled; you may leave it empty.</span>\n            <span class=\"text-xs leading-5 text-muted-foreground\">Non-custodial: only this public address is saved. Keys and recovery phrases stay on your device. User funds, the community pool, pending rewards, and completed transfers are distinct states.</span>\n          </label>\n\n          <form data-credential-scope class=\"contents\">\n          <label class=\"grid gap-1.5 text-xs text-muted-foreground\">\n            Current password\n            <input data-profile-password type=\"password\" autocomplete=\"current-password\" placeholder=\"Required to save payout changes\" class=\"h-control rounded-control border border-border bg-background px-3 text-control text-foreground outline-none placeholder:text-muted-foreground\" />\n          </label>\n          </form>\n\n          <p data-profile-hint class=\"min-h-4 text-xs text-muted-foreground\"></p>\n        </div>\n        <div class=\"fm-dialog-footer\">\n          <button data-profile-save type=\"button\" class=\"fm-btn fm-btn-sm fm-btn-cta\">\n            Save profile\n          </button>\n        </div>\n      </div>\n    </div>\n\n    <div\n      data-profile-about-modal\n      class=\"hidden fixed inset-0 z-[95] items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm\"\n      role=\"dialog\"\n      aria-modal=\"true\"\n      aria-labelledby=\"profileAboutModalTitle\"\n    >\n      <button data-profile-about-modal-backdrop type=\"button\" aria-label=\"Close about editor\" class=\"absolute inset-0 cursor-default\"></button>\n      <div class=\"fm-dialog relative z-10 w-full max-w-3xl\">\n        <div class=\"fm-dialog-header\">\n          <div class=\"fm-dialog-heading\">\n            <h2 id=\"profileAboutModalTitle\" class=\"fm-dialog-title\">Edit about yourself</h2>\n            <p class=\"fm-dialog-desc\">Markdown shown on your <span data-platform-name>ForkMesh</span> profile overview.</p>\n          </div>\n          <button data-profile-about-modal-close type=\"button\" aria-label=\"Close about editor\" class=\"fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0\">\n            <i data-lucide=\"x\" aria-hidden=\"true\"></i>\n          </button>\n        </div>\n        <div class=\"fm-dialog-body grid gap-4\">\n          <label class=\"grid gap-2 text-xs font-medium text-muted-foreground\">\n            About yourself\n            <textarea data-profile-about-textarea rows=\"14\" maxlength=\"32000\" spellcheck=\"true\" class=\"min-h-72 resize-y rounded-control border border-border bg-background px-3 py-2 font-mono text-control leading-6 text-foreground outline-none placeholder:text-muted-foreground\" placeholder=\"# Hi, I'm ...\"></textarea>\n          </label>\n          <p data-profile-about-hint class=\"min-h-4 text-xs text-muted-foreground\"></p>\n        </div>\n        <div class=\"fm-dialog-footer\">\n          <button data-profile-about-cancel type=\"button\" class=\"fm-btn fm-btn-sm\">Cancel</button>\n          <button data-profile-about-save type=\"button\" class=\"fm-btn fm-btn-sm fm-btn-cta\">Save about</button>\n        </div>\n      </div>\n    </div>\n\n    <div\n      id=\"notificationModal\"\n      class=\"hidden fixed inset-0 z-[80] items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm\"\n      role=\"dialog\"\n      aria-modal=\"true\"\n      aria-labelledby=\"notificationModalTitle\"\n    >\n      <button data-notification-modal-backdrop type=\"button\" aria-label=\"Close pings\" class=\"absolute inset-0 cursor-default\"></button>\n      <div class=\"fm-dialog relative z-10 w-full max-w-4xl\">\n        <div class=\"fm-dialog-header\">\n          <div class=\"fm-dialog-heading\">\n            <h2 id=\"notificationModalTitle\" class=\"fm-dialog-title\">Pings</h2>\n            <p class=\"fm-dialog-desc\">Read node, repository, and network updates.</p>\n          </div>\n          <div class=\"flex shrink-0 items-center gap-1\">\n            <a href=\"/dashboard/settings/notifications\" data-ping-settings-link=\"\" title=\"Ping settings\" class=\"fm-btn fm-btn-sm fm-btn-invisible\">\n              <i data-lucide=\"settings\" aria-hidden=\"true\"></i>\n              Ping settings\n            </a>\n            <button data-close-notification-modal type=\"button\" aria-label=\"Close pings\" class=\"fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0\">\n              <i data-lucide=\"x\" aria-hidden=\"true\"></i>\n            </button>\n          </div>\n        </div>\n\n        <div class=\"grid min-h-0 flex-1 md:grid-cols-[19rem_minmax(0,1fr)]\">\n          <div data-notification-modal-list class=\"max-h-80 overflow-y-auto border-b border-border p-2 md:max-h-none md:border-b-0 md:border-r\"></div>\n          <article data-notification-modal-detail class=\"min-h-0 overflow-y-auto p-5\"></article>\n        </div>\n      </div>\n    </div>\n\n    <!--\n      Provider sign-in, streamed from the owner's own node (agent-terminal.js).\n      This replaces a `forkmesh://agent-login/<node>` hand-off that a browser\n      could only complete on a machine with the desktop app installed.\n    -->\n    <div\n      data-agent-login-modal\n      class=\"fm-agent-login-modal hidden fixed inset-0 z-[95] items-center justify-center px-4 py-6 backdrop-blur-sm\"\n      role=\"dialog\"\n      aria-modal=\"true\"\n      aria-labelledby=\"agentLoginModalTitle\"\n    >\n      <button data-agent-login-backdrop type=\"button\" aria-label=\"Close the sign-in terminal\" class=\"absolute inset-0 cursor-default\"></button>\n      <div class=\"fm-dialog fm-agent-login-box relative z-10 w-full max-w-5xl\">\n        <div class=\"fm-dialog-header\">\n          <div class=\"fm-dialog-heading\">\n            <h2 id=\"agentLoginModalTitle\" data-agent-login-title class=\"fm-dialog-title flex items-center gap-2\"><i data-lucide=\"terminal\" class=\"h-4 w-4 text-muted-foreground\"></i>Sign in on your node</h2>\n            <p data-agent-login-status class=\"fm-dialog-desc\">Connecting\u2026</p>\n          </div>\n          <button data-agent-login-close type=\"button\" aria-label=\"Close the sign-in terminal\" class=\"fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0\">\n            <i data-lucide=\"x\" aria-hidden=\"true\"></i>\n          </button>\n        </div>\n        <div data-agent-login-surface class=\"fm-agent-login-surface min-h-0 flex-1 overflow-hidden p-2\"></div>\n        <p data-agent-login-footer class=\"border-t border-border px-4 py-2 text-xs leading-5 text-muted-foreground\">\n          Keystrokes and screen updates travel between this tab and your node over the account's existing relay socket, which forwards them and stores nothing. The node runs only the provider's own login command \u2014 not a shell \u2014 and the credential itself is created on the provider's site, never here.\n        </p>\n      </div>\n    </div>\n\n    <div\n      data-feedback-modal\n      class=\"hidden fixed inset-0 z-[95] items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm\"\n      role=\"dialog\"\n      aria-modal=\"true\"\n      aria-labelledby=\"feedbackModalTitle\"\n    >\n      <button data-feedback-close type=\"button\" aria-label=\"Close feedback\" class=\"absolute inset-0 cursor-default\"></button>\n      <form data-feedback-form class=\"fm-dialog relative z-10 w-full max-w-lg\">\n        <div class=\"fm-dialog-header\">\n          <div class=\"fm-dialog-heading\">\n            <h2 id=\"feedbackModalTitle\" class=\"fm-dialog-title\">Send feedback</h2>\n            <p class=\"fm-dialog-desc\">Tell us what worked, what was confusing, or the one thing you want us to improve next. Only the <span data-platform-name>ForkMesh</span> team reads it; nothing is published.</p>\n          </div>\n          <button data-feedback-close type=\"button\" aria-label=\"Close feedback\" class=\"fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0\">\n            <i data-lucide=\"x\" aria-hidden=\"true\"></i>\n          </button>\n        </div>\n        <div class=\"fm-dialog-body grid gap-3\">\n          <label class=\"grid gap-1.5 text-xs font-medium text-muted-foreground\">\n            Your feedback\n            <textarea data-feedback-message name=\"message\" rows=\"6\" minlength=\"2\" maxlength=\"2000\" required placeholder=\"What should we know?\" class=\"min-h-32 resize-y rounded-control border border-border bg-background px-3 py-2 text-control leading-6 text-foreground outline-none placeholder:text-muted-foreground\"></textarea>\n          </label>\n          <p data-feedback-status class=\"min-h-4 text-xs text-muted-foreground\" role=\"status\" aria-live=\"polite\"></p>\n        </div>\n        <div class=\"fm-dialog-footer\">\n          <button data-feedback-close type=\"button\" class=\"fm-btn fm-btn-sm\">Cancel</button>\n          <button data-feedback-submit type=\"submit\" class=\"fm-btn fm-btn-sm fm-btn-cta\">Send feedback</button>\n        </div>\n      </form>\n    </div>\n" },
+      "dialogs": { marker: "#profileModalTitle", after: null, html: "    <div\n      data-profile-modal\n      class=\"hidden fixed inset-0 z-[90] items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm\"\n      role=\"dialog\"\n      aria-modal=\"true\"\n      aria-labelledby=\"profileModalTitle\"\n    >\n      <button data-profile-modal-backdrop type=\"button\" aria-label=\"Close profile settings\" class=\"absolute inset-0 cursor-default\"></button>\n      <div class=\"fm-dialog relative z-10 w-full max-w-lg\">\n        <div class=\"fm-dialog-header\">\n          <div class=\"fm-dialog-heading\">\n            <h2 id=\"profileModalTitle\" class=\"fm-dialog-title\">Profile settings</h2>\n            <p class=\"fm-dialog-desc\">Verify email and optionally add a public Solana address for mirror rewards or direct community donations.</p>\n          </div>\n          <button data-profile-modal-close type=\"button\" aria-label=\"Close profile settings\" class=\"fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0\">\n            <i data-lucide=\"x\" aria-hidden=\"true\"></i>\n          </button>\n        </div>\n        <div class=\"fm-dialog-body grid gap-4\">\n          <div class=\"flex items-start justify-between gap-3 border-b border-border pb-4\">\n            <div class=\"min-w-0\">\n              <p class=\"text-sm font-medium text-foreground\">Email verification</p>\n              <p data-profile-email-status class=\"mt-1 text-xs text-muted-foreground\">Sign in to view email status.</p>\n            </div>\n            <button data-profile-verify-email type=\"button\" class=\"fm-btn fm-btn-sm shrink-0\">\n              Send link\n            </button>\n          </div>\n\n          <label class=\"grid gap-1.5 text-xs text-muted-foreground\">\n            Solana payout address\n            <input data-profile-solana type=\"text\" inputmode=\"latin\" autocomplete=\"off\" placeholder=\"Your public Solana address\" class=\"h-control rounded-control border border-border bg-background px-3 text-control text-foreground outline-none placeholder:text-muted-foreground\" />\n            <span class=\"text-xs leading-5 text-muted-foreground\">Used only for optional mirror rewards and direct community donations. Legacy bounty custody is disabled; you may leave it empty.</span>\n            <span class=\"text-xs leading-5 text-muted-foreground\">Non-custodial: only this public address is saved. Keys and recovery phrases stay on your device. User funds, the community pool, pending rewards, and completed transfers are distinct states.</span>\n          </label>\n\n          <form data-credential-scope class=\"contents\">\n          <label class=\"grid gap-1.5 text-xs text-muted-foreground\">\n            Current password\n            <input data-profile-password type=\"password\" autocomplete=\"current-password\" placeholder=\"Required to save payout changes\" class=\"h-control rounded-control border border-border bg-background px-3 text-control text-foreground outline-none placeholder:text-muted-foreground\" />\n          </label>\n          </form>\n\n          <p data-profile-hint class=\"min-h-4 text-xs text-muted-foreground\"></p>\n        </div>\n        <div class=\"fm-dialog-footer\">\n          <button data-profile-save type=\"button\" class=\"fm-btn fm-btn-sm fm-btn-cta\">\n            Save profile\n          </button>\n        </div>\n      </div>\n    </div>\n\n    <div\n      data-profile-about-modal\n      class=\"hidden fixed inset-0 z-[95] items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm\"\n      role=\"dialog\"\n      aria-modal=\"true\"\n      aria-labelledby=\"profileAboutModalTitle\"\n    >\n      <button data-profile-about-modal-backdrop type=\"button\" aria-label=\"Close about editor\" class=\"absolute inset-0 cursor-default\"></button>\n      <div class=\"fm-dialog relative z-10 w-full max-w-3xl\">\n        <div class=\"fm-dialog-header\">\n          <div class=\"fm-dialog-heading\">\n            <h2 id=\"profileAboutModalTitle\" class=\"fm-dialog-title\">Edit about yourself</h2>\n            <p class=\"fm-dialog-desc\">Markdown shown on your <span data-platform-name>ForkMesh</span> profile overview.</p>\n          </div>\n          <button data-profile-about-modal-close type=\"button\" aria-label=\"Close about editor\" class=\"fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0\">\n            <i data-lucide=\"x\" aria-hidden=\"true\"></i>\n          </button>\n        </div>\n        <div class=\"fm-dialog-body grid gap-4\">\n          <label class=\"grid gap-2 text-xs font-medium text-muted-foreground\">\n            About yourself\n            <textarea data-profile-about-textarea rows=\"14\" maxlength=\"32000\" spellcheck=\"true\" class=\"min-h-72 resize-y rounded-control border border-border bg-background px-3 py-2 font-mono text-control leading-6 text-foreground outline-none placeholder:text-muted-foreground\" placeholder=\"# Hi, I'm ...\"></textarea>\n          </label>\n          <p data-profile-about-hint class=\"min-h-4 text-xs text-muted-foreground\"></p>\n        </div>\n        <div class=\"fm-dialog-footer\">\n          <button data-profile-about-cancel type=\"button\" class=\"fm-btn fm-btn-sm\">Cancel</button>\n          <button data-profile-about-save type=\"button\" class=\"fm-btn fm-btn-sm fm-btn-cta\">Save about</button>\n        </div>\n      </div>\n    </div>\n\n    <!--\n      Provider sign-in, streamed from the owner's own node (agent-terminal.js).\n      This replaces a `forkmesh://agent-login/<node>` hand-off that a browser\n      could only complete on a machine with the desktop app installed.\n    -->\n    <div\n      data-agent-login-modal\n      class=\"fm-agent-login-modal hidden fixed inset-0 z-[95] items-center justify-center px-4 py-6 backdrop-blur-sm\"\n      role=\"dialog\"\n      aria-modal=\"true\"\n      aria-labelledby=\"agentLoginModalTitle\"\n    >\n      <button data-agent-login-backdrop type=\"button\" aria-label=\"Close the sign-in terminal\" class=\"absolute inset-0 cursor-default\"></button>\n      <div class=\"fm-dialog fm-agent-login-box relative z-10 w-full max-w-5xl\">\n        <div class=\"fm-dialog-header\">\n          <div class=\"fm-dialog-heading\">\n            <h2 id=\"agentLoginModalTitle\" data-agent-login-title class=\"fm-dialog-title flex items-center gap-2\"><i data-lucide=\"terminal\" class=\"h-4 w-4 text-muted-foreground\"></i>Sign in on your node</h2>\n            <p data-agent-login-status class=\"fm-dialog-desc\">Connecting\u2026</p>\n          </div>\n          <button data-agent-login-close type=\"button\" aria-label=\"Close the sign-in terminal\" class=\"fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0\">\n            <i data-lucide=\"x\" aria-hidden=\"true\"></i>\n          </button>\n        </div>\n        <div data-agent-login-surface class=\"fm-agent-login-surface min-h-0 flex-1 overflow-hidden p-2\"></div>\n        <p data-agent-login-footer class=\"border-t border-border px-4 py-2 text-xs leading-5 text-muted-foreground\">\n          Keystrokes and screen updates travel between this tab and your node over the account's existing relay socket, which forwards them and stores nothing. The node runs only the provider's own login command \u2014 not a shell \u2014 and the credential itself is created on the provider's site, never here.\n        </p>\n      </div>\n    </div>\n\n    <div\n      data-feedback-modal\n      class=\"hidden fixed inset-0 z-[95] items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm\"\n      role=\"dialog\"\n      aria-modal=\"true\"\n      aria-labelledby=\"feedbackModalTitle\"\n    >\n      <button data-feedback-close type=\"button\" aria-label=\"Close feedback\" class=\"absolute inset-0 cursor-default\"></button>\n      <form data-feedback-form class=\"fm-dialog relative z-10 w-full max-w-lg\">\n        <div class=\"fm-dialog-header\">\n          <div class=\"fm-dialog-heading\">\n            <h2 id=\"feedbackModalTitle\" class=\"fm-dialog-title\">Send feedback</h2>\n            <p class=\"fm-dialog-desc\">Tell us what worked, what was confusing, or the one thing you want us to improve next. Only the <span data-platform-name>ForkMesh</span> team reads it; nothing is published.</p>\n          </div>\n          <button data-feedback-close type=\"button\" aria-label=\"Close feedback\" class=\"fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0\">\n            <i data-lucide=\"x\" aria-hidden=\"true\"></i>\n          </button>\n        </div>\n        <div class=\"fm-dialog-body grid gap-3\">\n          <label class=\"grid gap-1.5 text-xs font-medium text-muted-foreground\">\n            Your feedback\n            <textarea data-feedback-message name=\"message\" rows=\"6\" minlength=\"2\" maxlength=\"2000\" required placeholder=\"What should we know?\" class=\"min-h-32 resize-y rounded-control border border-border bg-background px-3 py-2 text-control leading-6 text-foreground outline-none placeholder:text-muted-foreground\"></textarea>\n          </label>\n          <p data-feedback-status class=\"min-h-4 text-xs text-muted-foreground\" role=\"status\" aria-live=\"polite\"></p>\n        </div>\n        <div class=\"fm-dialog-footer\">\n          <button data-feedback-close type=\"button\" class=\"fm-btn fm-btn-sm\">Cancel</button>\n          <button data-feedback-submit type=\"submit\" class=\"fm-btn fm-btn-sm fm-btn-cta\">Send feedback</button>\n        </div>\n      </form>\n    </div>\n" },
       "agent": { marker: "#agentModal", after: "#agentModalToggle", html: "<div\n  id=\"agentModal\"\n  class=\"fm-popover hidden fixed inset-x-3 top-16 z-50 max-h-[calc(100dvh-5rem)] overflow-y-auto overscroll-contain sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96 sm:max-h-[calc(100dvh-6rem)]\"\n  role=\"dialog\"\n  aria-labelledby=\"agentModalTitle\"\n>\n  <div class=\"fm-popover-header\">\n    <div class=\"min-w-0 py-1\">\n      <h2 id=\"agentModalTitle\" class=\"fm-popover-title\">Start an agent</h2>\n      <p class=\"text-xs text-muted-foreground\">Run on an agent-capable node owned by your account.</p>\n    </div>\n    <button data-agent-modal-close type=\"button\" aria-label=\"Close agent composer\" class=\"fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0\">\n      <i data-lucide=\"x\" aria-hidden=\"true\"></i>\n    </button>\n  </div>\n  <form data-repo-agent-new-form class=\"grid gap-3 p-3 text-xs\">\n    <label class=\"grid gap-1.5 font-medium text-foreground\">Repository\n      <select data-agent-modal-repo name=\"repository\" required class=\"h-control rounded-control border border-border bg-background px-2 text-control text-foreground\"></select>\n    </label>\n    <label class=\"grid gap-1.5 font-medium text-foreground\">Run on\n      <select data-agent-modal-target name=\"targetNode\" required class=\"h-control rounded-control border border-border bg-background px-2 text-control text-foreground\"><option value=\"\">Choose an owned node\u2026</option></select>\n    </label>\n    <label class=\"grid gap-1.5 font-medium text-foreground\">Agent and model\n      <select data-repo-agent-new-agent-model required class=\"h-control rounded-control border border-border bg-background px-2 text-control text-foreground\"></select>\n    </label>\n    <input data-repo-agent-new-provider name=\"provider\" type=\"hidden\" value=\"claude-code\" />\n    <input data-repo-agent-new-model name=\"model\" type=\"hidden\" value=\"\" />\n    <div data-agent-modal-login class=\"hidden flex-col gap-1.5\">\n      <button data-agent-modal-login-start type=\"button\" class=\"fm-btn fm-btn-sm\">\n        <i data-lucide=\"key\" aria-hidden=\"true\"></i>\n        <span data-agent-modal-login-label>Sign in to agent</span>\n      </button>\n      <a data-agent-modal-login-desktop href=\"#\" class=\"text-xs text-accent hover:underline\">Or hand this off to the <span data-desktop-brand>ForkMesh </span>desktop app</a>\n    </div>\n    <label class=\"grid gap-1.5 font-medium text-foreground\">Task\n      <textarea data-repo-agent-new-input name=\"prompt\" required maxlength=\"8000\" rows=\"5\" class=\"w-full resize-y rounded-control border border-border bg-background px-3 py-2 text-control leading-5 text-foreground\" placeholder=\"Describe the change you want the agent to make\u2026\"></textarea>\n    </label>\n    <input data-repo-agent-new-file-input type=\"file\" accept=\"image/png,image/jpeg,image/webp,image/gif\" multiple class=\"hidden\" />\n    <div class=\"flex flex-wrap items-center gap-2\">\n      <button data-repo-agent-new-attach type=\"button\" class=\"fm-btn fm-btn-sm\">\n        <i data-lucide=\"image-plus\" aria-hidden=\"true\"></i>\n        Attach images\n      </button>\n      <span class=\"text-xs text-muted-foreground\">or paste a screenshot into the task</span>\n    </div>\n    <div data-repo-agent-new-attachments class=\"hidden\"></div>\n    <label class=\"flex items-center gap-2 text-foreground\">\n      <input name=\"createPr\" type=\"checkbox\" class=\"h-4 w-4 rounded border-border\" />\n      Create a pull request when the run finishes\n    </label>\n    <p class=\"text-xs leading-5 text-muted-foreground\">Prompts are encrypted at rest until the selected owned node claims them. Agent provider credentials and owner-device private keys never leave that node.</p>\n    <p data-repo-agent-new-hint class=\"text-xs leading-5 text-muted-foreground\">The request is saved durably and starts when the selected node claims it.</p>\n    <div class=\"flex justify-end border-t border-border pt-3\">\n      <button type=\"submit\" class=\"fm-btn fm-btn-sm fm-btn-cta\">\n        <i data-lucide=\"play\" aria-hidden=\"true\"></i>\n        Start agent\n      </button>\n    </div>\n  </form>\n</div>\n" },
     }[name] || null;
   }
@@ -60311,6 +61345,7 @@ Your reply
     "network": initNetworkPage,
     "ads": initAdsPage,
     "runners": initRunnersPage,
+    "pings": initPingsPage,
     "agents": initAgentsPage,
     "docs": initDocsPage,
     "plugins": initPluginsPage,

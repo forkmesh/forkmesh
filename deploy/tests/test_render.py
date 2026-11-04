@@ -105,7 +105,7 @@ def test_per_node_values(tmp_path):
         assert KEYS[node] not in wg  # a node is not its own peer
         assert sum(1 for line in wg.splitlines() if line == "[Peer]") == 2
         assert manifest["wg_ip"] == wg_ip
-        assert "127.0.0.1 app.next.forkmesh.com" in files["/etc/forkmesh-next/hosts.fragment"]
+        assert "127.0.0.1 app.forkmesh.com" in files["/etc/forkmesh-next/hosts.fragment"]
         caddy = files["/etc/caddy/Caddyfile"]
         assert "\n%s.next.forkmesh.com {" % node in caddy
         assert "reverse_proxy 127.0.0.1:8790" in caddy
@@ -140,7 +140,7 @@ def test_certificates_are_leaderless_and_identical_on_every_core(tmp_path):
         outputs[node] = files
         caddy = files["/etc/caddy/Caddyfile"]
         assert "is_issuer" not in manifest and "acme_issuer" not in manifest
-        for host in ("app.next.forkmesh.com", "world.next.forkmesh.com"):
+        for host in ("app.forkmesh.com", "world.forkmesh.com"):
             # files | acme | internal: chosen at run time by fmnext-certsync.
             assert "\timport /etc/forkmesh-next/caddy/tls-%s.caddy" % host in caddy
         assert "\ttls " not in caddy
@@ -156,7 +156,7 @@ def test_certificates_are_leaderless_and_identical_on_every_core(tmp_path):
         assert "/etc/systemd/system/fmnext-cert-export.service" not in files
         assert "fmnext-cert-pull.timer" in manifest["retired_units"]
         config = json.loads(files["/etc/forkmesh-next/certsync.json"])
-        assert config["names"] == ["app.next.forkmesh.com", "world.next.forkmesh.com"]
+        assert config["names"] == ["app.forkmesh.com", "world.forkmesh.com"]
         assert config["peers"] == {"n1": "http://10.77.0.1:8793",
                                    "n2": "http://10.77.0.2:8793",
                                    "n3": "http://10.77.0.3:8793"}
@@ -198,7 +198,7 @@ def test_dns_reconciler_settings(tmp_path):
     env = files["/etc/forkmesh-next/app.env"]
     assert "FORKMESH_DNS_RECONCILER=dry" in env
     assert "FORKMESH_DNS_TARGETS=n1=203.0.113.11,n2=203.0.113.12,n3=203.0.113.13" in env
-    assert "FORKMESH_DNS_NAMES=app.next.forkmesh.com,world.next.forkmesh.com" in env
+    assert "FORKMESH_DNS_NAMES=app.forkmesh.com,world.forkmesh.com" in env
     assert "TOKEN" not in env  # the Cloudflare token only ever comes from the vault
 
 
@@ -269,7 +269,7 @@ def test_runner_holds_no_core_secret_and_no_mesh(tmp_path):
     data = fleet(tmp_path)
     data["runners"][0]["wg_ip"] = "10.77.0.11"
     files, manifest = render.render_runner(data, "r1")
-    # Only the runner's own IDS key (docs/IDS.md), never a core secret.
+    # Only the runner's own IDS key (docs/operations/intrusion-detection.md), never a core secret.
     assert manifest["credentials"] == {"fmnext-ids.service": ["FMNEXT_IDS_KEY"]}
     blob = "\n".join(content for path, (content, _) in files.items()
                      if path != "/etc/systemd/system/fmnext-ids.service")
@@ -295,7 +295,7 @@ def test_runner_holds_no_core_secret_and_no_mesh(tmp_path):
     assert 'meta skuid "forkmesh-node" ip daddr 169.254.0.0/16 counter reject' in nft
     overrides = json.loads(files["/etc/forkmesh-next/mirror-node.overrides.json"][0])
     assert overrides["role"] == "runner" and overrides["upstreams"] == {}
-    assert overrides["runner"]["appUrl"] == "https://app.next.forkmesh.com"
+    assert overrides["runner"]["appUrl"] == "https://app.forkmesh.com"
     assert overrides["runner"]["maxConcurrentRuns"] == 1
     assert overrides["enableActions"] is True
     # Job dirs live outside the daemon's 0700 state dir.
@@ -322,19 +322,19 @@ def test_core_daemon_has_agents_and_actions_off(tmp_path):
     files, _ = rendered(tmp_path, "n1")
     overrides = json.loads(files["/etc/forkmesh-next/mirror-node.overrides.json"])
     assert overrides == {
-        "catalogUrl": "https://app.next.forkmesh.com/api/repositories",
+        "catalogUrl": "https://app.forkmesh.com/api/repositories",
         "disableAgentJobs": True, "disableAgentLogin": True,
         "disableCloudflared": True, "enableActions": False, "role": "core",
         # Every core keeps a replica of the ForkMesh-hosted repositories
-        # (server/hosted.go, docs/HOSTED_REPOS.md).
+        # (server/hosted.go, docs/operations/core-hosted-repositories.md).
         "hosted": {"enabled": True, "root": "/var/lib/forkmesh/hosted",
                    "maxRepositoryBytes": 256 * 1024 * 1024},
         "upstreams": {"forkmesh/forkmesh": [
-            "https://app.next.forkmesh.com/forkmesh/forkmesh",
+            "https://app.forkmesh.com/forkmesh/forkmesh",
             "https://n2.next.forkmesh.com/forkmesh/forkmesh.git",
             "https://n3.next.forkmesh.com/forkmesh/forkmesh.git"]},
         "eventDrivenUpstreams": [
-            "https://app.next.forkmesh.com/forkmesh/forkmesh"]}
+            "https://app.forkmesh.com/forkmesh/forkmesh"]}
 
 
 def test_core_upstreams_fall_back_to_every_peer_core_but_itself(tmp_path):
@@ -344,7 +344,7 @@ def test_core_upstreams_fall_back_to_every_peer_core_but_itself(tmp_path):
         files, _ = render.render_core(data, name)
         overrides = json.loads(files[render.DAEMON_OVERRIDES_PATH][0])
         upstreams = overrides["upstreams"]["forkmesh/forkmesh"]
-        assert upstreams[0] == "https://app.next.forkmesh.com/forkmesh/forkmesh"
+        assert upstreams[0] == "https://app.forkmesh.com/forkmesh/forkmesh"
         assert upstreams[1:] == [
             "https://%s.next.forkmesh.com/forkmesh/forkmesh.git" % peer
             for peer in names if peer != name]
@@ -353,12 +353,12 @@ def test_core_upstreams_fall_back_to_every_peer_core_but_itself(tmp_path):
 
 def test_hosted_repositories_can_be_turned_off(tmp_path):
     import render
-    fleet = {"app_host": "app.next.forkmesh.com",
+    fleet = {"app_host": "app.forkmesh.com",
              "hosted": {"enabled": False}}
     overrides = json.loads(render.daemon_overrides(fleet, "core"))
     assert "hosted" not in overrides
     runner = json.loads(render.daemon_overrides(
-        {"app_host": "app.next.forkmesh.com"}, "runner"))
+        {"app_host": "app.forkmesh.com"}, "runner"))
     assert "hosted" not in runner
 
 
@@ -395,7 +395,8 @@ def test_unknown_peer_keys_are_commented_out(tmp_path):
 
 @pytest.mark.parametrize("mutate, message", [
     (lambda f: f.update(domain="forkmesh.com"), "domain"),
-    (lambda f: f.update(app_host="app.forkmesh.com"), "app_host"),
+    (lambda f: f.update(app_host="app.next.forkmesh.com"), "app_host"),
+    (lambda f: f.update(world_host="world.example"), "world_host"),
     (lambda f: f.update(acme_issuer="n1"), "acme_issuer is gone"),
     (lambda f: f.update(dns={"reconciler": "maybe"}), "dns.reconciler"),
     (lambda f: f.update(instance_label_prefix="mirror"), "fmnext-"),
@@ -465,7 +466,7 @@ def test_app_env_has_public_hosts_and_static_mesh_peers(tmp_path):
             "/etc/forkmesh-next/app.env"][0].splitlines()
             if line and not line.startswith("#"))
         assert env["FORKMESH_PUBLIC_HOSTS"] == (
-            "app.next.forkmesh.com,world.next.forkmesh.com,"
+            "app.forkmesh.com,world.forkmesh.com,"
             "n1.next.forkmesh.com,n2.next.forkmesh.com,n3.next.forkmesh.com")
         assert env["FORKMESH_MESH_PEERS"] == (
             "n1=http://10.77.0.1:8792,n2=http://10.77.0.2:8792,"
@@ -553,23 +554,23 @@ def test_node_relay_never_reaches_host_internal_paths(tmp_path):
 
 def test_private_git_snippet_is_imported_first(tmp_path):
     # tools/next_git_host.py writes /etc/forkmesh-next/caddy/git-private.caddy;
-    # the per-node and app.next sites import it by glob, before any handle,
-    # and world.next never serves it.
+    # the per-node and app sites import it by glob, before any handle,
+    # and the world site never serves it.
     files, _ = rendered(tmp_path, "n1")
     caddy = files["/etc/caddy/Caddyfile"]
     line = "\timport /etc/forkmesh-next/caddy/git-private*.caddy"
     sites = {}
-    for host in ("app.next.forkmesh.com", "world.next.forkmesh.com",
+    for host in ("app.forkmesh.com", "world.forkmesh.com",
                  "n1.next.forkmesh.com"):
         sites[host] = caddy.split("\n%s {\n" % host, 1)[1].split("\n}\n", 1)[0]
-    for host in ("app.next.forkmesh.com", "n1.next.forkmesh.com"):
+    for host in ("app.forkmesh.com", "n1.next.forkmesh.com"):
         body = sites[host].splitlines()
         assert body.count(line) == 1, host
         first_handle = min(i for i, text in enumerate(body)
                            if text.lstrip().startswith(("handle", "import site_common",
                                                         "import client_headers")))
         assert body.index(line) < first_handle, host
-    assert line not in sites["world.next.forkmesh.com"]
+    assert line not in sites["world.forkmesh.com"]
     assert caddy.count(line) == 2
     dropin = files["/etc/systemd/system/caddy.service.d/forkmesh-next.conf"]
     assert "ReadOnlyPaths=-/var/lib/forkmesh-next/git" in dropin

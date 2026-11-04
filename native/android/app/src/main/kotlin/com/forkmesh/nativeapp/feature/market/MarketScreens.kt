@@ -132,6 +132,7 @@ internal fun routeFor(pkg: MarketPackage): Route? = when ((pkg.phoneSurface as? 
     "analytics" -> Route.Analytics(null)
     "competitors" -> Route.Competitors
     "invoices" -> Route.Invoices(null, null)
+    "surveys" -> Route.Surveys(null, null)
     "ledger" -> Route.Ledger(null)
     "vault" -> Route.Vault(null)
     "calories" -> Route.Calories
@@ -144,18 +145,21 @@ internal fun routeFor(pkg: MarketPackage): Route? = when ((pkg.phoneSurface as? 
     "speech" -> Route.Speech
     "glassesAlert" -> Route.GlassesAlert
     "phoneSecurity" -> Route.PhoneSecurity
+    "silentSpeech" -> Route.SilentSpeech
     "ember" -> Route.Ember(null)
     "strata" -> Route.Strata(null)
     "synapse" -> Route.Synapse(null)
     "openWrtRouter" -> Route.OpenWrtRouter
     "faceChanger" -> Route.FaceChanger
     "appStoreStatus" -> Route.AppStoreStatus
+    "booking" -> Route.Booking(null)
     "runners" -> Route.Runners
     "usage" -> Route.Usage
     "rssReader" -> Route.RssReader
     "videoMixDjStudio" -> Route.VideoMixDjStudio
     "poker" -> Route.Poker(null)
     "instanceFeed" -> Route.InstanceFeed(null)
+    "mastodon" -> Route.Mastodon
     "secureDrive" -> Route.SecureDrive
     "files", "fileExplorer" -> Route.Files
     "workflows" -> Route.Workflows

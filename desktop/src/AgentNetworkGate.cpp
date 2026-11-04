@@ -194,17 +194,21 @@ QString hostOfLocation(const QString &word)
     return {};
 }
 
-QString firstUrlHost(const QStringList &words, int from)
+QStringList urlHosts(const QStringList &words, int from)
 {
     static const QRegularExpression url(
         QStringLiteral("\\b(?:https?|ftp|wss?)://[^\\s'\"<>]+"),
         QRegularExpression::CaseInsensitiveOption);
+    QStringList hosts;
     for (int i = from; i < words.size(); ++i) {
-        const QRegularExpressionMatch match = url.match(words.at(i));
-        if (match.hasMatch())
-            return hostOfUrl(match.captured(0));
+        auto it = url.globalMatch(words.at(i));
+        while (it.hasNext()) {
+            const QString host = hostOfUrl(it.next().captured(0));
+            if (!host.isEmpty() && !hosts.contains(host))
+                hosts.append(host);
+        }
     }
-    return {};
+    return hosts;
 }
 
 // A bare host argument (ssh host, ping host): strips user@ and :path/:port.
@@ -340,6 +344,16 @@ QString shortSummary(const QStringList &words)
     return text;
 }
 
+ExternalCall callForHosts(const QStringList &hosts, const QString &summary)
+{
+    QStringList remote;
+    for (const QString &host : hosts)
+        if (!isLocalHost(host) && !remote.contains(host))
+            remote.append(host);
+    return remote.isEmpty() ? ExternalCall{}
+                            : ExternalCall{true, remote.first(), summary, remote};
+}
+
 ExternalCall packageCall(const QString &registry, const QStringList &words)
 {
     return {true, registry, shortSummary(words)};
@@ -374,14 +388,17 @@ ExternalCall scriptNetworkCall(const QString &script, const QString &cwd, const 
         return {};
     static const QRegularExpression url(QStringLiteral("\\bhttps?://([A-Za-z0-9.-]+)"));
     bool sawLocal = false;
+    QStringList hosts;
     auto it = url.globalMatch(text);
     while (it.hasNext()) {
         const QString host = it.next().captured(1).toLower();
         if (isLocalHost(host))
             sawLocal = true;
         else if (host.contains(QLatin1Char('.')))
-            return {true, host, summary};
+            hosts.append(host);
     }
+    if (!hosts.isEmpty())
+        return callForHosts(hosts, summary);
     if (sawLocal)
         return {};
     return {true, QStringLiteral("%1 network code").arg(info.fileName()), summary};
@@ -397,10 +414,9 @@ ExternalCall classifyWords(const QStringList &raw, const QString &cwd)
     const QString summary = shortSummary(words);
 
     auto withUrlHost = [&](const QString &fallback) -> ExternalCall {
-        const QString host = firstUrlHost(words, 1);
-        if (!host.isEmpty())
-            return isLocalHost(host) ? ExternalCall{} : ExternalCall{true, host, summary};
-        return {true, fallback, summary};
+        const QStringList hosts = urlHosts(words, 1);
+        return hosts.isEmpty() ? ExternalCall{true, fallback, summary}
+                               : callForHosts(hosts, summary);
     };
 
     static const QSet<QString> urlClients{
@@ -409,21 +425,80 @@ ExternalCall classifyWords(const QStringList &raw, const QString &cwd)
         QStringLiteral("aria2c"), QStringLiteral("lynx"),  QStringLiteral("w3m"),
         QStringLiteral("websocat"), QStringLiteral("grpcurl")};
     if (urlClients.contains(program)) {
-        const QString host = firstUrlHost(words, 1);
-        if (!host.isEmpty())
-            return isLocalHost(host) ? ExternalCall{} : ExternalCall{true, host, summary};
-        // curl example.com, http :8080/path, wget host/file
+        static const QSet<QString> valueOptions{
+            QStringLiteral("-o"),       QStringLiteral("--output"),
+            QStringLiteral("-d"),       QStringLiteral("--data"),
+            QStringLiteral("--data-raw"), QStringLiteral("--data-binary"),
+            QStringLiteral("--data-urlencode"), QStringLiteral("--json"),
+            QStringLiteral("-H"),       QStringLiteral("--header"),
+            QStringLiteral("-u"),       QStringLiteral("--user"),
+            QStringLiteral("-A"),       QStringLiteral("--user-agent"),
+            QStringLiteral("-e"),       QStringLiteral("--referer"),
+            QStringLiteral("-b"),       QStringLiteral("--cookie"),
+            QStringLiteral("-c"),       QStringLiteral("--cookie-jar"),
+            QStringLiteral("-D"),       QStringLiteral("--dump-header"),
+            QStringLiteral("-F"),       QStringLiteral("--form"),
+            QStringLiteral("-T"),       QStringLiteral("--upload-file"),
+            QStringLiteral("-w"),       QStringLiteral("--write-out"),
+            QStringLiteral("-m"),       QStringLiteral("--max-time"),
+            QStringLiteral("-X"),       QStringLiteral("--request"),
+            QStringLiteral("--connect-timeout"), QStringLiteral("--retry"),
+            QStringLiteral("--cacert"), QStringLiteral("--cert"),
+            QStringLiteral("--key"),    QStringLiteral("-K"),
+            QStringLiteral("--config")};
+        static const QSet<QString> wgetValueOptions{QStringLiteral("-O"),
+                                                    QStringLiteral("-P")};
+        static const QSet<QString> proxyOptions{QStringLiteral("-x"),
+                                                QStringLiteral("--proxy")};
+        const bool wget = program.startsWith(QLatin1String("wget"));
+        QStringList hosts = urlHosts(words, 1);
+        bool sawLocal = false;
+        bool unknown = false;
         for (int i = 1; i < words.size(); ++i) {
             const QString &word = words.at(i);
+            if (proxyOptions.contains(word) && i + 1 < words.size()) {
+                hosts.append(hostWord(words.at(++i)));
+                continue;
+            }
+            if (valueOptions.contains(word) || (wget && wgetValueOptions.contains(word))) {
+                ++i;
+                continue;
+            }
             if (word.startsWith(QLatin1Char('-')))
                 continue;
-            if (word.startsWith(QLatin1Char(':')))
-                return {}; // httpie shorthand for localhost
+            if (word.startsWith(QLatin1Char(':'))) {
+                sawLocal = true;
+                continue;
+            }
+            if (word.contains(QLatin1String("://"))) {
+                if (hostOfUrl(word).isEmpty())
+                    unknown = true;
+                continue;
+            }
+            if (word.contains(QLatin1Char('$'))) {
+                unknown = true;
+                continue;
+            }
+            if (word.contains(QLatin1Char('=')))
+                continue;
             const QString candidate = hostWord(word);
             if (candidate.contains(QLatin1Char('.')) || isLocalHost(candidate))
-                return isLocalHost(candidate) ? ExternalCall{}
-                                              : ExternalCall{true, candidate, summary};
+                hosts.append(candidate);
         }
+        for (const QString &host : std::as_const(hosts))
+            sawLocal = sawLocal || isLocalHost(host);
+        ExternalCall call = callForHosts(hosts, summary);
+        if (unknown) {
+            call.external = true;
+            if (call.target.isEmpty())
+                call.target = program;
+            call.summary = summary;
+            call.targets.append(program);
+            call.targets.removeDuplicates();
+            return call;
+        }
+        if (call.external || sawLocal)
+            return call;
         return {true, program, summary};
     }
 
@@ -458,12 +533,13 @@ ExternalCall classifyWords(const QStringList &raw, const QString &cwd)
     }
 
     if (program == QLatin1String("scp") || program == QLatin1String("rsync")) {
+        QStringList hosts;
         for (int i = 1; i < words.size(); ++i) {
             const QString host = hostOfLocation(words.at(i));
             if (!host.isEmpty())
-                return isLocalHost(host) ? ExternalCall{} : ExternalCall{true, host, summary};
+                hosts.append(host);
         }
-        return {};
+        return callForHosts(hosts, summary);
     }
 
     if (program == QLatin1String("git")) {
@@ -802,6 +878,7 @@ bool commandOnlyReadsText(const QString &command)
 ExternalCall classifyCommand(const QString &command, const QString &cwd)
 {
     ExternalCall first;
+    QStringList targets;
     QHash<QString, QString> variables;
     for (QStringList words : simpleCommands(command)) {
         for (QString &word : words)
@@ -813,8 +890,12 @@ ExternalCall classifyCommand(const QString &command, const QString &cwd)
             continue;
         if (!first.external)
             first = call;
+        for (const QString &target : call.destinations())
+            if (!targets.contains(target))
+                targets.append(target);
     }
     if (first.external) {
+        first.targets = targets;
         // The summary names the whole command line, shortened.
         QString line = command.simplified();
         if (line.size() > 300)
@@ -836,6 +917,12 @@ CommandRisk classifyCommandRisk(const QString &command, const QString &scratch)
                 risk.removeSpans.append(span);
             else
                 other = true;
+            if (!risk.destructiveKinds.contains(value)) {
+                risk.destructiveKinds.append(value);
+                risk.kindSpans.insert(value, span);
+            }
+        } else if (slot == &risk.permission && !risk.permissions.contains(value)) {
+            risk.permissions.append(value);
         }
         if (!slot->isEmpty())
             return;
@@ -1016,11 +1103,16 @@ CommandRisk classifyCommandRisk(const QString &command, const QString &scratch)
             }
         }
     }
-    if (risk.destructive.isEmpty() && scratchSpan.first >= 0) {
-        span = scratchSpan;
-        risk.destructive = QStringLiteral("scratch delete");
-        risk.matchStart = span.first;
-        risk.matchLength = span.second;
+    if (scratchSpan.first >= 0) {
+        const QString scratchKind = QStringLiteral("scratch delete");
+        risk.destructiveKinds.append(scratchKind);
+        risk.kindSpans.insert(scratchKind, scratchSpan);
+        if (risk.destructive.isEmpty()) {
+            span = scratchSpan;
+            risk.destructive = scratchKind;
+            risk.matchStart = span.first;
+            risk.matchLength = span.second;
+        }
     }
     risk.onlyRemoves = !other && !risk.removeSpans.isEmpty();
     if (!risk.destructive.isEmpty() || !risk.permission.isEmpty()) {
@@ -1044,10 +1136,15 @@ CommandRisk classifyCommandRisk(const QString &command,
     return risk;
 }
 
+bool isShellTool(const QString &toolName)
+{
+    return toolName == QLatin1String("Bash") || toolName == QLatin1String("Monitor");
+}
+
 ExternalCall classifyToolCall(const QString &toolName, const QJsonObject &input,
                               const QString &cwd)
 {
-    if (toolName == QLatin1String("Bash"))
+    if (isShellTool(toolName))
         return classifyCommand(input.value(QStringLiteral("command")).toString(), cwd);
     if (toolName == QLatin1String("WebFetch")) {
         const QString url = input.value(QStringLiteral("url")).toString().trimmed();
@@ -1198,7 +1295,7 @@ QString claudeHookSettings(bool gateCalls)
     if (gateCalls)
         events.insert(QStringLiteral("PreToolUse"),
                       QJsonArray{QJsonObject{
-                          {QStringLiteral("matcher"), QStringLiteral("Bash|WebFetch|WebSearch")},
+                          {QStringLiteral("matcher"), QStringLiteral("Bash|Monitor|WebFetch|WebSearch")},
                           {QStringLiteral("hooks"), QJsonArray{hook}}}});
     const QJsonObject settings{{QStringLiteral("hooks"), events}};
     return QString::fromUtf8(QJsonDocument(settings).toJson(QJsonDocument::Compact));
@@ -1330,7 +1427,7 @@ void Server::readRequest(QLocalSocket *socket)
             if (request.environment.hidden.size() < 64 && name.isString())
                 request.environment.hidden.append(name.toString().left(128));
     }
-    if (request.tool == QLatin1String("Bash"))
+    if (isShellTool(request.tool))
         request.risk = classifyCommandRisk(
             request.input.value(QStringLiteral("command")).toString(), request.environment);
     if (!m_onRequest && request.risk.any()) {

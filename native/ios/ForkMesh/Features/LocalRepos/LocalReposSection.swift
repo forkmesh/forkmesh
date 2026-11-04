@@ -55,11 +55,12 @@ private struct LocalReposSectionContent: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            FmSectionHeader(title: "On this device", icon: "phone_iphone", count: model.records.count)
-                .padding(EdgeInsets(top: FmSpace.x2, leading: FmSpace.x4, bottom: FmSpace.x2, trailing: FmSpace.x4))
+            FmSectionHeader(
+                title: "On this device", trailing: AnyView(newMenu),
+                count: model.records.isEmpty ? nil : model.records.count)
+                .padding(EdgeInsets(top: FmSpace.x4, leading: FmSpace.x4, bottom: FmSpace.x2, trailing: FmSpace.x4))
             listBody
-            actionRow
-            if let folder = LocalRepoServices.folder {
+            if !model.records.isEmpty, let folder = LocalRepoServices.folder {
                 LocalRepoFolderRow(folder: folder, store: store, isBusy: model.isBusy) { (notice: LocalNotice) in
                     model.notice = notice
                 }
@@ -72,9 +73,8 @@ private struct LocalReposSectionContent: View {
                 LocalNodeSyncSummary(applier: applier)
             }
             if showsNetwork {
-                FmHairline()
-                FmSectionHeader(title: "Network", icon: "public")
-                    .padding(EdgeInsets(top: FmSpace.x3, leading: FmSpace.x4, bottom: FmSpace.x2, trailing: FmSpace.x4))
+                FmSectionHeader(title: "Network")
+                    .padding(EdgeInsets(top: FmSpace.x5, leading: FmSpace.x4, bottom: FmSpace.x2, trailing: FmSpace.x4))
             }
         }
         .task { await model.load() }
@@ -130,6 +130,7 @@ private struct LocalReposSectionContent: View {
         } else if model.records.isEmpty {
             Text(LocalReposSectionModel.emptyMessage)
                 .fmText(.bodyMedium, color: fm.textSecondary)
+                .lineLimit(2)
                 .padding(EdgeInsets(top: 0, leading: FmSpace.x4, bottom: FmSpace.x2, trailing: FmSpace.x4))
         } else {
             VStack(spacing: 0) {
@@ -138,6 +139,7 @@ private struct LocalReposSectionContent: View {
                         FmRowDivider()
                     }
                     LocalRepoTile(record: record) { opened = record }
+                        .textSelection(.disabled)
                         .contextMenu {
                             Button("Open") { opened = record }
                             if record.isPublished && model.canSync {
@@ -150,22 +152,41 @@ private struct LocalReposSectionContent: View {
         }
     }
 
-    private var actionRow: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: FmSpace.x2) {
-                if model.canSync {
-                    FmToneButton(
-                        label: model.cloneCount == model.syncableRecords.count ? "Sync clones" : "Sync all",
-                        icon: "sync",
-                        tone: .accent,
-                        onPressed: model.isBusy ? nil : { startSync(nil) })
+    private var newMenu: some View {
+        Menu {
+            Button { startCreate() } label: { Label("New repository", systemImage: "plus") }
+            Button { startImport() } label: { Label("Import from Files", systemImage: "folder.badge.plus") }
+            Button { startMirror() } label: {
+                Label {
+                    Text("Mirror a repository")
+                    Text("From GitHub, GitLab, Codeberg or Gitea")
+                } icon: {
+                    Image(systemName: "arrow.triangle.2.circlepath.icloud")
                 }
-                FmToneButton(label: "New repository", icon: "add", tone: .accent, onPressed: model.isBusy ? nil : { startCreate() })
-                FmToneButton(label: "Import from Files", icon: "drive_folder_upload_outlined", onPressed: model.isBusy ? nil : { startImport() })
-                FmToneButton(label: "Mirror from GitHub/GitLab/Codeberg/Gitea", icon: "cloud_sync_outlined", onPressed: model.isBusy ? nil : { startMirror() })
             }
-            .padding(EdgeInsets(top: FmSpace.x2, leading: FmSpace.x4, bottom: FmSpace.x3, trailing: FmSpace.x4))
+            if model.canSync {
+                Divider()
+                Button { startSync(nil) } label: {
+                    Label(model.cloneCount == model.syncableRecords.count ? "Sync clones" : "Sync all", systemImage: "arrow.triangle.2.circlepath")
+                }
+            }
+        } label: {
+            HStack(spacing: FmSpace.x1) {
+                Image(systemName: "plus")
+                    .font(.system(size: 12, weight: .bold))
+                Text("New")
+                    .fmText(.labelMedium, color: fm.accent)
+            }
+            .foregroundStyle(fm.accent)
+            .padding(.horizontal, FmSpace.x3)
+            .frame(height: 30)
+            .background(fm.accentSubtle, in: Capsule())
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
         }
+        .disabled(model.isBusy)
+        .accessibilityLabel(Text("New repository on this device"))
+        .accessibilityIdentifier("local-repos-new")
     }
 
     private func startSync(_ record: LocalRepoRecord?) {

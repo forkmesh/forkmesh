@@ -1,15 +1,15 @@
 # ForkMesh marketing plan
 
-The living plan the Marketing special agent keeps (charter:
-[README.md](README.md)). This page defines its structure, metrics and
-rules; the agent fills in the values on each run. Every number names its
+Part of [Marketing](README.md). The living plan the Marketing special agent
+keeps: this page defines its structure, metrics and rules, and the agent fills
+in the values on each run. Every number names its
 source and the moment it was read. "No data" means nobody measured it; it
 never means zero.
 
 ## North star
 
 **Activated accounts:** accounts that have published at least one repository
-(`first_mirror_created`, [../attribution.md](../attribution.md); "accounts
+(`first_mirror_created`, [attribution](../app/attribution.md); "accounts
 with at least one mirror" on `/product-analysis`).
 
 - **Drivers.** New signups, the share of signups that publish a first
@@ -59,9 +59,11 @@ runs first.
 ## Campaigns
 
 One brief per active or finished campaign in `docs/marketing/campaigns/`,
-with audience, problem, message, channel, call to action, owners, UTM-tagged
-links on the `ATTRIBUTION_ALLOWED_*` allowlists, a success measure with a
-baseline, start and end dates, a follow-up review, and the result.
+following [the brief outline](campaigns/README.md#brief-outline) (audience,
+problem, message, channel, call to action, owners, UTM-tagged links on the
+`ATTRIBUTION_ALLOWED_*` allowlists, a success measure with a baseline, start
+and end dates, a follow-up review, and the result). List each open one here
+with its tag and dates.
 
 ## Email channel
 

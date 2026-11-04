@@ -100,11 +100,17 @@ async function renderOrganizations() {
 async function renderSent() {
   const result = await send({ type: "fm-sent-settings" });
   if (!result.ok) return note("[data-sent-status]", humanError(result));
+  $("[data-auto-link]").checked = Boolean(result.autoLink);
   $("[data-track-sent]").checked = Boolean(result.track);
+  $("[data-track-pixel]").checked = Boolean(result.pixel);
+  $("[data-track-pixel]").disabled = !result.track;
   const last = result.last;
-  const intro = result.track
-    ? "Mail you send from Gmail or Zoho Mail to someone in the CRM is linked to their record."
-    : "Sent mail is not linked on its own; use the panel on the message instead.";
+  const opened = result.autoLink
+    ? "An email you open in Gmail or Zoho Mail is looked up in the CRM and linked when its address is on a contact. "
+    : "An email you open is looked up only when you press Look up. ";
+  const intro = opened + (result.track
+    ? `Mail you send from Gmail or Zoho Mail to someone in the CRM is linked to their record.${result.pixel ? " A 1-pixel image in each email pings you when it is first opened." : ""}`
+    : "Sent mail is not linked on its own; use the panel on the message instead.");
   const recent = !last ? "" : last.error
     ? ` Last send not tracked (${ago(last.at)}): ${last.error}.`
     : ` Last tracked ${ago(last.at)}: ${last.subject || "(no subject)"} → ${last.contact || "contact"}.`;
@@ -144,6 +150,7 @@ async function renderStatus(status) {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   void ForkMeshVaultPopup.render(tab?.url || "");
   void ForkMeshRepoPopup.render(tab?.url || "");
+  void ForkMeshForumPopup.render(tab);
   await renderReddit();
   await pollRedditWalk();
   await renderHere();
@@ -154,6 +161,23 @@ async function renderStatus(status) {
   await renderNote();
   await renderX();
   await renderPanel();
+  await reopenSections();
+}
+
+const SECTIONS = ["note", "x", "marketing", "reddit", "mastodon"];
+
+async function reopenSections() {
+  const { popupOpenSections = [] } = await chrome.storage.local.get("popupOpenSections");
+  for (const name of SECTIONS) {
+    const section = $(`[data-${name}-section]`);
+    if (popupOpenSections.includes(name) && !section.hidden && !section.open) section.open = true;
+  }
+}
+
+async function rememberSection(name, open) {
+  const { popupOpenSections = [] } = await chrome.storage.local.get("popupOpenSections");
+  const rest = popupOpenSections.filter((item) => item !== name);
+  await chrome.storage.local.set({ popupOpenSections: open ? [...rest, name] : rest });
 }
 
 async function signIn(event) {
@@ -980,6 +1004,10 @@ async function renderPanel() {
 document.addEventListener("DOMContentLoaded", () => {
   ForkMeshVaultPopup.bind(send);
   ForkMeshRepoPopup.bind(send);
+  ForkMeshForumPopup.bind(send);
+  for (const name of SECTIONS) {
+    $(`[data-${name}-section]`).addEventListener("toggle", (event) => void rememberSection(name, event.target.open));
+  }
   $("[data-sign-in-form]").addEventListener("submit", signIn);
   $("[data-organization]").addEventListener("change", async (event) => {
     await send({ type: "fm-set-organization", organization: event.target.value });
@@ -989,8 +1017,17 @@ document.addEventListener("DOMContentLoaded", () => {
     await renderPanel();
     void refreshMailTab();
   });
+  $("[data-auto-link]").addEventListener("change", async (event) => {
+    await send({ type: "fm-sent-set-track", autoLink: event.target.checked });
+    await renderSent();
+    void refreshMailTab();
+  });
   $("[data-track-sent]").addEventListener("change", async (event) => {
     await send({ type: "fm-sent-set-track", track: event.target.checked });
+    await renderSent();
+  });
+  $("[data-track-pixel]").addEventListener("change", async (event) => {
+    await send({ type: "fm-sent-set-track", pixel: event.target.checked });
     await renderSent();
   });
   $("[data-track-toots]").addEventListener("change", async (event) => {

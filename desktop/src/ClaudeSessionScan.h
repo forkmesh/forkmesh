@@ -43,6 +43,12 @@ QHash<QString, QString> desktopTitles(const QString &desktopRoot);
 
 QString projectKey(const QString &cwd);
 
+int removeOrphanedTranscripts(const QStringList &configDirs, const QString &cwd,
+                              QStringList *removed = nullptr);
+
+int removeOrphanedDesktopRecords(const QString &desktopRoot, const QString &cwd,
+                                 QStringList *removed = nullptr);
+
 QList<QJsonObject> readEvents(const QString &path, qint64 fromOffset,
                               qint64 *newOffset);
 

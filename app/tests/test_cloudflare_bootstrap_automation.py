@@ -1908,7 +1908,7 @@ def test_mirror_manifest_signer_covers_public_key_urls_and_storage_claim():
 
 def test_published_mirror_manifest_schema_is_strict_about_d1_and_https():
     schema = json.loads(
-        (ROOT / "www" / "docs" / "mirror-endpoint.schema.json").read_text(encoding="utf-8")
+        (ROOT / "docs" / "mirror-endpoint.schema.json").read_text(encoding="utf-8")
     )
     storage = schema["properties"]["storage"]["properties"]
     endpoint = schema["properties"]["endpoint"]["properties"]
@@ -1919,7 +1919,7 @@ def test_published_mirror_manifest_schema_is_strict_about_d1_and_https():
 
 def test_bootstrap_docs_include_kv_data_key_and_app_origin_requirements():
     docs = (
-        ROOT / "www/docs/operations/automation-and-cloudflare-bootstrap.md"
+        ROOT / "docs/operations/automation-and-cloudflare-bootstrap.md"
     ).read_text(encoding="utf-8")
     normalized_docs = " ".join(docs.split())
     assert "Workers KV Storage edit" in docs

@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.chat
 
+import com.forkmesh.nativeapp.ui.kit.FmHoldArea
 import com.forkmesh.nativeapp.ui.kit.confirmAction
 import com.forkmesh.nativeapp.chat.ChatPeerPresence
 import com.forkmesh.nativeapp.chat.peerPresence
@@ -145,20 +146,22 @@ fun ChatChannelPanel(navigator: Navigator, relay: RelaySnapshot, mesh: MeshSnaps
                 item(key = "group:${row.group}") {
                     var menu by remember { mutableStateOf(false) }
                     Box {
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .combinedClickable(
-                                    onClick = { updateGroups { ChannelGroups.setCollapsed(it, row.group, !row.collapsed, row.automatic) } },
-                                    onLongClick = if (row.automatic) null else ({ menu = true }),
-                                )
-                                .heightIn(min = 40.dp)
-                                .padding(horizontal = FmSpace.x2),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            FmIcon(if (row.collapsed) "chevron_right" else "expand_more", size = 16.dp, tint = Fm.colors.textTertiary)
-                            Spacer(Modifier.width(FmSpace.x2))
-                            Text(row.group, style = Fm.text.labelMedium.copy(color = Fm.colors.textTertiary))
+                        FmHoldArea(!row.automatic) {
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .combinedClickable(
+                                        onClick = { updateGroups { ChannelGroups.setCollapsed(it, row.group, !row.collapsed, row.automatic) } },
+                                        onLongClick = if (row.automatic) null else ({ menu = true }),
+                                    )
+                                    .heightIn(min = 40.dp)
+                                    .padding(horizontal = FmSpace.x2),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                FmIcon(if (row.collapsed) "chevron_right" else "expand_more", size = 16.dp, tint = Fm.colors.textTertiary)
+                                Spacer(Modifier.width(FmSpace.x2))
+                                Text(row.group, style = Fm.text.labelMedium.copy(color = Fm.colors.textTertiary))
+                            }
                         }
                         FmDropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                             FmDropdownMenuItem("Rename group", icon = "edit_outlined", onClick = {
@@ -374,60 +377,62 @@ private fun ChannelTile(
     leading: (@Composable () -> Unit)? = null,
 ) {
     val colors = Fm.colors
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(bottom = FmSpace.x1)
-            .background(if (selected) colors.accentSubtle else colors.bgRaised, RoundedCornerShape(FmRadius.md))
-            .combinedClickable(onClick = onTap, onLongClick = onLongPress)
-            .heightIn(min = 44.dp)
-            .padding(horizontal = FmSpace.x3, vertical = FmSpace.x2),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (leading != null) leading() else FmIcon(icon, size = 17.dp, tint = if (selected) colors.accent else colors.textTertiary)
-        Spacer(Modifier.width(FmSpace.x3))
-        Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    title,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = Fm.text.bodyMedium.copy(
-                        color = if (selected) colors.textPrimary else colors.textSecondary,
-                        fontSize = FmType.small,
-                        fontWeight = if (selected || unread) FmType.emphasis else FmType.regular,
-                    ),
-                )
-                val time = preview?.let { ChatListPreviews.timeLabel(it.timestamp, System.currentTimeMillis()) }.orEmpty()
-                if (time.isNotEmpty()) {
-                    Spacer(Modifier.width(FmSpace.x2))
-                    Text(time, maxLines = 1, style = Fm.text.bodySmall.copy(fontSize = FmType.micro, color = colors.textTertiary))
+    FmHoldArea(onLongPress != null) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(bottom = FmSpace.x1)
+                .background(if (selected) colors.accentSubtle else colors.bgRaised, RoundedCornerShape(FmRadius.md))
+                .combinedClickable(onClick = onTap, onLongClick = onLongPress)
+                .heightIn(min = 44.dp)
+                .padding(horizontal = FmSpace.x3, vertical = FmSpace.x2),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (leading != null) leading() else FmIcon(icon, size = 17.dp, tint = if (selected) colors.accent else colors.textTertiary)
+            Spacer(Modifier.width(FmSpace.x3))
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        title,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = Fm.text.bodyMedium.copy(
+                            color = if (selected) colors.textPrimary else colors.textSecondary,
+                            fontSize = FmType.small,
+                            fontWeight = if (selected || unread) FmType.emphasis else FmType.regular,
+                        ),
+                    )
+                    val time = preview?.let { ChatListPreviews.timeLabel(it.timestamp, System.currentTimeMillis()) }.orEmpty()
+                    if (time.isNotEmpty()) {
+                        Spacer(Modifier.width(FmSpace.x2))
+                        Text(time, maxLines = 1, style = Fm.text.bodySmall.copy(fontSize = FmType.micro, color = colors.textTertiary))
+                    }
+                }
+                if (preview != null) {
+                    Text(
+                        preview.line,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = Fm.text.bodySmall.copy(fontSize = FmType.meta, color = colors.textTertiary),
+                    )
                 }
             }
-            if (preview != null) {
-                Text(
-                    preview.line,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = Fm.text.bodySmall.copy(fontSize = FmType.meta, color = colors.textTertiary),
-                )
+            if (unreadCount > 0) {
+                Spacer(Modifier.width(FmSpace.x2))
+                Box(
+                    Modifier.heightIn(min = 18.dp).background(colors.danger, CircleShape).padding(horizontal = 6.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        if (unreadCount > 99) "99+" else unreadCount.toString(),
+                        style = Fm.text.labelMedium.copy(fontSize = FmType.micro, color = Color.White, fontWeight = FmType.emphasis),
+                    )
+                }
+            } else if (unread) {
+                Spacer(Modifier.width(FmSpace.x2))
+                Box(Modifier.size(8.dp).background(colors.danger, CircleShape))
             }
-        }
-        if (unreadCount > 0) {
-            Spacer(Modifier.width(FmSpace.x2))
-            Box(
-                Modifier.heightIn(min = 18.dp).background(colors.danger, CircleShape).padding(horizontal = 6.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    if (unreadCount > 99) "99+" else unreadCount.toString(),
-                    style = Fm.text.labelMedium.copy(fontSize = FmType.micro, color = Color.White, fontWeight = FmType.emphasis),
-                )
-            }
-        } else if (unread) {
-            Spacer(Modifier.width(FmSpace.x2))
-            Box(Modifier.size(8.dp).background(colors.danger, CircleShape))
         }
     }
 }
@@ -493,7 +498,7 @@ private fun MemberGroupTile(group: MemberGroup, selected: Boolean, onTap: (() ->
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     style = Fm.text.bodyMedium.copy(
-                        color = if (selected) colors.textPrimary else colors.textSecondary,
+                        color = if (selected || group.self) colors.textPrimary else colors.textSecondary,
                         fontSize = FmType.small,
                         fontWeight = if (selected) FmType.emphasis else FmType.regular,
                     ),

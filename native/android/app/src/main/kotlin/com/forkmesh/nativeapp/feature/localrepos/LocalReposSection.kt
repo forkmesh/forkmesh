@@ -63,6 +63,7 @@ import com.forkmesh.nativeapp.ui.kit.LocalFmMessenger
 import com.forkmesh.nativeapp.ui.kit.rememberFmStatus
 import com.forkmesh.nativeapp.ui.navigation.Navigator
 import com.forkmesh.nativeapp.ui.theme.Fm
+import com.forkmesh.nativeapp.ui.theme.FmIcon
 import com.forkmesh.nativeapp.ui.theme.FmSpace
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -71,9 +72,24 @@ import kotlinx.coroutines.withContext
 
 private data class NewRepoRequest(val name: String, val description: String)
 
-@OptIn(ExperimentalLayoutApi::class)
+class LocalRepoActions internal constructor(
+    val create: () -> Unit,
+    val importFiles: () -> Unit,
+    val mirror: () -> Unit,
+    val sync: () -> Unit,
+    val canSync: Boolean,
+    val syncLabel: String,
+    val busy: Boolean,
+    internal val status: FmStatus,
+    internal val records: List<LocalRepoRecord>,
+    internal val loaded: Boolean,
+    internal val loadError: String?,
+    internal val open: (LocalRepoRecord) -> Unit,
+    internal val more: (LocalRepoRecord) -> Unit,
+)
+
 @Composable
-internal fun LocalReposSectionContent(store: LocalRepoStore, navigator: Navigator) {
+internal fun rememberLocalRepoActions(store: LocalRepoStore, navigator: Navigator): LocalRepoActions {
     val c = Fm.colors
     val context = LocalContext.current
     val messenger = LocalFmMessenger.current
@@ -198,64 +214,83 @@ internal fun LocalReposSectionContent(store: LocalRepoStore, navigator: Navigato
         }
     }
 
+    return LocalRepoActions(
+        create = { if (!busy) create() },
+        importFiles = { if (!busy) import() },
+        mirror = { if (!busy) mirrorFromProvider() },
+        sync = { if (!busy) sync(null) },
+        canSync = canSync,
+        syncLabel = syncAllLabel(records),
+        busy = busy,
+        status = status,
+        records = records,
+        loaded = store.isLoaded,
+        loadError = loadError,
+        open = { open(it) },
+        more = { actions(it) },
+    )
+}
+
+@Composable
+internal fun LocalReposSectionContent(actions: LocalRepoActions) {
+    val c = Fm.colors
+    val records = actions.records
     Column(Modifier.fillMaxWidth()) {
-        FmSectionHeader(
-            title = "On this device",
-            icon = "phone_iphone",
-            count = records.size,
-            modifier = Modifier.padding(start = FmSpace.x4, top = FmSpace.x2, end = FmSpace.x4, bottom = FmSpace.x2),
-        )
-        val error = loadError
+        val error = actions.loadError
         when {
-            error != null -> Text(
-                error,
-                modifier = Modifier.padding(horizontal = FmSpace.x4),
-                style = Fm.text.bodySmall.copy(color = c.danger),
-            )
-            !store.isLoaded -> Box(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(FmSpace.x3),
-                contentAlignment = Alignment.Center,
-            ) {
-                FmCircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+            error != null -> {
+                LocalReposHeader(records.size)
+                Text(
+                    error,
+                    modifier = Modifier.padding(horizontal = FmSpace.x4),
+                    style = Fm.text.bodySmall.copy(color = c.danger),
+                )
             }
-            records.isEmpty() -> Text(
-                "No local repositories yet. Create one or import a folder from Files — everything stays on this phone until you publish.",
-                modifier = Modifier.padding(start = FmSpace.x4, end = FmSpace.x4, bottom = FmSpace.x2),
-                style = Fm.text.bodyMedium.copy(color = c.textSecondary),
-            )
-            else -> Column(
-                Modifier
-                    .fillMaxWidth()
-                    .background(c.listSurface),
-            ) {
-                records.forEachIndexed { index, record ->
-                    if (index > 0) FmRowDivider()
-                    LocalRepoTile(record, onLongPress = { actions(record) }) { open(record) }
+            !actions.loaded -> {
+                LocalReposHeader(records.size)
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(FmSpace.x3),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    FmCircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                }
+            }
+            records.isEmpty() -> {
+                LocalReposHeader(null)
+                Text(
+                    "None yet. They stay on this device until you publish.",
+                    modifier = Modifier.padding(start = FmSpace.x4, end = FmSpace.x4, bottom = FmSpace.x2),
+                    maxLines = 2,
+                    style = Fm.text.bodyMedium.copy(color = c.textSecondary),
+                )
+            }
+            else -> {
+                LocalReposHeader(records.size)
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(c.listSurface),
+                ) {
+                    records.forEachIndexed { index, record ->
+                        if (index > 0) FmRowDivider()
+                        LocalRepoTile(record, onLongPress = { actions.more(record) }) { actions.open(record) }
+                    }
                 }
             }
         }
-        FmInlineStatus(status, Modifier.padding(start = FmSpace.x4, top = FmSpace.x2, end = FmSpace.x4))
-        FlowRow(
-            Modifier.padding(start = FmSpace.x4, top = FmSpace.x2, end = FmSpace.x4, bottom = FmSpace.x3),
-            horizontalArrangement = Arrangement.spacedBy(FmSpace.x2),
-            verticalArrangement = Arrangement.spacedBy(FmSpace.x2),
-        ) {
-            if (canSync) {
-                FmToneButton(label = syncAllLabel(records), onPressed = if (busy) null else ({ sync(null) }), icon = "sync", tone = FmTone.Accent)
-            }
-            FmToneButton(label = "New repository", onPressed = if (busy) null else ({ create() }), icon = "add", tone = FmTone.Accent)
-            FmToneButton(label = "Import from Files", onPressed = if (busy) null else ({ import() }), icon = "drive_folder_upload_outlined")
-            FmToneButton(label = "Mirror from GitHub/GitLab/Codeberg/Gitea", onPressed = if (busy) null else mirrorFromProvider, icon = "cloud_sync_outlined")
-        }
-        HorizontalDivider(thickness = 1.dp, color = c.border)
-        FmSectionHeader(
-            title = "Network",
-            icon = "public",
-            modifier = Modifier.padding(start = FmSpace.x4, top = FmSpace.x3, end = FmSpace.x4, bottom = FmSpace.x2),
-        )
+        FmInlineStatus(actions.status, Modifier.padding(start = FmSpace.x4, top = FmSpace.x2, end = FmSpace.x4))
     }
+}
+
+@Composable
+private fun LocalReposHeader(count: Int?) {
+    FmSectionHeader(
+        title = "On this device",
+        count = count,
+        modifier = Modifier.padding(start = FmSpace.x4, top = FmSpace.x4, end = FmSpace.x4, bottom = FmSpace.x2),
+    )
 }
 
 @Composable
@@ -269,7 +304,7 @@ private fun LocalRepoTile(record: LocalRepoRecord, onLongPress: () -> Unit, onTa
     FmListRow(
         title = record.name,
         subtitle = localRepoTileMeta(record),
-        leading = { FmIconTile(if (record.isCloned) "cloud_done_outlined" else "phone_iphone", tint = c.accent, size = 40.dp) },
+        leading = { FmIcon(if (record.isCloned) "cloud_done_outlined" else "phone_iphone", size = 22.dp, tint = c.textSecondary) },
         trailing = { FmStatusBadge(record.syncLabel, tint) },
         onTap = onTap,
         onLongPress = onLongPress,

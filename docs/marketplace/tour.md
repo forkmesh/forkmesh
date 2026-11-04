@@ -1,9 +1,9 @@
 # Tour
 
 The `tour` package (1.2.0) is the first-run welcome and the guided tour on the
-desktop and the phone. On 2026-10-24 the operator asked for three depths,
-Essentials, Advanced and The whole shebang, and for the phone tour to look like
-the screens it talks about.
+desktop and the phone, in three depths (Essentials, Advanced and The whole
+shebang); the phone tour looks like the screens it talks about. Part of
+[Marketplace](README.md).
 
 ## Desktop
 

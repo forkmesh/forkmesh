@@ -1,7 +1,8 @@
 # Native phone apps: feature matrix, workstreams and the watch app
 
-`native/ios` is the iPhone app, `native/android` the Android app, and
-`native/ios/ForkMeshWatch` the Apple Watch app. This page lists the phone
+Part of the phone apps ([README.md](README.md)). `native/ios` is the iPhone
+app, `native/android` the Android app, and `native/ios/ForkMeshWatch` the Apple
+Watch app. This page lists the phone
 feature set (row numbers `#n` are stable and cited by the source and by
 [DESKTOP_PARITY.md](DESKTOP_PARITY.md)), the platform decisions, the iOS
 workstream structure (WS1 to WS7), the watch app's design, and the bundle ids.
@@ -95,7 +96,7 @@ iOS).
 | 70 | Settings: profile, avatar, payout address, this device, serve as node, room passphrase, import tokens, orgs, membership, ads, appearance, legal |
 | 71 | Telemetry screen and strip, log categories |
 | 72 | Performance monitor, debug overlay, stall log |
-| 73 | Bug report button and sheet (`POST /api/bug-reports`); admins' Reported tab with triage and attachments (`/api/bug-reports/inbox`) |
+| 73 | Bug report button and sheet (`POST /api/bug-reports`); admins' Reported tab with triage and attachments (`/api/bug-reports/inbox`); everyone else's My reports tab with status and Confirm it's fixed (`/api/bug-reports/mine`) |
 | 74 | Trust lists v1 resolver (core library) |
 | 75 | Accessibility labels |
 | 76 | Privacy manifest |
@@ -110,32 +111,8 @@ widgets, the share extension and Live Activities belong to
 
 ### 1.1 Theme rules
 
-- **Contrast.** Every light-mode text colour clears WCAG AA (4.5:1) on
-  `bgBase`, `bgRaised` and `bgOverlay` and inside its own 11% status-badge
-  tint. `FmColors.swift` and `ForkMeshTheme.kt` carry the same values:
-  `textSecondary` 72%, `textTertiary` 60%, `success` `#0F7A3B`, `warning`
-  `#8F5A0A`, `offline` `#5F6672` (`offlineOnLight`, light only).
-  `textDisabled` stays 25%. Accents suit buttons and larger text, not small
-  captions.
-- **Accents and themes.** Twelve accents (blue, cyan, teal, green, lime,
-  amber, orange, red, pink, violet, purple, graphite) or a custom colour,
-  stored by name in `appearance/accent`; unknown names fall back to blue.
-  Every preset clears 4.5:1 on `bgBase`, `bgRaised` and `bgOverlay` (the
-  default blue is `#0066CC` light, `#409CFF` dark since October 2026), under
-  white labels in light mode and the near-black `onPrimary` label in dark.
-  Surface families, the readable-colours rule, Shuffle and the per-colour
-  theme editor are in [THEMES.md](THEMES.md).
-- **Background image (iOS).** Downscaled to 2800 px, saved as JPEG in
-  Application Support `wallpapers/`, named in `appearance/backgroundImage`;
-  `appearance/backgroundDim` (0 to 90%, default 40%) lays `bgBase` over it.
-  `FmWallpaperBackdrop` draws it once behind `AppHomeView`. With a picture,
-  `fm.canvas` is clear (otherwise `bgBase`); pages paint `fm.canvas`;
-  `listSurface` drops to 60%; reading surfaces use `readingSurface` and
-  `readingGutter`; terminals paint `terminalSurface` (terminal black at 80%).
-  Bars, inputs, chips, sheets, cards and covers keep solid fills. Every pushed
-  page gets the clear navigation container through `shellPageClearance()` or
-  `shellDock` (iOS 18 and later). A conversation's own background wins over the
-  app background. Android has the accents but not the background image.
+Contrast, accents, surface families, the theme editor and the background
+image are in [THEMES.md](THEMES.md).
 
 ## 2. Platform limits and decisions
 
@@ -195,150 +172,120 @@ preference keys go to the active project's namespace; everything else is
 shared. Relay switching lives in `NIC/FMChat/Relay/`; the switcher is
 `NI/ForkMesh/Kit/ProjectSwitcher.swift`.
 
-Chat is per project (fixed 2026-10-21). The chat services outlive a switch,
-so before this an instance added to a project showed every other project's
-channels: `RelayService.resetForRelaySwitch` kept the channel list (and sent
-it to the new instance in its hello), private rooms and direct messages kept
-their sockets and lists, and a pending history save could write one project's
-chat into another's file. Now a switch (or attaching an instance) runs, in
-order:
+Chat is per project. The chat services outlive a switch, so a switch (or
+attaching an instance) clears and reloads them explicitly; otherwise one
+project's channels, rooms and history leak into the next:
 
 1. `ChatHub.leaveProject()` from the controller's `onSuspend`
-   (`AppServices+Chat.swift`): saves the project being left to its own
-   history file, stops further saves, and clears threads, private and hidden
-   channels (`ChatExtras.resetForProjectSwitch`), private rooms
+   (`AppServices+Chat.swift`) saves the project being left to its own history
+   file, stops further saves, and clears threads, private and hidden channels
+   (`ChatExtras.resetForProjectSwitch`), private rooms
    (`OfficeChannelService.clear`), direct messages
-   (`DirectMessageService.clear`) and read marks; the workspace (drafts,
-   saved items, mutes) is unbound until step 3. A generation
-   counter drops any answer from the old instance that arrives later.
-2. `RelayService.resetForRelaySwitch()`: also clears the channel list, the
-   open conversation, unread counts, seen ids and the member's own status.
-3. `ProjectRuntime.forgetPreviousProject` calls `ChatHub.enterProject` with
-   the new project's `ChatWorkspace` and `ChannelGroupsStore`, before the
-   view tree is rebuilt, and loads only that project's history. Attaching an
-   instance (no `activate`) enters from `onResume` instead.
+   (`DirectMessageService.clear`) and read marks; the workspace (drafts, saved
+   items, mutes) is unbound until step 3. A generation counter drops late
+   answers from the old instance.
+2. `RelayService.resetForRelaySwitch()` also clears the channel list, the open
+   conversation, unread counts, seen ids and the member's own status.
+3. `ProjectRuntime.forgetPreviousProject` calls `ChatHub.enterProject` with the
+   new project's `ChatWorkspace` and `ChannelGroupsStore` before the view tree
+   is rebuilt, and loads only that project's history. Attaching an instance (no
+   `activate`) enters from `onResume`.
 
-The LAN mesh room (`#mesh`) is the same room for every nearby device, but
-since 2026-10-22 each project keeps its own copy of it: `ChatHub.leaveProject`
-stops the mesh (`LocalMeshService.leaveProject`, which forgets its messages,
-peers, bundles and seal) and `enterProject` starts it again if it was running,
-with that project's history file (`defaultMeshHistoryFile(project:)`) and a
-trust scope that names the project (`meshSealScope`). Before, one
-`local_mesh_history.json` and a seal built once at `start()` carried one
-project's #mesh into the next. `ProjectChatIsolationTests` covers the switch,
-and since 2026-10-21 also private rooms and direct messages across a switch;
-`LocalMeshRoomTests.testAProjectSwitchRestartsTheMeshWithItsOwnHistoryAndKeys`
-covers the mesh.
+The LAN mesh room (`#mesh`) is one room for every nearby device, but each
+project keeps its own copy: `leaveProject` stops the mesh
+(`LocalMeshService.leaveProject` forgets messages, peers, bundles and seal) and
+`enterProject` restarts it if it was running, with that project's history file
+(`defaultMeshHistoryFile(project:)`) and a trust scope naming the project
+(`meshSealScope`). Tests: `ProjectChatIsolationTests`,
+`LocalMeshRoomTests.testAProjectSwitchRestartsTheMeshWithItsOwnHistoryAndKeys`.
 
-The relay `hello` (still 2026-10-21): the iPhone listed every channel it knew
-in its `hello` and its replies, private ones included, and took every channel
-a peer listed, even one it had hidden. So one project's private channel names
-reached every device in the room, and came back into other projects and
-devices from there. It now leaves out private, hidden and `#office/` channels
-(`RelayService.advertisedChannels`, as the desktop's `ServerNode::sendHello`
-leaves out private ones) and adopts only `#` channels it has not hidden.
+The relay `hello` leaves out private, hidden and `#office/` channels
+(`RelayService.advertisedChannels`, like the desktop's
+`ServerNode::sendHello`), and the phone adopts only `#` channels it has not
+hidden, so private channel names never reach other devices. Every relay frame
+that names one person in `to` (a `hello` reply aside) is sealed to that
+person's keys (`RelayService.directRecipient`).
 
-Addressed frames and private frames (2026-10-22): every relay frame that
-names one person in `to` (a `hello` reply aside) is sealed to that person's
-keys (`RelayService.directRecipient`). The same day the iPhone took the relay
-hardening ([chat-relay-hardening.md](../app/chat-relay-hardening.md)), which
-replaced the `RelayService.acceptsPrivate` filter and relay private channels:
+Relay hardening ([chat-relay-hardening.md](../app/chat-relay-hardening.md);
+threat model: [threat-model.md](../protocol/threat-model.md)):
 
 - R1: open-room bundles carry `nsig` by the node key (`RoomSeal.bundle`,
   `verifyNodeBinding`); `RelayService`, `OfficeChannelService` (through
-  `RoomSealCache`) and `#mesh` pass the device `Identity` to `RoomSeal`, and
-  an open room drops a bundle without a valid `nsig` and a stored sender whose
+  `RoomSealCache`) and `#mesh` pass the device `Identity` to `RoomSeal`, and an
+  open room drops a bundle without a valid `nsig` and a stored sender whose
   node is not a 32-byte key. Vector test: `RoomSealNodeBindingVectorTests`.
 - R2: `ChatFrameText.isRelayAllowed` refuses `dm`, `@` conversations,
   `private`, `invite`, `cove-invite` and `cove-open` both ways
   (`RelayService.sendUntracked` and `handle`). "Message" on a person
-  (`ChatHub.canMessage` / `message`, the person sheet, the roster row) opens
-  the server DM for their verified account and is hidden for guests; any
-  `@peer` selection is resolved to that DM or refused. New private channels
-  were already `OfficeChannelService.create`; the relay invite sheet is gone.
-  Cove invites go as a server DM (`ChatHub.sendDirectNote`, `CovesFeature`);
-  cove-open notices are not sent. On load `ChatHistorySnapshot.withoutRelayPrivate`
-  drops `@peer` and relay private history with its threads, reactions,
-  stickers, edits and looks, and the workspace forgets those conversations.
-  Notification quick replies to a person go to the server DM
+  (`ChatHub.canMessage` / `message`) opens the server DM for their verified
+  account and is hidden for guests; any `@peer` selection resolves to that DM
+  or is refused. Private channels are `OfficeChannelService.create`; cove
+  invites go as a server DM (`ChatHub.sendDirectNote`); cove-open notices are
+  not sent. On load `ChatHistorySnapshot.withoutRelayPrivate` drops `@peer` and
+  relay private history with its threads, reactions, stickers, edits and
+  looks. Notification quick replies to a person go to the server DM
   (`ChatReplySender`).
-- R3: every person frame is sealed, public channel chat included, in relay
-  and Office rooms; an unsealed frame is taken only when the envelope has
-  `srv: true`, only as a `chat`, and shown as `app:<name>`
-  (`ChatFrameText.integrationFrame`; push previews likewise). Deletes need a
-  known target by the same sender, a peer's `history` frame may replay only
-  its own messages, and a `bot` name that looks like a node key is ignored.
-- R4: `ChatNodeOwners` asks `/api/chat/node-owner` (an hour per node, a
+- R3: every person frame is sealed, public channel chat included, in relay and
+  Office rooms; an unsealed frame is taken only with `srv: true`, only as a
+  `chat`, shown as `app:<name>` (`ChatFrameText.integrationFrame`; push
+  previews likewise). Deletes need a known target by the same sender, a peer's
+  `history` frame may replay only its own messages, and a `bot` name that looks
+  like a node key is ignored.
+- R4: `ChatNodeOwners` asks `/api/chat/node-owner` (cached an hour per node, a
   failure retried after a minute); `RelayService` and `OfficeChannelService`
-  (one shared cache) hold a claiming node's frames until the answer, then
-  show them under the account or as `Guest ####` with no `ownerUser`. In an
-  Office room the claim is the frame's `ownerUser`, else the sealed bundle's
-  `acct`. Push previews name only what the app verified: the app mirrors each
-  answer and each direct conversation's other account into one item of the
-  push keychain group (`PushVerifiedNames`, at most 256 nodes); a sender the
-  extension finds there is named, anyone else is "New message" in a direct
-  message and just the channel name in a channel, and the portrait is fetched
-  for the verified account only.
-- Bot lines: a sealed frame with a `bot` field (anyone can set one) shows as
-  `<bot> · via <verified account or Guest ####>` (`ChatFrameText.asBotLine`,
-  relay, Office and push previews), so nobody can post as ForkBot. Its
-  sender id stays the bot's, so ForkBot context and member lists still skip it.
-- Webhooks: unsealed `srv: true` chat frames are taken in every server
-  channel room, public, private or notices, live and in `loadHistory`, never
-  in a direct message; a frame with `serverVisible` shows a small
-  "server-visible" marker (`ChatMessage.serverVisible`, kept in history).
+  (one shared cache) hold a claiming node's frames until the answer, then show
+  them under the account or as `Guest ####`. In an Office room the claim is the
+  frame's `ownerUser`, else the sealed bundle's `acct`. Push previews name only
+  verified senders: the app mirrors each answer and each direct conversation's
+  other account into the push keychain group (`PushVerifiedNames`, at most 256
+  nodes); anyone else is "New message" in a DM and just the channel name in a
+  channel, and the portrait is fetched for verified accounts only.
+- Bot lines: a sealed frame with a `bot` field shows as `<bot> · via <verified
+  account or Guest ####>` (`ChatFrameText.asBotLine`), so nobody can post as
+  ForkBot. Its sender id stays the bot's, so ForkBot context and member lists
+  still skip it.
+- Webhooks: unsealed `srv: true` chat frames are taken in every server channel
+  room, live and in `loadHistory`, never in a DM; a frame with `serverVisible`
+  shows a "server-visible" marker (`ChatMessage.serverVisible`).
 - R5: `ChatHub.setBlocked` pushes `PUT /api/chat/blocks`; `syncBlocks` merges
   `GET /api/chat/blocks` at sign-in (`directSessionChanged`).
-- R7: hello and presence carry no `timeZone`; the iPhone never sent a Solana
-  address, host name or `dg`. `#mesh`: bundles carry `acct` = node id and
-  frames no `ownerUser`; the frame's `sender` is a display name the user set
-  that differs from the account, else `Guest ####` (sign-in sets the display
-  name to the account name, so sending it would name the account anyway); a newly seen key gets only this device's queued
-  messages (never delivered to anyone) and frames already sealed to that key,
-  not a fresh seal of earlier history; the beacon `id` is random, renewed at
-  `start()` and `networkChanged()`, and peers heard by beacon are matched to a
-  key only once a link to that address authenticates (`MeshHeard`), so the
-  desktop control node comes from the authenticated hello, not the beacon; the
-  mesh wake token is gone (it was an account index good for a week, handed to
-  every stranger nearby, and let any of them make the phone ring;
-  own devices get relay pushes anyway); the room shows "Anyone nearby with
-  ForkMesh open can read #mesh."
-- Link previews: in shared rooms (relay rooms, `#mesh`, public Office
-  channels) another person's link shows "Show preview of <host>" and is
-  fetched only on a tap, since a fetch tells the site this phone's address;
-  own messages, direct messages and private channels load as before
-  (`ChatHub.autoLoadsLinkPreviews`). Every fetch and every redirect hop goes
-  through `ChatLinkGuardedHTTP`, which resolves the host and refuses it unless
-  every address is public (IPv4 and IPv6, mapped, NAT64 and 6to4 forms
-  checked by their embedded IPv4). URLSession resolves again, so a rebinding
-  name could still differ between the two lookups. The cache is one file per
-  project (`ChatLinkPreviewService.fileName(project:)`), cleared from memory
-  on a switch.
-- Chat history files (`ChatHistoryStore`, the mesh history) are written with
-  `.completeFileProtectionUnlessOpen`: unreadable while the phone is locked,
-  yet a write in the background (a call, a notification reply) still
-  succeeds because an atomic write creates a new file. A read that fails
-  while locked blocks writes to that file until it reads again.
-- Calls: a VoIP ring push's `caller` field is ignored; CallKit shows
-  "ForkMesh call" until the sealed invite names the partner
-  (`DirectCallRingPush`).
+- R7: hello and presence carry no `timeZone`, Solana address, host name or
+  `dg`. `#mesh`:
+  - bundles carry `acct` = node id and frames no `ownerUser`; `sender` is a
+    display name that differs from the account, else `Guest ####` (sign-in sets
+    the display name to the account name);
+  - a newly seen key gets only this device's undelivered queued messages and
+    frames already sealed to it, never a fresh seal of earlier history;
+  - the beacon `id` is random, renewed at `start()` and `networkChanged()`, and
+    a peer heard by beacon is matched to a key only once a link to that address
+    authenticates (`MeshHeard`), so the desktop control node comes from the
+    authenticated hello;
+  - there is no mesh wake token (it let any stranger nearby make the phone
+    ring); the room says "Anyone nearby with ForkMesh open can read #mesh."
+- Link previews: in shared rooms (relay rooms, `#mesh`, public Office channels)
+  another person's link shows "Show preview of <host>" and is fetched only on a
+  tap, since a fetch reveals the phone's address; own messages, DMs and private
+  channels load automatically (`ChatHub.autoLoadsLinkPreviews`). Every fetch
+  and redirect hop goes through `ChatLinkGuardedHTTP`, which refuses a host
+  unless every resolved address is public (IPv4, IPv6, mapped, NAT64 and 6to4
+  forms checked by their embedded IPv4). URLSession resolves again, so a
+  rebinding name could still differ between lookups. The cache is one file per
+  project (`ChatLinkPreviewService.fileName(project:)`).
+- Chat history files (`ChatHistoryStore`, the mesh history) use
+  `.completeFileProtectionUnlessOpen`: unreadable while locked, yet a
+  background write (a call, a notification reply) succeeds because an atomic
+  write creates a new file. A read that fails while locked blocks writes to
+  that file until it reads again.
+- Calls: a VoIP ring push's `caller` field is ignored; CallKit shows "ForkMesh
+  call" until the sealed invite names the partner (`DirectCallRingPush`).
 
-Android (2026-10-22) first fixed the same two leaks in `RelayRoom.kt`
-(advertised channels, frames with `to` sealed to the recipient), then took
-the relay hardening ([chat-relay-hardening.md](../app/chat-relay-hardening.md)):
-the relay no longer carries `dm`, `@peer`, `private`, `invite` or cove
-frames at all (`RelayFrames.isPrivate`), so `acceptsPrivate` and relay private
-channels are gone and saved `@peer` and relay private history is dropped on
-load; open-room bundles carry `nsig`; every person frame is sealed and only
-`srv: true` frames may arrive unsealed; account names are checked with
-`/api/chat/node-owner`; blocks sync with `/api/chat/blocks`; and `#mesh`
-sends no account and re-seals nothing. Details:
-[ANDROID.md](ANDROID.md) section 35.
+Android has the same rules (`RelayRoom.kt`, `RelayFrames.isPrivate`; details
+in [ANDROID.md](ANDROID.md) section 35) and rebuilds its whole chat graph per
+project (`ProjectLifecycle.close`, `Features.install`).
 
 The Inbox's local chat pings (`inbox/local-pings.v1`) are a per-project
-preference key and reload on a switch (`LocalPingLog.reload`), and removing a
-project erases its chat history file (`ChatHistoryStore.eraseProject`). Android rebuilds its whole chat graph per project
-(`ProjectLifecycle.close`, `Features.install`), so it never had this leak.
+preference key and reload on a switch (`LocalPingLog.reload`); removing a
+project erases its chat history file (`ChatHistoryStore.eraseProject`).
 
 ### WS2: Push, pings and code-push
 
@@ -408,7 +355,8 @@ native section of `codemagic.yaml`.
 - **One channel, two transports.** The LAN local control channel
   (`desktop/src/LocalControl.h`) also rides the relay: the phone holds a
   browser-role account event socket, the desktop its node-role socket, and the
-  per-owner `ForkMeshNodes` object forwards `{"type":"control"}` chunks
+  per-owner `ForkMeshNodes` object (`durable.py` on the cores) forwards
+  `{"type":"control"}` chunks
   (`app/src/node_control.py`, advertised as `relays: ["terminal", "control"]`,
   metered on its own window). The same hello, welcome, signed transcripts and
   AES-256-GCM frames run inside, so the relay sees only ciphertext. A phone
@@ -536,7 +484,7 @@ are separate from the phone's viewed marks ([DIFF_REVIEW.md](DIFF_REVIEW.md)).
 
 The watch app has its own `NewAgentIntent` (`ForkMeshWatch/NewAgentIntent.swift`)
 and `AppShortcutsProvider`, since Siri on the watch runs the watch app's
-intents. User guide: `www/docs/mobile/siri.md`.
+intents. User guide: `docs/mobile/siri.md`.
 
 1. Siri asks for the prompt and reads it back for confirmation.
 2. The intent opens the watch app (`openAppWhenRun`);

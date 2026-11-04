@@ -458,7 +458,7 @@ QString TerminalWidget::plainText() const
 
 void TerminalWidget::scanForSignInUrl(const QByteArray &chunk)
 {
-    if (m_signInUrlEmitted)
+    if (!m_opensSignInLinks || m_signInUrlEmitted)
         return;
     m_urlScanBuffer.append(chunk);
     constexpr int kMaxScan = 8192;

@@ -1,8 +1,9 @@
 # Herald and the ready X post
 
-The X channel always has a post ready to go, written by a special agent from
-past posts and their engagement, open campaigns and the marketing plan, with
-an image, for a person to copy or post.
+Part of [Marketing](README.md). The X channel always has a post ready to go,
+written by a special agent from past posts and their engagement, open
+campaigns and the marketing plan, with an image, for a person to copy or
+post.
 
 | Piece | Path |
 | --- | --- |

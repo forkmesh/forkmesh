@@ -2,7 +2,7 @@
 
 // forkmesh-conformance-adapter-v1 adapter for the WebCrypto collaboration
 // library (app/public/collaboration.js). One JSON request per stdin line, one
-// JSON response per stdout line; see www/docs/protocol/certification.md.
+// JSON response per stdout line; see docs/protocol/certification.md.
 
 if (!globalThis.crypto) {
   globalThis.crypto = require("node:crypto").webcrypto;

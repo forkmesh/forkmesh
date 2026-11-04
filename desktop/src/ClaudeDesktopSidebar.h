@@ -24,7 +24,10 @@ struct DesktopSection {
     QString id;
     QString kind;
     QString name;
+    QString groupBy;
+    bool ascending = false;
     QStringList members;
+    bool keepEmpty = false;
 };
 
 struct DesktopIndex {

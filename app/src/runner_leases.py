@@ -40,7 +40,7 @@ Endpoints (all JSON, ``Cache-Control: no-store``):
     caller holds that job's current runner lease.
 
 ``POST /api/runners/security-incident``
-    Runner-signed. The runner's root IDS (deploy/core/ids.py, docs/IDS.md)
+    Runner-signed. The runner's root IDS (deploy/core/ids.py, docs/operations/intrusion-detection.md)
     reports an incident ``{severity, detector, summary, detail}``; it is
     recorded in ``security_incidents`` (the core hosts page the admins,
     forkmesh_host.ids_alerts). ``severity: "lockdown"`` also revokes the
@@ -871,7 +871,7 @@ async def _stream(runtime, runner, data):
     return runtime.response(body, status)
 
 
-# --- intrusion detection (docs/IDS.md) ------------------------------------
+# --- intrusion detection (docs/operations/intrusion-detection.md) ------------------------------------
 
 INCIDENT_SEVERITIES = ("info", "alert", "lockdown", "test")
 INCIDENTS_PER_HOUR = 30
@@ -1206,6 +1206,18 @@ class WorkerRuntime:
 
     async def notify(self, account, topic):
         await notify_account_event(self.env, account, topic)  # noqa: F821
+
+    async def notify_actions(self, kind, owner, repo, title, body, href,
+                             dedupe, meta):
+        pings = 0
+        for recipient in await _org_fanout_recipients(  # noqa: F821
+                self.env, owner, repo):
+            if await enqueue_notification(  # noqa: F821
+                    self.env, recipient, kind, title, body=body,
+                    repo=owner + "/" + repo, href=href, source="actions",
+                    dedupe=dedupe, ts=self.now(), meta=meta):
+                pings += 1
+        return pings
 
     async def alert_runner_auth(self, runner, provider, state, title, body,
                                 href, dedupe, email=False, extra=(),

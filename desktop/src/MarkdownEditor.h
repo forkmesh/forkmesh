@@ -3,6 +3,10 @@
 #include <QStringList>
 #include <QWidget>
 
+#include <functional>
+
+class MarkdownLiveHighlighter;
+class PromptSpellCheckHighlighter;
 class QKeyEvent;
 class QListWidget;
 class QPlainTextEdit;
@@ -36,10 +40,24 @@ public:
     QPlainTextEdit *sourceEdit() const { return m_source; }
     void showWriteArea();
     void showPreviewArea();
+    void setLiveAvailable(bool available);
+    void showLiveArea();
+    bool liveShown() const { return m_live; }
+    std::function<void()> modeChanged;
+
+signals:
+    void sourceEdited();
+
+public:
     void addImageFile(const QString &path);
     void clearPendingAttachments();
 
     void setMentionCandidates(const QStringList &names);
+
+    using PreviewSource = std::function<QString(const QString &)>;
+    using PreviewFinish = std::function<void(QTextBrowser *)>;
+    void setPreviewHooks(PreviewSource source, PreviewFinish finish);
+    void refreshPreview();
 
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
@@ -47,6 +65,9 @@ protected:
 private:
     void showWrite();
     void showPreview();
+    void showLive();
+    void setLiveStyling(bool on);
+    void setTabs(QPushButton *checked);
     void wrapSelection(const QString &left, const QString &right);
     void chooseImage();
     bool pasteImageFromClipboard();
@@ -62,9 +83,16 @@ private:
     QStackedWidget *m_stack = nullptr;
     QPushButton *m_writeTab = nullptr;
     QPushButton *m_previewTab = nullptr;
+    QPushButton *m_liveTab = nullptr;
+    PromptSpellCheckHighlighter *m_spell = nullptr;
+    MarkdownLiveHighlighter *m_liveHighlighter = nullptr;
+    bool m_live = false;
+    QString m_lastText;
     QStringList m_attachments;
     QStringList m_attachmentPlaceholders;
     QString m_basePath;
+    PreviewSource m_previewSource;
+    PreviewFinish m_previewFinish;
 
     QStringList m_mentionCandidates;
     QListWidget *m_mentionPopup = nullptr;

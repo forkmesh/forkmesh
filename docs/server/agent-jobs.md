@@ -1,8 +1,8 @@
 # Agent jobs on mirror nodes
 
 How a mirror runs the Claude Code, Codex and Gemma sessions the website (or a
-desktop's **To cloud**) queues for it. Operator view:
-[mirror-node.md, "Running website agent jobs"](../../www/docs/operations/mirror-node.md#running-website-agent-jobs).
+desktop's **To cloud**) queues for it. Part of [the Go daemon docs](README.md). Operator view:
+[mirror-node.md, "Running website agent jobs"](../operations/mirror-node.md#running-website-agent-jobs).
 Code: `server/agents.go`, `agent_errors.go`, `agent_attachments.go`,
 `agent_live.go`, `agent_workspace.go`, `sandbox.go`, `jobhome.go`,
 `terminal.go`.
@@ -12,7 +12,7 @@ Code: `server/agents.go`, `agent_errors.go`, `agent_attachments.go`,
 1. **Advertise.** `CatalogPublisher.agentProviders()` lists `claude`/`codex`
    when found on `PATH`, plus `local-llama` (Gemma) when `codex` and `ollama`
    are, unless `disableAgentJobs` is set.
-2. **Wake.** The relay pushes an `org-agents` event on the node socket; a
+2. **Wake.** The App pushes an `org-agents` event on the node socket; a
    5-minute safety read (`agentJobSafetyCheck`) covers a lost push.
 3. **Claim.** Up to 8 jobs per repository per read (`agentJobClaimsPerRepo`)
    over the node-signed `org-agent-jobs` lease.
@@ -71,7 +71,7 @@ and ignored. Gemma models come from `marketplace/packages/gemma-4`
 The agent still runs as the node's user and can open the node key by path; a
 mirror cannot switch users because session clones share objects with the
 served repositories. Untrusted owners belong on a runner
-([../RUNNERS.md](../RUNNERS.md)). Tests: `server/sandbox_test.go`.
+([runners](../operations/runners.md)). Tests: `server/sandbox_test.go`.
 
 ## Error reporting
 
@@ -127,4 +127,4 @@ fresh folder per job instead. Tests: `server/agent_workspace_test.go`.
 
 ## Related
 
-- [Agent runs](../agents/README.md), [server/README.md](README.md)
+- [Agent runs](../agents/README.md), [Actions on runners](actions.md#on-a-runner-when-the-desktop-is-offline)

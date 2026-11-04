@@ -1,0 +1,147 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720" role="img" aria-labelledby="t">
+  <title id="t">The Spreadsheets editor with a menu bar, formatting toolbar, formula bar, a budget sheet with a bold blue header, a column chart and sheet tabs</title>
+  <rect width="1280" height="720" fill="#0f1115"/>
+  <rect x="32" y="32" width="1216" height="656" rx="16" fill="#171a21" stroke="#2a2f3a"/>
+  <text x="64" y="76" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="22" font-weight="600" fill="#f4f5f7">Household budget 2026</text>
+  <text x="360" y="76" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#9aa3b2">All changes saved</text>
+  <g font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" fill="#c9d1d9"><text x="64" y="106">File</text><text x="126" y="106">Edit</text><text x="188" y="106">View</text><text x="250" y="106">Insert</text><text x="312" y="106">Format</text><text x="374" y="106">Data</text><text x="436" y="106">Help</text></g>
+  <rect x="56" y="118" width="1168" height="36" rx="8" fill="#1e222b" stroke="#2a2f3a"/>
+  <rect x="72" y="128" width="22" height="16" rx="4" fill="#2c323d"/>
+  <rect x="102" y="128" width="22" height="16" rx="4" fill="#2c323d"/>
+  <rect x="132" y="128" width="22" height="16" rx="4" fill="#2c323d"/>
+  <rect x="162" y="128" width="22" height="16" rx="4" fill="#2c323d"/>
+  <rect x="196" y="126" width="1" height="20" fill="#2a2f3a"/>
+  <rect x="204" y="128" width="44" height="16" rx="4" fill="#2c323d"/>
+  <rect x="260" y="126" width="1" height="20" fill="#2a2f3a"/>
+  <rect x="268" y="128" width="22" height="16" rx="4" fill="#2c323d"/>
+  <rect x="298" y="128" width="22" height="16" rx="4" fill="#2c323d"/>
+  <rect x="328" y="128" width="22" height="16" rx="4" fill="#2c323d"/>
+  <rect x="358" y="128" width="22" height="16" rx="4" fill="#2c323d"/>
+  <rect x="392" y="126" width="1" height="20" fill="#2a2f3a"/>
+  <rect x="400" y="128" width="100" height="16" rx="4" fill="#2c323d"/>
+  <rect x="508" y="128" width="40" height="16" rx="4" fill="#2c323d"/>
+  <rect x="560" y="126" width="1" height="20" fill="#2a2f3a"/>
+  <rect x="568" y="128" width="22" height="16" rx="4" fill="#2c323d"/>
+  <rect x="598" y="128" width="22" height="16" rx="4" fill="#2c323d"/>
+  <rect x="628" y="128" width="22" height="16" rx="4" fill="#2c323d"/>
+  <rect x="658" y="128" width="22" height="16" rx="4" fill="#2c323d"/>
+  <rect x="688" y="128" width="22" height="16" rx="4" fill="#2c323d"/>
+  <rect x="722" y="126" width="1" height="20" fill="#2a2f3a"/>
+  <rect x="730" y="128" width="22" height="16" rx="4" fill="#2c323d"/>
+  <rect x="760" y="128" width="22" height="16" rx="4" fill="#2c323d"/>
+  <rect x="790" y="128" width="22" height="16" rx="4" fill="#2c323d"/>
+  <rect x="824" y="126" width="1" height="20" fill="#2a2f3a"/>
+  <rect x="832" y="128" width="22" height="16" rx="4" fill="#2c323d"/>
+  <rect x="862" y="128" width="22" height="16" rx="4" fill="#2c323d"/>
+  <rect x="892" y="128" width="22" height="16" rx="4" fill="#2c323d"/>
+  <rect x="926" y="126" width="1" height="20" fill="#2a2f3a"/>
+  <rect x="934" y="128" width="72" height="16" rx="4" fill="#2c323d"/>
+  <text x="954" y="141" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#58a6ff">Ask AI</text>
+  <rect x="56" y="162" width="1168" height="30" rx="6" fill="#11141a" stroke="#2a2f3a"/>
+  <text x="70" y="182" font-family="Menlo, monospace" font-size="13" fill="#c9d1d9">C8</text>
+  <rect x="130" y="162" width="1" height="30" fill="#2a2f3a"/>
+  <text x="142" y="182" font-family="Georgia, serif" font-style="italic" font-size="13" fill="#9aa3b2">fx</text>
+  <text x="172" y="182" font-family="Menlo, monospace" font-size="13" fill="#c9d1d9">=SUM(C2:C6)</text>
+  <rect x="56" y="200" width="680" height="324" fill="#0d1117"/>
+  <rect x="56" y="200" width="680" height="24" fill="#161b22"/>
+  <text x="187.0" y="216" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#8b949e">A</text>
+  <rect x="271" y="200" width="1" height="324" fill="#21262d"/>
+  <text x="332.0" y="216" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#8b949e">B</text>
+  <rect x="391" y="200" width="1" height="324" fill="#21262d"/>
+  <text x="452.0" y="216" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#8b949e">C</text>
+  <rect x="511" y="200" width="1" height="324" fill="#21262d"/>
+  <text x="572.0" y="216" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#8b949e">D</text>
+  <rect x="631" y="200" width="1" height="324" fill="#21262d"/>
+  <text x="682.0" y="216" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#8b949e">E</text>
+  <rect x="731" y="200" width="1" height="324" fill="#21262d"/>
+  <rect x="56" y="224" width="46" height="30" fill="#161b22"/>
+  <text x="79" y="243" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#8b949e">1</text>
+  <rect x="56" y="253" width="680" height="1" fill="#21262d"/>
+  <rect x="102" y="224" width="530" height="29" fill="#1f4e99"/>
+  <text x="110" y="243" text-anchor="start" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#ffffff">Category</text>
+  <text x="280" y="243" text-anchor="start" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#ffffff">Jan</text>
+  <text x="400" y="243" text-anchor="start" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#ffffff">Feb</text>
+  <text x="520" y="243" text-anchor="start" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#ffffff">Mar</text>
+  <rect x="56" y="254" width="46" height="30" fill="#161b22"/>
+  <text x="79" y="273" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#8b949e">2</text>
+  <rect x="56" y="283" width="680" height="1" fill="#21262d"/>
+  <text x="110" y="273" text-anchor="start" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#e6edf3">Rent</text>
+  <text x="384" y="273" text-anchor="end" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#e6edf3">1,450.00</text>
+  <text x="504" y="273" text-anchor="end" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#e6edf3">1,450.00</text>
+  <text x="624" y="273" text-anchor="end" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#e6edf3">1,450.00</text>
+  <rect x="56" y="284" width="46" height="30" fill="#161b22"/>
+  <text x="79" y="303" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#8b949e">3</text>
+  <rect x="56" y="313" width="680" height="1" fill="#21262d"/>
+  <text x="110" y="303" text-anchor="start" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#e6edf3">Groceries</text>
+  <text x="384" y="303" text-anchor="end" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#e6edf3">612.40</text>
+  <text x="504" y="303" text-anchor="end" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#e6edf3">588.15</text>
+  <text x="624" y="303" text-anchor="end" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#e6edf3">640.90</text>
+  <rect x="56" y="314" width="46" height="30" fill="#161b22"/>
+  <text x="79" y="333" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#8b949e">4</text>
+  <rect x="56" y="343" width="680" height="1" fill="#21262d"/>
+  <text x="110" y="333" text-anchor="start" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#e6edf3">Transport</text>
+  <text x="384" y="333" text-anchor="end" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#e6edf3">180.00</text>
+  <text x="504" y="333" text-anchor="end" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#e6edf3">205.50</text>
+  <text x="624" y="333" text-anchor="end" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#e6edf3">168.25</text>
+  <rect x="56" y="344" width="46" height="30" fill="#161b22"/>
+  <text x="79" y="363" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#8b949e">5</text>
+  <rect x="56" y="373" width="680" height="1" fill="#21262d"/>
+  <text x="110" y="363" text-anchor="start" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#e6edf3">Utilities</text>
+  <text x="384" y="363" text-anchor="end" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#e6edf3">240.10</text>
+  <text x="504" y="363" text-anchor="end" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#e6edf3">221.75</text>
+  <text x="624" y="363" text-anchor="end" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#e6edf3">198.60</text>
+  <rect x="56" y="374" width="46" height="30" fill="#161b22"/>
+  <text x="79" y="393" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#8b949e">6</text>
+  <rect x="56" y="403" width="680" height="1" fill="#21262d"/>
+  <text x="110" y="393" text-anchor="start" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#e6edf3">Savings</text>
+  <text x="384" y="393" text-anchor="end" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#e6edf3">500.00</text>
+  <text x="504" y="393" text-anchor="end" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#e6edf3">650.00</text>
+  <text x="624" y="393" text-anchor="end" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#e6edf3">700.00</text>
+  <rect x="56" y="404" width="46" height="30" fill="#161b22"/>
+  <text x="79" y="423" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#8b949e">7</text>
+  <rect x="56" y="433" width="680" height="1" fill="#21262d"/>
+  <text x="110" y="423" text-anchor="start" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#e6edf3"></text>
+  <text x="384" y="423" text-anchor="end" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#e6edf3"></text>
+  <text x="504" y="423" text-anchor="end" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#e6edf3"></text>
+  <text x="624" y="423" text-anchor="end" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#e6edf3"></text>
+  <rect x="56" y="434" width="46" height="30" fill="#161b22"/>
+  <text x="79" y="453" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#8b949e">8</text>
+  <rect x="56" y="463" width="680" height="1" fill="#21262d"/>
+  <rect x="102" y="434" width="530" height="29" fill="#1d2633"/>
+  <text x="110" y="453" text-anchor="start" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#e6edf3">Total</text>
+  <text x="384" y="453" text-anchor="end" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#e6edf3">2,982.50</text>
+  <text x="504" y="453" text-anchor="end" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#e6edf3">3,115.40</text>
+  <text x="624" y="453" text-anchor="end" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#e6edf3">3,157.75</text>
+  <rect x="56" y="464" width="46" height="30" fill="#161b22"/>
+  <text x="79" y="483" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#8b949e">9</text>
+  <rect x="56" y="493" width="680" height="1" fill="#21262d"/>
+  <rect x="56" y="494" width="46" height="30" fill="#161b22"/>
+  <text x="79" y="513" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#8b949e">10</text>
+  <rect x="56" y="523" width="680" height="1" fill="#21262d"/>
+  <rect x="392" y="434" width="120" height="30" fill="none" stroke="#2f81f7" stroke-width="2"/>
+  <rect x="760" y="200" width="464" height="324" rx="10" fill="#1e222b" stroke="#2a2f3a"/>
+  <text x="780" y="228" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#f4f5f7">Spending by month</text>
+  <rect x="810" y="290" width="24" height="190" rx="3" fill="#4285F4"/>
+  <rect x="940" y="290" width="24" height="190" rx="3" fill="#4285F4"/>
+  <rect x="1070" y="290" width="24" height="190" rx="3" fill="#4285F4"/>
+  <rect x="840" y="400" width="24" height="80" rx="3" fill="#EA4335"/>
+  <rect x="970" y="403" width="24" height="77" rx="3" fill="#EA4335"/>
+  <rect x="1100" y="396" width="24" height="84" rx="3" fill="#EA4335"/>
+  <rect x="870" y="414" width="24" height="66" rx="3" fill="#FBBC04"/>
+  <rect x="1000" y="395" width="24" height="85" rx="3" fill="#FBBC04"/>
+  <rect x="1130" y="388" width="24" height="92" rx="3" fill="#FBBC04"/>
+  <text x="855" y="500" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#9aa3b2">Jan</text>
+  <text x="985" y="500" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#9aa3b2">Feb</text>
+  <text x="1115" y="500" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#9aa3b2">Mar</text>
+  <rect x="800" y="480" width="400" height="1" fill="#3a404b"/>
+  <rect x="760" y="540" width="464" height="64" rx="10" fill="#1e222b" stroke="#2a2f3a"/>
+  <text x="780" y="566" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#58a6ff">AI assistant</text>
+  <text x="780" y="588" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#c9d1d9">Added a total row and a column chart of Jan–Mar.</text>
+  <rect x="56" y="560" width="680" height="44" fill="#161b22"/>
+  <rect x="98" y="570" width="100" height="26" rx="6" fill="#1f3a5f"/>
+  <text x="110" y="588" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#58a6ff">Budget</text>
+  <text x="230" y="588" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#9aa3b2">Accounts</text>
+  <text x="350" y="588" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#9aa3b2">Pivot table 1</text>
+  <text x="720" y="588" text-anchor="end" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#9aa3b2">Sum 9,255.65 · Count 3</text>
+  <text x="64" y="646" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" fill="#9aa3b2">Opens and saves .xls · .xlsx · .ods · .csv  —  formulas, formatting, charts, filters, pivot tables, AI</text>
+</svg>

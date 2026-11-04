@@ -129,7 +129,7 @@ public struct DocsLibrary: Sendable {
     public static let dependenciesArea = "dependencies"
     public static let gitHub = "https://github.com/"
     public static let linkScheme = "fmdocs"
-    static let repositoryPrefix = "www/docs/"
+    static let repositoryPrefix = "docs/"
     static let descriptionLimit = 180
     static let topAuthors = 3
     static let snippetWidth = 140
@@ -390,7 +390,7 @@ public struct DocsLibrary: Sendable {
     }
 
     func pagePath(forRepository repositoryPath: String) -> String? {
-        if repositoryPath == "www/docs" {
+        if repositoryPath == "docs" {
             return index["README.md"] != nil ? "README.md" : nil
         }
         guard repositoryPath.hasPrefix(Self.repositoryPrefix) else { return nil }

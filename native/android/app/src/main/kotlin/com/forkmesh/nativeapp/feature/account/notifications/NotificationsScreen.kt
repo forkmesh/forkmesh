@@ -54,7 +54,7 @@ import com.forkmesh.nativeapp.account.NotificationsBody
 import com.forkmesh.nativeapp.account.canDeleteAllNotifications
 import com.forkmesh.nativeapp.account.canMarkAllRead
 import com.forkmesh.nativeapp.account.notificationContextLabel
-import com.forkmesh.nativeapp.account.notificationIconForKind
+import com.forkmesh.nativeapp.account.notificationIcon
 import com.forkmesh.nativeapp.account.notificationPills
 import com.forkmesh.nativeapp.account.notificationPreview
 import com.forkmesh.nativeapp.account.notificationTimeLabel
@@ -73,6 +73,7 @@ import com.forkmesh.nativeapp.model.ForkNotification
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenu
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenuItem
 import com.forkmesh.nativeapp.ui.kit.FmEmptyState
+import com.forkmesh.nativeapp.ui.kit.FmHoldArea
 import com.forkmesh.nativeapp.ui.kit.FmIconButton
 import com.forkmesh.nativeapp.ui.kit.FmInlineStatus
 import com.forkmesh.nativeapp.ui.kit.FmPullToRefreshBox
@@ -410,86 +411,92 @@ private fun NotificationRow(notification: ForkNotification, onTap: () -> Unit, o
     var menu by remember { mutableStateOf(false) }
     val time = notificationTimeLabel(notification.ts)
     val unread = notification.isUnread
-    val accent = if (unread) c.accent else c.textTertiary
+    val accent = when {
+        notification.isGoodNews -> c.success
+        unread -> c.accent
+        else -> c.textTertiary
+    }
     val rule = c.border
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(FmRadius.md))
-            .combinedClickable(
-                onClick = onTap,
-                onLongClickLabel = pingKindSettingsLabel(notification.kindLabel),
-                onLongClick = { menu = true },
-            )
-            .drawBehind {
-                val stroke = 0.8.dp.toPx()
-                val y = size.height - stroke / 2
-                drawLine(rule, Offset(0f, y), Offset(size.width, y), stroke)
-            }
-            .padding(vertical = FmSpace.x3),
-        verticalAlignment = Alignment.Top,
-    ) {
-        Box(
+    FmHoldArea {
+        Row(
             Modifier
-                .size(52.dp)
-                .background(if (unread) c.accentSubtle else c.bgRaised, CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            FmIcon(notificationIconForKind(notification.kind), size = 24.dp, tint = accent)
-        }
-        HGap(FmSpace.x3)
-        Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.Top) {
-                Text(
-                    notification.title,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    style = Fm.text.bodyMedium.copy(
-                        color = c.textPrimary,
-                        fontSize = FmType.body,
-                        fontWeight = if (unread) FmType.emphasis else FmType.regular,
-                        lineHeight = FmType.body * 1.18f,
-                    ),
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(FmRadius.md))
+                .combinedClickable(
+                    onClick = onTap,
+                    onLongClickLabel = pingKindSettingsLabel(notification.typeLabel),
+                    onLongClick = { menu = true },
                 )
-                HGap(FmSpace.x2)
-                if (time.isNotEmpty()) {
-                    Text(time, style = Fm.text.bodyMedium.copy(fontWeight = FmType.medium, color = c.textTertiary))
+                .drawBehind {
+                    val stroke = 0.8.dp.toPx()
+                    val y = size.height - stroke / 2
+                    drawLine(rule, Offset(0f, y), Offset(size.width, y), stroke)
                 }
-            }
-            VGap(FmSpace.x2)
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(FmSpace.x2),
-                verticalArrangement = Arrangement.spacedBy(FmSpace.x1),
+                .padding(vertical = FmSpace.x3),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Box(
+                Modifier
+                    .size(52.dp)
+                    .background(if (unread) c.accentSubtle else c.bgRaised, CircleShape),
+                contentAlignment = Alignment.Center,
             ) {
-                notificationPills(notification).forEach { MiniPill(it) }
+                FmIcon(notificationIcon(notification.kind, notification.meta), size = 24.dp, tint = accent)
             }
-            VGap(FmSpace.x2)
-            Text(
-                notificationPreview(notification),
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-                style = Fm.text.bodyMedium.copy(color = c.textSecondary, lineHeight = FmType.small * 1.45f),
-            )
-            notificationContextLabel(notification)?.let { label ->
+            HGap(FmSpace.x3)
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.Top) {
+                    Text(
+                        notification.title,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        style = Fm.text.bodyMedium.copy(
+                            color = c.textPrimary,
+                            fontSize = FmType.body,
+                            fontWeight = if (unread) FmType.emphasis else FmType.regular,
+                            lineHeight = FmType.body * 1.18f,
+                        ),
+                    )
+                    HGap(FmSpace.x2)
+                    if (time.isNotEmpty()) {
+                        Text(time, style = Fm.text.bodyMedium.copy(fontWeight = FmType.medium, color = c.textTertiary))
+                    }
+                }
+                VGap(FmSpace.x2)
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(FmSpace.x2),
+                    verticalArrangement = Arrangement.spacedBy(FmSpace.x1),
+                ) {
+                    notificationPills(notification).forEach { MiniPill(it) }
+                }
                 VGap(FmSpace.x2)
                 Text(
-                    label,
-                    maxLines = 1,
+                    notificationPreview(notification),
+                    maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
-                    style = Fm.text.bodySmall.copy(fontWeight = FmType.emphasis, color = c.accent),
+                    style = Fm.text.bodyMedium.copy(color = c.textSecondary, lineHeight = FmType.small * 1.45f),
                 )
-            }
-            Box {
-                FmDropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    FmDropdownMenuItem(
-                        text = pingKindSettingsLabel(notification.kindLabel),
-                        icon = "tune_rounded",
-                        onClick = {
-                            menu = false
-                            onOpenSettings()
-                        },
+                notificationContextLabel(notification)?.let { label ->
+                    VGap(FmSpace.x2)
+                    Text(
+                        label,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = Fm.text.bodySmall.copy(fontWeight = FmType.emphasis, color = c.accent),
                     )
+                }
+                Box {
+                    FmDropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        FmDropdownMenuItem(
+                            text = pingKindSettingsLabel(notification.typeLabel),
+                            icon = "tune_rounded",
+                            onClick = {
+                                menu = false
+                                onOpenSettings()
+                            },
+                        )
+                    }
                 }
             }
         }

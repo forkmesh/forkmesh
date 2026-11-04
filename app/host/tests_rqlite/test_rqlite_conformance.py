@@ -2,7 +2,7 @@
 
 Every test runs against real local rqlited processes (1 node and 3 nodes)
 with data directories under a fresh temp directory. Results are summarised
-in app/host/RQLITE_FINDINGS.md; a test that pins a *surprising* rqlite
+in docs/host/rqlite-findings.md; a test that pins a *surprising* rqlite
 behaviour says so in its name, so an rqlite upgrade that changes it fails
 loudly here.
 """

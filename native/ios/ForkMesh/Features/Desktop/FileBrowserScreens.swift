@@ -268,8 +268,7 @@ struct FileViewerScreen: View {
                     Label("Could not open the file", systemImage: "exclamationmark.triangle")
                 } description: {
                     Text(error)
-                } actions: {
-                    FmMessageTools(error)
+                        .fmMessageTools(error)
                 }
             }
         }

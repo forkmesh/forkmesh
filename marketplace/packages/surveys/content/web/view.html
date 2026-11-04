@@ -1,0 +1,96 @@
+          <section data-view="surveys" class="view active h-full overflow-y-auto">
+            <style>
+              .sv-tab[aria-selected="true"] { color: rgb(var(--dashboard-primary-rgb)); box-shadow: inset 0 -2px 0 rgb(var(--dashboard-primary-rgb)); border-radius: 0; }
+            </style>
+            <div class="w-full p-3 sm:p-6">
+              <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h1 class="text-lg font-semibold text-foreground">Surveys</h1>
+                  <p class="mt-1 text-sm text-muted-foreground">Build a survey, share its link, and read the answers as they arrive.</p>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <select data-survey-organization aria-label="Organization" class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground"></select>
+                  <button data-survey-manage data-survey-requires-install type="button" class="fm-btn hidden"><i data-lucide="database"></i>Plugin data</button>
+                  <button data-survey-new data-survey-requires-install type="button" class="fm-btn fm-btn-cta hidden"><i data-lucide="plus"></i>New survey</button>
+                </div>
+              </div>
+              <div data-survey-error role="alert" class="fm-flash fm-flash-danger mb-3 hidden"><i data-lucide="circle-alert"></i><p data-survey-message-text class="fm-flash-body"></p></div>
+              <div data-survey-notice role="status" class="fm-flash mb-3 hidden"><i data-lucide="info"></i><p data-survey-message-text class="fm-flash-body"></p></div>
+
+              <section data-survey-install-panel class="fm-blankslate hidden rounded-lg border border-border bg-card">
+                <i data-lucide="clipboard-list"></i>
+                <h2 class="fm-blankslate-title">Surveys is not installed for <span data-survey-install-org class="font-mono"></span></h2>
+                <p class="fm-blankslate-desc">Install encrypted, organization-private surveys with a link anyone can answer.</p>
+                <button data-survey-install type="button" class="fm-btn fm-btn-sm mt-3 hidden">Install for this organization</button>
+                <p data-survey-install-denied class="fm-blankslate-desc mt-3 hidden">Ask an organization owner or admin to install Surveys.</p>
+              </section>
+
+              <div data-survey-app class="hidden">
+                <div class="mb-4 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-5">
+                  <div class="min-w-0 bg-card p-3"><p class="text-xs font-medium text-muted-foreground">Surveys</p><p data-survey-stat-surveys class="mt-1 truncate text-lg font-semibold text-foreground">—</p></div>
+                  <div class="min-w-0 bg-card p-3"><p class="text-xs font-medium text-muted-foreground">Open</p><p data-survey-stat-open class="mt-1 truncate text-lg font-semibold text-foreground">—</p></div>
+                  <div class="min-w-0 bg-card p-3"><p class="text-xs font-medium text-muted-foreground">Drafts</p><p data-survey-stat-drafts class="mt-1 truncate text-lg font-semibold text-foreground">—</p></div>
+                  <div class="min-w-0 bg-card p-3"><p class="text-xs font-medium text-muted-foreground">Responses</p><p data-survey-stat-responses class="mt-1 truncate text-lg font-semibold text-foreground">—</p></div>
+                  <div class="min-w-0 bg-card p-3 col-span-2 sm:col-span-1"><p class="text-xs font-medium text-muted-foreground">Last 7 days</p><p data-survey-stat-week class="mt-1 truncate text-lg font-semibold text-foreground">—</p></div>
+                </div>
+
+                <section class="min-w-0 overflow-hidden rounded-lg border border-border bg-card">
+                  <div class="flex flex-wrap items-center gap-2 border-b border-border p-3">
+                    <div class="relative min-w-0 flex-1"><i data-lucide="search" class="pointer-events-none absolute h-4 w-4 text-muted-foreground" style="left:.7rem;top:.5rem"></i><input data-survey-search type="search" aria-label="Search surveys" placeholder="Search surveys" class="h-control w-full rounded-md border border-border bg-background text-control text-foreground" style="padding-left:2.25rem;padding-right:.75rem" /></div>
+                    <select data-survey-status-filter aria-label="Status" class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground"><option value="">All surveys</option><option value="open">Open</option><option value="scheduled">Scheduled</option><option value="draft">Drafts</option><option value="closed">Closed</option></select>
+                  </div>
+                  <ul data-survey-cards class="divide-y divide-border sm:hidden"></ul>
+                  <div class="hidden overflow-x-auto sm:block"><table class="w-full text-left text-sm"><thead class="border-b border-border bg-secondary text-xs text-muted-foreground"><tr><th class="px-4 py-2 font-semibold">Survey</th><th class="px-4 py-2 font-semibold">Status</th><th class="px-4 py-2 text-right font-semibold">Responses</th><th class="px-4 py-2 font-semibold">Last response</th><th class="px-4 py-2 font-semibold">Created</th></tr></thead><tbody data-survey-list class="divide-y divide-border"></tbody></table></div>
+                  <div data-survey-empty class="fm-blankslate hidden"><i data-lucide="clipboard-list"></i><p class="fm-blankslate-title">No surveys in this view.</p><p class="fm-blankslate-desc">Change the search or filter, or create a survey.</p></div>
+                </section>
+              </div>
+            </div>
+
+            <dialog data-survey-editor aria-labelledby="survey-editor-title" class="w-full max-w-3xl bg-transparent p-0 text-foreground backdrop:bg-background/80">
+              <form data-survey-form class="fm-dialog">
+                <div class="fm-dialog-header"><div class="fm-dialog-title"><h2 id="survey-editor-title" data-survey-editor-title class="text-sm font-semibold">New survey</h2><p class="text-xs font-normal text-muted-foreground">Questions and answers are shared only with members of this organization.</p></div><button data-survey-dialog-close type="button" aria-label="Close" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><i data-lucide="x"></i></button></div>
+                <input data-survey-id type="hidden" />
+                <div class="fm-dialog-body grid gap-3 sm:grid-cols-2">
+                  <div data-survey-dialog-error role="alert" class="fm-flash fm-flash-danger sm:col-span-2 hidden"><i data-lucide="circle-alert"></i><p data-survey-message-text class="fm-flash-body"></p></div>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Title<input data-survey-title required maxlength="200" class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Introduction<textarea data-survey-description maxlength="4000" rows="2" placeholder="Shown above the questions" class="rounded-md border border-border bg-background px-3 py-2 text-control text-foreground"></textarea></label>
+                  <div class="grid gap-2 sm:col-span-2">
+                    <div class="flex flex-wrap items-center justify-between gap-2"><p class="text-xs font-semibold text-foreground">Questions</p><div class="flex items-center gap-2"><select data-survey-question-type aria-label="Question type" class="h-control-sm rounded-md border border-border bg-background px-2 text-control text-foreground"><option value="single">Pick one</option><option value="multiple">Pick any</option><option value="text">Short text</option><option value="paragraph">Long text</option><option value="rating">Rating</option></select><button data-survey-question-add type="button" class="fm-btn fm-btn-sm"><i data-lucide="plus"></i>Add question</button></div></div>
+                    <ol data-survey-questions class="grid gap-2"></ol>
+                    <p data-survey-questions-empty class="hidden rounded-md border border-border px-3 py-3 text-xs text-muted-foreground">Add at least one question before opening the survey.</p>
+                  </div>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Thank-you message<textarea data-survey-thanks maxlength="1000" rows="2" class="rounded-md border border-border bg-background px-3 py-2 text-control text-foreground"></textarea></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Opens<input data-survey-opens type="datetime-local" class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Closes<input data-survey-closes type="datetime-local" class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Stop after this many responses<input data-survey-max type="number" min="0" max="10000" step="1" placeholder="No limit" class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground" /></label>
+                  <div class="grid gap-2 text-xs text-foreground">
+                    <label class="flex items-center gap-2"><input data-survey-setting="oneResponsePerPerson" type="checkbox" />One response per person</label>
+                    <label class="flex items-center gap-2"><input data-survey-setting="notifyOnResponse" type="checkbox" />Ping me when responses arrive</label>
+                    <label class="flex items-center gap-2"><input data-survey-setting="notifyOnVisit" type="checkbox" />Ping me when someone opens or starts it</label>
+                    <label class="flex items-center gap-2"><input data-survey-setting="shuffleOptions" type="checkbox" />Shuffle choice order</label>
+                  </div>
+                </div>
+                <div class="fm-dialog-footer"><button data-survey-dialog-close type="button" class="fm-btn fm-btn-sm">Cancel</button><button type="submit" class="fm-btn fm-btn-sm">Save survey</button></div>
+              </form>
+            </dialog>
+
+            <dialog data-survey-detail aria-labelledby="survey-detail-title" class="w-full max-w-3xl bg-transparent p-0 text-foreground backdrop:bg-background/80">
+              <div class="fm-dialog">
+                <div class="fm-dialog-header"><div data-survey-detail-head class="fm-dialog-title min-w-0"></div><button data-survey-dialog-close type="button" aria-label="Close" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><i data-lucide="x"></i></button></div>
+                <div class="fm-dialog-body"><div data-survey-dialog-error role="alert" class="fm-flash fm-flash-danger mb-3 hidden"><i data-lucide="circle-alert"></i><p data-survey-message-text class="fm-flash-body"></p></div><div data-survey-dialog-notice role="status" class="fm-flash mb-3 hidden"><i data-lucide="info"></i><p data-survey-message-text class="fm-flash-body"></p></div>
+                  <div data-survey-detail-link></div>
+                  <div role="tablist" aria-label="Survey views" class="mb-3 flex gap-2 border-b border-border"><button data-survey-tab="results" role="tab" aria-selected="true" type="button" class="sv-tab fm-btn fm-btn-invisible fm-btn-sm">Results</button><button data-survey-tab="responses" role="tab" aria-selected="false" type="button" class="sv-tab fm-btn fm-btn-invisible fm-btn-sm">Responses</button><button data-survey-tab="activity" role="tab" aria-selected="false" type="button" class="sv-tab fm-btn fm-btn-invisible fm-btn-sm">Activity</button></div>
+                  <div data-survey-detail-body></div>
+                </div>
+                <div data-survey-detail-actions class="fm-dialog-footer flex-wrap"></div>
+              </div>
+            </dialog>
+
+            <dialog data-survey-manage-dialog aria-labelledby="survey-manage-title" class="w-full max-w-lg bg-transparent p-0 text-foreground backdrop:bg-background/80">
+              <div class="fm-dialog">
+                <div class="fm-dialog-header"><h2 id="survey-manage-title" class="fm-dialog-title">Surveys data</h2><button data-survey-dialog-close type="button" aria-label="Close" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><i data-lucide="x"></i></button></div>
+                <div class="fm-dialog-body"><div data-survey-dialog-error role="alert" class="fm-flash fm-flash-danger mb-3 hidden"><i data-lucide="circle-alert"></i><p data-survey-message-text class="fm-flash-body"></p></div><p class="text-sm text-muted-foreground">Export every survey with its questions and responses, or uninstall the plugin and remove its stored data. Survey links already shared stop working once it is uninstalled.</p></div>
+                <div class="fm-dialog-footer"><button data-survey-uninstall type="button" class="fm-btn fm-btn-sm fm-btn-danger mr-auto">Uninstall…</button><button data-survey-dialog-close type="button" class="fm-btn fm-btn-sm">Close</button><button data-survey-export type="button" class="fm-btn fm-btn-sm">Export JSON</button></div>
+              </div>
+            </dialog>
+          </section>

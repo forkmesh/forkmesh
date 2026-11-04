@@ -23,6 +23,7 @@ public struct ShellPaneMetrics: Equatable, Sendable {
 public enum ShellPanes {
     public static let wideWidth: Double = 600
     public static let wideHeight: Double = 480
+    public static let duoModel: String = "iPhone19,4"
     public static let railWidth: Double = 800
     public static let railColumn: Double = 76
     public static let listMin: Double = 280
@@ -31,7 +32,7 @@ public enum ShellPanes {
 
     public static let listKinds: Set<Route.Kind> = [
         .agents, .allAgents, .teammates, .shortcuts, .inbox, .repos, .localRepos, .people, .docs, .notes, .tasks,
-        .calendar, .timers, .desktops, .hosts, .runners, .market, .crm, .marketing, .invoices, .coves, .workflows,
+        .calendar, .timers, .desktops, .hosts, .runners, .market, .crm, .marketing, .invoices, .surveys, .booking, .coves, .workflows,
         .settings, .orgs, .projects, .rssReader, .logs,
     ]
 
@@ -39,9 +40,17 @@ public enum ShellPanes {
         min(width, height) >= wideWidth
     }
 
-    public static func metrics(width: Double, height: Double, pad: Bool) -> ShellPaneMetrics {
+    public static func isDuo(model: String) -> Bool {
+        model == duoModel
+    }
+
+    public static func sideColumn(width: Double, height: Double) -> Bool {
+        !(width >= wideWidth && height > width)
+    }
+
+    public static func metrics(width: Double, height: Double, pad: Bool, sideColumn: Bool = false) -> ShellPaneMetrics {
         guard !pad, width >= wideWidth, height >= wideHeight else { return .phone }
-        let rail: Bool = width >= railWidth
+        let rail: Bool = !sideColumn && width >= railWidth
         let content: Double = rail ? width - railColumn : width
         return ShellPaneMetrics(rail: rail, wide: true, list: listWidth(content: content))
     }

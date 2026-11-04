@@ -5,7 +5,7 @@
 #   sudo bash tools/install_ssh_relay.sh --host ssh.example.org [--port 22]
 #
 # On a separate front host, so the instance's address stays private behind
-# its CDN proxy (www/docs/operations/git-ssh-gateway.md, "Keep the origin
+# its CDN proxy (docs/operations/git-ssh-gateway.md, "Keep the origin
 # private"):
 #   instance$ sudo bash tools/install_ssh_relay.sh --control-plane-only --host ssh.example.org
 #   instance$ sudo cat /etc/forkmesh-ssh/ssh-gateway.token |

@@ -16,10 +16,6 @@ from next_common import GuardError
 REPO = Path(__file__).resolve().parents[2]
 WORKFLOW = (REPO / ".forkmesh" / "deploy-nodes.yml").read_text("utf-8")
 FLEET_TOML = """domain = "next.example.com"
-app_host = "app.next.example.com"
-world_host = "world.next.example.com"
-
-[production]
 app_host = "app.example.com"
 world_host = "world.example.com"
 
@@ -80,7 +76,7 @@ def test_trigger_filter_selects_served_stack_paths_only():
         "tools/mirror_gateway.py", "marketplace/packages/p/manifest.json",
         "app/tests/test_x.py", "deploy/tests/test_y.py", "app/host/tests_cluster/t.py",
         "app/browser_tests/tests/a.spec.js", "server/main_test.go",
-        "www/docs/guide.md", "docs/deploy/README.md", "desktop/src/MainWindow.cpp",
+        "docs/guide.md", "docs/operations/fleet-tooling.md", "desktop/src/MainWindow.cpp",
         "native/ios/ForkMesh/App/ForkMeshApp.swift", "tools/source_publisher.py",
         ".forkmesh/ci.yml"])
     assert changed["release"] == [
@@ -90,7 +86,7 @@ def test_trigger_filter_selects_served_stack_paths_only():
         "www/public/styles.css"]
     assert changed["roll"] == ["deploy/core/render.py", "server/main.go",
                                "tools/mirror_gateway.py"]
-    assert auto.classify(["www/docs/a.md", "docs/x.md", "README.md"]) == {
+    assert auto.classify(["docs/a.md", "docs/x.md", "README.md"]) == {
         "release": [], "roll": []}
 
 
@@ -114,7 +110,8 @@ def test_workflow_prefilter_is_generated_and_covers_every_served_file():
     served = [p for p in tracked if auto.release_path(p) or auto.roll_path(p)]
     assert served
     assert [p for p in served if not any(x.match(p) for x in patterns)] == []
-    assert not any(x.match("www/docs/guide.md") for x in patterns)
+    assert any(x.match("docs/guide.md") for x in patterns)
+    assert any(x.match("docs/native/ios/FMTools.md") for x in patterns)
     assert not any(x.match("desktop/src/main.cpp") for x in patterns)
 
 
@@ -581,7 +578,7 @@ def test_failures_ping_and_only_a_repeat_emails(tmp_path):
     assert notifier.sent[-1][2] is False
 
 
-def test_fleet_hosts_uses_production_names_and_core_nodes_only():
+def test_fleet_hosts_uses_the_app_and_world_names_and_core_nodes_only():
     hosts = auto.fleet_hosts(FLEET_TOML)
     assert hosts["app_host"] == "app.example.com"
     assert hosts["world_host"] == "world.example.com"
@@ -690,13 +687,17 @@ def test_website_step_compares_the_www_tree_with_the_live_header():
         def call(self, *args, check=False):
             assert args[0] == "rev-parse"
             return SimpleNamespace(stdout=self.trees[args[1]] + "\n", returncode=0)
-    base = {"abc123:www": "tree0001", "abc123:marketplace": "tree0101"}
+    base = {"abc123:www": "tree0001", "abc123:marketplace": "tree0101",
+            "abc123:docs": "tree0201"}
     wanted = auto.website_fingerprint(FakeGit(base), "abc123")
     assert len(wanted) == 64 and wanted != auto.website_fingerprint(
         FakeGit({**base, "abc123:www": "tree0002"}), "abc123")
     assert wanted != auto.website_fingerprint(
         FakeGit({**base, "abc123:marketplace": "tree0102"}), "abc123"), (
         "a package page such as /design redeploys forkmesh.com")
+    assert wanted != auto.website_fingerprint(
+        FakeGit({**base, "abc123:docs": "tree0202"}), "abc123"), (
+        "a docs page rendered at /docs/ redeploys forkmesh.com")
 
     def fake_curl(argv, **_kwargs):
         assert argv[-1] == auto.WEBSITE_URL
@@ -705,6 +706,60 @@ def test_website_step_compares_the_www_tree_with_the_live_header():
     assert auto.live_website_fingerprint(run=fake_curl) == wanted
     assert "www/worker.js" in auto.RELEASE_FILES
     assert auto.release_path("www/wrangler.production.toml")
+
+
+def _website_commands(tmp_path, monkeypatch, npm_exit=0):
+    pipeline = auto.Pipeline(tmp_path, auto.Log(echo=False), state_dir=tmp_path / "state",
+                             layout=SimpleNamespace(cache=tmp_path / "cache"))
+    calls = []
+
+    def fake_stream(command, say, **kwargs):
+        calls.append((command, kwargs))
+        return npm_exit if len(calls) == 1 else 0
+    live = iter(["old", "wanted"])
+    monkeypatch.setattr(auto, "stream", fake_stream)
+    monkeypatch.setattr(auto, "node22_bin", lambda: Path("/node/bin"))
+    monkeypatch.setattr(auto, "website_fingerprint", lambda git, target: "wanted")
+    monkeypatch.setattr(auto, "live_website_fingerprint", lambda run=None: next(live))
+    monkeypatch.setattr(auto.common, "credential", lambda file, name: "secret-" + name)
+    monkeypatch.setattr(pipeline, "worktree", lambda target: tmp_path / "wt")
+    monkeypatch.setenv("FMNEXT_LEAK_CHECK", "must-not-reach-npm")
+    result = {"message": "deployed", "ok": True}
+    pipeline.website("a" * 40, result)
+    return calls, result
+
+
+def test_website_installs_the_locked_wrangler_without_scripts_or_credentials(
+        tmp_path, monkeypatch):
+    calls, result = _website_commands(tmp_path, monkeypatch)
+    www = tmp_path / "wt" / "www"
+    (npm, npm_args), (wrangler, wrangler_args) = calls
+    assert npm == ["/node/bin/npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"]
+    assert wrangler[:2] == [str(www / "node_modules" / ".bin" / "wrangler"), "deploy"]
+    assert npm_args["cwd"] == wrangler_args["cwd"] == str(www)
+    assert set(npm_args["env"]) == {"PATH", "HOME", "LANG", "WRANGLER_SEND_METRICS"}
+    assert set(wrangler_args["env"]) == set(npm_args["env"]) | {
+        "CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"}
+    assert npm_args["env"]["HOME"].startswith(str(tmp_path / "cache"))
+    assert result["ok"] and "forkmesh.com updated" in result["message"]
+
+
+def test_website_stops_before_the_token_when_npm_ci_fails(tmp_path, monkeypatch):
+    calls, result = _website_commands(tmp_path, monkeypatch, npm_exit=1)
+    assert len(calls) == 1
+    assert result["ok"] is False and "npm ci exited 1" in result["message"]
+
+
+def test_website_wrangler_is_pinned_by_a_committed_lockfile():
+    www = Path(auto.__file__).resolve().parents[1] / "www"
+    wanted = json.loads((www / "package.json").read_text())["dependencies"]["wrangler"]
+    assert re.fullmatch(r"\d+\.\d+\.\d+", wanted)
+    lock = json.loads((www / "package-lock.json").read_text())
+    assert lock["packages"]["node_modules/wrangler"]["version"] == wanted
+    for name, entry in lock["packages"].items():
+        if name:
+            assert entry["integrity"].startswith("sha512-"), name
+            assert entry["resolved"].startswith("https://registry.npmjs.org/"), name
 
 
 def test_node22_bin_prefers_the_newest_nvm_node(tmp_path):
@@ -869,10 +924,10 @@ def test_the_critical_security_suite_must_pass_before_a_deploy(tmp_path):
 
 
 def test_markdown_under_roll_prefixes_never_needs_a_roll():
-    assert not auto.roll_path("deploy/core/edge_client.md")
+    assert not auto.roll_path("docs/www/edge-client.md")
     assert not auto.roll_path("server/README.md")
     assert auto.roll_path("deploy/core/edge_client.py")
-    assert auto.classify(["deploy/core/edge_client.md"])["roll"] == []
+    assert auto.classify(["docs/www/edge-client.md"])["roll"] == []
 
 
 def test_a_roll_lost_by_an_earlier_deploy_is_rolled_by_the_next(repo, tmp_path):
@@ -958,6 +1013,25 @@ def test_a_failed_roll_keeps_the_pending_roll_and_emails(tmp_path, monkeypatch):
     state = auto.record_outcome(result, notifier, print, state_dir=tmp_path / "state")
     assert state["roll"]["paths"] == ["server/main.go"] and state["roll"]["error"]
     assert notifier.sent[-1][1:] == ("node-roll-failed:%s" % ("b" * 12), True)
+
+
+def test_a_docs_only_push_updates_the_website_and_leaves_the_cores_alone(
+        repo, tmp_path, monkeypatch):
+    base = git(repo, "rev-parse", "HEAD")
+    target = commit(repo, {"docs/readme.md": "d2\n"}, "docs")
+    pipeline = auto.Pipeline(repo, auto.Log(echo=False), state_dir=tmp_path / "state",
+                             layout=SimpleNamespace(cache=tmp_path / "cache"))
+    published = []
+    monkeypatch.setattr(auto.common, "DeployLock", lambda what: _RollLock())
+    monkeypatch.setattr(auto.common, "load_manifest", lambda: {})
+    monkeypatch.setattr(pipeline, "hosts", lambda target: {"nodes": []})
+    monkeypatch.setattr(auto, "live_fleet", lambda *a, **k: ({"n1": base[:12]}, {}))
+    monkeypatch.setattr(pipeline, "website", lambda target, result: published.append(target))
+    monkeypatch.setattr(pipeline, "test_gate", lambda *a: pytest.fail("ran the core gates"))
+    result = pipeline.execute(target)
+    assert result["ok"] is True and "no core-node change" in result["message"]
+    assert not result.get("deployed") and not result.get("roll")
+    assert published == [target]
 
 
 def _failing_website(target, result):

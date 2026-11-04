@@ -11,6 +11,7 @@
 #include "WorkspaceLayout.h"
 
 #include <QApplication>
+#include <algorithm>
 #include <QDateTime>
 #include <QDir>
 #include <QElapsedTimer>
@@ -540,7 +541,47 @@ int runWorkspaceSnapshots(MainWindow &window)
             bool toggled = false;
             panels.setRemoteActions([&toggled](bool on) { toggled = !on; }, [] {});
             panels.setDetails(details);
-            settle();
+            const auto usage = [](qint64 input, qint64 output, const QJsonArray &content) {
+                return QJsonObject{
+                    {QStringLiteral("type"), QStringLiteral("assistant")},
+                    {QStringLiteral("message"),
+                     QJsonObject{{QStringLiteral("content"), content},
+                                 {QStringLiteral("usage"),
+                                  QJsonObject{{QStringLiteral("input_tokens"), 10},
+                                              {QStringLiteral("cache_read_input_tokens"),
+                                               input - 10},
+                                              {QStringLiteral("output_tokens"), output}}}}}};
+            };
+            panels.append(QJsonObject{
+                {QStringLiteral("type"), QStringLiteral("system")},
+                {QStringLiteral("subtype"), QStringLiteral("init")},
+                {QStringLiteral("tools"),
+                 QJsonArray{QStringLiteral("Read"), QStringLiteral("Edit"), QStringLiteral("Bash")}},
+                {QStringLiteral("mcp_servers"), QJsonArray{QJsonObject{}}},
+                {QStringLiteral("skills"), QJsonArray{QStringLiteral("a"), QStringLiteral("b")}}});
+            panels.append(QJsonObject{{QStringLiteral("type"), QStringLiteral("_local_user")},
+                                      {QStringLiteral("text"), QString(400, QLatin1Char('p'))}});
+            panels.append(usage(20000, 300,
+                                QJsonArray{QJsonObject{
+                                    {QStringLiteral("type"), QStringLiteral("tool_use")},
+                                    {QStringLiteral("id"), QStringLiteral("t1")},
+                                    {QStringLiteral("name"), QStringLiteral("Read")},
+                                    {QStringLiteral("input"),
+                                     QJsonObject{{QStringLiteral("file_path"),
+                                                  QStringLiteral("/repo/a.cpp")}}}}}));
+            panels.append(QJsonObject{
+                {QStringLiteral("type"), QStringLiteral("user")},
+                {QStringLiteral("message"),
+                 QJsonObject{{QStringLiteral("content"),
+                              QJsonArray{QJsonObject{
+                                  {QStringLiteral("type"), QStringLiteral("tool_result")},
+                                  {QStringLiteral("tool_use_id"), QStringLiteral("t1")},
+                                  {QStringLiteral("content"), QString(80000, QLatin1Char('x'))}}}}}}});
+            panels.append(usage(127000, 500,
+                                QJsonArray{QJsonObject{{QStringLiteral("type"), QStringLiteral("text")},
+                                                       {QStringLiteral("text"),
+                                                        QString(2000, QLatin1Char('r'))}}}));
+            settle(20);
             QStringList rows;
             for (QLabel *swatch : panels.findChildren<QLabel *>(
                      QStringLiteral("sessionsDetailSwatch")))
@@ -548,10 +589,13 @@ int runWorkspaceSnapshots(MainWindow &window)
                     rows << swatch->parentWidget()
                                 ->findChild<QLabel *>(QStringLiteral("sessionsDetailText"))
                                 ->text();
-            check(rows == QStringList{QStringLiteral("Used"), QStringLiteral("Free space"),
+            check(rows == QStringList{QStringLiteral("Messages"), QStringLiteral("Tool calls"),
+                                      QStringLiteral("System prompt & tools"),
+                                      QStringLiteral("Free space"),
                                       QStringLiteral("Input tokens"),
                                       QStringLiteral("Output tokens"), QStringLiteral("Turns"),
-                                      QStringLiteral("Cost")},
+                                      QStringLiteral("Cost"), QStringLiteral("Tools loaded"),
+                                      QStringLiteral("Skills & agents")},
                   QStringLiteral("the Context card lists coloured rows (%1): %2")
                       .arg(label, rows.join(QStringLiteral(", "))));
             auto *used = panels.findChild<QLabel *>(QStringLiteral("sessionsContextUsed"));
@@ -563,6 +607,129 @@ int runWorkspaceSnapshots(MainWindow &window)
                       status->text().contains(QStringLiteral("on this network")) && remote &&
                       remote->isChecked() && remote->isEnabled(),
                   QStringLiteral("the Remote control switch shows the connected phone (%1)")
+                      .arg(label));
+            QStringList cards;
+            for (QFrame *card : panels.findChildren<QFrame *>(
+                     QStringLiteral("sessionsDetailCard")))
+                if (card->isVisible())
+                    cards << card->property("sessionsPanel").toString();
+            std::sort(cards.begin(), cards.end(), [&panels](const QString &a, const QString &b) {
+                return panels.cardFrame(a)->y() < panels.cardFrame(b)->y();
+            });
+            check(cards == QStringList{QStringLiteral("environment"), QStringLiteral("context"),
+                                       QStringLiteral("sources"), QStringLiteral("tools")},
+                  QStringLiteral("Environment and Context lead and empty cards stay hidden "
+                                 "(%1): %2")
+                      .arg(label, cards.join(QStringLiteral(", "))));
+            details.claudeRemote = QStringLiteral("on");
+            details.claudeRemoteSource = QStringLiteral("/home/a/.claude.json");
+            panels.setDetails(details);
+            settle();
+            bool claudeRemote = false;
+            for (QLabel *text : panels.cardFrame(QStringLiteral("environment"))
+                                    ->findChildren<QLabel *>(QStringLiteral("sessionsDetailText")))
+                if (text->isVisible() && text->text() == QStringLiteral("Claude Remote Control"))
+                    claudeRemote = text->parentWidget()
+                                       ->findChild<QLabel *>(QStringLiteral("sessionsDetailTrailing"))
+                                       ->text() == QStringLiteral("On");
+            check(claudeRemote, QStringLiteral("Environment shows Claude's own Remote Control "
+                                               "setting (%1)")
+                                    .arg(label));
+            const auto call = [](const QString &id, const QString &name, const QJsonObject &input) {
+                return QJsonObject{
+                    {QStringLiteral("type"), QStringLiteral("assistant")},
+                    {QStringLiteral("message"),
+                     QJsonObject{{QStringLiteral("content"),
+                                  QJsonArray{QJsonObject{{QStringLiteral("type"),
+                                                          QStringLiteral("tool_use")},
+                                                         {QStringLiteral("id"), id},
+                                                         {QStringLiteral("name"), name},
+                                                         {QStringLiteral("input"), input}}}}}}};
+            };
+            const auto result = [](const QString &id, const QString &text) {
+                return QJsonObject{
+                    {QStringLiteral("type"), QStringLiteral("user")},
+                    {QStringLiteral("message"),
+                     QJsonObject{{QStringLiteral("content"),
+                                  QJsonArray{QJsonObject{
+                                      {QStringLiteral("type"), QStringLiteral("tool_result")},
+                                      {QStringLiteral("tool_use_id"), id},
+                                      {QStringLiteral("content"), text}}}}}}};
+            };
+            panels.append(call(QStringLiteral("w1"), QStringLiteral("Write"),
+                               QJsonObject{{QStringLiteral("file_path"),
+                                            QStringLiteral("/repo/tools/find-key.py")},
+                                           {QStringLiteral("content"),
+                                            QStringLiteral("a\nb\nc\n")}}));
+            panels.append(result(QStringLiteral("w1"), QStringLiteral("ok")));
+            QJsonObject scan = call(QStringLiteral("a1"), QStringLiteral("Task"),
+                                    QJsonObject{{QStringLiteral("description"),
+                                                 QStringLiteral("Scan the scratch drive")}});
+            scan.insert(QStringLiteral("_ts"),
+                        double(QDateTime::currentMSecsSinceEpoch() - 22 * 60000 - 5000));
+            panels.append(scan);
+            panels.append(call(QStringLiteral("a2"), QStringLiteral("Task"),
+                               QJsonObject{{QStringLiteral("description"),
+                                            QStringLiteral("Explore code")}}));
+            panels.append(result(QStringLiteral("a2"), QStringLiteral("report")));
+            details.path = QStringLiteral("/repo/.worktrees/141-relink-payment-wallet-ledger");
+            details.pathFull = details.path;
+            details.files = 3;
+            details.added = 52;
+            details.removed = 4;
+            details.dirty = 2;
+            details.canCommit = true;
+            bool committed = false;
+            panels.setCommitAction([&committed] { committed = true; });
+            panels.setDetails(details);
+            settle(20);
+            QStringList background;
+            for (QLabel *text : panels.cardFrame(QStringLiteral("background"))
+                                    ->findChildren<QLabel *>(QStringLiteral("sessionsDetailText")))
+                if (text->isVisible())
+                    background << text->text();
+            QString scanAge;
+            for (QLabel *text : panels.cardFrame(QStringLiteral("background"))
+                                    ->findChildren<QLabel *>(QStringLiteral("sessionsDetailText")))
+                if (text->isVisible() && text->text() == QStringLiteral("Scan the scratch drive"))
+                    scanAge = text->parentWidget()
+                                  ->findChild<QLabel *>(QStringLiteral("sessionsDetailTrailing"))
+                                  ->text();
+            check(scanAge == QStringLiteral("22m"),
+                  QStringLiteral("a running background task shows how long it has run "
+                                 "(%1): %2")
+                      .arg(label, scanAge));
+            auto *commitButton =
+                panels.findChild<QPushButton *>(QStringLiteral("sessionsCommitButton"));
+            check(commitButton && commitButton->isVisible(),
+                  QStringLiteral("Changes offers Commit changes while files are uncommitted "
+                                 "(%1)")
+                      .arg(label));
+            if (commitButton)
+                commitButton->click();
+            check(committed, QStringLiteral("Commit changes starts the commit (%1)").arg(label));
+            check(background == QStringList{QStringLiteral("Scan the scratch drive"),
+                                            QStringLiteral("1 finished")},
+                  QStringLiteral("Background tasks lists running ones and counts the finished "
+                                 "(%1): %2")
+                      .arg(label, background.join(QStringLiteral(", "))));
+            bool folderRow = false;
+            bool changesRow = false;
+            for (QLabel *text : panels.findChildren<QLabel *>(QStringLiteral("sessionsDetailText"))) {
+                const QLabel *trailingLabel =
+                    text->parentWidget()->findChild<QLabel *>(QStringLiteral("sessionsDetailTrailing"));
+                if (!text->isVisible() || !trailingLabel)
+                    continue;
+                const QString trailing = trailingLabel->text();
+                folderRow |= text->text() == QStringLiteral("141-relink-payment-wallet-ledger") &&
+                             trailing == QStringLiteral("· .worktrees");
+                changesRow |= text->text() == QStringLiteral("3 files changed") &&
+                              trailing.contains(QStringLiteral("+52")) &&
+                              trailing.contains(QStringLiteral("−4"));
+            }
+            check(folderRow && changesRow,
+                  QStringLiteral("the folder row names its parent and Changes shows the line "
+                                 "counts (%1)")
                       .arg(label));
             QDir().mkpath(dir);
             if (panels.grab().save(
@@ -690,11 +857,11 @@ int runWorkspaceSnapshots(MainWindow &window)
         settle();
         select(9301);
         settle(20);
-        check(shown(towerPanels()) && shown(subSessionsCard()) &&
+        check(shown(towerPanels()) && subSessionsCard() && !shown(subSessionsCard()) &&
                   !named("agentSubSessionStrip"),
-              QStringLiteral("Control Tower shows the side panels, Sub-sessions "
-                             "among them, beside the transcript instead of a "
-                             "strip above it"));
+              QStringLiteral("Control Tower shows the side panels beside the "
+                             "transcript, Sub-sessions hidden while none run, "
+                             "instead of a strip above it"));
         if (grab(dir, QStringLiteral("agents-control-tower")))
             ++saved;
         window.testSetAppViewMode(AppViewMode::Workspace);

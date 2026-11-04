@@ -31,8 +31,7 @@ struct CoveDocumentScreen: View {
                     Label("Document unavailable", systemImage: "doc.questionmark")
                 } description: {
                     Text("The cove was locked or the document was removed.")
-                } actions: {
-                    FmMessageTools("Document unavailable. The cove was locked or the document was removed.")
+                        .fmMessageTools("Document unavailable. The cove was locked or the document was removed.")
                 }
             }
         }
@@ -59,7 +58,7 @@ struct CoveDocumentScreen: View {
                     .font(.footnote)
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .fmMessageTools(error, color: .white)
+                    .fmMessageTools(error)
                     .padding(8)
                     .background(Color.red)
             }
@@ -328,8 +327,7 @@ struct CovePipelineEditor: View {
                         Label("Can't read this pipeline", systemImage: "exclamationmark.triangle")
                     } description: {
                         Text(problem ?? "")
-                    } actions: {
-                        FmMessageTools("Can't read this pipeline. \(problem ?? "")")
+                            .fmMessageTools("Can't read this pipeline. \(problem ?? "")")
                     }
                     TextEditor(text: $text).font(.system(.caption, design: .monospaced)).frame(minHeight: 200).padding(.horizontal)
                 }

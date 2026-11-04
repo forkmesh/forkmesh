@@ -1,7 +1,7 @@
 # Accounts and website sessions
 
 How a signed-in state is created, stored and shown across the App, the site
-and the World.
+and the World. Part of [the App docs](README.md).
 
 ## Session tokens
 
@@ -23,18 +23,25 @@ and the World.
   disabled is also refused on every path that checks it
   (`_account_key_revoked`: owner signing keys, signed admin requests,
   heartbeat, finalize, rotate as the old or the new key), and a later desktop
-  login replaces it. Before this, revoking a stolen first desktop left its key
-  trusted, and rotate let it bind a successor the owner could not see or
-  revoke.
+  login replaces it. So revoking a stolen first desktop untrusts its key, and
+  it cannot rotate to a successor the owner cannot see. The key also comes off
+  every node this account owns, because a node record that kept it would still
+  accept its pushes, rotations and link grants; the owner relinks the node from
+  a new desktop.
+- A password reset or recovery-code reset also revokes every device key except
+  the account's primary key and its nodes' keys, and removes its SSH keys
+  (`_account_revoke_other_keys`), because someone who once had the password may
+  have bound their own key. The primary and node keys stay so a person who
+  forgot their password does not lose their identity.
 - `POST /api/accounts/rotate` also needs `newSig`: the successor key signs
   `forkmesh-rotate-accept-v1\n<account>\n<oldPubkey>\n<newPubkey>\n<ts>`
   (`ForkMeshIdentity::acceptRotation` on the desktop). A request without it
   gets 426 `new_key_proof_required`, a bad one 401 `bad_new_key_signature`.
   The successor is refused with 409 `device_key_conflict` when another
   account (other than a node's owning user) has it in `account_devices`, or
-  `_device_proven_user_bis` names another user. Without the proof, any account
-  could bind a key it did not hold, such as the browser or phone key on
-  someone else's public pull request, and then pass the pull author check.
+  `_device_proven_user_bis` names another user. The proof stops an account
+  binding a key it does not hold (say the browser key on someone else's public
+  pull request) and then passing the pull author check.
 - `_git_push_account_for_pubkey` resolves a key to nobody when its `nodes` row
   belongs to one account but an enabled device row for the same key belongs
   to another (other than the node's owning user), so a primary key can never
@@ -44,14 +51,53 @@ and the World.
   `POST /api/accounts/devices/revoke-all`, `DELETE /api/accounts/devices/<id>`,
   `POST /api/accounts/logout`.
 
+## Desktop sessions from the account key
+
+A desktop signs in on launch with its Ed25519 key, not a password, so it had
+no session, and features that need one (an embedded dashboard page, the user
+status, runners) told a signed-in person to sign in.
+`POST /api/accounts/desktop-session` (`_account_desktop_session`) gives it one:
+
+- Body `nodeName`, `pubkey`, `ts`, `sig`, where `sig` signs
+  `forkmesh-desktop-session-v1\n<account>\n<pubkey>\n<ts>`; `ts` within
+  `LOGIN_MAX_SKEW_MS`.
+- The key must be one of the account's signing keys
+  (`_account_signing_pubkeys`: the primary key or an enabled `owner_sign`
+  device) and not revoked; user accounts only, like signed package requests.
+- An admin or two-factor account needs the primary key, the same bar as
+  signed admin requests (`_admin_authorized`), so a session never reaches
+  further than the key already could.
+- One use per signature: the request is recorded in `sensitive_audit_log`
+  and a replay is refused.
+- The session is tied to the key's `account_devices` row, and the device's
+  earlier sessions are revoked first, so relaunching does not use up the
+  20-session limit or push out browser sessions. Revoking the device revokes
+  it. No cookie is set.
+
+The desktop calls it after a key sign-in (`ensureAccountSession`,
+`desktop/src/MainWindowAccounts.cpp`); see
+[package modules](../desktop/package-modules.md#checking-sign-in). Tests:
+`app/tests/test_desktop_session.py`.
+
+## Guessing budgets stop correct guesses too
+
+A wrong password charges a source budget and a source+name budget. Once the
+source+name budget is spent, `_account_login` and `_password_git_account` answer
+429 before checking the password, so a correct guess looks like a wrong one.
+The budget belongs to the source, so a stranger cannot lock someone out by
+naming them. A source's own budget refuses correct passwords only past
+`LOGIN_SOURCE_HARD_FAILS` failures, so a few typos in a shared office do not
+block everyone there, while spraying many accounts from one address stops.
+A request with no client address metadata has only a name budget, so it stays
+unchecked until the password is verified.
+
 ## Password checks cost the same for unknown accounts
 
 `POST /api/accounts/login` and the password branch of
 `POST /api/accounts/profile` run one PBKDF2 check even when the identifier
 has no active account with a password (`_verify_password_miss`, against the
-fixed `PASSWORD_MISS_SALT` / `PASSWORD_MISS_HASH`). Without it a miss answered
-tens of milliseconds sooner than a wrong password, so response time told
-anyone whether an email address had an account. Tests:
+fixed `PASSWORD_MISS_SALT` / `PASSWORD_MISS_HASH`), so response time does not
+tell whether an email address has an account. Tests:
 `app/tests/test_login_key_binding.py`, `app/tests/test_account_totp_gate.py`.
 
 ## Cookies and browser markers
@@ -77,15 +123,12 @@ anyone whether an email address had an account. Tests:
   as a guest.
 - The admin shortcut (the shield button in the dashboard header and
   **Admin console** in the account menu) needs `adminUrl` in the stored
-  session. A session rebuilt from the cookie used to carry only the account
-  name, and the one-time profile read (`/api/accounts/<name>`) returns
-  `isAdmin` but never the private console path, so an admin signed in that
-  way lost the button for good. The `account` block of
-  `GET /api/accounts/sessions` now carries `isAdmin` and `adminUrl` for an
-  admin (nothing for anyone else; `_account_admin_link`, which reads the
-  admin flag only for TOTP-enrolled accounts), and the dashboard's
-  `backfillAdminUrl` asks it once when a stored admin session has no
-  `adminUrl`, then marks the session `adminUrlCheckedAt`.
+  session. The profile read (`/api/accounts/<name>`) never returns the private
+  console path, so a session rebuilt from the cookie gets it from the
+  `account` block of `GET /api/accounts/sessions`, which carries `isAdmin` and
+  `adminUrl` for an admin only (`_account_admin_link`, TOTP-enrolled accounts
+  only). The dashboard's `backfillAdminUrl` asks once when a stored admin
+  session has no `adminUrl`, then marks it `adminUrlCheckedAt`.
 - Session validity is not polled: pages check on load, focus and socket
   frames. Tabs share state through `BroadcastChannel("forkmesh.session")` and
   `localStorage`; sign-out clears both.
@@ -102,8 +145,8 @@ ForkMesh page or URLs with a hash or query, and uses `location.replace`.
 
 Signing out, in this tab or another, sends the browser to the public homepage,
 never back into the app. `https://app.forkmesh.com/` answers 308 to
-`/dashboard`, so the old `location.replace("/")` after logout reopened the
-dashboard (issue 2017). The dashboard uses `signedOutHomeUrl()` in
+`/dashboard`, so `location.replace("/")` would reopen the dashboard. The
+dashboard uses `signedOutHomeUrl()` in
 `02-helpers.js` (`https://forkmesh.com/` on the official hosts, the node's own
 `/` on a self-hosted origin); `site-header.js` uses `SIGNED_OUT_HREF`
 (`https://forkmesh.com/` from `app.` and `world.`, `/` elsewhere). The arrival
@@ -130,8 +173,7 @@ digits, 30 seconds); other accounts may enroll optionally.
   caller's source budget is locked, counts every wrong password or code
   against the login budgets, and asks an enrolled account for its code unless
   the request also carries that account's own session (the S-3 rule of
-  `/api/accounts/profile`). They used to be an uncounted password oracle with
-  no TOTP.
+  `/api/accounts/profile`), so they are not an uncounted password oracle.
   - A missing code answers `bad_totp` without touching any budget, so a
     client that has not asked for the code yet (the desktop's "Log in as a
     user", the dashboard's claim form) cannot lock its own account's
@@ -145,7 +187,7 @@ digits, 30 seconds); other accounts may enroll optionally.
     applies there too.
 - Address budgets charge an IPv6 address by its /64 (`_client_source_bucket`),
   the smallest block one customer is routed, so rotating addresses inside it
-  no longer buys new guesses: login, signup, the signup backup check, node
+  buys no new guesses: login, signup, the signup backup check, node
   reserve and the security webhook. `test_every_address_budget_in_the_worker_folds_ipv6_to_a_slash_64`
   fails a new budget in `entry.py` that skips the fold. The same fold covers
   the per-address budgets outside it: signed-out bug reports
@@ -182,34 +224,28 @@ confirm page shows the masked address. Code: `_send_verification_email`,
 
 ### Resend limit
 
-Whoever signs up picks the address, so a resend sends mail to someone who may
-not have asked for it. Two paths can resend: `POST
-/api/accounts/resend-verification` (session only) and the profile POST with
-`resendVerification` (password). Both go through
-`_verification_resend_refusal`: at most one send a minute and five a day per
-account, read from the account's `email_sends` history.
+Whoever signs up picks the address, so a resend mails someone who may not have
+asked. Two paths resend: `POST /api/accounts/resend-verification` (session
+only) and the profile POST with `resendVerification` (password). Both go
+through `_verification_resend_refusal`: at most one send a minute and five a
+day per account, read from the account's `email_sends` history.
 
-The history is written only after the send, which takes seconds over postfix,
-and the postfix route spends no daily mail budget. On its own, the history
-check would let a burst of parallel requests all pass. So each send also
-claims a row in `notification_email_sends`, keyed by the account name and the
-current minute (`verification-resend:` blind index). The claim is one
-`INSERT OR IGNORE` through rqlite, so only one request a minute wins on any
-core. If the claim cannot be written, the resend is refused. The profile path
-then answers `verificationError` and `verificationRetryAfterMs` instead of
-sending. Each send also pings the admins ("Verification email sent to
-<name>"), so the limit caps those pings too. This came out of a check on the
-`chatgpt-race-b9a0aadce62d` signup on 2026-10-20: one signup and one resend,
-both within the limits. Tests: `app/tests/test_email_verification_resend.py`.
+That history is written only after the send (seconds over postfix), so alone
+it would let parallel requests all pass. Each send therefore also claims a row
+in `notification_email_sends` keyed by account and current minute
+(`verification-resend:` blind index) with one `INSERT OR IGNORE` through
+rqlite: one request a minute wins on any core. If the claim cannot be written
+the resend is refused, and the profile path answers `verificationError` and
+`verificationRetryAfterMs`. Each send also pings the admins ("Verification
+email sent to <name>"), so the limit caps those pings too. Tests:
+`app/tests/test_email_verification_resend.py`.
 
 ### One email per signup
 
-A new account got three verification emails on 2026-10-25. Signup
-(`_account_signup`) and node finalize (`_account_finalize` in
-`app/src/route_handlers.py`) used to send a fresh email on every call that
-found an unverified address, so a retried, repeated or parallel request sent
-another one each time. Both now call `_send_signup_verification`. It claims a
-row in `notification_email_sends` keyed by the account name and the lowercased
+Signup (`_account_signup`) and node finalize (`_account_finalize` in
+`app/src/route_handlers.py`) both see an unverified address, and a retried or
+parallel request would mail again each time. Both call
+`_send_signup_verification`, which claims a row in `notification_email_sends` keyed by the account name and the lowercased
 address (`verification-signup:` blind index), and only the request that wins
 the `INSERT OR IGNORE` sends. A failed send still goes to the manual
 verification queue, once. A new address on the same account claims its own
@@ -229,13 +265,14 @@ router key. A mirror never receives the session row or password material.
 
 ## Related
 
-`www/docs/portable-identities.md`, `www/docs/security/organization-roles.md`.
+[portable identities](../portable-identities.md),
+[organization roles](../security/organization-roles.md),
+[encryption](../encryption.md).
 
 ## Settings pinned header
 
 The account header (avatar, name and the page buttons) and the open section's
-title stay at the top while the settings page scrolls, at the user's request
-(2026-10-31). A `<style>` block at the top of `partials/views/settings.html`
+title stay at the top while the settings page scrolls. A `<style>` block at the top of `partials/views/settings.html`
 makes `[data-settings-account-header]` sticky from 768 px up, where it is a
 single row, and every `[data-settings-section-heading]` (a section's `h2`, or
 the Pings title row with its save status) sticky at all widths.
@@ -251,7 +288,8 @@ every save inline: the status line under each form is muted while working,
 `text-success` on a confirmed save and `text-destructive` on a failure.
 Signing out other devices, revoking a node or SSH key, and deleting an
 organization, team, member, linked repo or bot token ask through
-`confirmAccountAction`, an `fm-dialog` with a neutral Cancel (focused first)
+`confirmAccountAction`, an `fm-dialog`
+([dashboard-components.md](dashboard-components.md)) with a neutral Cancel (focused first)
 and a danger confirm; issue and comment deletion and sub-issue creation in
 `03-issues-profile-io.js` use the same dialog. Notices that appear on an event
 are `fm-flash` banners: the node reconnect callout (warning), the node link

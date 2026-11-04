@@ -119,7 +119,7 @@ private struct ConnectionCard: View {
                         .fmMessageTools("\(card.title). \(card.detail)")
                         .padding(.top, FmSpace.x2)
                 }
-                if control.status == .awaitingApproval, let code = LocalDesktopText.spacedCode(control.pairingCode) {
+                if control.status == .awaitingApproval || control.status == .confirmingCode, let code = LocalDesktopText.spacedCode(control.pairingCode) {
                     Text(code)
                         .fmMono(size: 34, weight: .semibold)
                         .tracking(4)
@@ -140,6 +140,9 @@ private struct ConnectionCard: View {
 
     private var buttons: some View {
         HStack(spacing: FmSpace.x2) {
+            if control.status == .confirmingCode {
+                FmFilledButton("Confirm", onPressed: { control.confirmDesktop(control.desktopKey) })
+            }
             if control.status == .failed, let host = control.host {
                 FmOutlinedButton("Try again", onPressed: { Task { await control.connect(host) } })
             }

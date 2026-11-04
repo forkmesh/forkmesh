@@ -15,6 +15,11 @@ enum CIServices {
         let desktop: DesktopActions? = hub.map { DesktopActions(channel: $0, desktopName: $0.desktop?.name ?? "") }
         return RepoActionsModel(client: client, repo: repo, desktop: desktop)
     }
+
+    static func pullChecksModel(_ repo: RepoRef, number: Int) -> PullChecksModel? {
+        guard let client else { return nil }
+        return PullChecksModel(client: client, repo: repo, number: number)
+    }
 }
 
 @MainActor
@@ -73,6 +78,18 @@ struct RepoActionsScreen: View {
                     .onDisappear { model.stop() }
                     .sheet(item: $dispatching) { (workflow: ActionsWorkflowSummary) in
                         DispatchWorkflowSheet(model: model, workflow: workflow)
+                    }
+                    .toolbar {
+                        ToolbarItem(placement: .primaryAction) {
+                            NavigationLink {
+                                RepoActionSecretsScreen(repo: model.repo)
+                                    .shellPageClearance()
+                            } label: {
+                                Image(systemName: "key")
+                            }
+                            .accessibilityLabel("Secrets")
+                            .accessibilityIdentifier("actions-secrets")
+                        }
                     }
             } else {
                 FmEmptyState(icon: "play_circle_outline", title: "Actions are unavailable")
@@ -258,7 +275,7 @@ struct RepoActionsList: View {
             footer: "A turned-off workflow does not run on push, pull requests or releases, and cannot be run by hand.")
         if !model.workflows.isEmpty && !model.canSwitchWorkflows {
             Section {
-                Text("This repository's node does not take remote changes, so workflows can only be run or turned off there.")
+                Text(model.switchesUnavailableMessage)
                     .font(.caption)
                     .foregroundStyle(fm.textSecondary)
             }
@@ -299,6 +316,7 @@ struct RepoActionsList: View {
                 .tint(workflow.enabled ? fm.warning : fm.success)
             }
         }
+        .textSelection(.disabled)
         .contextMenu {
             if workflow.canDispatch && model.canControl {
                 Button {
@@ -389,7 +407,11 @@ struct ActionWorkflowScreen: View {
     var body: some View {
         List {
             if let workflow {
-                switchSection(workflow)
+                if model.summary?.isRunner == true {
+                    runnerSection
+                } else {
+                    switchSection(workflow)
+                }
                 detailsSection(workflow)
                 runsSection(workflow)
             } else if model.loading {
@@ -409,6 +431,20 @@ struct ActionWorkflowScreen: View {
                 ToolbarItem(placement: .primaryAction) {
                     Button("Run") { dispatching = workflow }
                 }
+            }
+        }
+    }
+
+    private var runnerSection: some View {
+        Section {
+            Text(model.switchesUnavailableMessage)
+                .font(.caption)
+                .foregroundStyle(fm.textSecondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if let notice = model.notice {
+                Text(notice.text).font(.caption).foregroundStyle(notice.good ? fm.success : fm.danger)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fmMessageTools(notice.text)
             }
         }
     }
@@ -679,9 +715,22 @@ struct ActionRunScreen: View {
         }
     }
 
+    private func logTitle(_ run: ActionsRunSummary) -> String {
+        let live: Bool = model.fromDesktop || model.hasFullLog(run.id)
+        if live && run.status.isActive {
+            return "Log (live)"
+        }
+        return model.hasFullLog(run.id) ? "Log" : "Log (last lines)"
+    }
+
     private func logSection(_ run: ActionsRunSummary) -> some View {
-        Section(model.fromDesktop && run.status.isActive ? "Log (live)" : "Log (last lines)") {
-            let lines: [String] = CILog.lines(run.logTail)
+        Section(logTitle(run)) {
+            let lines: [String] = model.logLines(run.id)
+            if let problem = model.logProblem, !model.fromDesktop {
+                Text(problem).font(.caption).foregroundStyle(fm.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fmMessageTools(problem)
+            }
             if lines.isEmpty {
                 Text(run.status.isActive ? "The log appears here as the run goes. Pull to refresh." : "No log output.")
                     .foregroundStyle(fm.textSecondary)
@@ -692,14 +741,8 @@ struct ActionRunScreen: View {
                         .textSelection(.enabled)
                         .fixedSize(horizontal: true, vertical: false)
                 }
-                HStack {
-                    ShareLink(item: lines.joined(separator: "\n")) {
-                        Label("Share log", systemImage: "square.and.arrow.up")
-                    }
-                    if run.status == .failed || run.status == .rejected {
-                        Spacer()
-                        FmMessageTools(lines.joined(separator: "\n"), handoff: CIPrompts.fixFailedRun(run, repo: model.repo))
-                    }
+                ShareLink(item: model.fullLog(run.id)) {
+                    Label("Share log", systemImage: "square.and.arrow.up")
                 }
             }
         }

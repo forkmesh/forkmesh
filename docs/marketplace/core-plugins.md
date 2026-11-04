@@ -1,13 +1,14 @@
 # Core features as plugins, off by default in new projects
 
-Most of what the Home grid, the bar tabs and the repository tabs offer is a
-Market package. The packages on this page without a `content/` folder are
-switches over core code; packages with one are plugins that a build adds only
-when `marketplace/plugins.json` lists them ([plugins.md](plugins.md)). Each package is the feature's on/off switch, Market listing
-and install state; the feature code stays in each app (desktop, iPhone,
-Android, web). New projects and accounts start with these packages removed,
-except the phone starter pack below; older ones keep what they had. Repos, Search, Market and Settings stay core
-and always show.
+Part of [Marketplace](README.md). Most of what the Home grid, the
+bar tabs and the repository tabs offer is a Market package. Packages here
+without a `content/` folder are switches over core code; packages with one are
+plugins a build adds only when `marketplace/plugins.json` lists them
+([plugins.md](plugins.md)). Each package is the feature's on/off switch,
+Market listing and install state; the feature code stays in each app (desktop,
+iPhone, Android, web). New projects and accounts start with these packages
+removed, except the phone starter pack below; older ones keep what they had.
+Repos, Search, Market and Settings stay core and always show.
 
 The manifest field `install.installedBefore` (`YYYY-MM-DD`, with
 `install.default: false`) installs a package for projects and accounts
@@ -16,7 +17,7 @@ away from existing users.
 
 ## The packages
 
-Every package below has `install.default: false`. Account-synced packages
+Every package below has `install.default: false`, except `forum`. Account-synced packages
 (`install.sync: "account"`, `GET /api/plugins/@account`) keep their install
 state on the ForkMesh account and follow every device.
 
@@ -35,6 +36,7 @@ state on the ForkMesh account and follow every device.
   `steps`, `water`, `sleep`, `sugar-break`, `stretch`, `food-guide` (mobile
   only), `phone-security` (mobile only, [phone-security.md](phone-security.md)),
   `eye-control` (mobile only, [eye-control.md](eye-control.md)),
+  `silent-speech` (mobile only, [silent-speech.md](silent-speech.md)),
   `runners` (mobile and desktop, [runners.md](runners.md)),
   `strata`, `ember`, `synapse` (mobile and desktop since 1.1.0; desktop
   installs from before are carried to the account,
@@ -43,6 +45,10 @@ state on the ForkMesh account and follow every device.
   `size-map`, the repository screen's Code map button and Size map tab
   (installed before 2026-10-17, desktop only,
   [codebase-analysis.md](codebase-analysis.md)).
+- **The one installed by default, account-synced:** `forum`, the repository
+  Forum tab (web only for now). Readers need nothing to read a forum, and the
+  tab shows only on repositories whose owner turned the forum on
+  ([repo-forum](../app/repo-forum.md)).
 
 Each package gates its feature's surfaces in every app (tabs, tiles, rail
 buttons, repository tabs). `crm` stays organization-installed; `market`,
@@ -86,12 +92,10 @@ desktop keep the off-by-default rule.
 - Before the catalog loads, a gated package with no entry is installed when
   the project is legacy or the package is in the chosen pack.
 
-Why: an October 2026 audit found new installs opened on Repos, Search, Market
-and Settings only, with nothing to do, so Kaif's fixed starter set (Standard)
-turned the three bar tabs, the Code tab and the tour on. A single fixed set
-forced agents on people who want a quiet start, so the owner asked for a
-choice: Minimal for code only, Everything for people who want the legacy
-layout, Standard for everyone else.
+Why: with nothing installed a new phone opened on Repos, Search, Market and
+Settings only, with nothing to do; one fixed set forced agents on people who
+want a quiet start. So the user chooses: Minimal for code only, Everything for
+the legacy layout, Standard for everyone else.
 
 Nesting: every Market nests a package under its first `dependencies` entry, so
 Pull requests sits under Branches, Special Agents under Agents, and the
@@ -109,7 +113,7 @@ installed (it and everything it depends on are installed) and the app's own
 place is in the package's places. Deep links and direct routes keep working;
 hiding is about entry points. On the desktop the core's background services
 behind a switch (the agent watchers, the local mesh, log feeds, the task
-read) start and stop with it too ([shell](../desktop/shell.md)).
+read) start and stop with it too ([empty shell](../desktop/package-modules.md#core-services-follow-their-packages)).
 
 ### Account state
 
@@ -128,15 +132,13 @@ step 2 counts every account as created before every date
 (`_instance_created_at` in `plugin_data.py`), so an account there starts with
 the whole pre-marketplace set: the repository tabs (Code, Issues, Pull
 requests, Branches, Commits, Releases, Discussions, Actions, Agents) and the
-navigation entries (Chat, Network, Agents and the rest). Why: the cut-off
-only exists so that new forkmesh.com accounts pick features in the Market
-onboarding; an instance has no onboarding, every account on a new instance
-(its admins included) is created after the date, and the web hides every
-`data-plugin-entry` the account does not have, so signed-in users saw fewer
-repository tabs than signed-out visitors. Removing a package still stores an
+navigation entries (Chat, Network, Agents and the rest). The cut-off exists
+only so new forkmesh.com accounts pick features in the Market onboarding; an
+instance has no onboarding, and without this its signed-in users would see
+fewer repository tabs than signed-out visitors. Removing a package still stores an
 `installed: false` row, which wins as in step 1. ForkMesh-company surfaces
 among them (World, the ledger) stay hidden by the instance's own plugin
-switch (`INSTANCE_PLUGINS`, see [INSTANCES.md](../INSTANCES.md)).
+switch (`INSTANCE_PLUGINS`, see [instances](../operations/instances.md)).
 forkmesh.com is unchanged.
 
 The server marks answers from steps 2 and 3 with `"legacy": true`
@@ -148,20 +150,18 @@ added on the phone is marked new when it is added).
 
 Answers with no row that step 1 to 3 do not cover (not default, no
 `installedBefore`, no per-account data hook) carry `"unchosen": true`
-(`_unchosen`). The account has never chosen the package, so a desktop that
-has its own stored install keeps it and posts an install to the account
+(`_unchosen`). The account has never chosen the package, so a desktop with
+its own stored install keeps it and posts an install to the account
 (`PackageRegistry::hasStoredInstall`, `MainWindow::applyAccountPackages`).
-This keeps desktop installs made while a package was desktop-only, such as
-`voice-changer` before 1.1.0 added its web page and account sync. Removing
-a package stores a row with `installed: false`, so a removal is never undone
-this way.
+This keeps installs made while a package was desktop-only (such as
+`voice-changer` before 1.1.0). A removal stores `installed: false`, so it is
+never undone this way.
 
 Account-scoped data alone does not establish a legacy install choice:
 `_hook_fallback` checks that the package actually provides an
 `account_installed` hook. Packages such as Instance Feed use only the shared
-account registry and must remain `unchosen` until an account row exists,
-including when a desktop install initially failed because the server's
-catalog was older.
+account registry and stay `unchosen` until an account row exists, even when a
+desktop install failed against an older server catalog.
 
 ### Projects
 
@@ -234,11 +234,11 @@ Android `PackageGateTest` and `AccountPackagesTest`; desktop
 Some packages only work while the user's desktop is reachable: `agents`,
 `desktops`, `special-agents`, `shortcuts`, `hosts` and `usage`. While the
 desktop is offline, each of their icons gets a small amber dot at the
-bottom-left corner that slowly fades in and out (one cycle takes about two seconds).
-It tells the user why the page is empty before they open it. The bottom-left
-corner was chosen because it is the only one free: counts sit top-right,
-live markers top-left, and the update dot (phone) and activity lamp
-(desktop) bottom-right. With Reduce Motion on, the dot stays solid.
+bottom-left corner that fades in and out (about a two-second cycle), so the
+user knows why the page is empty before opening it. Bottom-left is the only
+free corner: counts sit top-right, live markers top-left, the update dot
+(phone) and activity lamp (desktop) bottom-right. With Reduce Motion on, the
+dot stays solid.
 
 The list is kept by hand in three places, because no manifest field says
 whether a package needs the desktop:
@@ -260,7 +260,7 @@ Which icons get the dot, and what counts as offline:
 - **Desktop.** Rail buttons (`ActivityRailButton::setDesktopOffline`, drawn
   by both the classic and the Next painter) and Home board tiles
   (`HomeTile::desktopOffline`). Here, offline means this desktop is not
-  online on the relay (`updateConnectionStatus`, where the top-right
+  online on the App (`updateConnectionStatus`, where the top-right
   connection dot is not green), so phones and the web cannot reach it.
   `syncDesktopOfflineDots` marks the Agents and Team buttons and any native
   package page in the list.

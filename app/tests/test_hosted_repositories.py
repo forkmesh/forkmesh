@@ -1044,7 +1044,7 @@ def test_private_visibility_is_not_offered_for_a_hosted_repository():
 
 
 def test_core_hosting_form_fields_and_import():
-    """docs/HOSTED_REPOS.md: owner, README, .gitignore, license, import."""
+    """docs/operations/core-hosted-repositories.md: owner, README, .gitignore, license, import."""
     for marker in ("data-new-repo-hosted-options", "data-new-repo-owner",
                    "data-new-repo-readme", "data-new-repo-gitignore",
                    "data-new-repo-license", "data-new-repo-quota",

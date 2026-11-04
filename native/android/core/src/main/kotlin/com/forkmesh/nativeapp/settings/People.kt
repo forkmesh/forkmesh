@@ -53,7 +53,6 @@ data class PeopleMember(
                 hasPayoutAddress = map.text("solana").isNotBlank(),
                 statusText = status.text("text").take(80),
                 statusEmoji = status.text("emoji").take(8),
-                tipAddress = map.text("solana").trim().takeIf(SolanaAddress::isValid).orEmpty(),
             )
         }
     }
@@ -208,6 +207,7 @@ data class PeopleProfile(
                 isFollowing = if (social.containsKey("isFollowing")) social.flag("isFollowing") else map.flag("isFollowing"),
                 statusText = status.text("text").take(80),
                 statusEmoji = status.text("emoji").take(8),
+                tipAddress = map.text("solana").trim().takeIf(SolanaAddress::isValid).orEmpty(),
             )
         }
     }

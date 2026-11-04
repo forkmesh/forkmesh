@@ -1,7 +1,8 @@
 # Product analytics
 
-ForkMesh measures its own site with the first-party `analytics` marketplace
-package. No third party receives analytics events.
+Part of [the App docs](README.md). ForkMesh measures its own site with the
+first-party `analytics` marketplace package. No third party receives analytics
+events.
 
 ## Pieces
 
@@ -52,14 +53,13 @@ package. No third party receives analytics events.
   personal hackathon links (`/hackathon/join|squad|challenge/*`) are
   `hackathon-link` and investor deck links (`/pitch-deck/<token>`) are
   `investor-deck`. Both stay coarse, because their paths name a person or
-  carry a token. Until 2026-10-19 the hackathon rules, archive, Market
-  package and ecosystem project pages were counted only as `/(repository)`.
+  carry a token.
 - The hackathon pages the App renders in Python (invite, squad, challenge,
   project) stay script-free on purpose (`hackathon_runtime.py`: one request,
   no script, before the invited person sees who invited them), so they are
   not counted. The static hackathon pages are.
 - No IP address is stored.
-- Campaign attribution ([../attribution.md](../attribution.md)) is a
+- Campaign attribution ([../attribution.md](attribution.md)) is a
   separate server-side system.
 
 ## Storage
@@ -77,11 +77,9 @@ one app process: one load at a time, and an untruncated result is reused for
 15 s (`EVENT_CACHE_MS`) by any query whose window it covers, trimmed to that
 window. A capture, an erasure, a project purge, an organization purge and
 retention clear the project's entry; rows written on another core can be up to
-15 s late. Why (2026-10-16): the Analytics page sends one `/query` per tile at
-once and the Marketing performance report loads the same range again, so n3
-ran 6 to 12 reads of the same 1,043 batch rows together. Its local rqlite hit
-the 220 MB unit limit, was OOM-killed while leading, and the reads during the
-restart opened a 500 error group (`store not open`).
+15 s late. The reason: the Analytics page sends one `/query` per tile at once
+and the Marketing report loads the same range again; unshared, those parallel
+reads of the same batch rows pushed a core's rqlite past its memory limit.
 
 The package is default-on (`install.default: true`): it is listed for every
 organization member, and owners and admins are offered the install. The
@@ -139,6 +137,18 @@ reason (an `Error`'s message and stack, or a shape such as `undefined`,
 are dropped by `knownNonActionableBrowserError` and by
 `_client_error_is_non_actionable` on the server.
 
+A first-party module that fails to link because an import names an export its
+dependency lacks (`does not provide an export named`, Safari's `Importing
+binding name ... is not found`, Firefox's `import not found`) means the page
+mixed files from two builds: the chat graph (`/chat.js` and its imports) is
+served without `?v=` and only revalidates, so a stale copy of one module next
+to a fresh importer breaks the whole page. The error listener reloads the page
+once (`forkmesh.staleModuleReload.v1` in `sessionStorage`, at most every five
+minutes) instead of reporting it; a second failure in that window is reported
+as usual, so a real missing export still reaches `error_log`. The World avoids
+the mix with content-hashed module URLs (`version_world_modules` in
+`app/tools/build_site_assets.py`).
+
 ## Recordings
 
 The package's Recordings tab (session replay) plays back a visit: the page as
@@ -155,8 +165,8 @@ README under "Recordings".
 
 The investor deck (`app/public/pitch-deck/deck.html`) never loads
 `analytics.js`: it is a per-contact link with no consent banner, and its
-per-reader attention goes to the CRM (`/api/pitch-deck/<token>/events`). As of
-2026-10-19 the same beacon also sends a token-free visit to the site project
+per-reader attention goes to the CRM (`/api/pitch-deck/<token>/events`). The
+same beacon also sends a token-free visit to the site project
 (`key: "site"`): one `$pageview` with `$pathname` `/pitch-deck` and an
 `investor_deck_page` event (`page`, `seconds`, `slides`) per slide report. The
 distinct id is `deck-<tab session>`, nothing is stored in the browser, and
@@ -166,7 +176,7 @@ the site. It sends no replay.
 
 ### Desktop overview and playback
 
-The desktop Analytics page (2026-10-19) is laid out densely: KPIs, a 150 px
+The desktop Analytics page is laid out densely: KPIs, a 150 px
 chart, then the breakdown tables in four columns of seven 22 px rows (top
 pages, referrers, landing pages, search terms; countries with flags, devices,
 browsers, events), with campaigns full width. A Recordings column on the
@@ -183,9 +193,9 @@ and typed values never leave the server. The player draws the viewport with
 an outline of the page that scrolls, the cursor and its trail, click ripples,
 and a page minimap with the visible window and that page's clicks so far. It
 has a timeline with page-change and click marks, 0.5–8× speed, skip
-inactivity, and a pages list that seeks. The SDK now records the document
-height (`pageHeight` on `meta`, `h` on window scrolls), so the minimap is to
-scale. Older recordings fall back to the deepest scroll seen. Recordings store
+inactivity, and a pages list that seeks. The SDK records the document height
+(`pageHeight` on `meta`, `h` on window scrolls), so the minimap is to scale;
+older recordings fall back to the deepest scroll seen. Recordings store
 the visitor's country from the first chunk.
 
 ## Security
@@ -197,7 +207,8 @@ Recorded referrer URLs are shown as plain text, never links.
 ## Dashboard page components
 
 The package view (`content/web/view.html`, `content/web/src/page.ui.js`)
-uses the dashboard shell's shared components instead of its own: `fm-btn`
+uses the dashboard shell's shared components
+([dashboard-components.md](dashboard-components.md)) instead of its own: `fm-btn`
 (`fm-btn-sm` in rows, toolbars, cards and dialogs), `fm-flash` for the error,
 saved and truncated-results notices, `fm-dialog` for the editor dialog, the
 person drawer and the data dialog, `fm-blankslate` for empty, loading and

@@ -7,7 +7,7 @@
 
 Runs **only on the operator desktop**, against a local SQLite file (a backup
 pulled with ``tools/next_backup.py``; ``.gz`` or already gunzipped). It never
-talks to a node, rqlite or production. docs/REKEY.md has the inventory this
+talks to a node, rqlite or production. docs/operations/rekey.md has the inventory this
 tool implements and the rollout runbook.
 
 What ``run`` does, in memory, row by row:
@@ -73,7 +73,7 @@ import forkmesh_safe_delete  # noqa: E402
 TOOL_VERSION = 1
 
 # --------------------------------------------------------------------------
-# The inventory (docs/REKEY.md). app/tests/host/test_next_rekey.py fails when
+# The inventory (docs/operations/rekey.md). app/tests/host/test_next_rekey.py fails when
 # the schema grows a *_bi column or a table this registry does not name.
 
 # Emptied: state that is invalid under a new key anyway, or that a user or
@@ -267,6 +267,10 @@ BI_COLUMNS = {
     "moderation_queue": ("repo_bi", "scope_bi", "author_bi"),
     "moderation_roles": ("scope_bi", "account_bi"),
     "nodes": ("node_bi", "user_bi"),
+    "note_chat": ("author_bi",),
+    "note_comments": ("author_bi", "resolved_bi"),
+    "note_page_shares": ("principal_bi", "added_by_bi"),
+    "note_pages": ("owner_bi",),
     "note_events": ("actor_bi",),
     "note_shares": ("principal_bi", "added_by_bi"),
     "note_versions": ("author_bi",),
@@ -351,6 +355,9 @@ BI_COLUMNS = {
     "repo_provider_mirror_outbox": ("repo_bi",),
     "repo_provider_mirrors": ("repo_bi",),
     "repo_archive_syncs": ("repo_bi",),
+    "stale_pull_repos": ("repo_bi",),
+    "stale_pulls": ("repo_bi",),
+    "retired_account_names": ("name_bi", "successor_bi"),
     "repo_remote_forks": ("repo_bi", "url_bi"),
     "repo_security_scan_leases": ("repo_bi", "lease_token_bi"),
     "repo_security_scan_reviews": ("repo_bi", "reviewer_bi"),
@@ -465,7 +472,10 @@ CIPHER_COLUMNS = {
         "marketing_email_campaigns", "microjob_claims",
         "moderation_blocks", "moderation_flags", "moderation_log",
         "moderation_queue", "moderation_roles",
-        "nodes", "note_versions", "notes", "notifications", "org_agent_jobs",
+        "nodes", "note_chat", "note_comments", "note_pages", "note_versions",
+        "notes",
+        "notifications",
+        "org_agent_jobs",
         "org_agent_sessions", "org_bot_tokens",
         "organization_discord_connectors",
         "organization_discord_oauth_grants",
@@ -492,6 +502,7 @@ CIPHER_COLUMNS = {
         "repository_migration_runs", "security_advisories",
         "security_advisory_comments", "security_advisory_credits",
         "security_advisory_members", "security_reports",
+        "stale_pull_repos", "stale_pulls",
         "thread_subscriptions", "users", "workflow_credentials",
         "workflow_runs", "workflows", "world_fediverse_mentions",
         "world_floor_note_replies", "world_floor_notes",
@@ -597,7 +608,7 @@ class Keyset:
         return hmac.compare_digest(self._secret.encode(), other._secret.encode())
 
     def fingerprint(self):
-        """The vault key_id (docs/VAULT.md), shown by next_vault.py status."""
+        """The vault key_id (docs/operations/vault.md), shown by next_vault.py status."""
         try:
             sys.path.insert(0, str(Path(__file__).resolve().parents[1]
                                    / "app" / "host"))

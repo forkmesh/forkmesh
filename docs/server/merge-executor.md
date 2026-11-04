@@ -6,13 +6,15 @@ can merge while the source desktop is offline. A merge needs an owner; an
 update needs only someone who may push the pull's head branch
 ([app/pull-merge-box.md](../app/pull-merge-box.md#update-branch)). Code: `server/merge.go`,
 `server/checks.go`, `server/pull_metadata_refs.go`. Operator view:
-[mirror-node.md, "Owner-authorized web merges"](../../www/docs/operations/mirror-node.md#owner-authorized-web-merges).
+[mirror-node.md, "Owner-authorized web merges"](../operations/mirror-node.md#owner-authorized-web-merges).
+Home: [Go daemon](README.md); why mirrors can take writes:
+[mirroring](../mirroring.md).
 
 ## Flow
 
-1. The relay (the app on the cores) authenticates the account (an owner
-   for a merge, anyone who may push the head branch for an update), signs
-   the exact request (expected base, head and ledger object ids), and sends it to one
+1. The App on the cores authenticates the account (an owner for a merge,
+   anyone who may push the head branch for an update), signs the exact
+   request (expected base, head and ledger object ids), and sends it to one
    healthy mirror's gateway (`merge-preview`, `merge-pull`,
    `update-pull-branch`).
 2. The gateway (`tools/mirror_gateway.py`) runs this binary with one JSON
@@ -24,7 +26,8 @@ update needs only someone who may push the pull's head branch
 4. Gates, in order: the pinned pull record, current base tip, current head tip
    (branch-backed pulls), the review gate (one distinct non-author signed
    approval, no outstanding request for changes; skipped only when the request
-   carries `overrideReview`, which only merges may set),
+   carries `overrideReview`, which only merges may set; see
+   [Reviewers are accounts](#reviewers-are-accounts)),
    `.forkmesh/required-checks.json` read from the reviewed base commit, and
    `.forkmesh/pull-rules.json` from the same commit (`rules_required`; see
    [pull-rules.md](pull-rules.md)). Neither of the last two can be waived.
@@ -42,7 +45,7 @@ update needs only someone who may push the pull's head branch
    `mergeHead` and, when the merged
    commits or mbox carry `Co-authored-by` trailers, `coAuthors` (sorted,
    lowercased emails, at most 16). The executor is never told who asked for
-   the merge, so it writes no `mergedBy`; the relay records the merger for the
+   the merge, so it writes no `mergedBy`; the App records the merger for the
    badge sweep instead ([badges.md](../app/badges.md#record-badges)).
 6. One `update-ref --stdin` transaction moves the base branch, the
    `forkmesh/pulls` compatibility index, the hidden `refs/pr/<n>/metadata` ref
@@ -57,11 +60,29 @@ update needs only someone who may push the pull's head branch
    no branch"). The Python executor in
    `tools/headless_mirror_refresh.py` (`_merge_atomic_update`) does the same.
 7. It rewrites `expectedRefsSha256` for every gateway entry sharing the Git
-   directory, rings the daemon's `/v1/control/sync`, and returns a node-signed
-   refs attestation. The relay admits that digest into the pin history and
+   directory, rings the daemon's `/v1/control/sync` (best effort, 3 s by
+   default, `DaemonWakeTimeout`; the daemon converges on its next cycle if
+   the ring is lost), and returns a node-signed refs attestation. The App
+   admits that digest into the pin history and
    pushes a `commits` event so the other mirrors converge. The event goes
    out even when the digest is not admitted, and it reaches every core
-   (`docs/CORE_PUSH.md`, "Every core is woken at once").
+   ([core push](../operations/core-push.md), "Every core is woken at once").
+
+## Reviewers are accounts
+
+Both executors (`reviewGateSatisfied` in `server/merge.go`,
+`_merge_peer_review_gate` in `tools/headless_mirror_refresh.py`) group reviews
+by the review's `authorName`, lowercased and trimmed, not by its signing key:
+people sign from several device and browser keys, so an account that asked for
+changes with one key and approved with another would otherwise keep an open
+objection, and a pull author could approve their own pull with a second key.
+The App sets `authorName` itself (`_bind_session_author`: the signed-in
+session, or the account the signing key is bound to, refusing a mismatch),
+never from the client, matching the account-keyed ledger in
+[branch protection](../app/branch-protection.md). A review with no account
+name falls back to its key; reviews from the pull author's account under any
+key, or signed with the pull's own key, never count. Latest review wins per
+account, and a dismissal clears that account's earlier review.
 
 ## Progress
 
@@ -74,7 +95,7 @@ patch-backed head), `committing` (ledger record or update commit), `pushing`
 (the `update-ref` transaction) and `publishing` (gateway generation and daemon
 wake). Nothing else goes on those lines: no paths, branch names or object ids.
 There is no `hooks` phase today because Git runs with hooks off; the name is
-reserved in the vocabulary so a node that adds one needs no relay change.
+reserved in the vocabulary so a node that adds one needs no App change.
 
 The gateway runs `execute` through `ExternalMergeExecutor.stream`, which reads
 stderr on its own pipe as the helper runs (at most 64 lines of 256 bytes;
@@ -85,7 +106,7 @@ steps: [{phase, at}]}` for that request id. An executor object without
 `stream` (an older wrapper, the tests' fakes) still runs through `call` and
 reports only `claimed` and `publishing`.
 
-The relay (`_https_mirror_merge_result`) keeps only known phases and integer
+The App (`_https_mirror_merge_result`) keeps only known phases and integer
 times (at most 18 steps), and `repository_pull_merge_handler` writes the
 latest record onto the in-flight `repo_merge_jobs` row's `result` column,
 `{"progress": ...}`, only when it changed and only while the row is
@@ -160,7 +181,7 @@ mutations (`server/merge_branch.go`):
   is derived from the request, so a record rebuilt from the completion marker
   after a crash names the same ref.
 - **Replication.** The cores fetch every head from each other and never
-  delete ([CORE_PUSH.md](../CORE_PUSH.md)), so a removed branch would come
+  delete ([core push](../operations/core-push.md)), so a removed branch would come
   back from a peer. `reconcileUpstreamRefs` therefore skips creating an
   `agent/` branch whose incoming tip is a trashed tip (or contained in one),
   and the App sends the delete to every core that serves the repository;
@@ -191,7 +212,7 @@ Further rules:
   refuses non-`agent/` branches and the App queues the operation for the
   owner's desktop ([../app/branch-ops.md](../app/branch-ops.md)).
 - Hosted repositories get the same mutations on their cores
-  ([../HOSTED_REPOS.md](../HOSTED_REPOS.md)).
+  ([core-hosted repositories](../operations/core-hosted-repositories.md)).
 - After `merged` with `generationReady`, the gateway adopts the generation
   with `reload_from_disk(prewarm=False)` and warms caches in the background.
   The warmup waits until no job finished for 5 s and runs once at a lower
@@ -212,8 +233,8 @@ Tests: `server/merge_branch_test.go`, `app/tests/test_agent_branch_gateway.py`.
 
 ## Traps
 
-- Restarting the gateway kills the job the Worker is polling; the
-  generation marker exists to avoid exactly that.
+- Restarting the gateway kills the job the App is polling; the generation
+  marker exists to avoid exactly that.
 - Nothing rewinds: a stale base, head or ledger pin fails closed
   (`stale_base`, `stale_head`, `pull_not_open`, `review_required`), and the
   owner reloads the pull.
@@ -222,6 +243,6 @@ Tests: `server/merge_branch_test.go`, `app/tests/test_agent_branch_gateway.py`.
 ## Related
 
 - [Pull request rules and model attestations](pull-rules.md)
-- [Signed required checks](../../www/docs/operations/required-checks.md)
-- [Review threads across patchsets](../../www/docs/design/pull-review-threads.md)
+- [Signed required checks](../operations/required-checks.md)
+- [Review threads across patchsets](../design/pull-review-threads.md)
 - [server/README.md](README.md)

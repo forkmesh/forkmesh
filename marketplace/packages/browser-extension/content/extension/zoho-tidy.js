@@ -79,10 +79,12 @@
     });
   }
 
-  function ticked({ checked = false, ariaChecked = null, ariaSelected = null, boxClass = "", rowClass = "" } = {}) {
-    if (checked === true || ariaChecked === "true" || ariaSelected === "true") return true;
-    if (ariaChecked === "false") return false;
-    return /\b(?:checked|selected|zmLSel\w*)\b/i.test(`${boxClass} ${rowClass}`);
+  function ticked({ checked = null, ariaChecked = null, rowChecked = null, boxClass = "", rowClass = "" } = {}) {
+    if (typeof checked === "boolean") return checked;
+    if (ariaChecked === "true" || ariaChecked === "false") return ariaChecked === "true";
+    if (/\b(?:checked|selected|ticked)\b/i.test(boxClass)) return true;
+    if (rowChecked === "true" || rowChecked === "false") return rowChecked === "true";
+    return /\b(?:checked|ticked)\b|[A-Za-z]Checked\b/.test(rowClass);
   }
 
   function actionOf(label) {

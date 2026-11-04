@@ -336,6 +336,8 @@ def _login_harness(rec, *, device_proof_valid=True, initial_devices=None,
             ),
             "_login_record_fail": _login_record_fail,
             "_login_attempt_keys": _login_attempt_keys,
+            "_login_guessing_stopped": lambda *_: asyncio.sleep(0, result=0),
+            "_account_last_owner_org": lambda *_: asyncio.sleep(0, result=None),
             "_login_failure_response": _login_failure_response,
             "_login_clear": _login_clear,
             "_save_account": _save_account,
@@ -548,15 +550,44 @@ def test_login_failure_counter_is_atomic_and_progressive():
     ).fetchone() == (3,)
 
 
-def test_valid_login_never_prechecks_an_attacker_created_lock():
-    source = ENTRY.read_text(encoding="utf-8")
-    login_source = source[
-        source.index("async def _account_login"):
-        source.index("async def _account_rotate")
-    ]
-    assert "_login_locked_until" not in login_source
-    assert login_source.index("verify_password(") < login_source.index(
-        "_login_clear(")
+def _guessing_stopped(rows, now=1_800_000_000_000):
+    tree = ast.parse(ENTRY.read_text(encoding="utf-8"))
+    wanted = [node for node in tree.body
+              if isinstance(node, ast.AsyncFunctionDef)
+              and node.name in ("_login_guessing_stopped", "_login_locked_until")]
+
+    async def d1_first(_env, _sql, key):
+        return rows.get(key)
+
+    names = {"d1_first": d1_first, "LOGIN_SOURCE_HARD_FAILS": 100,
+             "Date": type("Date", (), {"now": staticmethod(lambda: now)})}
+    exec(compile(ast.Module(wanted, []), str(ENTRY), "exec"), names)
+    return names["_login_guessing_stopped"]
+
+
+def test_guessing_stops_for_one_source_and_account_pair_even_with_the_right_password():
+    later = 1_800_000_000_000 + 60_000
+    stopped = _guessing_stopped({"pair": {"locked_until": later}})
+    assert asyncio.run(stopped(None, ["source", "pair"])) == later
+    login_source = ENTRY.read_text(encoding="utf-8")
+    login_source = login_source[
+        login_source.index("async def _account_login"):
+        login_source.index("async def _account_rotate")]
+    assert login_source.index("_login_guessing_stopped(") < login_source.index("verify_password(")
+
+
+def test_a_source_lock_only_refuses_good_passwords_past_the_hard_ceiling():
+    later = 1_800_000_000_000 + 60_000
+    typing_office = _guessing_stopped({"source": {"fails": 12, "locked_until": later}})
+    assert asyncio.run(typing_office(None, ["source", "pair"])) == 0
+    sprayer = _guessing_stopped({"source": {"fails": 100, "locked_until": later}})
+    assert asyncio.run(sprayer(None, ["source", "pair"])) == later
+
+
+def test_a_name_alone_cannot_lock_anyone_out():
+    later = 1_800_000_000_000 + 60_000
+    stopped = _guessing_stopped({"local": {"locked_until": later}})
+    assert asyncio.run(stopped(None, ["local"])) == 0
 
 
 def test_local_demo_credentials_bootstrap_a_real_admin_account():
@@ -966,6 +997,8 @@ def test_concurrent_first_device_bind_allows_exactly_one_account_winner():
         "_ts_ok": lambda value: value == DEVICE_TS,
         "_login_record_fail": noop,
         "_login_attempt_keys": login_attempt_keys,
+        "_login_guessing_stopped": lambda *_: asyncio.sleep(0, result=0),
+        "_account_last_owner_org": lambda *_: asyncio.sleep(0, result=None),
         "_login_failure_response": login_failure_response,
         "_login_clear": noop,
         "_save_account": noop,

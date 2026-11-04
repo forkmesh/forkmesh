@@ -9,6 +9,7 @@ handling, the same prompt, the same markup. Icons are compared by name.
 from __future__ import annotations
 
 import asyncio
+import html
 import json
 import re
 import shutil
@@ -175,8 +176,8 @@ def test_untrusted_fields_are_one_short_line():
 # -- markup --------------------------------------------------------------------
 
 def _box(markup):
-    start = markup.index("<section data-repo-pull-review-prompt")
-    return markup[start:markup.index("</section>", start) + len("</section>")]
+    start = markup.index("<div data-repo-pull-review-prompt")
+    return markup[start:markup.index("</div>", start) + len("</div>")]
 
 
 def test_the_box_escapes_every_value():
@@ -194,12 +195,12 @@ def test_the_box_escapes_every_value():
 def test_the_box_shows_links_not_the_prompt():
     html = prp.render(values(), 12)
     assert "<pre" not in html and "Ground rules" not in html.split('data-dashboard-copy="', 1)[0]
-    assert "Copy review prompt" in html and "Copied" in html
+    assert "copy-icon" in html and "copy-check" in html
     assert 'aria-label="Copy the review prompt for this pull request"' in html
     url = "https://git.example.test/acme/bolt/pull/12"
     assert '<a href="%s.diff" data-repo-pull-diff-link' % url in html
     assert '<a href="%s.patch" data-repo-pull-patch-link' % url in html
-    assert "prompt-toggle" not in html and "data-repo-pull-review-files" not in html
+    assert "data-repo-pull-review-files" not in html
     branch = prp.render(values(has_diff=False), 12, "Short {url}")
     assert "data-repo-pull-diff-link" not in branch
 
@@ -213,21 +214,27 @@ def test_changed_files_link_to_the_head_branch():
         ["old name.txt", ""]]
     html = prp.render(got, 12)
     assert ('<li class="truncate"><a href="https://git.example.test/acme/bolt/blob/'
-            'src/limits.py?ref=feature%2Flimits"') in html
+            'src/limits.py?ref=feature%2Flimits" title="src/limits.py" '
+            'class="text-[var(--dashboard-link)] hover:underline">limits.py</a></li>') in html
     assert '<li class="truncate" title="old name.txt">old name.txt</li>' in html
+    assert "data-repo-pull-files-more" not in html
     remote = values(dict(PULL, head="bob:feature"), patch=PATCH)
     assert [href for _, href in remote["files"]] == ["", ""]
 
 
-def test_many_files_collapse_behind_a_toggle():
-    patch = "".join("diff --git a/f%d b/f%d\n" % (n, n) for n in range(prp.FILE_LINKS_MAX + 3))
+def test_the_box_names_three_files_and_links_the_rest():
+    patch = "".join("diff --git a/d/f%d b/d/f%d\n" % (n, n) for n in range(prp.FILE_LINKS_MAX + 3))
     got = values(patch=patch)
     assert len(got["files"]) == prp.FILE_LINKS_MAX and got["fileCount"] == prp.FILE_LINKS_MAX + 3
     html = prp.render(got, 12)
-    assert 'data-repo-pull-review-prompt-toggle aria-expanded="false" ' \
-           'aria-controls="repo-pull-review-prompt-12"' in html
-    assert '<ul id="repo-pull-review-prompt-12" data-repo-pull-review-files class="max-h-28 ' in html
-    assert "and 3 more" in html and "- and 3 more" in prp.summary_text(got)
+    assert html.count("<li class=\"truncate\">") == prp.FILES_SHOWN == 3
+    assert ">f0</a>" in html and ">f2</a>" in html and ">f3</a>" not in html
+    assert ('<a href="https://git.example.test/acme/bolt/pull/12/files" data-repo-record-tab="files" '
+            'data-repo-pull-files-more ') in html
+    assert ">+%d more files</a>" % (prp.FILE_LINKS_MAX) in html
+    assert "- and 3 more" in prp.summary_text(got)
+    one = prp.render(values(patch="".join("diff --git a/f%d b/f%d\n" % (n, n) for n in range(4))), 12)
+    assert ">+1 more file</a>" in one
 
 
 def test_chatgpt_asks_for_a_summary_with_the_diff_and_files():
@@ -261,6 +268,47 @@ def test_a_long_file_list_is_left_out_of_the_chatgpt_link():
 
 # -- first view ----------------------------------------------------------------
 
+def _chatgpt(markup):
+    link = re.search(r'<a href="https://chatgpt\.com/\?q=([^"]*)" target="_blank" '
+                     r'rel="noopener noreferrer"([^>]*data-repo-pull-review-chatgpt[^>]*)>', markup)
+    assert link, markup
+    return urllib.parse.unquote(html.unescape(link.group(1))), link.group(2)
+
+
+def test_the_box_opens_chatgpt_with_the_prompt():
+    markup = prp.render(values(), 12)
+    query, attrs = _chatgpt(_box(markup))
+    assert query == prp.prompt_text(values(), "")
+    assert query.startswith("Review pull request #12 in bolt on git.example.test: "
+                            "https://git.example.test/acme/bolt/pull/12\n")
+    assert 'aria-label="Review with ChatGPT: opens ChatGPT with the review prompt filled in"' in attrs
+    assert "data-dashboard-copy" not in attrs
+    assert "<span>Review with ChatGPT</span>" not in markup and "lucide-bot" in markup
+    assert markup.index("Copy the review prompt") < markup.index("Review with ChatGPT")
+    assert markup.index("Review with ChatGPT") < markup.index("Summarize in ChatGPT")
+
+
+def test_a_long_prompt_is_cut_to_fit_and_copied_whole():
+    template = "Look at this.\n" + "word " * 3000 + "\nend {url}"
+    prompt = prp.prompt_text(values(), prp.normalize_template(template))
+    markup = prp.render(values(), 12, prp.normalize_template(template))
+    query, attrs = _chatgpt(markup)
+    url = "https://git.example.test/acme/bolt/pull/12"
+    assert query.startswith(url + "\n\nLook at this.\nword ") and query.endswith("\u2026")
+    assert len(urllib.parse.quote(query, safe="-_.!~*'()")) <= prp.CHATGPT_PROMPT_LIMIT
+    assert 'data-dashboard-copy="%s"' % html.escape(prompt).replace("&#x27;", "&#039;") in attrs
+    assert "copies the full prompt" in attrs and "too long for a link" in attrs
+    short = prp.chatgpt_prompt("x " * 4000 + url, url)[0]
+    assert short.startswith(url + "\n\nx x") and short.count(url) == 1
+    kept = prp.chatgpt_prompt(url + " " + "x " * 4000, url)[0]
+    assert kept.startswith(url + " x") and kept.count(url) == 1
+
+
+def test_the_dashboard_bundle_has_the_chatgpt_link():
+    assert "function renderPullReviewChatGptLink(" in BUNDLE
+    assert "${renderPullReviewChatGptLink(text, fields.url, button)}" in BUNDLE
+
+
 def build(number, settings=None, monkeypatch=None):
     if settings is not None:
         main = dict(FILES[repo_views_main()])
@@ -287,9 +335,9 @@ def test_the_first_view_of_an_open_pull_has_the_box(monkeypatch):
     assert ("Look at https://git.example.test/forkmesh/forkmesh/pull/4 "
             "https://git.example.test/forkmesh/forkmesh/pull/4.diff") in box
     assert "data-repo-pull-diff-link" in box and "Summarize in ChatGPT" in box
-    # Between the header line and the tabs, on every tab.
-    assert page.index("wants to merge") < page.index(box) < page.rindex('<nav class="fm-ssr-tabs">')
-    assert "data-repo-pull-review-prompt" in repo_views.render(bundle, "files", origin=ORIGIN)
+    # After the conversation, on the Conversation tab only.
+    assert page.rindex('<nav class="fm-ssr-tabs">') < page.index("opened this pull request") < page.index(box)
+    assert "data-repo-pull-review-prompt" not in repo_views.render(bundle, "files", origin=ORIGIN)
     # Signed-out visitors see it: nothing in it is member-only.
     assert "data-ssr-member" not in box
 
@@ -362,12 +410,14 @@ JS_PRELUDE = "\n".join(
     [_function("escapeHtml", HELPERS)]
     + [_const(name) for name in (
         "PULL_REVIEW_PROMPT_MAX", "PULL_REVIEW_FIELD_LIMITS", "PULL_SUMMARY_CHATGPT_URL",
-        "PULL_SUMMARY_URL_LIMIT", "PULL_REVIEW_FILE_LINKS_MAX", "PULL_REVIEW_FILES_COLLAPSE",
-        "PULL_REVIEW_PATH_LIMIT", "PULL_REVIEW_INVISIBLE", "PULL_REVIEW_PROMPT_DEFAULT")]
+        "PULL_SUMMARY_URL_LIMIT", "PULL_REVIEW_CHATGPT_MAX", "PULL_REVIEW_FILE_LINKS_MAX",
+        "PULL_REVIEW_FILES_SHOWN", "PULL_REVIEW_PATH_LIMIT", "PULL_REVIEW_LONE_SURROGATE", "PULL_REVIEW_INVISIBLE",
+        "PULL_REVIEW_PROMPT_DEFAULT")]
     + [_function(name) for name in (
         "normalizePullReviewTemplate", "cleanPullReviewField",
         "pullChangedFiles", "pullReviewPromptFields", "pullSummaryText",
-        "pullSummaryChatGptUrl", "pullReviewPromptText", "renderPullReviewPrompt")]
+        "pullSummaryChatGptUrl", "pullReviewPromptText", "pullReviewChatGptPrompt",
+        "renderPullReviewChatGptLink", "renderPullReviewPrompt")]
     + ["""
 let ORIGIN = "";
 function publicSiteOrigin() { return ORIGIN; }
@@ -410,6 +460,8 @@ CASES = [
      "link": LINK, "origin": ORIGIN},
     {"pull": dict(PULL, title="\U0001F600" * 300), "patch": "  \n", "template":
      "\U0001F600" * 7000, "link": LINK, "origin": ORIGIN},
+    {"pull": dict(PULL, title="a\ud800b"), "patch": "", "template": "{title} \udc00 {url} " + "y " * 2500,
+     "link": LINK, "origin": ORIGIN},
 ]
 
 
@@ -466,29 +518,28 @@ def test_the_dashboard_reads_the_same_template_from_the_settings():
 
 def test_the_dashboard_shows_the_box_on_open_pulls_only():
     detail = _function("renderRepoRecordDetail")
-    assert ('${isPulls && stateKey === "open" ? renderPullReviewPrompt(pullReviewPromptFields('
-            'repo, number, values, parsed.pullPatch), number, '
-            'parsed.repoCollabSettings?.reviewPromptTemplate || "") : ""}') in detail
-    # In the header, after the merge line and before the section tabs.
-    assert detail.index("renderPullAiModelChip(") < detail.index(
-        "renderPullReviewPrompt(") < detail.index("${recordTabs}")
+    assert ('${isPulls && stateKey === "open" ? sidebarSection("Diff and files", '
+            'renderPullReviewPrompt(pullReviewPromptFields(repo, number, values, '
+            'parsed.pullPatch), number, parsed.repoCollabSettings?.reviewPromptTemplate || "")) '
+            ': ""}') in detail
+    # In the sidebar, after the reviewers, before the assignees.
+    assert detail.index("renderPullReviewers(") < detail.index(
+        "renderPullReviewPrompt(") < detail.index('sidebarSection("Assignees"')
     # The settings are read for pulls (signed out too).
     load = _function("loadRepoRecordDetail")
     assert 'kind === "discussions" ? null : loadRepoCollabSettings(repo)' in load
 
 
-def test_the_toggle_and_copy_are_wired():
-    assert 'closest("[data-repo-pull-review-prompt-toggle]")' in NETWORK
-    assert "togglePullReviewPrompt(reviewPromptToggle)" in NETWORK
-    toggle = _function("togglePullReviewPrompt")
-    assert 'setAttribute("aria-expanded"' in toggle and '"Show less" : "Show all"' in toggle
+def test_more_files_and_copy_are_wired():
+    assert "togglePullReviewPrompt" not in NETWORK
+    tab = NETWORK[NETWORK.index('closest("[data-repo-record-tab]'):]
+    assert tab.index("event.preventDefault()") < tab.index("setRepoRecordSection(")
     # The copy buttons use the shared data-dashboard-copy handler.
     assert 'closest("[data-dashboard-copy]")' in NETWORK
 
 
 def test_the_bundle_is_rebuilt():
-    for name in ("renderPullReviewPrompt", "togglePullReviewPrompt",
-                 "data-repo-pull-review-prompt-toggle", "reviewPromptTemplate"):
+    for name in ("renderPullReviewPrompt", "data-repo-pull-files-more", "reviewPromptTemplate"):
         assert name in BUNDLE
     assert _function("renderPullReviewPrompt") in BUNDLE
 

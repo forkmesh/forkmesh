@@ -44,6 +44,9 @@ struct DevPerformanceOverlay: View {
                 popup(monitor)
             }
         }
+        .onChange(of: proxy.size) { (_: CGSize, _: CGSize) in
+            offset = nil
+        }
     }
 
     private func clamped(_ point: CGPoint, _ proxy: GeometryProxy) -> CGPoint {

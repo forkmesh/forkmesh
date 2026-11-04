@@ -16,6 +16,7 @@ and the AST test suite loads them straight from this file.
 """
 
 import base64
+import re
 import time
 
 from js import Object
@@ -140,21 +141,51 @@ def _to_js_bytes(value):
     return Uint8Array.new(_to_js(bytes(value)))
 
 
-def b64url_decode(value):
+_B64URL_UNPADDED = re.compile(r"[A-Za-z0-9_-]*")
+
+
+def _b64url_decode_lenient(value):
     value = (value or "").strip()
     value += "=" * (-len(value) % 4)
     return base64.urlsafe_b64decode(value.encode())
+
+
+def b64url_decode(value):
+    if not isinstance(value, str) or not _B64URL_UNPADDED.fullmatch(value):
+        raise ValueError("invalid base64url")
+    raw = base64.urlsafe_b64decode((value + "=" * (-len(value) % 4)).encode())
+    if base64.urlsafe_b64encode(raw).rstrip(b"=").decode() != value:
+        raise ValueError("non-canonical base64url")
+    return raw
+
+
+ED25519_WEAK_KEYS = frozenset(bytes.fromhex(value) for value in (
+    "0000000000000000000000000000000000000000000000000000000000000000",
+    "0000000000000000000000000000000000000000000000000000000000000080",
+    "0100000000000000000000000000000000000000000000000000000000000000",
+    "0100000000000000000000000000000000000000000000000000000000000080",
+    "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+    "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+    "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+    "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+    "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+    "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+    "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
+))
 
 
 async def ed25519_verify(pubkey_b64url, sig_b64url, data_bytes):
     # Verify a raw Ed25519 signature using the runtime's WebCrypto, matching the
     # desktop client's identity (raw 32-byte key + 64-byte sig, base64url).
     try:
-        raw_key = b64url_decode(pubkey_b64url)
+        raw_key = _b64url_decode_lenient(pubkey_b64url)
         signature = b64url_decode(sig_b64url)
     except Exception:
         return False
-    if len(raw_key) != 32 or len(signature) != 64:
+    if len(raw_key) != 32 or len(signature) != 64 or raw_key in ED25519_WEAK_KEYS:
         return False
     try:
         key = await js_crypto.subtle.importKey(

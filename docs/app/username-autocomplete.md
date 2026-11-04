@@ -1,8 +1,7 @@
 # Username autocomplete
 
-Every web field that takes a ForkMesh username suggests matching accounts as
-you type. The user asked for it after inviting people to channels by typing
-exact names from memory: "make sure usernames are always auto-complete".
+Part of [the App docs](README.md). Every web field that takes a ForkMesh
+username suggests matching accounts as you type.
 
 ## The shared picker
 
@@ -34,8 +33,8 @@ page's variables and the dashboard's `--dashboard-*-rgb` roles under
 
 `ForkMeshUsernames.search(query)` calls the signed-in account search,
 `GET /api/chat/direct-messages/users?query=` (prefix matches first, 20 at
-most, the caller left out), the same endpoint the direct-message and
-organization member pickers already used. Each query is fetched once per page
+most, the caller left out), the endpoint the direct-message and organization
+member pickers use. Each query is fetched once per page
 load. Results, and any names a page hands to `remember()` (chat passes the
 public account directory), go into one known-names set that
 `lookup(query, onUpdate, exclude)` ranks synchronously: prefix matches
@@ -52,8 +51,8 @@ answers. An empty query returns nothing.
 | Repository settings, Collaborators | `[data-repo-collaborator-name]` (single, current collaborators excluded) |
 | Security advisory, credit and collaborator | `name="user"` (single) |
 
-The existing @mention pickers keep their own lists and add account search
-results after their local people:
+The @mention pickers keep their own lists and add account search results
+after their local people:
 
 - chat composer (`chat.js` `mentionCandidates`) and the dashboard chat panel
   (`dashboard-chat.js`): roster and directory first, then any account;
@@ -61,15 +60,15 @@ results after their local people:
   (`06-repo-content.js` `buildMentionCandidates`): people on the record (tier
   0), the repository roster (tier 1), then any account (tier 2).
 
-Not changed: the organization member field already searched the same endpoint
+Not using it: the organization member field searches the same endpoint
 through a `<datalist>`; team members, calendar attendees, Notes sharing and
 task @mentions pick from the organization, the invitees or the task board on
-purpose (task Pings reach members only, `task-pings.md`). The World page's
-media moderator field runs on its own origin and session and does not load
-the helper. The desktop app's invite dialogs already search people
-(`pickChatPeople`); the phone apps have no channel invite field.
+purpose (task Pings reach members only, [tasks.md](tasks.md#pings)). The
+World page's media moderator field runs on its own origin and session. The
+desktop invite dialogs search people (`pickChatPeople`); the phone apps have no
+channel invite field.
 
 The script is a cache-busted asset (`dashboard_shell.CACHE_BUSTED_ASSETS`),
-loaded by `chat.html` and the dashboard shell, and proxied by the www worker
-for the profile page like `user-status.js`. Tests:
+loaded by `chat.html` and the dashboard shell, and proxied by the
+`forkmesh-www` Worker for the profile page like `user-status.js`. Tests:
 `app/tests/test_username_autocomplete.py`.

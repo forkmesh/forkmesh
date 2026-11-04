@@ -47,11 +47,11 @@ at once needs the operator's desktop.
 The key is kept only as ``env.DATA_KEY`` (plus the app's own derived
 CryptoKey caches); nothing here logs or stores it. Python strings cannot be
 wiped, so ``seal`` removes references and clears the app's key caches but
-cannot guarantee the bytes are overwritten: see docs/VAULT.md. For that,
+cannot guarantee the bytes are overwritten: see docs/operations/vault.md. For that,
 ``seal-restart`` ends the process (its memory goes back to the kernel, which
 zeroes pages before reuse).
 
-IDS quarantine (quarantine.py, docs/IDS.md): a quarantined node refuses
+IDS quarantine (quarantine.py, docs/operations/intrusion-detection.md): a quarantined node refuses
 every unseal, and its peers refuse it peer unseal. After the operator's
 release, peers keep refusing until the desktop has unsealed it once through
 this socket (which stamps the release row).
@@ -332,7 +332,7 @@ class Vault:
             print("vault: unseal refused (quarantined, from %s)" % source,
                   flush=True)
             return _error("quarantined", "the IDS quarantined this node "
-                          "(docs/IDS.md); release it with tools/next_ids.py")
+                          "(docs/operations/intrusion-detection.md); release it with tools/next_ids.py")
         reunseal = quarantine is not None and quarantine.self_needs_reunseal
         if reunseal and source != "socket":
             return _error("desktop_unseal_required")

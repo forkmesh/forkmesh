@@ -1,5 +1,7 @@
 # apt repository
 
+Part of [Releases](README.md).
+
 Debian and Ubuntu users install and update the desktop app with apt:
 
 ```sh
@@ -11,7 +13,8 @@ sudo apt install forkmesh
 
 After that, `sudo apt update && sudo apt upgrade` installs each new release.
 The package runs on the same systems as the Linux binary: Ubuntu 22.04 and
-newer, Debian 12 and newer, x86_64.
+newer, Debian 12 and newer, x86_64. The build:
+[Linux release baseline](linux-baseline.md).
 
 ## Code map
 
@@ -45,7 +48,7 @@ maps to no package or to several. These package names are the same on
 Ubuntu 22.04 and 24.04, which the smoke test checks.
 
 The package version is the release version, with `+<build>` added for a
-rebuilt platform build (`--deploy-build linux`, [README.md](README.md#build-numbers)).
+rebuilt platform build (`--deploy-build linux`, [build numbers](README.md#build-numbers)).
 Build 0 of 1.5.1 is `1.5.1`, build 2 is `1.5.1+2`, and dpkg orders
 `1.5.1 < 1.5.1+2 < 1.5.2`. A rebuild with the same version would never reach
 apt users, which is why the build number goes into the version.
@@ -86,7 +89,8 @@ The app answers `/apt/*` on `app.forkmesh.com` with a 302:
 
 `apt` is in `CORE_RESERVED_ROUTE_PREFIXES`, so no account or organization can
 take a name the route would hide. `forkmesh.com/apt/*` reaches the same routes
-through the www Worker, which 308s two-segment paths to the app; the source
+through the static site's `forkmesh-www` Worker, which 308s two-segment paths
+to the app; the source
 file names `app.forkmesh.com` directly so apt takes one redirect less.
 
 apt verifies `InRelease` against the key named in `Signed-By`, and each file
@@ -100,7 +104,7 @@ and the next `apt update` succeeds.
 
 The key is an OpenPGP Ed25519 signing key, separate from the Ed25519 release
 key that signs `release.json`: apt reads only OpenPGP signatures. It was
-created on the release host on 2026-10-31 with
+created on the release host with
 
 ```sh
 python3 tools/forkmesh-apt-repo.py init-key \
@@ -139,11 +143,8 @@ then `dists/` does not exist and `apt update` reports a 404 for the source.
 
 ## Tested
 
-On 2026-10-31 the v1.5.0 binary and resources were packaged with `deb.sh`
-inside the Debian 12 builder, published with a throwaway key, and served by a
-local copy of the `/apt` redirect routes. On Ubuntu 22.04, Ubuntu 24.04 and
-Debian 12, `apt install forkmesh` installed it with the setup files already
-in place (no conffile prompt) and `apt upgrade` moved it from `1.5.0+2` to
-`1.5.0+3`. Debian 13's apt 3.0 (`sqv`) verified the same repository.
 `app/tests/test_apt_repository.py` covers the package, the metadata and the
-signatures.
+signatures. The whole path was checked end to end with a throwaway key: on
+Ubuntu 22.04, 24.04 and Debian 12, `apt install` with the setup files in place
+(no conffile prompt) and `apt upgrade` from `1.5.0+2` to `1.5.0+3`; Debian 13's
+apt 3.0 (`sqv`) verified the same repository.

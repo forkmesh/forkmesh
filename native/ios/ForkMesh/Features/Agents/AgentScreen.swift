@@ -366,7 +366,7 @@ struct AgentEventTile: View {
                 .fmText(.bodySmall, color: fm.textSecondary, height: 1.4)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            FmMessageTools(text)
+                .fmMessageTools(text)
         }
         .padding(.bottom, FmSpace.x3)
     }
@@ -463,7 +463,7 @@ struct AgentErrorNote: View {
                 .fmText(.bodySmall, height: 1.4)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            FmMessageTools(message)
+                .fmMessageTools(message)
             Button(action: onDismiss) {
                 FmIcon("close", size: 16, color: fm.textTertiary)
             }

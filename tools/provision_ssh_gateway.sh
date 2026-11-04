@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Install the public Git SSH gateway (read-only) on one mirror host.
 #
-# See www/docs/operations/git-ssh-gateway.md for the security model.
+# See docs/operations/git-ssh-gateway.md for the security model.
 #
 #   tools/provision_ssh_gateway.sh <host-ip> [<repo-owner>/<repo-name>]
 #

@@ -35,6 +35,7 @@ REPO_TAB_ROUTES = frozenset({
     "pulls",
     "actions",
     "discussions",
+    "forum",
     "mirrors",
     "agents",
     "insights",
@@ -100,6 +101,7 @@ CORE_RESERVED_ROUTE_PREFIXES = frozenset({
     "notes",
     "office",
     "start",
+    "start-discourse-mirror",
     # Referral share links (/r/<name>) are worker-owned counters.
     "r",
     "admin",
@@ -151,6 +153,7 @@ WWW_SITE_ROUTES = frozenset({
     "pricing",
     "privacy",
     "security-report",
+    "sitemap.xml",
     "status",
     "terms",
 }) | PLUGIN_WWW_SITE_ROUTES
@@ -173,6 +176,7 @@ DASHBOARD_PAGE_ASSETS = {
     "/dashboard/links": "dashboard/links/index.html",
     "/dashboard/achievements": "dashboard/achievements/index.html",
     "/dashboard/runners": "dashboard/runners/index.html",
+    "/dashboard/pings": "dashboard/pings/index.html",
     "/dashboard/docs": "dashboard/docs/index.html",
     "/dashboard/plugins": "dashboard/plugins/index.html",
     "/dashboard/apps": "dashboard/apps/index.html",
@@ -282,7 +286,7 @@ def legacy_page_redirect(path, query):
 # and the list at /owner/repo/pulls; /pulls/12, /pull-requests/12 and GitLab's
 # /-/merge_requests/12 land on /pull/12. Like the page redirects above these
 # are permanent 308s, so an alias is never removed; see
-# www/docs/terminology.json for the full compatibility table.
+# docs/terminology.json for the full compatibility table.
 REPO_ROUTE_ALIASES = {
     "commit": "commits",
     "pull": "pulls",
@@ -335,6 +339,7 @@ BLOCKED_STATIC_HTML_PATHS = frozenset({
     "/dashboard/links/index.html",
     "/dashboard/achievements/index.html",
     "/dashboard/runners/index.html",
+    "/dashboard/pings/index.html",
     "/dashboard/docs/index.html",
     "/dashboard/plugins/index.html",
     "/dashboard/apps/index.html",
@@ -354,6 +359,7 @@ BLOCKED_STATIC_HTML_PATHS = frozenset({
     "/verify-pending.html",
     "/mirror-payouts.html",
     "/start.html",
+    "/start-discourse-mirror.html",
     "/referral/index.html",
     "/hackathon/me/index.html",
     "/microjobs/index.html",

@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -80,6 +81,7 @@ import com.forkmesh.nativeapp.settings.ThemeModeChoice
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenu
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenuItem
 import com.forkmesh.nativeapp.ui.kit.FmEmptyState
+import com.forkmesh.nativeapp.ui.kit.FmHoldArea
 import com.forkmesh.nativeapp.ui.kit.FmIconButton
 import com.forkmesh.nativeapp.ui.kit.FmListRow
 import com.forkmesh.nativeapp.ui.kit.FmPullToRefreshBox
@@ -140,38 +142,66 @@ internal fun CrmSectionBar(model: CrmModel, data: CrmOrganizationData) {
 }
 
 @Composable
-internal fun CrmTabChips(model: CrmModel, items: List<CrmTabItem>) {
-    val haptics = FmHaptics.current
+internal fun CrmTabChips(model: CrmModel, items: List<CrmTabItem>, networks: List<CrmTabItem> = emptyList()) {
     val state = rememberLazyListState()
-    LaunchedEffect(items.size) {
-        val index = items.indexOfFirst { it.tab == model.activeTab }
+    LaunchedEffect(items.size, networks.size) {
+        val listed = items.indexOfFirst { it.tab == model.activeTab }
+        val network = networks.indexOfFirst { it.tab == model.activeTab }
+        val index = if (listed >= 0) listed else if (network >= 0) items.size + 1 + network else -1
         if (index > 0) state.scrollToItem(index)
     }
-    LazyRow(state = state, horizontalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(horizontal = 16.dp)) {
-        items(items, key = { it.tab.id }) { item ->
-            val active = model.activeTab == item.tab
-            val accent = Fm.colors.accent
-            Row(
-                Modifier.height(30.dp).clip(RoundedCornerShape(50))
-                    .background(if (active) accent.copy(alpha = 0.16f) else Fm.colors.textSecondary.copy(alpha = 0.1f))
-                    .semantics { selected = active }
-                    .combinedClickableCompat({
-                        haptics.selection()
-                        model.select(item.tab)
-                        CrmRevision.bump()
-                        (item.tab as? com.forkmesh.nativeapp.market.CrmTab.Sheet)?.let { sheet -> Thread { model.recordListView(sheet.viewId) }.start() }
-                    })
-                    .padding(horizontal = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                val color = if (active) accent else Fm.colors.textPrimary
-                FmIcon(item.icon, size = 14.dp, tint = color)
-                Text(item.title, maxLines = 1, style = Fm.text.bodySmall.copy(fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal), color = color)
-                item.count?.let { count ->
-                    Text("$count", style = Fm.text.labelSmall.copy(fontWeight = FontWeight.Bold), color = color.copy(alpha = 0.75f))
-                }
-            }
+    LazyRow(
+        state = state, horizontalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        items(items, key = { it.tab.id }) { item -> CrmTabChip(model, item) }
+        if (networks.isNotEmpty()) {
+            item(key = "networks") { CrmNetworksHeading() }
+            items(networks, key = { it.tab.id }) { item -> CrmTabChip(model, item) }
+        }
+    }
+}
+
+@Composable
+private fun CrmNetworksHeading() {
+    Row(
+        Modifier.padding(start = 4.dp).testTag("crm-networks")
+            .semantics(mergeDescendants = true) { heading() },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Box(Modifier.width(1.dp).height(18.dp).background(Fm.colors.textSecondary.copy(alpha = 0.3f)))
+        Text(
+            "Networks", maxLines = 1,
+            style = Fm.text.labelSmall.copy(fontWeight = FontWeight.SemiBold), color = Fm.colors.textSecondary,
+        )
+    }
+}
+
+@Composable
+private fun CrmTabChip(model: CrmModel, item: CrmTabItem) {
+    val haptics = FmHaptics.current
+    val active = model.activeTab == item.tab
+    val accent = Fm.colors.accent
+    Row(
+        Modifier.height(30.dp).clip(RoundedCornerShape(50))
+            .background(if (active) accent.copy(alpha = 0.16f) else Fm.colors.textSecondary.copy(alpha = 0.1f))
+            .semantics { selected = active }
+            .combinedClickableCompat({
+                haptics.selection()
+                model.select(item.tab)
+                CrmRevision.bump()
+                (item.tab as? com.forkmesh.nativeapp.market.CrmTab.Sheet)?.let { sheet -> Thread { model.recordListView(sheet.viewId) }.start() }
+            })
+            .padding(horizontal = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        val color = if (active) accent else Fm.colors.textPrimary
+        FmIcon(item.icon, size = 14.dp, tint = color)
+        Text(item.title, maxLines = 1, style = Fm.text.bodySmall.copy(fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal), color = color)
+        item.count?.let { count ->
+            Text("$count", style = Fm.text.labelSmall.copy(fontWeight = FontWeight.Bold), color = color.copy(alpha = 0.75f))
         }
     }
 }
@@ -409,22 +439,24 @@ private fun CrmNextRow(model: CrmModel, mode: CrmNextContact.Mode, runner: CrmRu
     var menu by remember { mutableStateOf(false) }
     Box {
         Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(
-                Modifier.weight(1f).combinedClickableCompat(
-                    { navigator.push(ContactScreen(CrmContactRef(model.organization, contact.id))) },
-                    { menu = true },
-                ),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                CrmAvatar(contact.name.ifEmpty { contact.email }, if (dense) 34 else 40)
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                        Text(contact.displayName, Modifier.weight(1f, fill = false), maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            style = Fm.text.bodyMedium.copy(fontWeight = FontWeight.SemiBold), color = Fm.colors.textPrimary)
-                        CrmChip(mode.title, if (mode == CrmNextContact.Mode.REACH_OUT) CrmColors.blue else CrmColors.orange)
+            FmHoldArea {
+                Row(
+                    Modifier.weight(1f).combinedClickableCompat(
+                        { navigator.push(ContactScreen(CrmContactRef(model.organization, contact.id))) },
+                        { menu = true },
+                    ),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    CrmAvatar(contact.name.ifEmpty { contact.email }, if (dense) 34 else 40)
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                            Text(contact.displayName, Modifier.weight(1f, fill = false), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                style = Fm.text.bodyMedium.copy(fontWeight = FontWeight.SemiBold), color = Fm.colors.textPrimary)
+                            CrmChip(mode.title, if (mode == CrmNextContact.Mode.REACH_OUT) CrmColors.blue else CrmColors.orange)
+                        }
+                        Text(next.reason, maxLines = if (dense) 1 else 2, overflow = TextOverflow.Ellipsis, style = Fm.text.labelSmall, color = Fm.colors.textSecondary)
                     }
-                    Text(next.reason, maxLines = if (dense) 1 else 2, overflow = TextOverflow.Ellipsis, style = Fm.text.labelSmall, color = Fm.colors.textSecondary)
                 }
             }
             val mastodon = CrmText.profileUrl("mastodon", contact.mastodon) ?: CrmText.profileUrl("twitter", contact.twitter)
@@ -575,18 +607,20 @@ private fun CrmStageList(model: CrmModel, data: CrmOrganizationData, flow: CrmFl
                         if (expanded) {
                             group.forEach { contact ->
                                 Box {
-                                    Row(
-                                        Modifier.fillMaxWidth().combinedClickableCompat(
-                                            { navigator.push(ContactScreen(CrmContactRef(model.organization, contact.id))) },
-                                            { menuFor = contact.id },
-                                        ),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        Box(Modifier.weight(1f)) { CrmContactRowContent(contact, flow, showStage = false, dense = false) }
-                                        flow.next(contact.stage)?.let { next ->
-                                            CrmChip("→ ${CrmStageLabel.title(next)}", CrmColors.stage(next, flow), Modifier.padding(end = 12.dp), onTap = {
-                                                runner.run({ move(contact, next) }) { ok -> if (ok) haptics.selection() }
-                                            })
+                                    FmHoldArea {
+                                        Row(
+                                            Modifier.fillMaxWidth().combinedClickableCompat(
+                                                { navigator.push(ContactScreen(CrmContactRef(model.organization, contact.id))) },
+                                                { menuFor = contact.id },
+                                            ),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Box(Modifier.weight(1f)) { CrmContactRowContent(contact, flow, showStage = false, dense = false) }
+                                            flow.next(contact.stage)?.let { next ->
+                                                CrmChip("→ ${CrmStageLabel.title(next)}", CrmColors.stage(next, flow), Modifier.padding(end = 12.dp), onTap = {
+                                                    runner.run({ move(contact, next) }) { ok -> if (ok) haptics.selection() }
+                                                })
+                                            }
                                         }
                                     }
                                     CrmContactMenu(model, data, runner, navigator, contact, expanded = menuFor == contact.id, onDismiss = { menuFor = null }, onDelete = { pendingDelete = it })

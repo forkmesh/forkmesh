@@ -9,7 +9,7 @@ WEB = ROOT / "app" / "public" / "portable-identity.js"
 MOBILE = (ROOT / "native" / "android" / "core" / "src" / "main" / "kotlin" / "com" / "forkmesh"
           / "nativeapp" / "security" / "PortableIdentity.kt")
 DESKTOP = ROOT / "desktop" / "src" / "ForkMeshIdentity.cpp"
-DOCS = ROOT / "www" / "docs" / "portable-identities.md"
+DOCS = ROOT / "docs" / "portable-identities.md"
 
 
 def test_web_and_mobile_use_the_same_provider_neutral_envelope():

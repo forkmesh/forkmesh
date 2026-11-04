@@ -1,6 +1,7 @@
 #include "MarkdownEditor.h"
 #include "ChatLinkText.h"
 #include "MarkdownDocument.h"
+#include "MarkdownLiveHighlighter.h"
 #include "MarkdownRender.h"
 #include "PromptSpellCheckHighlighter.h"
 
@@ -34,6 +35,7 @@
 #include <QVBoxLayout>
 
 #include <algorithm>
+#include <utility>
 
 namespace {
 const QStringList kImageSuffixes = {"png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"};
@@ -54,7 +56,9 @@ MarkdownEditor::MarkdownEditor(QWidget *parent) : QWidget(parent)
     m_source = new QPlainTextEdit;
     m_source->setObjectName("markdownSource");
     m_source->setAcceptDrops(false);  // drops are handled by this widget instead
-    (new PromptSpellCheckHighlighter(m_source->document()))->attachTo(m_source);
+    m_spell = new PromptSpellCheckHighlighter(m_source->document());
+    m_spell->attachTo(m_source);
+    m_liveHighlighter = new MarkdownLiveHighlighter(this);
     m_preview = new QTextBrowser;
     m_preview->setObjectName("markdownPreview");
     m_preview->setOpenExternalLinks(false);
@@ -76,8 +80,15 @@ MarkdownEditor::MarkdownEditor(QWidget *parent) : QWidget(parent)
         tab->setCursor(Qt::PointingHandCursor);
     }
     m_writeTab->setChecked(true);
+    m_liveTab = new QPushButton("Live");
+    m_liveTab->setObjectName("markdownTab");
+    m_liveTab->setCheckable(true);
+    m_liveTab->setCursor(Qt::PointingHandCursor);
+    m_liveTab->setToolTip("Edit the note formatted, with each line's Markdown shown while the cursor is on it");
+    m_liveTab->hide();
     header->addWidget(m_writeTab);
     header->addWidget(m_previewTab);
+    header->addWidget(m_liveTab);
     header->addSpacing(8);
 
     auto *toolbar = new QHBoxLayout;
@@ -122,6 +133,13 @@ MarkdownEditor::MarkdownEditor(QWidget *parent) : QWidget(parent)
     layout->addLayout(header);
     layout->addWidget(m_stack, 1);
 
+    connect(m_source, &QPlainTextEdit::textChanged, this, [this] {
+        QString text = m_source->toPlainText();
+        if (text == m_lastText)
+            return;
+        m_lastText = std::move(text);
+        emit sourceEdited();
+    });
     connect(m_source, &QPlainTextEdit::textChanged, this,
             &MarkdownEditor::updatePreview);
     connect(m_source, &QPlainTextEdit::textChanged, this,
@@ -130,6 +148,11 @@ MarkdownEditor::MarkdownEditor(QWidget *parent) : QWidget(parent)
             &MarkdownEditor::updateMentionPopup);
     connect(m_writeTab, &QPushButton::clicked, this, &MarkdownEditor::showWrite);
     connect(m_previewTab, &QPushButton::clicked, this, &MarkdownEditor::showPreview);
+    connect(m_liveTab, &QPushButton::clicked, this, &MarkdownEditor::showLive);
+    connect(m_source, &QPlainTextEdit::cursorPositionChanged, this, [this] {
+        if (m_live)
+            m_liveHighlighter->setActiveBlock(m_source->textCursor().blockNumber());
+    });
 
     setAcceptDrops(true);
     m_source->viewport()->installEventFilter(this);
@@ -186,22 +209,63 @@ void MarkdownEditor::clearPendingAttachments()
     m_attachmentPlaceholders.clear();
 }
 
+void MarkdownEditor::setLiveAvailable(bool available)
+{
+    m_liveTab->setVisible(available);
+    if (!available && m_live)
+        showWrite();
+}
+
+void MarkdownEditor::showLiveArea() { showLive(); }
+
+void MarkdownEditor::setTabs(QPushButton *checked)
+{
+    for (QPushButton *tab : {m_writeTab, m_previewTab, m_liveTab})
+        tab->setChecked(tab == checked);
+    if (modeChanged)
+        modeChanged();
+}
+
+void MarkdownEditor::setLiveStyling(bool on)
+{
+    if (on == m_live)
+        return;
+    m_live = on;
+    if (on) {
+        m_spell->setDocument(nullptr);
+        m_liveHighlighter->setActiveBlock(m_source->textCursor().blockNumber());
+        m_liveHighlighter->setDocument(m_source->document());
+    } else {
+        m_liveHighlighter->setDocument(nullptr);
+        m_spell->setDocument(m_source->document());
+    }
+}
+
 void MarkdownEditor::showWrite()
 {
+    setLiveStyling(false);
     m_stack->setCurrentWidget(m_source);
-    m_writeTab->setChecked(true);
-    m_previewTab->setChecked(false);
+    setTabs(m_writeTab);
+    m_source->setFocus();
+}
+
+void MarkdownEditor::showLive()
+{
+    hideMentionPopup();
+    setLiveStyling(true);
+    m_stack->setCurrentWidget(m_source);
+    setTabs(m_liveTab);
     m_source->setFocus();
 }
 
 void MarkdownEditor::showPreview()
 {
     hideMentionPopup();
+    setLiveStyling(false);
     updatePreview();
     m_stack->setCurrentWidget(m_preview);
     forkmesh::ui::styleReadmeDocument(m_preview);
-    m_writeTab->setChecked(false);
-    m_previewTab->setChecked(true);
+    setTabs(m_previewTab);
 }
 
 void MarkdownEditor::setMentionCandidates(const QStringList &names)
@@ -354,9 +418,25 @@ void MarkdownEditor::updatePreview()
         previewMarkdown.replace(m_attachmentPlaceholders.at(i),
                                 QUrl::fromLocalFile(m_attachments.at(i)).toString());
     }
+    if (m_previewSource)
+        previewMarkdown = m_previewSource(previewMarkdown);
     m_preview->setMarkdown(MarkdownRender::forPreview(previewMarkdown));
     if (m_stack && m_stack->currentWidget() == m_preview)
         forkmesh::ui::styleReadmeDocument(m_preview);
+    if (m_previewFinish)
+        m_previewFinish(m_preview);
+}
+
+void MarkdownEditor::setPreviewHooks(PreviewSource source, PreviewFinish finish)
+{
+    m_previewSource = std::move(source);
+    m_previewFinish = std::move(finish);
+}
+
+void MarkdownEditor::refreshPreview()
+{
+    if (m_previewFinish)
+        m_previewFinish(m_preview);
 }
 
 void MarkdownEditor::wrapSelection(const QString &left, const QString &right)

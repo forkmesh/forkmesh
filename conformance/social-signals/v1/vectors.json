@@ -3729,6 +3729,6 @@
   }
  ],
  "schema": "forkmesh-social-signal-vectors-v1",
- "specification": "www/docs/social-signals.md",
+ "specification": "docs/social-signals.md",
  "version": "1.0.0"
 }

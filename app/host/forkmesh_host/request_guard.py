@@ -2,7 +2,7 @@
 
 * **Host allowlist.** On a VPS node the App answers only its configured
   public names: ``FORKMESH_PUBLIC_HOSTS`` (comma list rendered into app.env:
-  app.next, world.next and every nN.next name) plus the hosts of
+  app.forkmesh.com, world.forkmesh.com and every nN.next name) plus the hosts of
   ``APP_ORIGIN`` / ``WORLD_ORIGIN``. Anything else (``localhost``,
   ``127.0.0.1``, a raw IP, a foreign name) gets ``421``. Only ``/health``,
   ``/readyz`` and ``GET /api/version`` from a loopback peer are exempt: the
@@ -14,12 +14,12 @@
   ``POST /<owner>/<repo>/git-receive-pack`` (``FORKMESH_MAX_GIT_PUSH_BODY_BYTES``;
   the pack streams through to a core gateway, never buffered, and a
   ForkMesh-hosted repository's own size limit is checked before it is
-  proxied, docs/HOSTED_REPOS.md). Caddy mirrors all three numbers
+  proxied, docs/operations/core-hosted-repositories.md). Caddy mirrors all three numbers
   (deploy/core/render.py). A ``Content-Length`` above the cap is refused
   before any byte is read; a chunked body is counted while it streams and
   stops at the cap, so it is never buffered past it.
 * **Edge client.** ``x-forkmesh-edge-client`` from the homepage Worker is
-  verified per deploy/core/edge_client.md and only then replaces
+  verified per docs/www/edge-client.md and only then replaces
   ``cf-connecting-ip`` / ``cf-ipcountry``. The header never reaches the
   Worker code.
 """
@@ -181,7 +181,7 @@ def edge_sign(secret, ip, country, ts, method, path):
 
 
 class EdgeClientVerifier:
-    """deploy/core/edge_client.md, plus a single-use MAC cache: a captured
+    """docs/www/edge-client.md, plus a single-use MAC cache: a captured
     header is accepted once per window (a replay falls back to the peer)."""
 
     def __init__(self, window=EDGE_WINDOW_S, max_seen=20000, clock=time.time):

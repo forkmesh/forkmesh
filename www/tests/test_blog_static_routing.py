@@ -127,6 +127,16 @@ def test_docs_redirects_defer_to_directory_html_handling():
     assert WRANGLER["assets"]["html_handling"] == "auto-trailing-slash"
 
 
+def test_static_redirects_come_before_the_dynamic_rule_limit():
+    dynamic = 0
+    for source, _, _ in redirect_rules():
+        if source.startswith("#"):
+            continue
+        if dynamic or ":" in source or "*" in source:
+            dynamic += 1
+    assert dynamic <= 100
+
+
 def test_docs_json_assets_are_not_redirected():
     patterns = []
     for source, _, _ in redirect_rules():
@@ -139,10 +149,10 @@ def test_docs_json_assets_are_not_redirected():
             else:
                 parts.append(".*".join(re.escape(piece) for piece in segment.split("*")))
         patterns.append((source, re.compile("/".join(parts))))
-    assets = sorted((WWW / "docs").rglob("*.json"))
+    assets = sorted((WWW.parent / "docs").rglob("*.json"))
     assert assets
     for asset in assets:
-        path = "/docs/" + asset.relative_to(WWW / "docs").as_posix()
+        path = "/docs/" + asset.relative_to(WWW.parent / "docs").as_posix()
         caught = [source for source, pattern in patterns if pattern.fullmatch(path)]
         assert not caught, (path, caught)
 
@@ -179,7 +189,7 @@ def test_flat_marketing_pages_defer_to_html_handling():
         assert (PUBLIC / f"{page}.html").is_file()
         assert (f"/{page}", f"/{page}.html", "200") not in rules
         # Flat pages pass through the Worker only so acquisition attribution
-        # can observe them (docs/attribution.md); the Worker still resolves
+        # can observe them (docs/app/attribution.md); the Worker still resolves
         # the clean URL through the assets binding's html_handling.
         assert f"/{page}" in worker_first
     assert [rule for rule in rules if rule[2] == "200"] == [

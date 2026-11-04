@@ -1,6 +1,7 @@
 # ForkMesh Ecosystem (curated project directory)
 
-A public directory of projects around Git-native collaboration (decentralized
+Part of [the App docs](README.md). A public directory of projects around
+Git-native collaboration (decentralized
 Git, forges, trackers, review, chat, AI coding agents) and of every third
 party ForkMesh depends on. Each listing has public fields and a private
 strategy layer visible only to administrators. Code: `app/src/ecosystem.py`,

@@ -3,18 +3,20 @@
 This page specifies layers 2 to 4 of [FM Media](fm-media.md): the media
 protocol (datagrams and the control stream), loss recovery (FEC and
 retransmission), congestion control and pacing, the jitter buffers, the
-session layer (`fmm.Client`) and the SFU forwarding core. It also records the
-measurements that shaped them and the decisions taken on the way
-(2026-10-21). The code is `server/rtc/fmm/`, standard library only, in the
-`forkmesh.com/mirror-node` module.
+session layer (`fmm.Client`) and the SFU forwarding core, plus the
+measurements that shaped them. The code is `server/rtc/fmm/`, standard
+library only, in the `forkmesh.com/mirror-node` module. Home:
+[Go daemon](README.md). Payloads are end-to-end encrypted before they reach
+this layer ([call-e2ee.md](call-e2ee.md),
+[encryption](../encryption.md)).
 
-The second round (also 2026-10-21) added the core's half of ideas 1 to 3 of
+The core includes its half of ideas 1 to 3 of
 [Beyond FaceTime](fm-media.md#beyond-facetime): long-term reference recovery,
 DRED-aware audio and the face stream with per-subscriber encodings
-(simulcast), and fixed the weak spots the first round listed. Each section
-below describes the protocol as it is now; [Round two](#round-two-what-changed-and-why)
-explains the changes and [Simulations](#simulations) compares the numbers
-before and after.
+(simulcast). Each section describes the protocol as it is now;
+[Why it is built this way](#why-it-is-built-this-way) gives the
+measured reasons and [Simulations](#simulations) compares the first version
+("before") with the current one.
 
 ## Packages
 
@@ -364,7 +366,7 @@ retransmission covers them, on audio DRED does.
 ## Congestion control
 
 A sender-side estimator in the spirit of Google Congestion Control, one per
-hop (`cc.Controller`), plus four delay and feedback rules added in round two:
+hop (`cc.Controller`), plus four delay and feedback rules:
 
 1. **Arrival groups.** Packets sent within 5 ms form a group; per pair of
    groups the delay variation is `(arrival delta) - (send delta)`. Packets
@@ -446,9 +448,9 @@ queued for more than 200 ms: a backlog left from a capacity drop then drains
 into the bottleneck slowly instead of refilling the queue that audio waits
 behind. Probes temporarily raise the rate and fill with padding, and pad
 until the probe has at least five packets: media sent during a probe count
-towards it, and a few large video packets used to use up its bytes after
-three packets, so the controller discarded every probe and an uplink stayed
-at 300 kbps for 10 s after drop-recover's link came back.
+towards it, and without the floor a few large video packets use up its bytes
+after three packets, the controller discards every probe, and an uplink
+stays at 300 kbps for 10 s after drop-recover's link comes back.
 
 ### Measured curves
 
@@ -468,13 +470,13 @@ sampled every 0.5 s; peak target over the same window):
 Cap drop and rise (2.5 Mbps, 500 kbps from 20 s, 2.5 Mbps from 40 s): the drop
 is handled within 1 s (one burst of tail drops, 246 ms of queue for one
 sample), and after the rise the target is back above 1.5 Mbps in 3.0 s
-(4 s before round two). Random loss on a 2 Mbps link: mean target 1785 kbps at
+(4 s in the first version). Random loss on a 2 Mbps link: mean target 1785 kbps at
 5% loss and 1632 kbps at 10% loss (1758 and 1654 before).
 
-At 3 Mbps the controller now uses more of the link (92% against 88%) and the
-link's p95 queue rose from 32 to 49 ms: probes that used to be discarded for
-having too few packets now count, and win more often near the cap. At 300 kbps
-the queue fell; the peak overshoot (about 110%) is unchanged.
+At 3 Mbps the five-packet probe floor uses more of the link (92% against
+88%) at the price of a higher p95 queue (49 ms against 32 ms): probes count
+and win more often near the cap. At 300 kbps the queue fell; the peak
+overshoot (about 110%) is unchanged.
 
 ## Jitter buffers
 
@@ -656,8 +658,8 @@ headers. Within a track an active face encoding takes 32 kbps first; the
 video encodings split the rest 1 : 3 (two) or 12 : 28 : 60 (three) among
 those not paused; each is capped by the SFU's `BitrateHint` for its stream
 and returned as 0 below 15 kbps (the encoder should stop rather than send an
-unusable stream; it used to be floored at 30 kbps even when audio alone did
-not fit). `AudioBitrate` is 20% of the target, between 16 and 32 kbps.
+unusable stream; a 30 kbps floor kept video sending when audio alone did not
+fit). `AudioBitrate` is 20% of the target, between 16 and 32 kbps.
 
 ## SFU forwarding core (`fmm/sfu`)
 
@@ -833,9 +835,9 @@ keeps the newest complete picture (`FaceReference`) and returns it from
 **Receiver.** `PollVideo` reports `Face` on every frame, and an
 `EventRepresentation` whenever a stream changes between video and face.
 
-## Round two: what changed and why
+## Why it is built this way
 
-In the order it was built, each change measured in the simulator:
+Each rule below was measured in the simulator against the first version:
 
 1. **Long-term recovery** (above). In the ablation (same code with recovery
    off), loss-20 calls send 27.4 keyframes (324 kB) without it and 13.1
@@ -844,11 +846,8 @@ In the order it was built, each change measured in the simulator:
    become 9.8 (151 kB) plus 1.9 (20 kB). On drop-recover (keyframes there come
    from subscribers resuming after a pause, which recovery cannot serve) it
    makes no difference.
-2. **DRED** in the audio buffer, the depth field, the look-ahead and the
-   cheap-FEC rule (above).
-3. **Face stream, encodings, simulcast** (above).
-4. **Drop-recover.** The trace of a 2 Mbps to 100 kbps drop showed the real
-   causes: (a) the 400 ms queue fills in about 30 ms, and the reports that
+2. **DRED, face stream, encodings and simulcast**: see their sections.
+3. **Drop-recover.** A 2 Mbps to 100 kbps drop has three causes: (a) the 400 ms queue fills in about 30 ms, and the reports that
    would slow the sender sit in the other direction's full queue; (b) after
    the cut the sender still offered more than the link carried (fixed-rate
    audio with 1 s of DRED, a 30 kbps video floor, FEC), so the queue stayed
@@ -862,7 +861,7 @@ In the order it was built, each change measured in the simulator:
    congested pacer. Priority for audio in the pacer was already there (audio
    always first, and it may overdraw the budget); it cannot help once the
    packets are in the network's queue.
-5. **Estimate overshoot at 300 kbps.** The two-client cap-300k concealment
+4. **Estimate overshoot at 300 kbps.** The two-client cap-300k concealment
    was 5% from short delay spikes as the uplink estimate overshot; with the
    standing-queue cut and the rules above it is 1.7% (mean of seeds 7 to 12;
    seed 7 alone gave 5% before). In the single-flow CC
@@ -871,17 +870,16 @@ In the order it was built, each change measured in the simulator:
    packets instead of 1200 bytes (as libwebrtc does) brought the peak to 105%
    but slowed the climb at 100 kbps enough to pause face streams, so it was
    not kept.
-6. **Feedback datagrams.** Measured in the ablation table: loss-20 freezes
+5. **Feedback datagrams.** Measured in the ablation table: loss-20 freezes
    92.8 (24.2 s) → 61.2 (15.5 s), burst freezes 32.6 (7.2 s) → 16.0 (3.7 s) (control stream first). Reliable reports
    and NACKs wait for QUIC retransmission behind lost packets (head-of-line
    blocking); unreliable ones, repeated, arrive on time or not at all.
-7. **Keyframe storms and stuck estimates.** Eight-seed runs exposed single
-   calls with 68 keyframes: a paused subscriber's receiver asked for a
-   keyframe every 500 ms and the SFU passed each on, while its downstream,
-   carrying only audio, could never grow enough to resume. The SFU now
-   ignores those requests and probes while anything is paused. The same runs
-   found the probe-size bug above.
-8. **Random-loss threshold** 25% → 35% (30% path loss no longer collapses the
+6. **Keyframe storms and stuck estimates.** A paused subscriber's receiver
+   asking for a keyframe every 500 ms, passed on by the SFU, gave single calls
+   68 keyframes, while its audio-only downstream could never grow enough to
+   resume. The SFU ignores those requests and probes while anything is
+   paused.
+7. **Random-loss threshold** 25% → 35% (30% path loss no longer collapses the
    uplink), and the SFU no longer costs layers with packet overhead (that made
    it drop layer 2 at burst loss; overhead counts only for shedding).
 
@@ -918,13 +916,12 @@ capped profiles have no randomness and give the same result for every seed.
 
 - `go test ./rtc/fmm/sim`: two clients, 12 s, clean, loss-10, jitter-100 and
   cap-300k, gated on the mean of seeds 7 to 12 (with `-short`: clean and
-  loss-10), and the face-stream test below with its limits. The gate used one
-  seed; on that seed jitter-100 passed by luck: over seeds 7 to 12 two-client
-  jitter-100 conceals 3.2% of audio with the round-one code and 2.9% now, so
-  its limit is 4%.
+  loss-10), and the face-stream test below with its limits. The gate uses a
+  six-seed mean because one seed can pass by luck: over seeds 7 to 12
+  two-client jitter-100 conceals 2.9% of audio, so its limit is 4%.
 - `FMM_SIM=1 go test -v ./rtc/fmm/sim`: everything here.
 
-"Before" numbers come from the round-one code (commit `ac7429636f`) with the
+"Before" numbers come from the first version (commit `ac7429636f`) with the
 same profiles, seeds and metrics added to its harness.
 
 ### Three clients, every profile
@@ -942,7 +939,7 @@ same profiles, seeds and metrics added to its harness.
 
 cap-300k and drop-recover have no randomness, so all eight seeds give one
 run, and that run swings with any change (drop-recover's audio moved between
-6.6% and 8.6% across the last few changes of round two). With ±2 ms of
+6.6% and 8.6% across small changes). With ±2 ms of
 in-order jitter added to every link, which gives each seed its own run:
 
 | Profile (±2 ms, 8 seeds) | Audible audio concealment | Audio delay mean ms | Video fps | Freezes per call (total) | Video kbps | Keyframes per call |
@@ -998,7 +995,7 @@ profiles from the DRED look-ahead and audio FEC.
 | burst (GE 0.05/0.2, 90%) | 2.64% / 2.51%, 89 ms | 2.18% / 2.42%, 89 ms | **0.55%** / 4.46%, 118 ms |
 
 With room for it, hop-level FEC alone already holds random loss below 0.5%
-(round one used 200% audio FEC here too); DRED adds little there, costs up to
+(the first version used 200% audio FEC here too); DRED adds little there, costs up to
 20 ms of look-ahead, and at 30% one-hop loss is slightly worse than FEC
 (0.51% against 0.34% before), because the cheap-FEC rule turns audio FEC off
 once its rate passes 15% of the target. DRED wins on bursts (2.64% → 0.55% at
@@ -1061,12 +1058,10 @@ Three clients at 2.5 Mbps; p2's downlink is capped at 250 kbps.
 | simulcast x3 + face | 746 | 756 | 15 | 15 | 30.0 | 0 | 0.55% |
 | one encoding + face | 830 | 752 | 15 | 15 | 30.0 | 0 | 0.41% |
 
-Before (one encoding, seed 23): p0 received p1 at 73 kbps and p1 received p0
-at 80 kbps, because the hint followed p2; p2 got 25 and 14 kbps at 6 and
-3 fps with 3 freezes each and 7.3% audio concealment. Now the weak subscriber
-never drags the others down: with one encoding it is paused (audio only),
-with simulcast it gets the lowest encoding at 22 fps, and with a face
-encoding it gets live faces at 30 fps.
+In the first version the hint followed p2, so p0 and p1 received each other
+at 73 and 80 kbps. Now the weak subscriber never drags the others down: with
+one encoding it is paused (audio only), with simulcast it gets the lowest
+encoding at 22 fps, and with a face encoding it gets live faces at 30 fps.
 
 ### drop-recover, client p0 (300 kbps section)
 
@@ -1107,9 +1102,10 @@ round-trips), `fec.FuzzDecoder` (recovered packets always parse),
 `frag.FuzzReassembler` (no state is left after expiry), `sfu.FuzzPeerInput`
 and `fmm.FuzzClientInput` (arbitrary datagrams and control into a live
 peer, seeded with feedback datagrams, Ack, Recovery, an encoding Publish and a
-reference-picture part). Each ran for 20 s with no failure on 2026-10-21 on a
-heavily loaded machine (from about 7 000 executions for the reassembler to
-2 million for the control decoder), for example `go test -run XXX -fuzz '^FuzzParseFeedback$' -fuzztime 20s ./rtc/fmm/wire`.
+reference-picture part). Each runs 20 s clean on a loaded machine (from
+about 7,000 executions for the reassembler to 2 million for the control
+decoder), for example
+`go test -run XXX -fuzz '^FuzzParseFeedback$' -fuzztime 20s ./rtc/fmm/wire`.
 `cd server && go test -race ./rtc/fmm/...` covers everything else.
 
 ## Not done yet
@@ -1128,7 +1124,7 @@ heavily loaded machine (from about 7 000 executions for the reassembler to
 - Simulcast switches between video encodings need a keyframe of the target
   encoding; long-term frames cannot serve across encodings.
 - DRED's cost and quality in the simulator are a model; the Opus build has
-  DRED off for now (docs/native/opus.md).
+  DRED off for now ([opus.md](../native/opus.md)).
 - A per-track packet cache shared by all subscribers at the SFU. Today each
   subscriber's downstream sender keeps its own 512-packet video history.
 - The WebRTC bridge. Room and ticket integration and failover are in the

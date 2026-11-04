@@ -19,6 +19,8 @@ CONTACT = "c" * 32
 
 class Runtime:
     def __init__(self, installed=True, crm=True):
+        invoices._SCHEMA_READY = False
+        self.verified = set()
         self.db = sqlite3.connect(":memory:")
         self.db.row_factory = sqlite3.Row
         self.db.execute("CREATE TABLE schema_meta(k TEXT PRIMARY KEY,v TEXT NOT NULL)")
@@ -84,7 +86,7 @@ class Runtime:
     async def json_body(self, _limit): return self.body, ""
     async def session(self, _data=None):
         bi = "bi:" + self.actor if self.actor in {"alice", "charlie"} else ""
-        return (bi, {"name": self.actor}) if bi else ("", None)
+        return (bi, {"name": self.actor, "email_verified": self.actor in self.verified}) if bi else ("", None)
     async def organization(self, name, account_bi):
         row = self.db.execute(
             "SELECT o.org_bi,m.role FROM orgs o JOIN org_members m ON "
@@ -364,3 +366,70 @@ def test_package_owns_dashboard_public_page_and_crm_card_contracts():
     assert "innerHTML" not in public
     assert "/api/invoices/" in crm_page and "data-crm-detail-invoices" in crm_page
     assert "http://" not in page + public
+
+
+def writes_of(runtime):
+    seen = []
+    original = runtime.d1_run
+    async def counted(sql, *args):
+        seen.append(sql)
+        return await original(sql, *args)
+    runtime.d1_run = counted
+    return seen
+
+
+def test_foreign_origin_never_reaches_the_invoice_links():
+    runtime = Runtime()
+    runtime.request_origin = lambda: "https://evil.example"
+    invoice = create(runtime)
+    call(runtime.use("POST", body={}), f"/api/invoices/acme/items/{invoice['id']}/send")
+    mail = runtime.mails[0][1]
+    assert "evil.example" not in mail["html"] + mail["text"]
+    assert "https://app.forkmesh.com/invoice?t=" in mail["text"]
+
+
+def test_send_names_the_organization_for_its_mail_budget():
+    runtime = Runtime()
+    invoice = create(runtime)
+    call(runtime.use("POST", body={}), f"/api/invoices/acme/items/{invoice['id']}/send")
+    assert runtime.mails[0][1]["organization"] == "org:acme"
+
+
+def test_sending_needs_a_manager_or_a_verified_email():
+    runtime = Runtime()
+    invoice = create(runtime)
+    path = f"/api/invoices/acme/items/{invoice['id']}/send"
+    refused = call(runtime.use("POST", actor="charlie", body={}), path)
+    assert refused["status"] == 403 and refused["data"]["error"] == "send_requires_verified_email"
+    assert runtime.mails == []
+    runtime.verified.add("charlie")
+    assert call(runtime.use("POST", actor="charlie", body={}), path)["status"] == 201
+    assert call(runtime.use("POST", actor="alice", body={}), path)["status"] == 201
+
+
+def test_auditors_read_but_cannot_write():
+    runtime = Runtime()
+    invoice = create(runtime)
+    runtime.db.execute("UPDATE org_members SET role='auditor' WHERE member_bi='bi:charlie'")
+    runtime.verified.add("charlie")
+    item = f"/api/invoices/acme/items/{invoice['id']}"
+    assert call(runtime.use("GET", actor="charlie"), item)["status"] == 200
+    for method, path in (("POST", "/api/invoices/acme/items"), ("PATCH", item), ("DELETE", item),
+                         ("POST", item + "/send"), ("POST", item + "/paid"), ("POST", item + "/void")):
+        answer = call(runtime.use(method, actor="charlie", body={"amount": 1}), path)
+        assert answer["status"] == 403 and answer["data"]["error"] == "read_only_role", (method, path)
+    assert runtime.mails == []
+
+
+def test_bad_tokens_touch_no_schema_and_readiness_is_cached():
+    runtime = Runtime()
+    seen = writes_of(runtime)
+    token = "0" * 32 + "." + "0" * 24
+    assert call(runtime.use("GET", actor=""), "/api/invoices/-/public/" + token)["status"] == 404
+    assert call(runtime.use("GET", actor=""), "/api/invoices/-/t/c/" + token)["status"] == 404
+    assert call(runtime.use("GET", actor=""), "/api/invoices/-/t/o/" + token + ".png")["status"] in (301, 302, 303, 307, 308)
+    assert seen == []
+    create(runtime)
+    seen.clear()
+    assert call(runtime.use("GET"), "/api/invoices/acme")["status"] == 200
+    assert not [sql for sql in seen if sql.startswith("CREATE")]

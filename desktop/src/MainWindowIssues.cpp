@@ -6687,7 +6687,8 @@ void MainWindow::publishQuickAddToActivityPub(const QString &prompt)
 
 void MainWindow::quickAddIssue()
 {
-    if (!m_issueQuickAdd || submitQuickAddToPackage())
+    if (!m_issueQuickAdd ||
+        (!quickAddPackageAppliesToOpen() && submitQuickAddToPackage()))
         return;
     const QString title = m_issueQuickAdd->toPlainText().trimmed();
     if (title.isEmpty() && m_quickAddImages.isEmpty())
@@ -7050,21 +7051,20 @@ void MainWindow::clearQuickAddImages()
 void MainWindow::updateQuickAddImageButton()
 {
     rebuildQuickAddAttachChips();
-    if (!m_quickAddImageButton)
+    if (!m_quickAddPlusButton)
         return;
     const int n = m_quickAddImages.size();
-    m_quickAddImageButton->setText(n > 0 ? QString::number(n) : QString());
+    m_quickAddPlusButton->setText(n > 0 ? QString::number(n) : QString());
     if (n == 0) {
-        m_quickAddImageButton->setToolTip(
-            QString::fromUtf8("Attach an image or video \xE2\x80\x94 pick a file or "
-                           "paste an image with Ctrl+V. Sent to the agent in "
-                           "\"No issue\" mode, or attached to the created issue."));
+        m_quickAddPlusButton->setToolTip(
+            QString::fromUtf8("Add files or photos (Ctrl+U), a folder, slash "
+                              "commands, connectors or plugins"));
         return;
     }
     QStringList names;
     for (const QString &p : m_quickAddImages)
         names << QFileInfo(p).fileName();
-    m_quickAddImageButton->setToolTip(
+    m_quickAddPlusButton->setToolTip(
         QStringLiteral("%1 attachment%2:\n%3\n\nClick to add more.")
             .arg(n)
             .arg(n == 1 ? QString() : QStringLiteral("s"), names.join(QLatin1Char('\n'))));
@@ -8759,14 +8759,17 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event)
             m_quickAddModeSelector->setCurrentIndex(
                 (m_quickAddModeSelector->currentIndex() + 1) %
                 m_quickAddModeSelector->count());
+            applyComposerModeToTargetSession();
             return true;
         }
         if (ke->text() == QLatin1String("/") &&
             !(ke->modifiers() & (Qt::ControlModifier | Qt::AltModifier |
                                  Qt::MetaModifier)) &&
             m_issueQuickAdd->toPlainText().isEmpty() && promptChatRoom().isEmpty() &&
-            m_quickAddSlashButton && m_quickAddSlashButton->isVisible()) {
+            m_quickAddPlusButton && m_quickAddPlusButton->isVisible()) {
             m_issueQuickAdd->insertPlainText(QStringLiteral("/"));
+            m_composerTarget = m_issueQuickAdd;
+            m_composerMenuAnchor = m_quickAddPlusButton;
             openQuickAddSlashActions();
             if (m_slashActionsPopup && m_slashActionsPopup->isVisible())
                 m_slashActionsPopup->setProperty("typedSlash", true);
@@ -13776,9 +13779,11 @@ QWidget *MainWindow::buildChatHeader()
     auto *approveDevice = new QPushButton(QStringLiteral("Approve"));
     approveDevice->setObjectName(QStringLiteral("primaryButton"));
     approveDevice->setCursor(Qt::PointingHandCursor);
+    m_devicePendingApprove = approveDevice;
     auto *blockDevice = new QPushButton(QStringLiteral("Block"));
     blockDevice->setObjectName(QStringLiteral("ghostButton"));
     blockDevice->setCursor(Qt::PointingHandCursor);
+    m_devicePendingBlock = blockDevice;
     auto *safetyButton = new QPushButton(QStringLiteral("Safety number"));
     safetyButton->setObjectName(QStringLiteral("ghostButton"));
     safetyButton->setCursor(Qt::PointingHandCursor);
@@ -13791,16 +13796,10 @@ QWidget *MainWindow::buildChatHeader()
     pendingLayout->addWidget(approveDevice);
     m_devicePendingBanner->hide();
     connect(approveDevice, &QPushButton::clicked, this, [this] {
-        if (m_officeChannelMirror && !m_devicePendingKid.isEmpty())
-            m_officeChannelMirror->approveDirectDevice(m_currentConversation,
-                                                       m_devicePendingKid);
-        refreshDevicePendingBanner();
+        decideDirectDevices(m_currentConversation, m_devicePendingKids, true);
     });
     connect(blockDevice, &QPushButton::clicked, this, [this] {
-        if (m_officeChannelMirror && !m_devicePendingKid.isEmpty())
-            m_officeChannelMirror->blockDirectDevice(m_currentConversation,
-                                                     m_devicePendingKid);
-        refreshDevicePendingBanner();
+        decideDirectDevices(m_currentConversation, m_devicePendingKids, false);
     });
     connect(safetyButton, &QPushButton::clicked, this,
             [this] { showDirectDetails(m_currentConversation); });

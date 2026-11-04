@@ -1,6 +1,6 @@
 # Managed by deploy/core/render.py for node @@NODE@@. Do not edit on the node.
 [Unit]
-Description=ForkMesh fleet peers: WireGuard, nftables and certsync allowances for autoscaled app replicas (docs/fleet/AUTOSCALING.md)
+Description=ForkMesh fleet peers: WireGuard, nftables and certsync allowances for autoscaled app replicas (docs/operations/autoscaling.md)
 After=network-online.target wg-quick@wg0.service rqlite.service nftables.service
 Wants=wg-quick@wg0.service
 

@@ -1,4 +1,5 @@
 import re
+import unicodedata
 
 
 def _bind_runtime(runtime):
@@ -25,6 +26,17 @@ DESKTOP_PING_CATEGORIES = frozenset(
 DESKTOP_PING_ALARMS = {"power-battery": "power"}
 DESKTOP_PING_TITLE_MAX = 160
 DESKTOP_PING_BODY_MAX = 500
+AGENT_APPROVAL_PROOF = "forkmesh-account-agent-approval-ping-v1"
+AGENT_APPROVAL_KIND = "agent_approval"
+AGENT_APPROVAL_CATEGORY = "agent-approval"
+AGENT_APPROVAL_PATH_RE = re.compile(r"^/api/notifications/agent-approval/?$")
+AGENT_APPROVAL_ID_RE = re.compile(r"^[0-9a-f]{32}$")
+AGENT_APPROVAL_SESSION_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
+AGENT_APPROVAL_AGENT_MAX = 80
+AGENT_APPROVAL_SUMMARY_MAX = 200
+AGENT_APPROVAL_DEFAULT_AGENT = "An agent"
+AGENT_APPROVAL_DEFAULT_SUMMARY = "Wants your approval"
+AGENT_APPROVAL_LINE_BREAKERS = frozenset({"Cc", "Cf", "Zl", "Zp"})
 
 
 def desktop_ping_resource(fields):
@@ -106,9 +118,51 @@ def desktop_ping_fields(data):
     return fields
 
 
-async def _desktop_ping_signed_account(env, request, canonical_for):
+def agent_approval_resource(fields):
+    return "\n".join([
+        fields["sessionId"], fields["approvalId"], fields["agent"],
+        fields["summary"],
+    ])
+
+
+def agent_approval_canonical(user, ts, fields):
+    return "\n".join([
+        AGENT_APPROVAL_PROOF, user, agent_approval_resource(fields), str(ts),
+    ]).encode()
+
+
+def _line(data, key, limit):
+    value = _text(data, key, limit)
+    if value is None or any(
+            unicodedata.category(c) in AGENT_APPROVAL_LINE_BREAKERS
+            for c in value):
+        return None
+    return value
+
+
+def agent_approval_fields(data):
+    if not isinstance(data, dict):
+        return None
+    session = data.get("sessionId", "")
+    approval = data.get("approvalId", "")
+    if (not isinstance(session, str)
+            or not AGENT_APPROVAL_SESSION_RE.match(session)):
+        return None
+    if (not isinstance(approval, str)
+            or not AGENT_APPROVAL_ID_RE.match(approval)):
+        return None
+    agent = _line(data, "agent", AGENT_APPROVAL_AGENT_MAX)
+    summary = _line(data, "summary", AGENT_APPROVAL_SUMMARY_MAX)
+    if agent is None or summary is None:
+        return None
+    return {"sessionId": session, "approvalId": approval, "agent": agent,
+            "summary": summary}
+
+
+async def _desktop_ping_signed_account(env, request, canonical_for,
+                                       path_re=DESKTOP_PING_PATH_RE):
     url = urlparse(request.url)
-    if not DESKTOP_PING_PATH_RE.match(url.path):
+    if not path_re.match(url.path):
         return ""
     params = parse_qs(url.query)
     user = clean_string(params.get("user", [""])[0], MAX_NODE_NAME).lower()
@@ -215,4 +269,43 @@ async def desktop_ping_handler(env, request):
         repo=repo, href=href, source="desktop",
         dedupe="desktop:" + node + ":" + fields["pingId"],
         ts=int(Date.now()), meta=meta, force=bool(alarm))
+    return json_response({"ok": True}, cache_control=no_store)
+
+
+async def agent_approval_ping_handler(env, request):
+    await ensure_schema(env)
+    no_store = "no-store"
+    if method_name(request) != "POST":
+        return json_response(
+            {"error": "method_not_allowed"}, status=405,
+            cache_control=no_store, extra_headers={"allow": "POST"})
+    try:
+        data = await bounded_json_request(request)
+    except Exception:
+        return json_response(
+            {"error": "invalid_json"}, status=400, cache_control=no_store)
+    fields = agent_approval_fields(data)
+    if fields is None:
+        return json_response(
+            {"error": "bad_request"}, status=400, cache_control=no_store)
+    account = await _authed_account_name(env, request, data)
+    if not valid_node_name(account):
+        account = await _desktop_ping_signed_account(
+            env, request,
+            lambda user, ts: agent_approval_canonical(user, ts, fields),
+            AGENT_APPROVAL_PATH_RE)
+    if not valid_node_name(account):
+        return json_response(
+            {"error": "unauthorized"}, status=401, cache_control=no_store)
+
+    agent = fields["agent"].strip() or AGENT_APPROVAL_DEFAULT_AGENT
+    summary = fields["summary"].strip() or AGENT_APPROVAL_DEFAULT_SUMMARY
+    meta = {"category": AGENT_APPROVAL_CATEGORY,
+            "sessionId": fields["sessionId"],
+            "approvalId": fields["approvalId"], "agent": agent}
+    await enqueue_notification(
+        env, account.lower(), AGENT_APPROVAL_KIND,
+        agent + " needs your approval", body=summary, source="desktop",
+        dedupe="agent-approval:" + fields["approvalId"],
+        ts=int(Date.now()), meta=meta)
     return json_response({"ok": True}, cache_control=no_store)

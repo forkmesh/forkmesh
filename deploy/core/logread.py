@@ -70,6 +70,7 @@ _SCRUBS = (
     (re.compile(r'(?i)("(?:%s|x-[a-z0-9-]*(?:token|secret|signature|key|auth)'
                 r'[a-z0-9-]*)"\s*:\s*)(\[[^\]]*\]|"(?:[^"\\]|\\.)*")'
                 % _CREDENTIAL_WORDS), r'\1"<redacted>"'),
+    (re.compile(r"(?im)^(\s*(?:set-)?cookie\s*:\s*)\S[^\r\n]*"), r"\1<redacted>"),
     (re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{8,}"), "Bearer <redacted>"),
     (re.compile(r"(?i)\bBasic\s+[A-Za-z0-9+/=]{12,}"), "Basic <redacted>"),
     (re.compile(r"(?i)([?&;](?:token|access_token|refresh_token|sig|signature|"
@@ -86,6 +87,8 @@ _SCRUBS = (
 
 def redact(text):
     text = str(text or "")
+    if re.search(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY", text):
+        return "<redacted: private key material>"
     for rule_id, regex, group in _COMPILED_RULES:
         if rule_id == "private-key-material":
             if regex.search(text):

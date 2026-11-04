@@ -1,11 +1,13 @@
 #pragma once
 
+#include <QDeadlineTimer>
 #include <QHash>
 #include <QList>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QStringList>
+#include <QTimer>
 #include <QUrl>
 
 #include "ClientVersionGate.h"
@@ -20,7 +22,7 @@ public:
     // What the person answered for a destination no rule covers yet. Allow
     // and Deny are remembered as rules; DenyOnce blocks just this request and
     // asks again next time.
-    enum FirewallVerdict { FirewallDenyOnce, FirewallDeny, FirewallAllow };
+    enum FirewallVerdict { FirewallDenyOnce, FirewallDeny, FirewallAllow, FirewallAllowOnce };
     // How the stored rules classify a destination. When rules of both kinds
     // match, the most specific one decides and a tie goes to deny, so
     // "*.example.com denied, but example.com/api/request/* allowed" works as
@@ -101,6 +103,10 @@ public:
     bool addFirewallDenyRule(const QString &rule);
     bool removeFirewallDenyRule(const QString &rule);
     void setFirewallPrompt(FirewallPrompt prompt);
+    void allowAllFirewallFor(qint64 msecs);
+    void stopAllowingAllFirewall();
+    bool firewallAllowingAll() const;
+    qint64 firewallAllowAllRemainingMs() const;
 
     // The test builds drive the whole window, so every poller, badge refresh
     // and thread view runs for real — and used to run against production. A
@@ -140,6 +146,10 @@ public:
     bool blockedByClientVersion() const { return m_clientVersionBlocked; }
 
     static bool isOnThisMachine(const QUrl &url);
+    static QString redirectRefusal(QNetworkRequest::RedirectPolicy policy, const QUrl &from,
+                                   const QUrl &to);
+    static bool firewallAnswerCoversUrl(FirewallVerdict verdict, const QString &rule,
+                                        const QUrl &url);
     QList<EndpointStats> endpointStats() const;
     // Requests grouped by destination host, busiest first, each with what the
     // firewall rules say about that host right now. The Stats page charts it
@@ -283,6 +293,7 @@ signals:
     void outdatedClientBlockedRequest(const QString &method, const QUrl &url);
     void endpointStatsChanged();
     void firewallRuleHitsChanged();
+    void firewallAllowAllChanged(bool active);
 
 protected:
     QNetworkReply *createRequest(Operation op, const QNetworkRequest &request,
@@ -297,6 +308,9 @@ private:
     static QString endpointStatsKey(Operation op, const QUrl &url);
     static QString endpointStatsUrl(const QUrl &url);
     bool firewallAllows(const QUrl &url) const;
+    bool firewallAdmits(Operation op, const QUrl &url, bool decoration, int requestIndex);
+    void guardRedirects(QNetworkReply *reply, Operation op, const QUrl &origin,
+                        QNetworkRequest::RedirectPolicy policy, bool decoration);
     EndpointStats &endpointStatsFor(Operation op, const QUrl &url);
     int noteEndpointAttempt(Operation op, const QUrl &url,
                             const QString &requestData);
@@ -322,6 +336,9 @@ private:
     QStringList m_firewallRules;
     QStringList m_firewallDenyRules;
     FirewallPrompt m_firewallPrompt;
+    QDeadlineTimer m_firewallAllowAllUntil;
+    QTimer *m_firewallAllowAllTimer = nullptr;
+    bool m_firewallAllowAllAnnounced = false;
     QHash<QString, EndpointStats> m_endpointStats;
     QHash<QString, FirewallRuleHits> m_firewallRuleHits;
 };

@@ -201,14 +201,14 @@ def test_privacy_notice_is_checked_against_the_same_manifest():
 def test_self_hosting_documentation_links_the_map():
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     self_hosting = readme.split("## Self-hosting and operations", 1)[1].split("\n## ", 1)[0]
-    assert "www/docs/external-dependency-map.md" in self_hosting
-    docs_index = (ROOT / "www" / "docs" / "README.md").read_text(encoding="utf-8")
+    assert "docs/external-dependency-map.md" in self_hosting
+    docs_index = (ROOT / "docs" / "README.md").read_text(encoding="utf-8")
     assert "(external-dependency-map.md)" in docs_index
 
 
 def test_quality_gate_and_workflow_run_the_map():
     gates = json.loads(
-        (ROOT / "www" / "docs" / "engineering" / "quality-gates.json").read_text(encoding="utf-8"))
+        (ROOT / "docs" / "engineering" / "quality-gates.json").read_text(encoding="utf-8"))
     gate = next(g for g in gates["gates"] if g["id"] == "external-dependency-map")
     assert "app/tests/test_external_dependency_map.py" in gate["command"]
     assert "external-dependency-map" in gates["profiles"]["core"]

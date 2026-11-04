@@ -179,14 +179,21 @@ async def _contribution_activity_rows(
                     COALESCE(SUM(reviews), 0) AS reviews,
                     COALESCE(SUM(repositories), 0) AS repositories,
                     (SELECT COUNT(*) FROM owned_projects)
-                      AS repository_count
+                      AS repository_count,
+                    '' AS project_bi
                FROM combined_days
              UNION ALL
              SELECT 1 AS row_order, 'day' AS row_kind, day,
                     commits, issues, pulls, reviews, repositories,
-                    0 AS repository_count
+                    0 AS repository_count, '' AS project_bi
                FROM combined_days
-             ORDER BY row_order ASC, day ASC""",
+             UNION ALL
+             SELECT 2 AS row_order, 'project' AS row_kind, '' AS day,
+                    SUM(commits) AS commits, SUM(issues) AS issues,
+                    SUM(pulls) AS pulls, SUM(reviews) AS reviews,
+                    0 AS repositories, 0 AS repository_count, project_bi
+               FROM selected_days GROUP BY project_bi
+             ORDER BY row_order ASC, day ASC, project_bi ASC""",
         subject_user_bi, from_value, to_value, subject_user_bi,
         subject_user_bi,
         from_value, to_value,
@@ -1646,7 +1653,7 @@ async def _ring_cloud_agent_readers(env, record, topic="cloud-agents"):
     A payload-free "cloud-agents" frame on the account event socket. Without
     it nothing tells a desktop or a phone that a mirror claimed, ran or
     finished a job: no client polls for it
-    (www/docs/operations/polling-elimination.md), so the run would stay
+    (docs/operations/polling-elimination.md), so the run would stay
     invisible until somebody opened that exact repository and refreshed.
 
     Its own topic, not the "agents" one a desktop's snapshot push rings

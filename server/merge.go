@@ -162,14 +162,17 @@ type pullJobRecord struct {
 // PullMutationExecutor runs the bounded merge-pull / update-pull-branch
 // protocol for the gateway. It is constructed once per helper invocation.
 type PullMutationExecutor struct {
-	Config        Config
-	Gateway       GatewayConfig
-	Identity      *Identity
-	Now           func() time.Time
-	DaemonBaseURL string // loopback control API; empty disables the wake-up
-	Progress      io.Writer
-	lastPhase     string
+	Config            Config
+	Gateway           GatewayConfig
+	Identity          *Identity
+	Now               func() time.Time
+	DaemonBaseURL     string // loopback control API; empty disables the wake-up
+	DaemonWakeTimeout time.Duration
+	Progress          io.Writer
+	lastPhase         string
 }
+
+const defaultDaemonWakeTimeout = 3 * time.Second
 
 const pullProgressPrefix = "forkmesh-progress "
 
@@ -696,6 +699,10 @@ func (e *PullMutationExecutor) reviewGateSatisfied(ctx context.Context, gitDir s
 	if meta.author == "" {
 		return false
 	}
+	pullAccount := ""
+	if meta.matter != nil {
+		pullAccount = reviewAccount(meta.matter.values["authorName"])
+	}
 	prefix := fmt.Sprintf(".forkmesh/pulls/%d/", request.number)
 	listing, code, err := e.git(ctx, gitDir, "ls-tree", "-z", "--name-only", request.ExpectedPullsOid, "--", prefix)
 	if err != nil || code != 0 {
@@ -722,10 +729,18 @@ func (e *PullMutationExecutor) reviewGateSatisfied(ctx context.Context, gitDir s
 		if !ok || matter.values["type"] != "review" {
 			continue
 		}
-		reviewer := strings.TrimSpace(matter.values["author"])
+		key := strings.TrimSpace(matter.values["author"])
 		state := strings.TrimSpace(matter.values["state"])
-		if reviewer == "" || reviewer == meta.author || strings.TrimSpace(matter.values["sig"]) == "" {
+		if key == "" || key == meta.author || strings.TrimSpace(matter.values["sig"]) == "" {
 			continue
+		}
+		account := reviewAccount(matter.values["authorName"])
+		if account != "" && account == pullAccount {
+			continue
+		}
+		reviewer := "key:" + key
+		if account != "" {
+			reviewer = "account:" + account
 		}
 		if state == "approved" || state == "changes_requested" {
 			latest[reviewer] = state
@@ -743,6 +758,10 @@ func (e *PullMutationExecutor) reviewGateSatisfied(ctx context.Context, gitDir s
 		}
 	}
 	return approved
+}
+
+func reviewAccount(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
 }
 
 // requiredChecksSatisfied applies .forkmesh/required-checks.json from the
@@ -1331,7 +1350,11 @@ func (e *PullMutationExecutor) wakeDaemon() {
 	if err != nil {
 		return
 	}
-	client := &http.Client{Timeout: 3 * time.Second}
+	timeout := e.DaemonWakeTimeout
+	if timeout <= 0 {
+		timeout = defaultDaemonWakeTimeout
+	}
+	client := &http.Client{Timeout: timeout}
 	request, err := http.NewRequest(http.MethodPost, endpoint.String(), nil)
 	if err != nil {
 		return

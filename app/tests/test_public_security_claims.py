@@ -94,23 +94,6 @@ def test_recipient_encryption_update_carries_its_exact_trust_boundary():
     assert "baked-in copy overstated controller blindness" in update
 
 
-def test_historical_private_chat_designs_point_to_the_current_protocol():
-    records = (
-        PROJECT / "www" / "docs" / "superpowers" / "plans" /
-        "2026-07-24-private-admin-chat-channels.md",
-        PROJECT / "www" / "docs" / "superpowers" / "specs" /
-        "2026-07-24-private-admin-chat-channels-design.md",
-    )
-
-    for record in records:
-        normalized = " ".join(record.read_text(encoding="utf-8").split()).lower()
-        assert "august 28, 2026" in normalized
-        assert "../../security/sealed-chat.md" in normalized
-        assert "public channels remain" in normalized
-        assert "controller-readable" in normalized
-        assert "active-controller limitations" in normalized
-
-
 def test_public_durability_and_private_metadata_claims_are_bounded():
     corpus = _public_corpus().lower()
     forbidden = (

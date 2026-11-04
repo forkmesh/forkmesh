@@ -1,11 +1,21 @@
-# Desktop: Merge all with AI
+# Desktop: Merge all and Review all with AI
 
-Part of [the desktop docs](README.md). Code: `desktop/src/PullMergeAll.*`
-(prompt, name checks, saved runs, refusal messages),
-`desktop/src/MainWindowPullMergeAll.cpp` (button, launch, cleanup) and the
-`pulls.` family for phones. Test: `desktop/tests/test_pull_merge_all.cpp`.
+The Pull requests list has two buttons that hand every open pull request to
+one agent run: **Merge all** reviews, fixes and merges them, and **Review
+all** only reviews them and posts the results. This page covers the prompt
+each one drafts, how branches are found, the cleanup and posting ForkMesh does
+afterwards, and the phone entry point.
 
-## What the button does
+Part of [Desktop](README.md).
+
+## Code
+
+| Button | Code | Test |
+| --- | --- | --- |
+| Merge all | `desktop/src/PullMergeAll.*` (prompt, name checks, saved runs, refusal messages), `desktop/src/MainWindowPullMergeAll.cpp` (button, launch, cleanup), the `pulls.` local-control family for phones | `desktop/tests/test_pull_merge_all.cpp` |
+| Review all | `desktop/src/PullReviewAll.*` (prompt, report format, verdict, summary, saved runs), `desktop/src/MainWindowPullReviewAll.cpp` (button, draft, posting) | `desktop/tests/test_pull_review_all.cpp` |
+
+## Merge all: what the button does
 
 **Merge all** sits in the Pull requests list toolbar, between the filters and
 **Delete closed and merged**. The phones offer the same action
@@ -35,8 +45,7 @@ where this node has a working checkout.
    and no worktree, so its merges land on the real base branch.
 5. When the sent prompt still starts with the drafted heading, the repository
    matches and the branch toggle was off (`pullmergeall::draftMatches`),
-   `adoptPullMergeAllDraft` saves the run for that session, as the old direct
-   launch did. A prompt sent with its own branch, or an unrelated prompt,
+   `adoptPullMergeAllDraft` saves the run for that session. A prompt sent with its own branch, or an unrelated prompt,
    is just an ordinary agent.
 6. The agent reviews each pull request for security issues, bugs and code that
    breaks the repository's rules, fixes what it can in follow-up commits, merges
@@ -46,9 +55,8 @@ where this node has a working checkout.
 7. When the run finishes successfully, `notifyAgentDone` calls
    `finishPullMergeAllRun`, and ForkMesh cleans up (next section).
 
-Until 2026-10-31 the button asked for confirmation and started the agent at
-once in mode `Auto`, which left no chance to read or change the prompt. The
-phones still start it directly ([From a phone](#from-a-phone)), through
+The button drafts rather than starts so the operator can read and change the
+prompt. The phones start it directly ([From a phone](#from-a-phone)), through
 `startPullMergeAll`, which shares the preparation step
 (`preparePullMergeAll`) with the button.
 
@@ -56,12 +64,8 @@ phones still start it directly ([From a phone](#from-a-phone)), through
 
 The timed checkout sync (`refreshCore` in `UpstreamCheckoutSync.cpp`) copies
 the cloud's branches into `refs/remotes/origin/*` and
-`refs/remotes/forkmesh-mesh/*`, but Merge all used to look only at local
-branches and the replayed patch. A pull request another node had already
-published as `pr/<n>` was skipped as "its code is not on this node" until the
-next sync happened to make the local branch.
-
-Now the worker, before its loop, asks `origin` once with `git ls-remote` for
+`refs/remotes/forkmesh-mesh/*` only now and then, so the worker, before its
+loop, asks `origin` once with `git ls-remote` for
 `refs/heads/pr/<n>` of every open pull request without a local branch, and
 fetches only the ones the cloud has (`fetchServedPullBranches`). For each
 pull request that local replay cannot build, it creates `pr/<n>` at the
@@ -75,25 +79,21 @@ branch published earlier may not.
 Some pull requests have no commit anywhere: a signed patch with no
 `headBaseOid` that no longer applies to the base (a stacked series whose
 earlier parts changed, or a patch from a remote fork). Fetching cannot help
-there. The skip reason now says so (`pullmergeall::missingCodeReason`): "its
+there. The skip reason says so (`pullmergeall::missingCodeReason`): "its
 signed patch does not apply to `main` and no node has published its branch;
 the author needs to rebase it". A branch pull says which branch is missing.
-`materializePullRef` returns without an error in that case, which is why the
-old message only ever said the code was not here.
+(`materializePullRef` returns without an error in that case, so the reason
+has to be worked out here.)
 
 ## Stacked patches whose earlier parts merged
 
-On 2026-10-24 Merge all left out twelve pull requests: #552 to #564 (parts 4
-to 16 of a 16-part series sent as signed patches) and #567. The series' author
-sent each part with only its own commit. Each patch was cut from the author's
-`main` with the earlier parts on top. Parts 1, 2, 3, 5 and 14 had arrived as
-branches rebased onto a newer `main` and were merged. So the files part 4
-expects (`index <pre>..` in its patch) existed nowhere here: neither on the
-base tip, nor in its history (`patchPreimageBaseCommit`), nor as blobs for
-`git am --3way`.
-
-`replayStackedPullSeries` in `PullStore.cpp` now rebuilds such a pull before
-it is given up:
+A series sent as signed patches carries one commit per part, each cut from
+the author's `main` with the earlier parts on top. When earlier parts arrived
+as branches rebased onto a newer `main` and were merged, the files a later
+part expects (`index <pre>..` in its patch) exist nowhere here: not on the
+base tip, not in its history (`patchPreimageBaseCommit`), not as blobs for
+`git am --3way`. `replayStackedPullSeries` in `PullStore.cpp` rebuilds such a
+pull before it is given up:
 
 1. The patch's first commit gives the author's email and date. The author's
    commits from the three days before it are found on the base branch and on
@@ -114,13 +114,9 @@ The resulting `pr/<n>` branch forks from the author's base and carries the
 author's exact tree, so it conflicts with the current base tip just as the
 pull request does. That merge is what the agent resolves. Later parts find
 the rebuilt earlier part on its `pr/*` branch, so a whole series rebuilds in
-number order. A patch cut from a fork whose files this repository never had,
-such as #567 (generated pages of a fork with a different `main`), still
-cannot be rebuilt. It keeps the "the author needs to rebase it" reason.
-
-The twelve pull requests of 2026-10-24 were rebuilt by hand the same way on
-the node that runs Merge all. #567 was rebased onto `main` and its conflicts
-were resolved, because no commit here matches its fork's generated pages.
+number order. A patch cut from a fork whose files this repository never had
+(for example generated pages of a fork with a different `main`) cannot be
+rebuilt and keeps the "the author needs to rebase it" reason.
 
 ## Why ForkMesh cleans up, not the agent
 
@@ -178,11 +174,9 @@ desktop through the `pulls.` local control family
 
 An organization-owned repository such as `forkmesh/forkmesh` belongs to the
 account only through its organization role. The desktop fetches that role
-list (`/api/orgs`) lazily: when Settings opens or a pull request is shown.
-A phone request usually arrives before either has happened. It used to fail
-the owner check with `not_repo_owner` while that check started the fetch in
-the background, so the organization's owner was refused (2026-10-21).
-Both `pulls.` methods now go through `whenPullOwnershipKnown`. When the
+list (`/api/orgs`) lazily: when Settings opens or a pull request is shown,
+and a phone request usually arrives before either. So both `pulls.` methods go
+through `whenPullOwnershipKnown`. When the
 account does not own the repository directly and the role list has not loaded
 yet, the request waits for one `/api/orgs` fetch (15 s timeout, inside the
 phone's 20 s call timeout) before it checks the blockers. A failed fetch
@@ -193,9 +187,8 @@ The phone sends the repository's public owner (`displayOwner`), not the
 owner of the catalog row it opened. The public catalog lists
 `forkmesh/forkmesh` only as copies on serving nodes such as
 `fmnext-n1/forkmesh`, and the phone shows those copies as one repository
-under `forkmesh`. Sending the row's `owner` asked the desktop for
-`fmnext-n1/forkmesh`, which `repoIndexFor` does not know, so every phone
-request was refused with `unknown_repo` (2026-10-22).
+under `forkmesh`; the row's `owner` (`fmnext-n1`) is unknown to
+`repoIndexFor` and would be refused with `unknown_repo`.
 `PullMergeAllRules.owner` picks the owner on both phones.
 
 The confirmation happens on the phone, as it does for `mergequeue.`. The
@@ -214,3 +207,72 @@ at 160 characters. Branch names must match `safeRefName`. The prompt forbids
 pushing, rewriting history, hard resets, cleaning, stashing and deleting
 branches or worktrees, and tells the agent to stop on a dirty checkout instead
 of discarding anything.
+
+## Review all: what the button does
+
+**Review all** sits in the Pull requests list toolbar, before **Merge all**,
+and works like it:
+
+1. It takes every open pull request in the list, oldest first, up to 200, and
+   finds each one's branch with the same step Merge all uses
+   (`preparePullMergeAll`). A pull request whose code is not on this node or
+   in the cloud is left out, with the reason in the notice.
+2. It writes the review prompt into the composer, turns off **Own branch and
+   worktree**, picks Claude Code when the composer's provider cannot run
+   without a worktree, and flies a copy of the button into the composer
+   (`fillComposerForPullDraft`, shared with Merge all).
+3. The operator reads the prompt, picks the model and mode, and sends it. The
+   agent runs in the repository's own checkout and only reads: the prompt
+   forbids editing files and every git command that changes something.
+4. It reviews each pull request for security, stability and maintainability
+   and writes its results as JSON to a report file ForkMesh named in the
+   prompt: `<data>/pull-reviews/<uuid>.json`, outside the repository.
+5. When the sent prompt still starts with the drafted heading, still names
+   that report file, and was sent with no branch,
+   `adoptPullReviewAllDraft` saves the run in the `pulls/reviewAllRuns`
+   setting, keyed by agent session id, so a restart in the middle still posts
+   the reviews when the run finishes.
+6. When the run succeeds, `notifyAgentDone` calls `finishPullReviewAllRun`,
+   which reads the report and posts the reviews (next section). If the run
+   fails or is stopped, nothing is posted; continuing the session until it
+   succeeds posts them then.
+
+Only one Review all runs per repository at a time; a second click opens the
+running one.
+
+## Review all: why ForkMesh posts, not the agent
+
+Review threads and review events are signed with the node identity key, which
+the agent cannot use. So the agent only writes the report, and ForkMesh posts
+from it, off the UI thread, with the same `PullStore` calls a person uses:
+
+- Each finding becomes a review thread (`addThreadComment`) on its file and
+  lines, anchored to the reviewed patchset (`pullAnchorFor`). A finding that
+  carries both the current lines and their replacement gets a suggestion
+  patch, so **Apply fix & commit** applies it in one click. A finding without
+  a fix is a plain conversation thread.
+- Then one review event per pull request. ForkMesh picks the verdict, not the
+  agent (`pullreviewall::reviewState`): no findings is **approved**, any
+  finding, nits included, is **changes requested**.
+- The review's body is the summary, so it is the last entry of the
+  conversation: the verdict, the agent's own summary, one line per finding
+  linking to its thread (`forkmesh-pull-thread:<id>`, which opens the
+  diff in Changes in Git) with an **Apply fix** link (`applyfix:<id>`) where it
+  has one, and a last line naming the reviewer: the provider and the model the
+  session ran with (`reviewerLabel`). When the session used the CLI's default
+  model, the label falls back to the model id the agent wrote in the report,
+  marked "as the agent reported it".
+- The agent's summary and comments are escaped (`markdownText`), so a pull
+  request that talks its reviewer into writing links or HTML cannot put them
+  in the summary.
+- At most 25 findings per pull request are posted. A pull request missing
+  from the report, or closed in the meantime, gets nothing; the notice and the
+  agent log list them. The report file is removed once posted.
+
+The single-PR **Review with AI** (`reviewCurrentPullWithAi`, see
+[agents-ui.md](agents-ui.md)) posts its result as "commented"; Review all
+posts real verdicts. An approval is signed by this node like the operator's
+own, so it counts wherever approvals do.
+
+The web dashboard shows the same threads and review. The two desktop link
+schemes in the summary do nothing there.

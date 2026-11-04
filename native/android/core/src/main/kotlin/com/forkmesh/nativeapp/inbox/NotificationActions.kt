@@ -20,9 +20,11 @@ enum class NotificationActionId(val id: String, val title: String) {
     ApprovePull("fm.approvePull", "Approve PR"),
     OpenLog("fm.openLog", "Open log");
 
-    val requiresAuthentication: Boolean get() = this == Approve || this == Merge || this == ApprovePull
+    val requiresAuthentication: Boolean get() =
+        this == Approve || this == Merge || this == ApprovePull || this == Deny || this == ContinueRun || this == Retry
     val isDestructive: Boolean get() = this == Merge || this == Deny
-    val opensApp: Boolean get() = this == Open || this == OpenLog || this == SendToAgent || requiresAuthentication
+    val opensApp: Boolean get() =
+        this == Open || this == OpenLog || this == SendToAgent || this == Approve || this == Merge || this == ApprovePull
     val isTextInput: Boolean get() = this == Reply || this == ContinueRun
 
     companion object {
@@ -32,6 +34,7 @@ enum class NotificationActionId(val id: String, val title: String) {
 
 enum class NotificationCategoryId(val id: String) {
     AgentApproval("agent-approval"),
+    ActionsApproval("actions-approval"),
     AgentFinished("agent-finished"),
     AgentFailed("agent-failed"),
     PullReview("pr-review"),
@@ -43,6 +46,7 @@ enum class NotificationCategoryId(val id: String) {
     val actions: List<NotificationActionId>
         get() = when (this) {
             AgentApproval -> listOf(NotificationActionId.Approve, NotificationActionId.Deny, NotificationActionId.Open)
+            ActionsApproval -> listOf(NotificationActionId.Approve, NotificationActionId.Open)
             AgentFinished -> listOf(NotificationActionId.Open, NotificationActionId.ContinueRun, NotificationActionId.Merge)
             AgentFailed -> listOf(NotificationActionId.Open, NotificationActionId.Retry, NotificationActionId.SendToAgent)
             PullReview -> listOf(NotificationActionId.Open, NotificationActionId.ApprovePull)
@@ -51,7 +55,7 @@ enum class NotificationCategoryId(val id: String) {
             Ping -> listOf(NotificationActionId.Open, NotificationActionId.MarkRead)
         }
 
-    val isTimeSensitive: Boolean get() = this == AgentApproval
+    val isTimeSensitive: Boolean get() = this == AgentApproval || this == ActionsApproval
 
     companion object {
         fun of(id: String?): NotificationCategoryId? = entries.firstOrNull { it.id == id }
@@ -63,6 +67,7 @@ enum class NotificationCategoryId(val id: String) {
             }
             return when (kind.lowercase()) {
                 "agent_approval", "agent-approval" -> AgentApproval
+                "action_approval", "actions-approval" -> ActionsApproval
                 "agent_finished", "agent-finished" -> AgentFinished
                 "agent_failed", "agent-failed" -> AgentFailed
                 "pull_submitted", "review_requested", "pr-review" -> PullReview
@@ -85,9 +90,10 @@ data class NotificationPayload(
     val number: Int = 0,
     val channel: String = "",
     val runId: String = "",
+    val head: String = "",
 ) {
     companion object {
-        val keys = listOf("kind", "topic", "alertId", "href", "sessionId", "approvalId", "repo", "number", "channel", "runId")
+        val keys = listOf("kind", "topic", "alertId", "href", "sessionId", "approvalId", "repo", "number", "channel", "runId", "head")
 
         fun from(category: String?, fields: Map<String, String?>): NotificationPayload {
             fun value(key: String) = fields[key]?.trim() ?: ""
@@ -102,6 +108,7 @@ data class NotificationPayload(
                 number = value("number").toIntOrNull() ?: 0,
                 channel = value("channel"),
                 runId = value("runId"),
+                head = value("head"),
             )
         }
     }
@@ -109,7 +116,7 @@ data class NotificationPayload(
     fun fields(kind: String = ""): Map<String, String> = linkedMapOf(
         "category" to category.id, "kind" to kind, "topic" to topic, "alertId" to alertId, "href" to href,
         "sessionId" to sessionId, "approvalId" to approvalId, "repo" to repo, "number" to number.toString(),
-        "channel" to channel, "runId" to runId,
+        "channel" to channel, "runId" to runId, "head" to head,
     ).filterValues { it.isNotEmpty() && it != "0" }
 }
 
@@ -124,6 +131,7 @@ sealed class NotificationCommand {
     data class Retry(val sessionId: String) : NotificationCommand()
     data class Compose(val target: ComposeTarget) : NotificationCommand()
     data class ApprovePull(val repo: RepoRef, val number: Int) : NotificationCommand()
+    data class ApproveChecks(val repo: RepoRef, val number: Int, val head: String) : NotificationCommand()
     data class Ignore(val reason: String) : NotificationCommand()
 }
 
@@ -138,6 +146,10 @@ object NotificationActionRouter {
                 } else if (payload.sessionId.isNotEmpty()) {
                     return Route.Agent(payload.sessionId)
                 }
+            NotificationCategoryId.ActionsApproval -> {
+                val repo = RepoRef.parse(payload.repo)
+                if (repo != null && payload.number > 0) return Route.Pull(repo, payload.number, PullTab.Checks)
+            }
             NotificationCategoryId.AgentFinished, NotificationCategoryId.AgentFailed ->
                 if (payload.sessionId.isNotEmpty()) return Route.Agent(payload.sessionId)
             NotificationCategoryId.CiFailed -> {
@@ -156,6 +168,19 @@ object NotificationActionRouter {
         return if (payload.category == NotificationCategoryId.Ping) Route.Inbox(InboxFilter.All) else null
     }
 
+    private fun checksCommand(action: NotificationActionId, payload: NotificationPayload): NotificationCommand {
+        if (action != NotificationActionId.Approve) return NotificationCommand.Open(route(payload), payload.href)
+        val repo = RepoRef.parse(payload.repo)
+        val head = payload.head.trim().lowercase()
+        return when {
+            repo == null || payload.number <= 0 -> NotificationCommand.Ignore("no pull request")
+            !CHECKS_HEAD.matches(head) -> NotificationCommand.Open(route(payload), payload.href)
+            else -> NotificationCommand.ApproveChecks(repo, payload.number, head)
+        }
+    }
+
+    private val CHECKS_HEAD = Regex("^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
+
     fun command(actionId: String?, payload: NotificationPayload, text: String?): NotificationCommand {
         val action = NotificationActionId.of(actionId) ?: return NotificationCommand.Open(route(payload), payload.href)
         val session = payload.sessionId
@@ -170,7 +195,9 @@ object NotificationActionRouter {
                 else -> NotificationCommand.Reply(payload.channel, typed.take(MAX_TEXT))
             }
             NotificationActionId.Approve, NotificationActionId.Deny ->
-                if (session.isEmpty() || payload.approvalId.isEmpty()) {
+                if (payload.category == NotificationCategoryId.ActionsApproval) {
+                    checksCommand(action, payload)
+                } else if (session.isEmpty() || payload.approvalId.isEmpty()) {
                     NotificationCommand.Ignore("no approval")
                 } else if (action == NotificationActionId.Approve) {
                     NotificationCommand.Approve(session, payload.approvalId)

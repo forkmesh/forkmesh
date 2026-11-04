@@ -2,7 +2,7 @@
 """Inbox drain hazards: precise discussion acks and claim visibility.
 
 Two Worker-side hazards surfaced by the mobile-node work
-(www/docs/mobile/mobile-node-contract.md), both about an account that now has
+(docs/mobile/mobile-node-contract.md), both about an account that now has
 MORE THAN ONE node holding `owner_sign` — a desktop and a phone:
 
 1. The per-repo discussion ack used to be a blanket

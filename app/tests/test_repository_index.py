@@ -474,7 +474,7 @@ def test_route_export_contract_and_docs_stay_in_step():
                     if item["id"] == "repository-search")
     assert resource["path"] == "/api/repositories/search"
     assert resource["auth"] == "anonymous"
-    docs = (ROOT / "www" / "docs" / "repository-index.md").read_text(
+    docs = (ROOT / "docs" / "repository-index.md").read_text(
         encoding="utf-8")
     for fact in ("50", "14 days", "capped at 50", "5 points per independent",
                  "at most 8 mirrors", "capped at 500", "6 minutes", "250 ms"):

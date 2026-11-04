@@ -1,4 +1,4 @@
--- ForkMesh Next: host secrets vault (docs/VAULT.md).
+-- ForkMesh Next: host secrets vault (docs/operations/vault.md).
 --
 -- One row per application variable, AES-256-GCM encrypted on the operator's
 -- desktop under a key derived from DATA_KEY (app/host/forkmesh_host/

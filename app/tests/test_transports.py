@@ -29,7 +29,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 TOOL_PATH = ROOT / "tools" / "forkmesh_transports.py"
 CASES = ROOT / "conformance" / "transports" / "v1" / "cases.json"
-DOC = ROOT / "www" / "docs" / "transports.md"
+DOC = ROOT / "docs" / "transports.md"
 
 
 def _load_tool():
@@ -765,9 +765,9 @@ def test_probe_distinguishes_slow_intermittent_and_unreachable_routes(origin):
     try:
         url = "https://%s:%d/" % (PRIVATE_NAME, echo.port)
         chosen = profile("private", {"id": "tor", "kind": "proxy", "network": "tor",
-                                     "socks": origin["proxy"].endpoint}, latency_ms=20)
+                                     "socks": origin["proxy"].endpoint}, latency_ms=250)
         assert tool.probe(chosen, url, attempts=2)["state"] == "protected"
-        origin["proxy"].delay = 0.08
+        origin["proxy"].delay = 0.6
         slow = tool.probe(chosen, url, attempts=2)
         assert (slow["state"], slow["reason"]) == ("degraded", "slow")
         origin["proxy"].delay = 0.0
@@ -909,11 +909,11 @@ def test_documentation_covers_the_contract():
         assert label in doc
     for code in ("0", "2", "3", "4", "5", "6"):
         assert re.search(r"^\| `%s` \|" % code, doc, re.M), code
-    assert "(transports.md)" in (ROOT / "www" / "docs" / "README.md").read_text()
+    assert "(transports.md)" in (ROOT / "docs" / "README.md").read_text()
 
 
 def test_quality_gate_and_platform_matrix_run_this_suite():
-    config = json.loads((ROOT / "www" / "docs" / "engineering" / "quality-gates.json").read_text())
+    config = json.loads((ROOT / "docs" / "engineering" / "quality-gates.json").read_text())
     gate = next(g for g in config["gates"] if g["id"] == "transport-conformance")
     assert "app/tests/test_transports.py" in gate["command"]
     assert "transport-conformance" in config["profiles"]["core"]

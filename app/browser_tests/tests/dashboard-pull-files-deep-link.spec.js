@@ -25,7 +25,7 @@ const DASHBOARD_CSS_PATH = path.resolve(
   "tailwind.css",
 );
 const DAILY_BUDGETS = require(path.resolve(
-  __dirname, "..", "..", "..", "www", "docs", "engineering",
+  __dirname, "..", "..", "..", "docs", "engineering",
   "daily-interface-budgets.json",
 ));
 

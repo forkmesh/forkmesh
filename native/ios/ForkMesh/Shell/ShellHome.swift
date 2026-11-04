@@ -32,7 +32,6 @@ struct ShellHome: View {
     @Environment(\.fmPalette) var fm
     @Environment(\.accessibilityReduceMotion) var reduceMotion
     @Environment(\.accessibilityVoiceOverEnabled) var voiceOver
-    @Environment(\.displayScale) var displayScale
 
     let groups: [ShellMenuGroup]
     let prefs: ShellBarPrefs
@@ -312,6 +311,7 @@ struct ShellHome: View {
     private var backgroundHold: some View {
         Color.clear
             .contentShape(Rectangle())
+            .textSelection(.disabled)
             .onLongPressGesture(minimumDuration: 0.5, maximumDistance: 10) {
                 guard prefs.drag == nil else { return }
                 CaptureHold.noteHandled()
@@ -357,24 +357,21 @@ struct ShellHome: View {
     private func sectionHeader(_ group: ShellMenuGroup) -> some View {
         let title: String = group.title
         return HStack(spacing: FmSpace.x2) {
-            Text(title.uppercased())
-                .fmText(.labelSmall, color: fm.textTertiary, weight: FmType.emphasis)
+            Text(title)
+                .fmText(.labelLarge, color: fm.textSecondary)
                 .lineLimit(1)
                 .fixedSize()
-            Capsule()
-                .fill(fm.border)
-                .frame(height: max(1, 1 / displayScale))
-                .accessibilityHidden(true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.top, FmSpace.x2)
-        .padding(.bottom, FmSpace.x2)
+        .padding(.top, FmSpace.x4)
+        .padding(.bottom, FmSpace.x1)
         .padding(.horizontal, FmSpace.x2)
         .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { (height: CGFloat) in
             headerHeight = height
             ShellLayoutMemory.remember(.homeHeader, height)
         }
         .contentShape(Rectangle())
+        .textSelection(.disabled)
         .contextMenu {
             homeMenuItems(hiding: group)
         }
@@ -640,6 +637,7 @@ struct ShellHome: View {
         }
         .buttonStyle(ShellHomeButtonStyle())
         .opacity(prefs.drag == ShellBarDrag(id: item.id, fromBar: false) ? 0.35 : 1)
+        .textSelection(.disabled)
         .contextMenu {
             ShellBarItemMenu(
                 item: item, items: layout.barItems, prefs: prefs, inBar: false,
@@ -689,6 +687,7 @@ struct ShellHomeButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
+            .textSelection(.disabled)
             .opacity(configuration.isPressed ? 0.75 : 1)
             .scaleEffect(configuration.isPressed ? 0.9 : 1)
             .animation(reduceMotion ? nil : .spring(response: 0.25, dampingFraction: 0.6), value: configuration.isPressed)

@@ -8,7 +8,8 @@ folder circles. Each tab colours the circles by one question: which files are
 unhealthy, which change often, which to refactor first, which change together,
 who knows them, where bugs get fixed, which language they are in. The numbers
 come from the shared analysis engine described in
-[codebase-analysis.md](codebase-analysis.md).
+[codebase-analysis.md](codebase-analysis.md). Part of
+[Marketplace](README.md).
 
 ## Code map
 

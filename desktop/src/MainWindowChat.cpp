@@ -61,6 +61,7 @@
 #include <QUuid>
 
 #include "SectionViewport.h"
+#include "UiKit.h"
 
 #include <algorithm>
 #include <cmath>
@@ -86,6 +87,16 @@ public:
         QString text;
         bool mine = false;
         QPixmap avatar;
+
+        bool operator==(const Line &other) const
+        {
+            return conversation == other.conversation && where == other.where &&
+                   who == other.who && when == other.when && text == other.text &&
+                   mine == other.mine &&
+                   (avatar.cacheKey() == other.avatar.cacheKey() ||
+                    avatar.toImage() == other.avatar.toImage());
+        }
+        bool operator!=(const Line &other) const { return !(*this == other); }
     };
 
     static constexpr int kAvatarPx = 16;
@@ -110,7 +121,10 @@ public:
 
     void setLines(const QList<Line> &lines)
     {
+        if (lines == m_lines)
+            return;
         m_lines = lines;
+        m_rowsKey.clear();
         rebuild();
         updateGeometry();
         update();
@@ -137,8 +151,7 @@ public:
     {
         const int rows = qMax(1, int(m_lines.size()));
         const QMargins margins = contentsMargins();
-        return QSize(QLabel::sizeHint().width(),
-                     rows * rowHeight() + (rows - 1) * kRowGap + margins.top() +
+        return QSize(0, rows * rowHeight() + (rows - 1) * kRowGap + margins.top() +
                          margins.bottom());
     }
 
@@ -148,7 +161,28 @@ protected:
     void paintEvent(QPaintEvent *event) override
     {
         QFrame::paintEvent(event);
+        const qreal dpr = devicePixelRatioF();
+        const QString key =
+            QStringList{QString::number(width()), QString::number(height()), QString::number(dpr),
+                        font().key(), Theme::color(Theme::Role::AccentFg).name(QColor::HexArgb),
+                        Theme::color(Theme::Role::FgSecondary).name(QColor::HexArgb),
+                        palette().color(QPalette::WindowText).name(QColor::HexArgb),
+                        Theme::nextOr(Theme::Role::FgMuted, QColor("#8b949e")).name(QColor::HexArgb)}
+                .join(QLatin1Char('|'));
+        if (key != m_rowsKey) {
+            m_rows = QPixmap(size() * dpr);
+            m_rows.setDevicePixelRatio(dpr);
+            m_rows.fill(Qt::transparent);
+            QPainter rows(&m_rows);
+            paintRows(rows);
+            m_rowsKey = key;
+        }
         QPainter painter(this);
+        painter.drawPixmap(0, 0, m_rows);
+    }
+
+    void paintRows(QPainter &painter)
+    {
         painter.setRenderHint(QPainter::Antialiasing);
         painter.setRenderHint(QPainter::SmoothPixmapTransform);
         const QRect area = contentsRect();
@@ -179,7 +213,7 @@ protected:
                 if (part.isEmpty())
                     return;
                 const QString shown =
-                    partMetrics.elidedText(part, Qt::ElideRight, maxWidth);
+                    kit::elideRightToWidth(part, partMetrics, maxWidth);
                 painter.setFont(partFont);
                 painter.setPen(color);
                 painter.drawText(QRect(x, y, qMax(0, area.right() - x + 1), rowH),
@@ -195,7 +229,7 @@ protected:
             painter.setPen(body);
             painter.drawText(QRect(textX, y, room, rowH),
                              Qt::AlignLeft | Qt::AlignVCenter,
-                             metrics.elidedText(line.text, Qt::ElideRight, room));
+                             kit::elideRightToWidth(line.text, metrics, room));
             y += rowH + kRowGap;
         }
     }
@@ -219,13 +253,16 @@ private:
             rows << QStringList{line.where, line.who, line.when}
                             .join(QLatin1Char(' '))
                             .toHtmlEscaped() +
-                        QStringLiteral(": ") + line.text.toHtmlEscaped();
+                        QStringLiteral(": ") +
+                        kit::cellDisplayText(line.text).toHtmlEscaped();
         const QString html = rows.join(QStringLiteral("<br>"));
         if (text() != html)
             setText(html);
     }
 
     QList<Line> m_lines;
+    QPixmap m_rows;
+    QString m_rowsKey;
 };
 
 class FloatingPromptBar : public QWidget
@@ -3076,7 +3113,7 @@ QWidget *MainWindow::buildStatusBar()
     debugRow->setSizeConstraint(QLayout::SetMinimumSize);
     if (m_resourceChart) {
         m_resourceChart->setObjectName(QStringLiteral("debugResourceChart"));
-        m_resourceChart->setFixedSize(40, 40);
+        m_resourceChart->setFixedSize(kDebugTileQuadSide, kDebugTileQuadSide);
         debugRow->addWidget(m_resourceChart, 0, Qt::AlignVCenter);
     }
     QVector<ResourceSparkline *> debugTiles;
@@ -3219,6 +3256,9 @@ QWidget *MainWindow::buildStatusBar()
     chartsExpandButton->setObjectName(QStringLiteral("debugChartsExpandButton"));
     chartsExpandButton->setCheckable(true);
     chartsExpandButton->setCompact(true);
+    chartsExpandButton->setToolTip(
+        QStringLiteral("Expand every debug chart, CPU, memory, swap and disk "
+                       "included, to full height"));
     connect(chartsExpandButton, &QPushButton::toggled, this, [this](bool on) {
         setDebugChartsExpanded(on);
         QSettings().setValue(kDebugChartsExpandedSetting, on);
@@ -3378,6 +3418,8 @@ void MainWindow::setDebugChartsExpanded(bool expanded)
     m_debugChartsExpanded = expanded;
     const int side =
         expanded ? kDebugChartExpandedSide : kResourceSparklineCompactSide;
+    if (auto *resources = dynamic_cast<ResourceQuadrantSparkline *>(m_resourceChart))
+        resources->setExpanded(expanded, kDebugChartExpandedSide);
     for (int q = 0; q < m_debugTileQuads.size(); ++q) {
         QWidget *quad = m_debugTileQuads.at(q);
         auto *grid = quad ? qobject_cast<QGridLayout *>(quad->layout()) : nullptr;
@@ -3409,9 +3451,11 @@ void MainWindow::setDebugChartsExpanded(bool expanded)
                                   : QStringLiteral("chevron-up"),
                          expanded ? QStringLiteral("Compact")
                                   : QStringLiteral("Expand"));
-        button->setToolTip(expanded
-                               ? QStringLiteral("Shrink the debug charts back to compact")
-                               : QStringLiteral("Expand the debug charts to full height"));
+        button->setToolTip(
+            expanded ? QStringLiteral("Collapse every debug chart, CPU, memory, "
+                                      "swap and disk included, back to compact")
+                     : QStringLiteral("Expand every debug chart, CPU, memory, "
+                                      "swap and disk included, to full height"));
     }
 }
 
@@ -3680,17 +3724,18 @@ QWidget *MainWindow::buildNetworkLogDock()
             return;
         const QString provider = m_quickAddAgentProvider->currentData().toString();
         const QString model = selectedModelComboValue(m_quickAddClaudeModel);
+        QSettings settings;
         if (provider == QLatin1String("claude-code")) {
-            QSettings().setValue(kClaudeCodeModelSetting, model);
+            forkmesh::settings::put(settings, kClaudeCodeModelSetting, model);
         } else if (agentIsCodexProvider(provider)) {
             const QString safeModel = codexChatGptModelId(model);
-            QSettings().setValue(kCodexModelSetting, safeModel);
+            forkmesh::settings::put(settings, kCodexModelSetting, safeModel);
             if (m_codexModelEdit)
                 m_codexModelEdit->setText(safeModel);
         } else if (agentIsCloudflareAiProvider(provider)) {
-            QSettings().setValue(kCloudflareAiModelSetting, model);
+            forkmesh::settings::put(settings, kCloudflareAiModelSetting, model);
         } else if (agentIsLocalLlamaProvider(provider)) {
-            QSettings().setValue(kLocalLlamaModelSetting, model);
+            forkmesh::settings::put(settings, kLocalLlamaModelSetting, model);
         }
         refreshQuickAddAgentModelSelector();
         scheduleTeammateRailRefresh();
@@ -3747,10 +3792,11 @@ QWidget *MainWindow::buildNetworkLogDock()
     }
     connect(m_quickAddModeSelector, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, [this](int) {
-                QSettings().setValue(kClaudeAutoModeSetting,
-                                     m_quickAddModeSelector->currentData().toBool());
-                QSettings().setValue(kAgentModeSetting,
-                                     m_quickAddModeSelector->currentText());
+                QSettings settings;
+                forkmesh::settings::put(settings, kClaudeAutoModeSetting,
+                                        m_quickAddModeSelector->currentData().toBool());
+                forkmesh::settings::put(settings, kAgentModeSetting,
+                                        m_quickAddModeSelector->currentText());
                 const QString description =
                     QStringLiteral("Permission mode: %1")
                         .arg(m_quickAddModeSelector->currentText());
@@ -3758,6 +3804,8 @@ QWidget *MainWindow::buildNetworkLogDock()
                 m_quickAddModeSelector->setToolTip(
                     description + QStringLiteral(". Click to choose a mode."));
             });
+    connect(m_quickAddModeSelector, QOverload<int>::of(&QComboBox::activated), this,
+            [this](int) { applyComposerModeToTargetSession(); });
     {
         const QString description =
             QStringLiteral("Permission mode: %1")
@@ -3792,13 +3840,16 @@ QWidget *MainWindow::buildNetworkLogDock()
     m_quickAddCreatePr->setToolTip(
         "When quick-add assigns an agent, create a pull request from its patch.");
     m_quickAddCreatePr->setVisible(false);
-    m_quickAddImageButton = new QPushButton;
-    m_quickAddImageButton->setObjectName("ghostButton");
-    m_quickAddImageButton->setCursor(Qt::PointingHandCursor);
-    setComposerIconTone(m_quickAddImageButton);
-    setOcticon(m_quickAddImageButton, "paperclip", 16);
-    connect(m_quickAddImageButton, &QPushButton::clicked, this,
-            &MainWindow::attachQuickAddMedia);
+    m_quickAddPlusButton = new QPushButton;
+    m_quickAddPlusButton->setObjectName("ghostButton");
+    m_quickAddPlusButton->setProperty("composerPlus", true);
+    m_quickAddPlusButton->setCursor(Qt::PointingHandCursor);
+    setComposerIconTone(m_quickAddPlusButton);
+    setOcticon(m_quickAddPlusButton, "plus", 16);
+    connect(m_quickAddPlusButton, &QPushButton::clicked, this, [this] {
+        openComposerPlusMenu(m_quickAddPlusButton, m_issueQuickAdd);
+    });
+    installComposerPlusShortcut(m_issueQuickAdd);
     m_quickAddAttachStrip = new QWidget;
     m_quickAddAttachStrip->setObjectName("quickAddAttachStrip");
     auto *attachStripRow = new QHBoxLayout(m_quickAddAttachStrip);
@@ -3858,8 +3909,9 @@ QWidget *MainWindow::buildNetworkLogDock()
     };
     connect(m_quickAddAgentProvider, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, [this, syncQuickAddAgentControls, refreshQuickAddModelPicker](int) {
-                QSettings().setValue(
-                    kQuickAddAgentProviderSetting,
+                QSettings settings;
+                forkmesh::settings::put(
+                    settings, kQuickAddAgentProviderSetting,
                     m_quickAddAgentProvider->currentData().toString());
                 refreshQuickAddModelPicker();
                 syncQuickAddAgentControls();
@@ -3901,15 +3953,6 @@ QWidget *MainWindow::buildNetworkLogDock()
         refreshQuickAddAgentModelSelector();
     }
 
-    m_quickAddSlashButton = new QPushButton(QStringLiteral("/"));
-    m_quickAddSlashButton->setObjectName("quickAddSlashButton");
-    m_quickAddSlashButton->setCursor(Qt::PointingHandCursor);
-    m_quickAddSlashButton->setFixedSize(22, 22);
-    m_quickAddSlashButton->setToolTip(
-        "Agent commands and quick actions");
-    connect(m_quickAddSlashButton, &QPushButton::clicked, this,
-            &MainWindow::openQuickAddSlashActions);
-
     m_quickAddSendButton = new QPushButton(QStringLiteral("new"));
     m_quickAddSendButton->setObjectName("quickAddSendIcon");
     m_quickAddSendButton->setCursor(Qt::PointingHandCursor);
@@ -3934,6 +3977,8 @@ QWidget *MainWindow::buildNetworkLogDock()
     connect(m_quickAddSendToAgentButton, &QPushButton::clicked, this, [this] {
         if (!m_issueQuickAdd)
             return;
+        if (quickAddPackageAppliesToOpen() && submitQuickAddToPackage())
+            return;
         const QString typed = m_issueQuickAdd->toPlainText().trimmed();
         // A cloud run open above takes the message through the relay. Its node
         // cannot read a file on this disk, so attachments stay in the composer.
@@ -3953,14 +3998,23 @@ QWidget *MainWindow::buildNetworkLogDock()
             }
             // An empty send is "continue", as it is for a local session.
             sendCloudAgentFollowUp(cloud, typed);
+            sessionsComposerSent(cloud);
             return;
         }
         // What is on screen names the conversation — the transcript open above,
         // the agent whose branch diff is being read, or the agent attached to
         // the selected pull request. Only when none is showing does the last
         // selection stand in.
+        QString sessionsBlocked;
+        const int sessionsOpen = sessionsComposerTarget(&sessionsBlocked);
+        if (!sessionsBlocked.isEmpty()) {
+            flashMessage(sessionsBlocked, true);
+            return;
+        }
         const int onScreen = quickAddFollowUpAgentSessionId();
-        const int target = onScreen >= 0 ? onScreen : m_selectedAgentSessionId;
+        const int target = sessionsOpen != 0 ? sessionsOpen
+                           : onScreen >= 0  ? onScreen
+                                            : m_selectedAgentSessionId;
         if (isExternalSession(target) && !isCloudSession(target) &&
             m_externalSurfaced.contains(target)) {
             if (typed.isEmpty())
@@ -3976,6 +4030,7 @@ QWidget *MainWindow::buildNetworkLogDock()
             recordQuickAddHistory(typed);
             m_issueQuickAdd->clear();
             sendPromptToExternalClaudeSession(target, typed);
+            sessionsComposerSent(target);
             return;
         }
         if (target < 0) {
@@ -4003,6 +4058,7 @@ QWidget *MainWindow::buildNetworkLogDock()
         if (target == m_selectedAgentSessionId && m_agentTranscript)
             m_agentTranscript->jumpToBottom();
         sendPromptToAgentSession(target, prompt);
+        sessionsComposerSent(target);
     });
 
     m_quickAddSendToChannelButton = new QPushButton;
@@ -4045,11 +4101,10 @@ QWidget *MainWindow::buildNetworkLogDock()
 
     if (next) {
         for (QPushButton *button :
-             {m_quickAddImageButton, m_quickAddMicButton, m_quickAddSlashButton}) {
+             {m_quickAddPlusButton, m_quickAddMicButton}) {
             button->setMinimumWidth(kComposerControlPx);
             button->setFixedHeight(kComposerControlPx);
         }
-        m_quickAddSlashButton->setFixedWidth(kComposerControlPx);
         for (QPushButton *button : {m_quickAddSendButton, m_quickAddSendToAgentButton,
                                     m_quickAddSendToChannelButton})
             button->setFixedHeight(kComposerControlPx);
@@ -4072,12 +4127,11 @@ QWidget *MainWindow::buildNetworkLogDock()
     auto *bottomBar = new QHBoxLayout;
     bottomBar->setContentsMargins(next ? 40 : 42, 4, next ? 4 : 6, next ? 4 : 0);
     bottomBar->setSpacing(next ? 4 : 5);
-    bottomBar->addWidget(m_quickAddImageButton, 0, Qt::AlignBottom);
+    bottomBar->addWidget(m_quickAddPlusButton, 0, Qt::AlignBottom);
     bottomBar->addWidget(m_quickAddMicButton, 0, Qt::AlignBottom);
     bottomBar->addWidget(m_voiceLevelMeter, 0, Qt::AlignBottom);
     bottomBar->addWidget(m_quickAddAttachStrip, 0, Qt::AlignBottom);
     bottomBar->addStretch(1);
-    bottomBar->addWidget(m_quickAddSlashButton, 0, Qt::AlignBottom);
     bottomBar->addWidget(agentBox, 0, Qt::AlignBottom);
     bottomBar->addStretch(1);
     bottomBar->addWidget(m_navCodexUsage, 0, Qt::AlignBottom);
@@ -4651,16 +4705,14 @@ void MainWindow::resetPromptOverlayPlacement()
 
 void MainWindow::savePromptOverlayPlacement()
 {
-    QSettings settings;
-    using forkmesh::settings::put;
-    put(settings, QLatin1String(kPromptFloatingSetting), m_promptOverlayFloating);
-    put(settings, QLatin1String(kPromptFloatPosSetting), m_promptOverlayPos);
-    put(settings, QLatin1String(kPromptFloatSizeSetting), m_promptOverlaySize);
-    put(settings, QLatin1String(kPromptDetachedSetting), m_promptOverlayDetached);
     if (m_promptOverlayDetached && m_promptDetachWindow)
         m_promptDetachGeometry = m_promptDetachWindow->geometry();
-    put(settings, QLatin1String(kPromptDetachGeometrySetting),
-        m_promptDetachGeometry);
+    QSettings settings;
+    if (m_promptDetachGeometry.isNull() &&
+        !settings.contains(QLatin1String(kPromptDetachGeometrySetting)))
+        return;
+    forkmesh::settings::put(settings, QLatin1String(kPromptDetachGeometrySetting),
+                            m_promptDetachGeometry);
 }
 
 void MainWindow::loadPromptOverlayPlacement()
@@ -4670,11 +4722,13 @@ void MainWindow::loadPromptOverlayPlacement()
     QSettings settings;
     m_promptDetachGeometry =
         settings.value(QLatin1String(kPromptDetachGeometrySetting)).toRect();
+    for (const char *stale : {kPromptFloatingSetting, kPromptFloatPosSetting,
+                              kPromptFloatSizeSetting, kPromptDetachedSetting})
+        forkmesh::settings::drop(settings, QLatin1String(stale));
     m_promptOverlayFloating = false;
     m_promptOverlayDetached = false;
     m_promptOverlaySize = QSize();
     m_promptOverlayPos = QPoint();
-    savePromptOverlayPlacement();
 }
 
 bool MainWindow::handlePromptPlacementEvent(QObject *object, QEvent *event)
@@ -4907,23 +4961,38 @@ void MainWindow::positionGlobalFooterOverlays()
     // is what lets the session list keep running to the bottom of the window.
     // Pinning the composer to the pane's own left edge -- rather than to the
     // dock's midpoint -- keeps the two lined up wherever the splitter sits.
-    const bool promptOverDetailPane =
-        dockAgentPrompt && m_agentDetail && !m_agentDetail->isHidden() &&
-        m_globalOverlayHost->isAncestorOf(m_agentDetail);
+    QWidget *const sessionsPane = sessionsComposerPane();
+    const bool dockSessionsPrompt =
+        !onAgents && anchoredPrompt && !m_promptOverlayCollapsed &&
+        sessionsPane && !sessionsPane->isHidden() && sessionsPageOnScreen() &&
+        m_globalOverlayHost->isAncestorOf(sessionsPane);
+    QWidget *dockPane = nullptr;
+    if (dockAgentPrompt && m_agentDetail && !m_agentDetail->isHidden() &&
+        m_globalOverlayHost->isAncestorOf(m_agentDetail))
+        dockPane = m_agentDetail;
+    else if (dockSessionsPrompt)
+        dockPane = sessionsPane;
+    const bool promptOverDetailPane = dockPane != nullptr;
+    const bool dockedPrompt = dockAgentPrompt || dockSessionsPrompt;
     const QRect detailRect =
         promptOverDetailPane
-            ? QRect(m_agentDetail->mapTo(m_globalOverlayHost, QPoint()),
-                    m_agentDetail->size())
+            ? QRect(dockPane->mapTo(m_globalOverlayHost, QPoint()), dockPane->size())
             : QRect();
+    constexpr int kSessionsComposerWidth = 760;
+    const int paneInset =
+        dockSessionsPrompt
+            ? qMax(16, (detailRect.width() - kSessionsComposerWidth) / 2)
+            : 0;
 
     if (m_footerLeftRegion)
-        m_footerLeftRegion->setVisible(m_logOverlayExpanded && !onAgents);
+        m_footerLeftRegion->setVisible(m_logOverlayExpanded && !onAgents &&
+                                       !dockSessionsPrompt);
     if (auto *dockRow = qobject_cast<QHBoxLayout *>(m_footerDock->layout())) {
         // On an open agent, the footer itself becomes the detail pane's exact
         // width. Dropping its horizontal inset keeps the prompt snug against
         // both transcript edges instead of leaving a narrow gutter.
-        dockRow->setContentsMargins(promptOverDetailPane ? 0 : 8, 8,
-                                    promptOverDetailPane ? 0 : 8, 0);
+        dockRow->setContentsMargins(promptOverDetailPane ? paneInset : 8, 8,
+                                    promptOverDetailPane ? paneInset : 8, 0);
         QLayoutItem *spacerSlot = dockRow->itemAt(1);
         QSpacerItem *spacer = spacerSlot ? spacerSlot->spacerItem() : nullptr;
         const QSizePolicy::Policy spacerPolicy =
@@ -4938,7 +5007,7 @@ void MainWindow::positionGlobalFooterOverlays()
         }
         dockRow->setStretch(1, promptOverDetailPane ? 0 : 1); // transparent spacer
         const Qt::Alignment promptAlignment =
-            dockAgentPrompt ? Qt::AlignBottom : Qt::AlignRight | Qt::AlignBottom;
+            dockedPrompt ? Qt::AlignBottom : Qt::AlignRight | Qt::AlignBottom;
         const int promptSlot = dockRow->indexOf(m_promptOverlayHost);
         QLayoutItem *promptItem =
             promptSlot >= 0 ? dockRow->itemAt(promptSlot) : nullptr;
@@ -4960,13 +5029,15 @@ void MainWindow::positionGlobalFooterOverlays()
             m_issueQuickAdd->setMaximumHeight(m_issueQuickAdd->minimumHeight());
             m_promptOverlayHost->setMinimumSize(0, 0);
             m_promptOverlayHost->setMaximumSize(
-                dockAgentPrompt ? QWIDGETSIZE_MAX : 560, QWIDGETSIZE_MAX);
+                dockedPrompt ? QWIDGETSIZE_MAX : 560, QWIDGETSIZE_MAX);
             m_promptOverlayHost->setFixedHeight(m_promptAnchoredHeight);
             m_promptOverlayHost->setSizePolicy(QSizePolicy::Expanding,
                                                QSizePolicy::Fixed);
             m_userAvatarNavButton->setToolTip(
                 dockAgentPrompt
                     ? QStringLiteral("The prompt is docked on the Agents page")
+                : dockSessionsPrompt
+                    ? QStringLiteral("The prompt is docked on the Sessions page")
                     : QStringLiteral("Collapse the prompt overlay"));
         } else {
             m_promptOverlayHost->setMinimumSize(0, 0);
@@ -4980,7 +5051,7 @@ void MainWindow::positionGlobalFooterOverlays()
                     : QStringLiteral("Collapse the prompt overlay"));
         }
     }
-    forkmesh::ui::NextAccess::placeWorkspaceComposer(*this, promptOverDetailPane);
+    forkmesh::ui::NextAccess::placeWorkspaceComposer(*this, dockPane);
     if (m_promptOverlayFloating && !m_promptOverlayDetached && m_promptOverlayHost) {
         clampPromptOverlayIntoHost();
         m_promptOverlayHost->show();
@@ -5026,7 +5097,8 @@ void MainWindow::positionGlobalFooterOverlays()
     reserveComposerBand(m_agentsPage, 0,
                         dockAgentPrompt && !promptOverDetailPane ? height : 0);
     reserveComposerBand(m_agentDetail, m_agentDetailBaseBottomMargin,
-                        promptOverDetailPane ? height : 0);
+                        dockPane == m_agentDetail ? height : 0);
+    reserveComposerBand(sessionsPane, 0, dockSessionsPrompt ? height : 0);
     m_footerDock->setGeometry(
         promptOverDetailPane ? detailRect.x() : kHorizontalMargin,
         qMax(0, m_globalOverlayHost->height() - height),
@@ -6663,7 +6735,9 @@ void MainWindow::tickBackgroundQueue()
 
 void MainWindow::openQuickAddSlashActions()
 {
-    if (!m_quickAddSlashButton || !m_issueQuickAdd)
+    QWidget *anchor = m_composerMenuAnchor ? m_composerMenuAnchor.data()
+                                           : static_cast<QWidget *>(m_quickAddPlusButton);
+    if (!anchor || !composerTarget())
         return;
     if (!m_slashActionsPopup) {
         m_slashActionsPopup = new QFrame(this);
@@ -6713,7 +6787,7 @@ void MainWindow::openQuickAddSlashActions()
         refreshClaudeSlashCommands();
 
     m_slashActionsPopup->adjustSize();
-    const QPoint above = m_quickAddSlashButton->mapToGlobal(
+    const QPoint above = anchor->mapToGlobal(
         QPoint(0, -m_slashActionsPopup->sizeHint().height() - 4));
     m_slashActionsPopup->move(above);
     m_slashActionsPopup->show();
@@ -6938,15 +7012,18 @@ void MainWindow::activateSlashActionRow(QWidget *row)
 
     if (kind == QLatin1String("attachFile")) {
         closePopup();
-        attachQuickAddMedia();
+        addFilesToComposer(composerTarget());
     } else if (kind == QLatin1String("mentionFile")) {
         closePopup();
         mentionProjectFileInQuickAdd();
     } else if (kind == QLatin1String("clearConversation")) {
-        if (m_issueQuickAdd)
-            m_issueQuickAdd->clear();
-        clearQuickAddImages();
-        m_quickAddHistoryIndex = -1;
+        QPlainTextEdit *target = composerTarget();
+        if (target)
+            target->clear();
+        if (target == m_issueQuickAdd) {
+            clearQuickAddImages();
+            m_quickAddHistoryIndex = -1;
+        }
         closePopup();
     } else if (kind == QLatin1String("rewind")) {
         navigateQuickAddHistory(-1);
@@ -6977,18 +7054,19 @@ void MainWindow::activateSlashActionRow(QWidget *row)
         closePopup();
         openAgentsOverview();
     } else if (kind == QLatin1String("command")) {
-        if (m_issueQuickAdd) {
-            QTextCursor cursor = m_issueQuickAdd->textCursor();
+        QPlainTextEdit *target = composerTarget();
+        if (target) {
+            QTextCursor cursor = target->textCursor();
             cursor.movePosition(QTextCursor::End);
-            if (!m_issueQuickAdd->toPlainText().isEmpty() &&
-                !m_issueQuickAdd->toPlainText().endsWith(QLatin1Char('\n')))
+            if (!target->toPlainText().isEmpty() &&
+                !target->toPlainText().endsWith(QLatin1Char('\n')))
                 cursor.insertText(QStringLiteral("\n"));
             cursor.insertText(QStringLiteral("/%1 ").arg(value));
-            m_issueQuickAdd->setTextCursor(cursor);
+            target->setTextCursor(cursor);
         }
         closePopup();
-        if (m_issueQuickAdd)
-            m_issueQuickAdd->setFocus();
+        if (target)
+            target->setFocus();
     }
 }
 
@@ -7972,6 +8050,22 @@ void MainWindow::refreshClaudeEffortLevels()
     proc->start(probe.program, probe.arguments);
 }
 
+void MainWindow::applyClaudeSlashCommands(const QJsonArray &commands)
+{
+    m_claudeSlashCommands.clear();
+    for (const QJsonValue &v : commands) {
+        const QJsonObject c = v.toObject();
+        const QString name = c.value(QStringLiteral("name")).toString();
+        if (name.isEmpty())
+            continue;
+        m_claudeSlashCommands.append({name, c.value(QStringLiteral("description")).toString(),
+                                      c.value(QStringLiteral("argumentHint")).toString()});
+    }
+    m_claudeSlashCommandsLoaded = true;
+    if (m_slashActionsPopup && m_slashActionsPopup->isVisible())
+        populateSlashActionsList();
+}
+
 // Probes the live `claude` CLI for its slash-command list via the same
 // control-protocol `initialize` request the VS Code extension sends
 // pipe one control_request in, read the control_response, then
@@ -8000,19 +8094,7 @@ void MainWindow::refreshClaudeSlashCommands()
                                              .toObject()
                                              .value(QStringLiteral("commands"))
                                              .toArray();
-            m_claudeSlashCommands.clear();
-            for (const QJsonValue &v : commands) {
-                const QJsonObject c = v.toObject();
-                const QString name = c.value(QStringLiteral("name")).toString();
-                if (name.isEmpty())
-                    continue;
-                m_claudeSlashCommands.append(
-                    {name, c.value(QStringLiteral("description")).toString(),
-                     c.value(QStringLiteral("argumentHint")).toString()});
-            }
-            m_claudeSlashCommandsLoaded = true;
-            if (m_slashActionsPopup && m_slashActionsPopup->isVisible())
-                populateSlashActionsList();
+            applyClaudeSlashCommands(commands);
             if (proc->state() != QProcess::NotRunning)
                 proc->kill(); // the initialize handshake is all we needed
         }
@@ -8051,7 +8133,8 @@ void MainWindow::refreshClaudeSlashCommands()
 
 void MainWindow::mentionProjectFileInQuickAdd()
 {
-    if (!m_issueQuickAdd)
+    QPlainTextEdit *target = composerTarget();
+    if (!target)
         return;
     QString baseDir;
     const int idx = issuesRepoIndex();
@@ -8060,7 +8143,7 @@ void MainWindow::mentionProjectFileInQuickAdd()
     const QString path = QFileDialog::getOpenFileName(
         this, QStringLiteral("Mention a file from this project"), baseDir);
     if (path.isEmpty()) {
-        m_issueQuickAdd->setFocus();
+        target->setFocus();
         return;
     }
     QString mention = path;
@@ -8070,10 +8153,10 @@ void MainWindow::mentionProjectFileInQuickAdd()
         if (!rel.startsWith(QStringLiteral("..")))
             mention = rel;
     }
-    QTextCursor cursor = m_issueQuickAdd->textCursor();
+    QTextCursor cursor = target->textCursor();
     cursor.insertText(QStringLiteral("@%1 ").arg(mention));
-    m_issueQuickAdd->setTextCursor(cursor);
-    m_issueQuickAdd->setFocus();
+    target->setTextCursor(cursor);
+    target->setFocus();
 }
 
 

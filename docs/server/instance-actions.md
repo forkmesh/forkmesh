@@ -3,8 +3,10 @@
 An instance (installed with `www/public/install-instance.sh`) runs its
 repositories' workflows on the instance server itself, so maintainers can
 push, merge, run CI, run scheduled jobs and deploy from the website alone.
-It builds on the runner Actions path ([runner-actions.md](runner-actions.md)):
+It builds on the runner Actions path ([actions.md](actions.md#on-a-runner-when-the-desktop-is-offline)):
 one runner daemon is installed next to the core and leases every Actions job.
+Home: [Go daemon](README.md); running an instance:
+[self-hosting](../self-hosting.md).
 
 What this adds over runner Actions:
 
@@ -133,7 +135,7 @@ Payloads (`FORKMESH_EVENT_PATH`) follow GitHub's shapes for the fields used:
 - issue_comment: `{action, issue:{...}, comment:{id, body, user:{login, verified}, verified}, sender:{login, verified}}`
 
 `verified` is `true` only when the inbox bound the author to an account (the
-signed-in session or an account-bound key, `docs/app/notification-email.md`).
+signed-in session or an account-bound key, [notifications.md](../app/notifications.md#collaboration-author-display)).
 Then `login` is that account. Otherwise `login` is the signing key, never a
 username the client chose. A workflow that acts for the commenter (assigning
 them, for example) must check `comment.user.verified`.
@@ -162,53 +164,44 @@ and retry. A push made with an Actions grant does not trigger `push`
 workflows again.
 
 That push goes straight to the git node on the runner route, so the app never
-sees it the way it sees a push through `/<owner>/<repo>.git`, and it does not
-record the new refs state as a routing pin. A public clone is routed only to a
-node whose signed refs digest is pinned, or that two nodes agree on; an
-instance with a single git node has no second node, so after an Actions
-commit-back every `git clone` / `git ls-remote` answered 503
-`mirror_unavailable` while the website kept browsing (2026-10-18). When a
-trusted job (one leased with a job token, the only kind that gets a push
-grant) reports a terminal status, the app now reads the target node's freshly
-signed repository proof and records its refs digest exactly as an accepted
-core push does (`_admit_core_push_state`), then wakes the repository's
-mirrors. A job that pushed nothing re-records the current digest, which is
-harmless; a failed proof leaves the report untouched.
+sees it as it sees a push through `/<owner>/<repo>.git` and does not record
+the new refs state as a routing pin. A public clone is routed only to a node
+whose signed refs digest is pinned, or that two nodes agree on, so on a
+single-node instance every `git clone` / `git ls-remote` would answer 503
+`mirror_unavailable` after an Actions commit-back while the website kept
+browsing. The app admits the pushed state twice:
 
-The terminal report alone left a gap: a deploy step after the commit-back
-kept the job running for minutes, and every clone in that window still
-answered 503 (job 57, 2026-10-18: pushed at about 05:06, clones failed until
-it finished at 05:07:45). The app therefore also admits the state at the
-first read that meets it. When a read through the app finds a node whose
-proof is signed, healthy and intact and differs from the pins only in its
-refs digest (`signed_refs_lag`), and no second node agrees on that digest,
-the app admits that node's state (`_actions_push_admitted`) only if all of
-these hold:
+- **At the first read that meets it.** When a read through the app finds a
+  node whose proof is signed, healthy and intact and differs from the pins
+  only in its refs digest (`signed_refs_lag`), and no second node agrees on
+  that digest, the app admits that node's state (`_actions_push_admitted`)
+  only if the repository is held by the hosting cores and the node is one of
+  them (`HOSTED_GIT_CORE_NODES`, the test a web push to a core passes), and a
+  trusted Actions job for that repository is active on that node right now
+  (`runner_actions.pushing`: status leased, running or cancelling, a job token
+  and lease still set, `expires_at` not passed, `target_node` equal to the
+  node). That is exactly the job holding the node's `actions-push` grant,
+  which the gateway lets fast-forward only the one branch it names. This
+  covers a deploy step that keeps the job running for minutes after the
+  commit-back.
+- **At the terminal report** of a trusted job (one leased with a job token,
+  the only kind that gets a push grant), as the fallback for a push no one
+  reads before the job ends. A job that pushed nothing re-records the current
+  digest, which is harmless; a failed proof leaves the report untouched.
 
-- the repository is held by the hosting cores and the node is one of them
-  (`HOSTED_GIT_CORE_NODES`), the same test a web push to a core passes;
-- a trusted Actions job for that repository is active on that node right now
-  (`runner_actions.pushing`: status leased, running or cancelling, a job
-  token and lease still set, `expires_at` not passed, `target_node` equal to
-  the node). That is exactly the job that holds an `actions-push` grant for
-  the node, and the gateway lets that grant only fast-forward the one branch
-  it names.
-
-It then records the node's state through the same `_admit_core_push_state`
-the terminal report uses (a fresh, forced, signed proof, the hosted catalog
-head, the mirror wake) and serves the read. This grants no trust the terminal
-report did not already grant: it moves the moment of admission from the end
-of the job to the first clone after its push. A lagging node with no such job
-(a different node, a mirror, a node after the job ended or expired) is still
-refused, so an arbitrary node cannot move the pins, and a push never rides a
-lagging proof. Health and monitoring probes do not admit. The terminal-report
-admission stays as the fallback for a job whose push no one reads before it
-ends.
+Both read the target node's fresh, forced, signed repository proof and record
+its refs digest exactly as an accepted core push does
+(`_admit_core_push_state`: the hosted catalog head, then a mirror wake). The
+early admission grants no trust the terminal report did not: it only moves the
+moment. A lagging node with no such job (another node, a mirror, a node after
+the job ended or expired) is still refused, so an arbitrary node cannot move
+the pins, and a push never rides a lagging proof. Health and monitoring probes
+do not admit.
 
 Rejected alternatives: a gateway-to-app notice after a runner push needs a
 new signed node-to-app channel and key on every git node; an interim runner
-report needs the runner to detect a push made by an arbitrary workflow step
-and a runner rebuild. Both would still end in the same proof read.
+report needs the runner to detect a push made by an arbitrary workflow step.
+Both would still end in the same proof read.
 
 The runner masks the job token and the push grant as well as the secrets.
 
@@ -235,19 +228,16 @@ upload-pack of the same repository (`RUNNER_READ_ACCESS`), because the
 workspace's only credential is this grant: the lease's read grant stays with
 the runner's own clone. An agent `push` grant still cannot read.
 
-Why: the stale-base rule means a commit-back that races another push must
-fetch and rebase first, and with a push-only grant every `git fetch` or
-`git pull` in the workspace was answered 404, which git reports as
-`fatal: repository '<url>/' not found`. A commit-back loop of
-`git pull --rebase origin main && git push origin HEAD:main` therefore failed
-every attempt ("could not push to main") although the push alone would have
-been accepted. It showed up first on an organization repository because those
-jobs only started running once leases named the organization, but it never
-depended on the alias: `/v1/runner/<org>/<repo>.git` is a gateway entry for
-the same bare repository (`server/hosted.go` writes one per organization
-alias) and receive-pack resolves it exactly as upload-pack does. Git's own `receive.denyNonFastForwards` then refuses
-a new commit that does not descend from the old one (the pack is not in the
-repository before git runs, so the gateway cannot check ancestry itself).
+Why read access: the stale-base rule means a commit-back that races another
+push must fetch and rebase first; with a push-only grant every `git fetch` or
+`git pull` in the workspace answers 404 (`fatal: repository '<url>/' not
+found`), so a `git pull --rebase origin main && git push origin HEAD:main`
+loop fails every attempt. Organization aliases behave the same:
+`/v1/runner/<org>/<repo>.git` is a gateway entry for the same bare repository
+(`server/hosted.go` writes one per alias). Git's own
+`receive.denyNonFastForwards` refuses a new commit that does not descend from
+the old one (the pack is not in the repository before git runs, so the gateway
+cannot check ancestry itself).
 
 The gateway never calls the app. An accepted Actions push is reported the way
 runner pushes are: the `hosted-pushes.json` sidecar for the refresh cycle (no
@@ -280,7 +270,7 @@ the runner without a maintainer agreeing.
 | Anyone can open a pull request and use the runner | Runs start only for approved authors: the repository owner, an account owning its node, organization writers, and the per-repository allowlist `repo_action_trusted_authors`. Others are queued as `waiting` (awaiting approval). |
 | An approval is reused for code the maintainer never saw | Approval names the head commit (`POST .../pulls/<n>/checks {action: "approve", head}`), answers `409 stale_head` for any other commit, and a new head cancels the older `waiting`/`queued` jobs and needs a new approval unless the author is trusted. |
 | A claimed author name | The author is the account the pull's signing key belongs to (`_git_push_account_for_pubkey`), never `authorName`. An unknown key is untrusted and cannot be allowlisted from the pull. |
-| Resource abuse | The same job sandbox as every Actions job (job user, systemd scope memory/CPU/task limits, no loopback or private networks, per-run `HOME`/`TMPDIR`, work tree removed after the run), the 90-minute lease and per-workflow `timeout-minutes` cap, one active job per workflow, at most 16 workflows per head, unapproved runs expire after 7 days. |
+| Resource abuse | The same job sandbox as every Actions job (job user, systemd scope memory/CPU/task limits, no loopback or private networks, per-run `HOME`/`TMPDIR`, work tree removed after the run), the 90-minute lease and per-workflow `timeout-minutes` cap, one active job per workflow, at most 16 workflows per head, unapproved runs expire after 7 days, and a queued job no runner takes expires a day after it became queued (`MAX(created_at, updated_at)`, so an approval starts a fresh day). |
 
 Residual risk: an approved or trusted run executes arbitrary code as the
 runner's job user with public network access; a sandbox escape is out of scope
@@ -333,6 +323,10 @@ an allowlisted author's Checks tab offers *Stop running automatically*. The
 Actions tab shows a runner card (running / queued / awaiting-approval counts),
 a pull request chip on pull request runs, Approve and Reject on a waiting run,
 and on a fork without workflows a pointer to the parent repository.
+Approve and *Always run for* ask first in the dashboard's in-page dialog
+(`confirmAccountAction`), not `window.confirm()`, which returns false without
+showing anything where native dialogs are suppressed (embedded webviews,
+automated browsers) and left the button doing nothing.
 
 Required checks are separate: `.forkmesh/required-checks.json` needs signed
 `forkmesh-check-v1` attestations, which instance runners do not produce yet, so
@@ -341,6 +335,66 @@ a repository that adds it locks every merge.
 Tests: `app/tests/test_pull_request_actions.py`,
 `app/tests/test_pull_request_checks_frontend.py`,
 `server/runner_actions_pull_test.go`.
+
+### Pings and the phone
+
+Waiting checks and failed runs reach the people who can act on them as pings,
+so a maintainer can run the whole loop from the phone. Recipients are the
+hosting account plus the owners, admins and maintainers of any organization
+in front of the repository (`_org_fanout_recipients`, the audience of new
+issues), filed through `WorkerRuntime.notify_actions`; a missing or failing
+hook never fails the runner's report.
+
+| Kind | Raised when | Title / href | `meta` |
+| --- | --- | --- | --- |
+| `action_approval` ("Checks waiting for your approval") | `enqueue_pull` queues `waiting` jobs for a head, or the runner reports `approvalRequired: "workflows"` | "Checks need your approval", `/<owner>/<repo>/pull/<n>/checks` | `category: actions-approval`, `number`, `head`, `runId`, `reason` (`author` or `workflows`), `author` |
+| `action_failed` ("Failed workflow runs") | a report ends a job as `failed` or with a failed run, unless it was cancelled | "<workflow> failed", `/<owner>/<repo>/actions/runs/<runId>` | `category: ci-failed`, `runId` (the first failed run), `workflow`, `number` on a pull request run |
+
+An approval ping is deduplicated per pull request head
+(`actions-approval:<owner>/<repo>:<n>:<head>`), so re-syncing never pings
+again and a new commit pings once for the new head; a failure ping per job.
+Both carry `meta.number` on pull request runs but keep their own href: a
+numbered ping whose source has no record segment (`NOTIFICATION_ITEM_URL_SEGMENTS`)
+no longer falls back to the repository's front page in the banner, inbox or
+digest. Both kinds can be switched off in the ping settings (repositories group). The
+APNs payload carries `aps.category`, `runId`, `repo`, `number` and `head`
+(approvals are time-sensitive); Android reads the same fields from the
+ping's `meta`.
+
+The phone acts through the same routes as the website: *Approve* on the
+banner and *Approve and run* on the pull request post `pulls/<n>/checks`
+with the `head` the ping named (a newer commit answers `409 stale_head`, and
+the app opens the pull request instead), *Always run for @author* and *Stop
+running automatically* post `trust` / `untrust`, the run screen reads the
+full log from `actions/runs/<id>/log`, and the repository's Actions screen
+manages secrets through `actions/secrets`. Runner summaries
+(`source: "runner"`) hide the workflow and repository switches, which only
+mirror executors accept. A runner summary sends `source: "runner"` with no
+`schemaVersion`; the apps read `controlAvailable` and `workflows` from it,
+treat a workflow with `workflow_dispatch` as runnable by hand, and settle a
+control as soon as it answers `status: "applied"`. Approve, Run workflow and
+*Always run for @author* (which also approves the waiting head) ask for
+Face ID or the screen lock.
+
+| Piece | iOS | Android |
+| --- | --- | --- |
+| Client calls (checks, log, secrets) | `FMCode/CI/CIClient.swift` | `core/.../ci/CiClient.kt` |
+| Checks model and buttons | `FMCode/CI/PullChecksModel.swift`, `Features/Code/CI/CIRepoSections.swift` | `core/.../ci/PullChecks.kt`, `feature/code/review/RunnerActionsScreens.kt` |
+| Full run log, runner summary | `FMCode/CI/ActionsModel.swift`, `FMApi/Models/Actions.swift` | `core/.../ci/Actions.kt`, `feature/code/review/CiScreens.kt` |
+| Secrets | `FMCode/CI/ActionSecretsModel.swift`, `Features/Code/CI/ActionSecretsScreen.swift` | `core/.../ci/ActionSecrets.kt`, `RunnerActionsScreens.kt` |
+| Approval banner | `FMCode/CI/ActionsApprovalNotification.swift`, `FMApi/Inbox/NotificationCategories.swift` | `core/.../inbox/NotificationActions.kt`, `feature/inbox/InboxFeature.kt` |
+
+Tests: `app/tests/test_actions_notifications.py`,
+`app/tests/test_push_alert_expansion.py`, iOS
+`Tests/FMCodeTests/ActionsRunnerTests.swift`, Android
+`core/src/test/.../ci/RunnerActionsTest.kt` and
+`inbox/ActionsNotificationsTest.kt`.
+
+Known gaps: the phone sends no `workflow_dispatch` inputs, so a workflow with
+required inputs answers `input_required`; and *Always run for @author* fails
+with `author_unknown` when the author is the instance's own flagship node,
+whose name the run summary shows as its display name (`_shown_actor`), on
+the website too.
 
 ## Job API
 
@@ -367,8 +421,8 @@ App side (`app/src/actions_job_api.py`, routed for `/api/actions/job/*` in
 `leased`, `running` or `cancelling`. The bot key is derived from
 `ACTIONS_BOT_SEED` (64 hex characters, the raw Ed25519 seed; WebCrypto
 imports it as PKCS#8 and exports it as a JWK; `to_py()` turns the JWK into a
-dict on both Pyodide and the host, so `x` and `d` are read as keys, which
-keeps the `test_host_js_surface` inventory free of attribute chains on it).
+dict, so `x` and `d` are read as keys, which keeps the `test_host_js_surface`
+inventory free of attribute chains on it).
 Each change is a v2
 issue event (`forkmesh-issue-event-v2\n<owner>/<repo>\n...`, owner being the
 repository's public address: an organization alias such as `acme/app`, the key
@@ -386,8 +440,8 @@ issue goes through the repository's gateway (`blobs` of
 ### Assigning
 
 `POST issues/<n>/assignees` (`change_assignees`) lets a workflow assign
-without committing ledger events to git itself. A commit made that way never
-passes through the issue inbox, so it raised no "issue assigned" notification.
+without committing ledger events to git itself (a direct commit never passes
+through the issue inbox, so it would raise no "issue assigned" notification).
 
 - Each change is one signed `claim` event (`assignee`, `claimState`
   `assigned` or `released`), the event the web's self-assignment writes. A
@@ -501,9 +555,9 @@ organization), `name, value, updated_by, updated_at`) and `repo_action_logs`
   the owner in the read and `actions-push` grants, exactly like agent jobs
   (`runner_leases._gateway_owner`). The Go runner checks its `allowedOwners`
   against `organization` (falling back to `repositoryOwner` for a lease
-  without one). Before this, the lease sent the creator account
-  (`drew`), and a runner registered for `acme-bolt` refused every Bolt
-  job with "This runner does not accept jobs for that owner."
+  without one); a lease naming the creator account (`drew`) would be refused
+  by a runner registered for `acme-bolt` with "This runner does not accept
+  jobs for that owner."
 - Secrets for a job: organization secrets (`owner=<org>`, empty repo), then
   repository secrets stored under the organization address, then those under
   the storage owner (the settings API is reached through the alias rewrite,
@@ -512,9 +566,9 @@ organization), `name, value, updated_by, updated_at`) and `repo_action_logs`
   (`ACTIONS_INSTANCE_RUNNER` set) answers from the runner tables
   (`repository_actions_instance_status_handler`), for the owner, an account
   owning the storage node or an organization writer, at either address and
-  for private repositories too. It no longer goes through the public mirror
-  routing context, which had no answer for an imported organization
-  repository, so the page showed no runs, workflows or controls. The answer
+  for private repositories too. It does not go through the public mirror
+  routing context, which has no answer for an imported organization
+  repository. The answer
   always has `source: runner`, `controlAvailable` and `workflows`, even with
   no jobs yet. A job that ended without runs (refused, expired, cancelled)
   shows as a failed or cancelled run whose log tail is the job's note.
@@ -610,7 +664,6 @@ organization), `name, value, updated_by, updated_at`) and `repo_action_logs`
   log or log tail is read (`run_log`, `snapshot`), with the secrets the
   repository and its organization have at read time, so a value that becomes
   a secret after it was printed is hidden from then on too.
-
 
 A repository can turn Actions off (`actions` in its feature settings): enqueue
 skips it and lease cancels its queued jobs. On a protected default branch the
@@ -744,20 +797,17 @@ instance that already has `ACTIONS_INSTANCE_RUNNER` in `app.env` keeps that
 name on `--update`, because the name is the runner's identity in
 `runner_nodes`, in its `runner.json`/gateway identity and on every job row.
 
-To move an existing instance to the new name, an operator waits until no job
-is running, sets `ACTIONS_INSTANCE_RUNNER=<owner>-runner` in
-`/etc/forkmesh-instance/app.env` and runs `--update`. The runner installer
-finds the owner's runner on the machine and renames it in place ("<owner>'s
-runner forkmesh-runner on this machine becomes <owner>-runner"), and
-`instance-runner` registers the new name. Then the old row is revoked with
-`UPDATE runner_nodes SET status='revoked' WHERE name='forkmesh-runner'`
-(`revoked` is the status the lease code already uses; a revoked runner gets
-no leases). Job rows keep `runner='forkmesh-runner'`: the snapshot and the log
-header treat both `ACTIONS_INSTANCE_RUNNER` and the old default
-`<INSTANCE_FLAGSHIP_NODE>-runner` as this server (`_instance_runners`), so
-old runs still read "Runs on this server <host>". A job leased by the old
-name at the moment of the rename loses its lease and is retried after the
-lease expires.
+To rename: wait until no job is running, set
+`ACTIONS_INSTANCE_RUNNER=<owner>-runner` in `/etc/forkmesh-instance/app.env`
+and run `--update`. The runner installer renames the owner's runner in place
+("<owner>'s runner forkmesh-runner on this machine becomes <owner>-runner")
+and `instance-runner` registers the new name. Then revoke the old row with
+`UPDATE runner_nodes SET status='revoked' WHERE name='forkmesh-runner'` (a
+revoked runner gets no leases). Old job rows keep `runner='forkmesh-runner'`;
+the snapshot and log header treat both `ACTIONS_INSTANCE_RUNNER` and the old
+default `<INSTANCE_FLAGSHIP_NODE>-runner` as this server (`_instance_runners`).
+A job leased by the old name during the rename loses its lease and is retried
+after it expires.
 
 ## Install
 

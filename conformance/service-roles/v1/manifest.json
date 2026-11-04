@@ -6,7 +6,7 @@
     "updated": "2026-09-14",
     "reportSchema": "forkmesh-service-role-report-v1",
     "tool": "tools/forkmesh_service_roles.py",
-    "documentation": "www/docs/operations/service-roles.md",
+    "documentation": "docs/operations/service-roles.md",
     "tracking": "#502"
   },
   "statuses": {
@@ -36,8 +36,8 @@
         "paths": ["tools/mirror_gateway.py"],
         "start": ["python3", "tools/mirror_gateway.py", "--config", "<gateway.json>"],
         "check": ["python3", "tools/mirror_gateway.py", "--config", "<gateway.json>", "--check"],
-        "configSchema": "www/docs/mirror-gateway-config.schema.json",
-        "runbook": "www/docs/operations/direct-https-mirror-gateway.md#same-codebase-dashboard",
+        "configSchema": "docs/mirror-gateway-config.schema.json",
+        "runbook": "docs/operations/direct-https-mirror-gateway.md#same-codebase-dashboard",
         "evidence": ["app/tests/test_mirror_dashboard.py", "app/tests/test_service_roles_contract.py"]
       },
       "contract": [
@@ -82,19 +82,19 @@
             "id": "cloudflared",
             "proprietary": false,
             "substitute": "Set disableCloudflared and publish the origin through the operator's own HTTPS reverse proxy.",
-            "docs": "www/docs/operations/mirror-node.md#build-and-test"
+            "docs": "docs/operations/mirror-node.md#build-and-test"
           },
           {
             "id": "canonical-login-origin",
             "proprietary": false,
             "substitute": "Omit dashboard.canonicalOrigin: /login and /signup are not redirected, and the dashboard stays signed out except for portable sessions the router key already signed.",
-            "docs": "www/docs/operations/direct-https-mirror-gateway.md#same-codebase-dashboard"
+            "docs": "docs/operations/direct-https-mirror-gateway.md#same-codebase-dashboard"
           }
         ]
       },
       "defaultEndpoints": [],
       "canonicalData": "None. Pages and assets are Git blobs from the mirrored assets repository; the gateway stores no page state.",
-      "backup": {"paths": ["gateway configuration", "dashboard.replicaPath"], "runbook": "www/docs/operations/node-backup-and-recovery.md#backups"},
+      "backup": {"paths": ["gateway configuration", "dashboard.replicaPath"], "runbook": "docs/operations/node-backup-and-recovery.md#backups"},
       "observability": ["GET /health", "GET /api/version", "structured gateway access log on stderr"],
       "failure": "Losing the hosted Worker leaves the dashboard serving the last validated public projection from dashboard.replicaPath; losing the gateway makes /health unreachable and the stable clone URL fails over to another healthy mirror.",
       "gaps": [
@@ -117,8 +117,8 @@
         "paths": ["tools/mirror_gateway.py", "server/cmd/forkmesh-mirror-node/main.go", "server/daemon.go"],
         "start": ["forkmesh-mirror-node", "--config", "<mirror-node.json>"],
         "check": ["forkmesh-mirror-node", "--config", "<mirror-node.json>", "--preflight", "--json"],
-        "configSchema": "www/docs/mirror-gateway-config.schema.json",
-        "runbook": "www/docs/operations/mirror-node.md",
+        "configSchema": "docs/mirror-gateway-config.schema.json",
+        "runbook": "docs/operations/mirror-node.md",
         "evidence": ["server/daemon_test.go", "app/tests/test_mirror_dashboard.py", "app/tests/test_service_roles_contract.py"]
       },
       "contract": [
@@ -148,13 +148,13 @@
             "id": "hosted-node-event-socket",
             "proprietary": false,
             "substitute": "Ref changes arrive through the post-receive doorbell (POST /v1/control/sync) and direct peer upstreams; third-party upstreams use syncInterval.",
-            "docs": "www/docs/operations/mirror-node.md"
+            "docs": "docs/operations/mirror-node.md"
           },
           {
             "id": "cloudflared",
             "proprietary": false,
             "substitute": "Pass --disable-cloudflared with an operator HTTPS origin.",
-            "docs": "www/docs/operations/mirror-node.md#build-and-test"
+            "docs": "docs/operations/mirror-node.md#build-and-test"
           }
         ]
       },
@@ -166,7 +166,7 @@
         }
       ],
       "canonicalData": "Git objects and refs in the node's bare repositories, pinned by the signed refs digest.",
-      "backup": {"paths": ["bare repositories", "node identity", "mirror-node configuration"], "runbook": "www/docs/operations/node-backup-and-recovery.md#backups"},
+      "backup": {"paths": ["bare repositories", "node identity", "mirror-node configuration"], "runbook": "docs/operations/node-backup-and-recovery.md#backups"},
       "observability": ["GET /healthz", "GET /readyz", "GET /v1/status syncStatus and recovery blocks"],
       "failure": "Without the hosted relay, existing clones and fetches keep working against the gateway's own origin; the stable forkmesh.com URL cannot redirect to it.",
       "gaps": [
@@ -189,8 +189,8 @@
         "paths": ["tools/mirror_gateway.py"],
         "start": ["python3", "tools/mirror_gateway.py", "--config", "<gateway.json>"],
         "check": ["python3", "tools/mirror_gateway.py", "--config", "<gateway.json>", "--check"],
-        "configSchema": "www/docs/mirror-gateway-config.schema.json",
-        "runbook": "www/docs/operations/direct-https-mirror-gateway.md#same-codebase-dashboard",
+        "configSchema": "docs/mirror-gateway-config.schema.json",
+        "runbook": "docs/operations/direct-https-mirror-gateway.md#same-codebase-dashboard",
         "evidence": ["app/tests/test_mirror_dashboard.py", "app/tests/test_service_roles_contract.py"]
       },
       "contract": [
@@ -213,7 +213,7 @@
             "id": "hosted-catalog-publication",
             "proprietary": false,
             "substitute": "Set disableCatalog in the mirror-node configuration, or point --catalog-url at another operator's catalog.",
-            "docs": "www/docs/operations/mirror-node.md"
+            "docs": "docs/operations/mirror-node.md"
           }
         ]
       },
@@ -225,7 +225,7 @@
         }
       ],
       "canonicalData": "None. Catalog rows are signed, republished projections of repository state on each node.",
-      "backup": {"paths": ["none: rebuilt from repositories"], "runbook": "www/docs/operations/node-backup-and-recovery.md#restoring-a-node"},
+      "backup": {"paths": ["none: rebuilt from repositories"], "runbook": "docs/operations/node-backup-and-recovery.md#restoring-a-node"},
       "observability": ["GET /api/repositories", "GET /v1/status"],
       "failure": "A node's own catalog keeps listing its repositories; the network-wide list is lost with the hosted Worker, and clients must show it as unavailable rather than empty.",
       "gaps": [
@@ -249,13 +249,13 @@
           "path": "/api/repositories/search?q={query}",
           "expect": {"status": [200], "json": {"total": "int"}},
           "degraded": {"status": [503], "json": {"error": "str"}},
-          "source": {"path": "www/docs/repository-index.md", "marker": "catalog_unavailable"}
+          "source": {"path": "docs/repository-index.md", "marker": "catalog_unavailable"}
         }
       ],
       "dependencies": {"required": [{"id": "cloudflare-workers", "proprietary": true}], "optional": []},
       "defaultEndpoints": [],
       "canonicalData": "None. Results are derived from the catalog.",
-      "backup": {"paths": ["none: derived"], "runbook": "www/docs/repository-index.md#determinism-and-pagination"},
+      "backup": {"paths": ["none: derived"], "runbook": "docs/repository-index.md#determinism-and-pagination"},
       "observability": ["response freshness, withheld, and budgets blocks"],
       "failure": "The endpoint answers 503 catalog_unavailable when no catalog can be read, never an empty result.",
       "gaps": [
@@ -277,8 +277,8 @@
         "paths": ["tools/headless_mirror_identity.py", "tools/ssh_authorization_broker.py", "tools/mirror_gateway.py"],
         "start": ["python3", "tools/ssh_authorization_broker.py", "--config", "<ssh-authorization-broker.json>"],
         "check": ["forkmesh-mirror-node", "--config", "<mirror-node.json>", "--public-key"],
-        "configSchema": "www/docs/ssh-authorization-broker.schema.json",
-        "runbook": "www/docs/operations/git-ssh-gateway.md#controller-free-operation",
+        "configSchema": "docs/ssh-authorization-broker.schema.json",
+        "runbook": "docs/operations/git-ssh-gateway.md#controller-free-operation",
         "evidence": ["app/tests/test_ssh_independent_writes.py", "app/tests/test_mirror_dashboard.py"]
       },
       "contract": [],
@@ -292,7 +292,7 @@
             "id": "hosted-account-registry",
             "proprietary": false,
             "substitute": "localAuthorization mode local with an operator-maintained grants file; nodes keep signing with their own key.",
-            "docs": "www/docs/operations/git-ssh-gateway.md#controller-free-operation"
+            "docs": "docs/operations/git-ssh-gateway.md#controller-free-operation"
           }
         ]
       },
@@ -304,7 +304,7 @@
         }
       ],
       "canonicalData": "Private keys stay on each device or node; the registry holds only public authority state.",
-      "backup": {"paths": ["node identity key (sealed export)", "SSH local grants file"], "runbook": "www/docs/operations/node-backup-and-recovery.md#moving-or-replacing-an-identity-key"},
+      "backup": {"paths": ["node identity key (sealed export)", "SSH local grants file"], "runbook": "docs/operations/node-backup-and-recovery.md#moving-or-replacing-an-identity-key"},
       "observability": ["broker decision log", "GET /v1/status"],
       "failure": "In fallback mode the broker consults local grants only when the Worker is unreachable, never after a denial, so revocation cannot be bypassed by cutting the uplink.",
       "gaps": [
@@ -327,8 +327,8 @@
         "paths": ["server/intake.go", "tools/ssh_gateway.py", "tools/mirror_gateway.py"],
         "start": ["forkmesh-mirror-node", "--config", "<mirror-node.json>"],
         "check": ["forkmesh-mirror-node", "--config", "<mirror-node.json>", "--check"],
-        "configSchema": "www/docs/ssh-gateway-config.schema.json",
-        "runbook": "www/docs/operations/direct-https-mirror-gateway.md#contributor-pull-requests-over-ssh",
+        "configSchema": "docs/ssh-gateway-config.schema.json",
+        "runbook": "docs/operations/git-ssh-gateway.md#contributor-pull-requests-over-ssh",
         "evidence": ["server/intake_test.go", "app/tests/test_ssh_independent_writes.py", "app/tests/test_mirror_dashboard.py"]
       },
       "contract": [],
@@ -343,13 +343,13 @@
             "id": "hosted-inbox-leases",
             "proprietary": false,
             "substitute": "Contributors submit over SSH (forkmesh-pull-submit) or directly to the gateway; the signed records are committed on the node.",
-            "docs": "www/docs/operations/direct-https-mirror-gateway.md#contributor-pull-requests-over-ssh"
+            "docs": "docs/operations/git-ssh-gateway.md#contributor-pull-requests-over-ssh"
           }
         ]
       },
       "defaultEndpoints": [],
       "canonicalData": "Signed collaboration records under .forkmesh/ in the repository itself.",
-      "backup": {"paths": ["bare repositories", "pullSubmissionSpool"], "runbook": "www/docs/operations/node-backup-and-recovery.md#backups"},
+      "backup": {"paths": ["bare repositories", "pullSubmissionSpool"], "runbook": "docs/operations/node-backup-and-recovery.md#backups"},
       "observability": ["GET /v1/status", "spool file count"],
       "failure": "Submissions made while the Worker is down stay durable in the spool; nothing is acknowledged that was not committed.",
       "gaps": [
@@ -372,8 +372,8 @@
         "paths": ["desktop/src/ActionRunner.cpp", "server/checks.go"],
         "start": ["forkmesh"],
         "check": ["forkmesh-mirror-node", "--sign-check-attestation"],
-        "configSchema": "www/docs/mirror-actions-catalog-configuration.schema.json",
-        "runbook": "www/docs/operations/required-checks.md",
+        "configSchema": "docs/mirror-actions-catalog-configuration.schema.json",
+        "runbook": "docs/operations/required-checks.md",
         "evidence": ["server/checks_test.go"]
       },
       "contract": [],
@@ -387,13 +387,13 @@
             "id": "hosted-agent-cli",
             "proprietary": true,
             "substitute": "Leave website agent jobs disabled; workflows and signed required checks run without them.",
-            "docs": "www/docs/operations/required-checks.md"
+            "docs": "docs/operations/required-checks.md"
           }
         ]
       },
       "defaultEndpoints": [],
       "canonicalData": "Workflow files and signed check attestations in the repository; run logs on the runner host.",
-      "backup": {"paths": ["actions run directory on the runner host"], "runbook": "www/docs/operations/node-backup-and-recovery.md#backups"},
+      "backup": {"paths": ["actions run directory on the runner host"], "runbook": "docs/operations/node-backup-and-recovery.md#backups"},
       "observability": ["run meta.json and log.txt per run", "actionsSummaryPath on the gateway"],
       "failure": "A missing check attestation keeps the merge gate closed; it never counts as success.",
       "gaps": [
@@ -415,7 +415,7 @@
       "dependencies": {"required": [{"id": "cloudflare-workers", "proprietary": true}], "optional": []},
       "defaultEndpoints": [],
       "canonicalData": "Organization rows in the hosted D1 database.",
-      "backup": {"paths": ["hosted D1 export"], "runbook": "www/docs/operations/organization-succession.md"},
+      "backup": {"paths": ["hosted D1 export"], "runbook": "docs/operations/organization-succession.md"},
       "observability": ["hosted route metrics"],
       "failure": "Repositories owned by an organization stay cloneable from their mirrors; membership changes are unavailable.",
       "gaps": [

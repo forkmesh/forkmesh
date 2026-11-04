@@ -1,25 +1,22 @@
 # Plugins and the core
 
-Part of [the marketplace docs](README.md). Code: `marketplace/plugins.json`,
+Part of [Marketplace](README.md). Code: `marketplace/plugins.json`,
 `marketplace/tools/marketplace_lib.py` (`plugin_selection` and the
 `selected_*` helpers), `marketplace/tools/generate_desktop_packages.py`,
 `desktop/cmake/ForkMeshPackageModules.cmake`, `app/tools/build_app_plugins.py`,
 `marketplace/tools/generate_world_packages.py`.
 
-Until October 2026 every catalogued package was built into every host: the
-desktop compiled all of them into the `forkmesh` binary (17 were split into
-modules on Linux only), the App staged every package's Worker module into its
-own source tree, and the desktop binary embedded every package's files. A
-package was an on/off switch over code that was always there. The owner asked
-for real plugins: separate parts with their own setup, and a core that holds
-none of them unless a build explicitly adds them.
+This page covers the difference between plugins and switches, and how a
+build chooses which plugins to add to the core on the desktop, the App, World
+and the phones. A plugin is a separate part with its own setup, and the core
+holds none of them unless a build explicitly adds it.
 
 ## Plugins and switches
 
 A package is a **plugin** when it has a `content/` folder: code or material
 that some host builds or ships (desktop sources from `content/desktop/build.json`,
-a Worker module, dashboard or `www` pages, World modules, themes, agent
-descriptors, Workflows packs). There are 90.
+a server module, dashboard or `www` pages, World modules, themes, agent
+descriptors, Workflows packs). There are 96.
 
 A package without `content/` is a **switch**: it only turns a core feature on
 or off (Chat, Issues, Agents, the repository tabs, see
@@ -75,30 +72,28 @@ dropped, and so is a guide whose pack is gone.
   loads.
 - Every listed plugin with `content/desktop/build.json` that the core does not
   call is built as its own module (`packages/<id>.so` and sidecar,
-  [package-modules](../desktop/package-modules.md)): 37 today, against 17
-  before. The hand-kept module list is gone; the generator emits
-  `FORKMESH_PLUGIN_MODULE_CANDIDATES`.
+  [package-modules](../desktop/package-modules.md)): 37 today. The generator
+  emits `FORKMESH_PLUGIN_MODULE_CANDIDATES`; there is no hand-kept list.
 - Desktop extensions (Sentry, VSCodium) register themselves with
   `DesktopPackageExtensionRegistration`, like page plugins do with
-  `NativePackageRegistration`. The generated factory table that made the core
-  call `createSentryDesktopExtension()` by name is gone, so both are modules
-  now.
-- `AgentNetworkSampler` moved from agent-watch to `desktop/src`: the core's
-  local control insights use it, so it is core code. Agent Watch is a module.
+  `NativePackageRegistration`, so the core never calls them by name and both
+  are modules.
+- `AgentNetworkSampler` lives in `desktop/src`, not in agent-watch: the
+  core's local control insights use it, so it is core code. Agent Watch is a
+  module.
 - Agent Watch, Analytics and Docs are installed by default, so their modules
-  load at start (the 2026-10-15 measurement put that at about 30 ms and 3 MB
-  together). They were compiled in to save that; being real plugins was the
-  owner's call.
+  load at start (about 30 ms and 3 MB together); being real plugins was judged
+  worth that.
 - Qt WebEngine is a core module the same way (`packages/web-engine.so`, not a
   Market package), loaded the first time a page opens
   ([browser](../desktop/browser.md#the-engine-is-a-module)); the empty shell
-  and what is still core are on [shell](../desktop/shell.md).
+  and what is still core are on [package modules](../desktop/package-modules.md#the-empty-shell).
 - macOS and Windows still link listed plugins into the app
   (`FORKMESH_PACKAGE_MODULES` defaults off there): a module resolves the
   window's symbols from the executable, which works through `-rdynamic` on
   Linux but needs a shared plugin SDK library on Windows. Unlisted plugins
   are left out on every platform.
-- **The Market card shows it** (2026-10-30). Every package with desktop code
+- **The Market card shows it.** Every package with desktop code
   has a line under its byline: **Separate from the core · 6.4 MB in memory**
   (green) for a loaded module, **· not loaded yet** / **· no memory until
   installed** for one that is not mapped, **· not loaded** with the reason in
@@ -128,10 +123,9 @@ can only shrink.
 | `tour` | `MainWindowOnboarding.cpp` creates `OnboardingTour` |
 
 Each one moves out by turning the window code that drives it into the plugin's
-own page or a socket in `NativePackageHost`, then dropping `coreLinked`.
-Timers moved out on 2026-10-25: its clock is a top-bar widget the plugin
-registers (`chromeFactory`), so it is a module now
-([package-modules](../desktop/package-modules.md#top-bar-widgets)).
+own page or a socket in `NativePackageHost`, then dropping `coreLinked`, as
+Timers did: its clock is a top-bar widget the plugin registers
+(`chromeFactory`) ([package-modules](../desktop/package-modules.md#top-bar-widgets)).
 
 Tasks, Notes and Calendar were never `coreLinked`, but their desktop pages
 were window code (`MainWindowTasks.cpp`, `MainWindowNotes.cpp`,
@@ -145,10 +139,9 @@ because agents, search, quick add and Stats read it
 
 - `build_app_plugins` uses the list for everything it stages: dashboard and
   `www` pages, `worker.http` routes, the generated `PLUGINS` registry,
-  `MARKET_PACKAGES`, and the Worker modules. Before, `FORKMESH_EXCLUDED_PLUGINS`
-  only hid pages: an instance built without CRM still shipped `crm.py` and
-  answered `/api/crm`.
-- Worker modules are staged into `app/src_build/plugins/`, not beside the core
+  `MARKET_PACKAGES`, and the server modules, so an instance built without CRM
+  ships no `crm.py` and does not answer `/api/crm`.
+- Server modules are staged into `app/src_build/plugins/`, not beside the core
   modules. `forkmesh_host.paths.ensure_import_paths` puts that folder last on
   `sys.path`, after the core, and `plugin_data._module` adds it when missing.
   A plugin module named like a core module fails the build.

@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.shell
 
+import com.forkmesh.nativeapp.ui.kit.FmHoldArea
 import com.forkmesh.nativeapp.ui.kit.FmSafeInput
 import com.forkmesh.nativeapp.ui.theme.FmRadius
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -246,164 +247,168 @@ internal fun ShellHomeGrid(
             tile = ShellHomeMetrics.tileHeight.value.toDouble(),
             minimum = 50.0,
         ).dp
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(style.across),
-            modifier = Modifier
-                .fillMaxSize()
-                .nestedScroll(pull)
-                .semantics { contentDescription = "All pages" }
-                .pointerInput(Unit) {
-                    detectTapGestures(onLongPress = { at ->
-                        haptics.palette()
-                        pressAt = at
-                        backgroundMenu = true
-                    })
-                },
-            contentPadding = PaddingValues(
-                start = contentPadding.calculateLeftPadding(androidx.compose.ui.unit.LayoutDirection.Ltr),
-                end = contentPadding.calculateRightPadding(androidx.compose.ui.unit.LayoutDirection.Ltr),
-                top = if (style.headed) 0.dp else FmSpace.x4,
-                bottom = bottom,
-            ),
-        ) {
-            if (status.message != null) {
-                item(key = "menu-status", span = { GridItemSpan(maxLineSpan) }) { FmInlineStatus(status) }
-            }
-            if (searchShown || query.isNotEmpty()) {
-                item(key = "home-search", span = { GridItemSpan(maxLineSpan) }) {
-                    ShellHomeSearchField(
-                        query,
-                        onQuery = { query = it },
-                        onSubmit = {
-                            val first = arranged.firstOrNull()?.ids?.firstOrNull()?.let { tiles[it] }
-                            if (first != null) {
-                                haptics.selection()
-                                ShellBarStore.use(first.id)
-                                first.onClick()
-                            } else if (needle.isNotEmpty()) {
-                                NavigationFeature.open(Route.Search(needle, com.forkmesh.nativeapp.navigation.SearchScope.Everything))
-                            }
-                        },
-                        onBlur = { if (query.isEmpty()) searchShown = false },
-                        onHomeSettings = { settings = true },
-                        onBarSettings = { barSettings = true },
-                    )
+        FmHoldArea {
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(style.across),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .nestedScroll(pull)
+                    .semantics { contentDescription = "All pages" }
+                    .pointerInput(Unit) {
+                        detectTapGestures(onLongPress = { at ->
+                            haptics.palette()
+                            pressAt = at
+                            backgroundMenu = true
+                        })
+                    },
+                contentPadding = PaddingValues(
+                    start = contentPadding.calculateLeftPadding(androidx.compose.ui.unit.LayoutDirection.Ltr),
+                    end = contentPadding.calculateRightPadding(androidx.compose.ui.unit.LayoutDirection.Ltr),
+                    top = if (style.headed) 0.dp else FmSpace.x4,
+                    bottom = bottom,
+                ),
+            ) {
+                if (status.message != null) {
+                    item(key = "menu-status", span = { GridItemSpan(maxLineSpan) }) { FmInlineStatus(status) }
                 }
-            }
-            arranged.forEach { section ->
-                if (style.headed) {
-                    item(key = "section:${section.id}", span = { GridItemSpan(maxLineSpan) }) {
-                        Box {
-                            Row(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .combinedClickable(onClick = {}, onLongClick = {
-                                        haptics.palette()
-                                        hideMenu = section.id
-                                    })
-                                    .padding(start = FmSpace.x3, end = FmSpace.x3, top = FmSpace.x4, bottom = FmSpace.x2)
-                                    .semantics { heading() },
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(section.title.uppercase(), style = Fm.text.labelSmall.copy(fontSize = 12.sp, letterSpacing = 1.2.sp), color = Fm.colors.textTertiary)
-                                Spacer(Modifier.width(FmSpace.x3))
-                                Box(Modifier.weight(1f).height(1.dp).background(Fm.colors.border))
+                if (searchShown || query.isNotEmpty()) {
+                    item(key = "home-search", span = { GridItemSpan(maxLineSpan) }) {
+                        ShellHomeSearchField(
+                            query,
+                            onQuery = { query = it },
+                            onSubmit = {
+                                val first = arranged.firstOrNull()?.ids?.firstOrNull()?.let { tiles[it] }
+                                if (first != null) {
+                                    haptics.selection()
+                                    ShellBarStore.use(first.id)
+                                    first.onClick()
+                                } else if (needle.isNotEmpty()) {
+                                    NavigationFeature.open(Route.Search(needle, com.forkmesh.nativeapp.navigation.SearchScope.Everything))
+                                }
+                            },
+                            onBlur = { if (query.isEmpty()) searchShown = false },
+                            onHomeSettings = { settings = true },
+                            onBarSettings = { barSettings = true },
+                        )
+                    }
+                }
+                arranged.forEach { section ->
+                    if (style.headed) {
+                        item(key = "section:${section.id}", span = { GridItemSpan(maxLineSpan) }) {
+                            Box {
+                                FmHoldArea {
+                                    Row(
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .combinedClickable(onClick = {}, onLongClick = {
+                                                haptics.palette()
+                                                hideMenu = section.id
+                                            })
+                                            .padding(start = FmSpace.x3, end = FmSpace.x3, top = FmSpace.x4, bottom = FmSpace.x2)
+                                            .semantics { heading() },
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text(section.title, style = Fm.text.titleSmall, color = Fm.colors.textSecondary)
+                                    }
+                                }
+                                FmDropdownMenu(expanded = hideMenu == section.id, onDismissRequest = { hideMenu = null }, offset = DpOffset(FmSpace.x3, 0.dp)) {
+                                    FmDropdownMenuItem("Refresh everything", onClick = {
+                                        hideMenu = null
+                                        refreshEverything()
+                                    }, icon = "refresh")
+                                    FmDropdownMenuItem("Hide ${section.title}", onClick = {
+                                        hideMenu = null
+                                        ShellBarStore.editHome { setShown(section.id, false) }
+                                    }, icon = "visibility_off")
+                                    FmDropdownMenuItem("Home screen settings…", onClick = {
+                                        hideMenu = null
+                                        settings = true
+                                    }, icon = "tune")
+                                }
                             }
-                            FmDropdownMenu(expanded = hideMenu == section.id, onDismissRequest = { hideMenu = null }, offset = DpOffset(FmSpace.x3, 0.dp)) {
+                        }
+                    } else if (style.grouped && section !== arranged.first()) {
+                        item(key = "gap:${section.id}", span = { GridItemSpan(maxLineSpan) }) { Spacer(Modifier.height(FmSpace.x2)) }
+                    }
+                    items(section.ids.mapNotNull { tiles[it] }, key = { "${section.id}:${it.key}" }) { tile ->
+                        val barCell = barCells.firstOrNull { it.id == tile.id }
+                        Box(
+                            Modifier
+                                .animateItem()
+                                .onGloballyPositioned { homeBounds[tile.id] = section.id to it.boundsInRoot() }
+                                .graphicsLayer { alpha = if (ShellDrag.isDragging(tile.id, bar = false)) 0.35f else 1f }
+                                .shellDragSource(
+                                    tile.id, tile.icon, fromBar = false, enabled = needle.isEmpty(),
+                                    onStart = {
+                                        tileMenu = null
+                                        backgroundMenu = false
+                                        lastTarget = null
+                                        haptics.selection()
+                                    },
+                                    onMove = { at ->
+                                        if (ShellDrag.overBar || !style.reorders) return@shellDragSource
+                                        val hit = homeBounds.entries.firstOrNull { it.key != tile.id && it.value.second.contains(at) } ?: return@shellDragSource
+                                        if (hit.key == lastTarget) return@shellDragSource
+                                        lastTarget = hit.key
+                                        if (ShellBarStore.moveInMenu(tile.id, hit.value.first, hit.key, placed)) {
+                                            if (style.sort != ShellHomeSort.custom) ShellBarStore.editHome { sort = ShellHomeSort.custom }
+                                            haptics.selection()
+                                        }
+                                    },
+                                    onDrop = { at ->
+                                        if (ShellDrag.overBar) {
+                                            if (ShellBarStore.putInBar(tile.id, ShellDrag.barSlotAt(at), barCells)) haptics.success() else haptics.warning()
+                                        }
+                                    },
+                                ),
+                        ) {
+                        FmHoldArea {
+                            ShellHomeTile(
+                                tile.icon,
+                                tile.title,
+                                tile.badge,
+                                tile.selected,
+                                tile.running,
+                                tile.desktopOffline,
+                                iconStyle = style.icons,
+                                heat = if (style.highlightFrequent) ShellBarOrder.heat(tile.id, uses, most) else 0.0,
+                                tileHeight = fitted,
+                                updated = packagesVersion >= 0 && packages?.isUpdated(tile.id, tile.kind) == true,
+                                loading = tile.loading,
+                                onLongClick = {
+                                    haptics.palette()
+                                    if (barCell != null) {
+                                        tileMenu = tile.key
+                                    } else {
+                                        pressAt = Offset.Unspecified
+                                        backgroundMenu = true
+                                    }
+                                },
+                            ) {
+                                ShellBarStore.use(tile.id)
+                                packages?.markViewed(tile.id, tile.kind)
+                                tile.onClick()
+                            }
+                        }
+                        if (barCell != null) {
+                            FmDropdownMenu(expanded = tileMenu == tile.key, onDismissRequest = { tileMenu = null }) {
+                                ShellBarItemMenu(barCell, barCells, onSettings = { barSettings = true }, inBarMenu = false) { tileMenu = null }
                                 FmDropdownMenuItem("Refresh everything", onClick = {
-                                    hideMenu = null
+                                    tileMenu = null
                                     refreshEverything()
                                 }, icon = "refresh")
-                                FmDropdownMenuItem("Hide ${section.title}", onClick = {
-                                    hideMenu = null
-                                    ShellBarStore.editHome { setShown(section.id, false) }
-                                }, icon = "visibility_off")
-                                FmDropdownMenuItem("Home screen settings…", onClick = {
-                                    hideMenu = null
-                                    settings = true
-                                }, icon = "tune")
-                            }
-                        }
-                    }
-                } else if (style.grouped && section !== arranged.first()) {
-                    item(key = "gap:${section.id}", span = { GridItemSpan(maxLineSpan) }) { Spacer(Modifier.height(FmSpace.x2)) }
-                }
-                items(section.ids.mapNotNull { tiles[it] }, key = { "${section.id}:${it.key}" }) { tile ->
-                    val barCell = barCells.firstOrNull { it.id == tile.id }
-                    Box(
-                        Modifier
-                            .animateItem()
-                            .onGloballyPositioned { homeBounds[tile.id] = section.id to it.boundsInRoot() }
-                            .graphicsLayer { alpha = if (ShellDrag.isDragging(tile.id, bar = false)) 0.35f else 1f }
-                            .shellDragSource(
-                                tile.id, tile.icon, fromBar = false, enabled = needle.isEmpty(),
-                                onStart = {
+                                FmDropdownMenuItem("Home settings…", onClick = {
                                     tileMenu = null
-                                    backgroundMenu = false
-                                    lastTarget = null
-                                    haptics.selection()
-                                },
-                                onMove = { at ->
-                                    if (ShellDrag.overBar || !style.reorders) return@shellDragSource
-                                    val hit = homeBounds.entries.firstOrNull { it.key != tile.id && it.value.second.contains(at) } ?: return@shellDragSource
-                                    if (hit.key == lastTarget) return@shellDragSource
-                                    lastTarget = hit.key
-                                    if (ShellBarStore.moveInMenu(tile.id, hit.value.first, hit.key, placed)) {
-                                        if (style.sort != ShellHomeSort.custom) ShellBarStore.editHome { sort = ShellHomeSort.custom }
-                                        haptics.selection()
-                                    }
-                                },
-                                onDrop = { at ->
-                                    if (ShellDrag.overBar) {
-                                        if (ShellBarStore.putInBar(tile.id, ShellDrag.barSlotAt(at), barCells)) haptics.success() else haptics.warning()
-                                    }
-                                },
-                            ),
-                    ) {
-                    ShellHomeTile(
-                        tile.icon,
-                        tile.title,
-                        tile.badge,
-                        tile.selected,
-                        tile.running,
-                        tile.desktopOffline,
-                        iconStyle = style.icons,
-                        heat = if (style.highlightFrequent) ShellBarOrder.heat(tile.id, uses, most) else 0.0,
-                        tileHeight = fitted,
-                        updated = packagesVersion >= 0 && packages?.isUpdated(tile.id, tile.kind) == true,
-                        loading = tile.loading,
-                        onLongClick = {
-                            haptics.palette()
-                            if (barCell != null) {
-                                tileMenu = tile.key
-                            } else {
-                                pressAt = Offset.Unspecified
-                                backgroundMenu = true
+                                    settings = true
+                                }, icon = "grid_view")
                             }
-                        },
-                    ) {
-                        ShellBarStore.use(tile.id)
-                        packages?.markViewed(tile.id, tile.kind)
-                        tile.onClick()
-                    }
-                    if (barCell != null) {
-                        FmDropdownMenu(expanded = tileMenu == tile.key, onDismissRequest = { tileMenu = null }) {
-                            ShellBarItemMenu(barCell, barCells, onSettings = { barSettings = true }, inBarMenu = false) { tileMenu = null }
-                            FmDropdownMenuItem("Refresh everything", onClick = {
-                                tileMenu = null
-                                refreshEverything()
-                            }, icon = "refresh")
-                            FmDropdownMenuItem("Home settings…", onClick = {
-                                tileMenu = null
-                                settings = true
-                            }, icon = "grid_view")
+                        }
                         }
                     }
-                    }
+                if (needle.isNotEmpty()) {
+                    item(key = "home-search-everywhere", span = { GridItemSpan(maxLineSpan) }) { ShellHomeSearchEverywhere(needle) }
                 }
-            if (needle.isNotEmpty()) {
-                item(key = "home-search-everywhere", span = { GridItemSpan(maxLineSpan) }) { ShellHomeSearchEverywhere(needle) }
-            }
+                }
             }
         }
         val menuWidth = 260.dp

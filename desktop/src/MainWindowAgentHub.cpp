@@ -62,6 +62,24 @@ windows::Registry *MainWindow::agentWindows()
         m_agentWindows = std::make_unique<windows::Registry>(this);
         m_agentWindows->setAnswerHandler(
             [this](const QString &windowId) { answerAgentSuggestion(windowId); });
+        struct UrlRules {
+            forkmesh::agentrules::RunRules rules;
+            QSet<QString> approved;
+            qint64 readAtMs = 0;
+        };
+        auto cache = std::make_shared<QHash<int, UrlRules>>();
+        m_agentWindows->setBrowserUrlPolicy([this, cache](int sessionId, const QUrl &url) {
+            UrlRules &entry = (*cache)[sessionId];
+            const qint64 now = QDateTime::currentMSecsSinceEpoch();
+            if (now - entry.readAtMs > 2000) {
+                entry.rules = agentRunRules(sessionId);
+                entry.approved = agentRunApprovals(sessionId);
+                entry.readAtMs = now;
+            }
+            return forkmesh::agentrules::decideUrl(entry.rules, url, entry.approved).verdict ==
+                   forkmesh::agentrules::Verdict::Run;
+        });
+        m_agentWindows->setBrowserDock([this](QWidget *frame) { return dockAgentPage(frame); });
     }
     return m_agentWindows.get();
 }

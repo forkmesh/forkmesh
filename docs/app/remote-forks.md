@@ -1,7 +1,7 @@
 # Forks on other instances and cross-instance pull requests
 
 Part of [the App docs](README.md). A repository can list copies of itself on
-other ForkMesh instances ([../INSTANCES.md](../INSTANCES.md)) and send a
+other ForkMesh instances ([instances](../operations/instances.md)) and send a
 branch to one of them as a pull request: the same signed, self-contained patch
 a fork sends its parent. Code: `app/src/remote_forks.py`, table
 `repo_remote_forks`, `_open_pull_cors_headers` in `app/src/entry.py`. Tests:
@@ -31,7 +31,8 @@ sessions. Unreachable targets report `remote_unreachable`. Review happens on
 the target instance; both copies must share history.
 
 The iPhone app's New pull request sheet offers the same **Send to** menu
-(`NewPullSheet`, `InboxService.openRemotePull`, `native/ios/docs/FMCodeCollab.md`):
+(`NewPullSheet`, `InboxService.openRemotePull`,
+[FMCode.md](../native/ios/FMCode.md#collab-issues-pull-requests-discussions-and-diffs)):
 it reads the saved list, compares the branches on this instance's mirror, signs
 with the device's key for the target's owner and name, and posts the same body
 (`{owner, repo, pull}`) with no session. It refuses an origin that is not
@@ -60,10 +61,9 @@ left. **Nothing to send** when N is 0.
   listed by default. **More** holds an optional prefix filter: with a prefix,
   only file rows under it are kept and other branches under it follow, with a
   title made from the branch name and the file's `compareBase`. Every field
-  is cleaned before use: control
-  and bidirectional-override characters are removed, titles are one line of at
-  most 240 characters, branch names must be plain git ref names, and a
-  description over 60 KB holds its row back.
+  is cleaned before use: control and bidirectional-override characters are
+  removed, titles are one line of at most 240 characters, branch names must be
+  plain git ref names, and a description over 60 KB holds its row back.
 - **Sending.** Each row goes through `submitRemotePullOpen`, the same path as a
   single **Send to**: compared on this instance's mirror, signed in this
   browser, posted to the target. Rows are sent one at a time, dependencies
@@ -103,8 +103,8 @@ left. **Nothing to send** when N is 0.
   posts `{action: "record", target, sent: [{branch, head, number}]}`; rows
   are keyed by repository, target, branch and head commit. A branch pushed
   again after it was sent is listed unticked with "Sent as #N before its
-  latest push". Numbers the browser kept in `localStorage` (older pages,
-  `forkmesh.pullBatch.v1:<host>/<owner>/<repo>><target url>`) are posted once
+  latest push". Numbers kept in `localStorage`
+  (`forkmesh.pullBatch.v1:<host>/<owner>/<repo>><target url>`) are posted once
   as records for the branch's current head when the server has none, and are
   still written as a fallback. **Stop** ends the run after the pull request
   in flight. An unreachable target, a full inbox, a quota, a rate limit or a
@@ -133,29 +133,22 @@ Pull requests have no dependency field. The `Depends on: #N` line is the same
 convention issues use (`issueDependencyNumbers`), but the pull request page
 shows it as part of the description, not as a relationship list.
 
-### Comparing with the other instance's branch, not this one's
+### Compare base
 
 A fork whose own `main` has moved away from the other instance's `main` (an
-instance's platform repository carrying local changes) can't compare its
+instance's platform repository carrying local changes) cannot compare its
 branches with its own `main`: the diff is the whole divergence and the mirror
 times out (`mirror_unavailable`). The batch file may then be an object
 `{"compareBase": "<branch>", "pulls": [...]}`, or a row may carry its own
-`compareBase` (a branch name or commit id). Rows are compared with it (a copy
-of the other instance's `main`) while the signed pull request still targets
-`base`. Precedence: the row's own `compareBase`, then a single `dependsOn`
-branch (so a stacked row is compared with its parent even when the file sets
-a shared `compareBase`), then the file's `compareBase`, then `base`. The same
-compare base is the `limit` of the merged-upstream check, so a stacked row is
-judged by its own commits only. Files from before this change read the same
-way, except that a single `dependsOn` now wins over the shared value.
+`compareBase` (a branch name or commit id, typically a copy of the other
+instance's `main`). The signed pull request still targets `base`.
 
-### Each stacked pull request carries only its own commits
-
-A row with exactly one `dependsOn` branch is compared with that branch, not
-with its `base`: the patch and commit series hold only the row's own commits,
-while the signed pull request still targets `base` and names its parent with
-"Depends on: #N". Comparing every row with `main` made each stacked pull
-request repeat all of its parents, so the reviewer saw the whole stack again
-and the upper rows outgrew the 4 MiB submission cap (`pull_too_large`). After
-the parent merges, `git am --3way` on the target applies the row cleanly. A row
-with several dependencies is still compared with `base`.
+Precedence: the row's own `compareBase`, then a single `dependsOn` branch,
+then the file's `compareBase`, then `base`. A row with exactly one `dependsOn`
+branch is compared with its parent, so its patch and series hold only its own
+commits; comparing every row with `main` repeated the whole stack in each
+pull and pushed the upper rows past the 4 MiB submission cap
+(`pull_too_large`). After the parent merges, `git am --3way` on the target
+applies the row cleanly. A row with several dependencies is compared with
+`base`. The compare base is also the `limit` of the merged-upstream check, so
+a stacked row is judged by its own commits only.

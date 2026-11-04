@@ -878,20 +878,8 @@ private fun TopBar(
             Spacer(Modifier.weight(1f))
             prompt()
             if (guest) {
-                Box(
-                    Modifier
-                        .size(44.dp)
-                        .clip(CircleShape)
-                        .clickable(onClick = onAvatar)
-                        .semantics {
-                            role = Role.Button
-                            contentDescription = "You: projects, tools and settings"
-                        },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    FmIcon("account_circle", size = 28.dp, tint = Fm.colors.textPrimary)
-                }
-                if (showsSignIn) SignInChip(onSignIn)
+                Spacer(Modifier.width(FmSpace.x2))
+                GuestAccountCapsule(showsSignIn, onAvatar, onSignIn)
             } else {
                 Spacer(Modifier.width(FmSpace.x2))
                 AvatarWithDot(name, avatarPng, connection, statusEmoji, away, onAvatar)
@@ -901,21 +889,42 @@ private fun TopBar(
 }
 
 @Composable
-private fun SignInChip(onClick: () -> Unit) {
+private fun GuestAccountCapsule(showsSignIn: Boolean, onHub: () -> Unit, onSignIn: () -> Unit) {
     val c = Fm.colors
+    val shape = RoundedCornerShape(50)
     Row(
         Modifier
-            .height(36.dp)
-            .clip(RoundedCornerShape(18.dp))
-            .border(1.dp, c.border, RoundedCornerShape(18.dp))
-            .clickable(onClick = onClick)
-            .semantics { role = Role.Button }
-            .padding(horizontal = FmSpace.x3),
+            .height(40.dp)
+            .fmGlass(shape, shadow = false),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        FmIcon("person_outline", size = 18.dp, tint = c.textPrimary)
-        Spacer(Modifier.width(FmSpace.x2))
-        Text("Sign in", style = Fm.text.labelLarge, color = c.textPrimary)
+        Box(
+            Modifier
+                .size(40.dp)
+                .clip(shape)
+                .clickable(onClick = onHub)
+                .semantics {
+                    role = Role.Button
+                    contentDescription = "You: projects, tools and settings"
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            FmIcon("account_circle", size = 24.dp, tint = c.textPrimary)
+        }
+        if (showsSignIn) {
+            Box(Modifier.width(1.dp).height(20.dp).background(c.textPrimary.copy(alpha = 0.12f)))
+            Box(
+                Modifier
+                    .fillMaxHeight()
+                    .clip(shape)
+                    .clickable(onClick = onSignIn)
+                    .semantics { role = Role.Button }
+                    .padding(start = FmSpace.x3, end = FmSpace.x4),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("Sign in", style = Fm.text.labelLarge, color = c.textPrimary)
+            }
+        }
     }
 }
 
@@ -949,7 +958,7 @@ private fun AvatarWithDot(name: String, avatarPng: String, connection: RelayConn
                 .border(2.dp, ring, RoundedCornerShape(corner + 3.dp)),
             contentAlignment = Alignment.Center,
         ) {
-            FmAvatar(name, size, avatarPng = avatarPng, corner = corner)
+            FmAvatar(name, size + 2.dp, avatarPng = avatarPng, corner = corner + 1.dp)
             if (statusEmoji.isNotEmpty()) {
                 Text(
                     statusEmoji,

@@ -1712,12 +1712,10 @@ async def _ap_handle_remove(env, activity, remote):
     row, existing, _ = await _ap_comment_by_remote_id(env, target_id)
     if not row or not existing:
         return json_response({"ok": True}, status=202)
-    # Lemmy community moderators use a different actor from the comment
-    # author. Accept moderation only from the same already-verified instance.
-    actor_host = urlparse(remote.get("actor_id", "")).hostname or ""
-    if actor_host.lower() != existing.get("sourceInstance", "").lower():
-        return json_response({"error": "moderator_instance_mismatch"},
-                             status=401)
+    actor_id = str(remote.get("actor_id", "") or "").rstrip("/")
+    if not actor_id or actor_id != str(
+            existing.get("authorId", "") or "").rstrip("/"):
+        return json_response({"error": "moderator_not_author"}, status=401)
     result = ap_threads.apply_activity(
         {target_id: existing}, activity, remote_actor=remote,
         context=existing.get("context"), received_ms=int(Date.now()))
@@ -2144,17 +2142,14 @@ async def _ap_public_repo_owner(env, request, owner, repo):
     except Exception:
         match = None
     owner_l = str(owner or "").strip().lower()
-    if not match:
-        return owner_l
-    alias = (safe_segment(match.group(1)) or "").lower()
-    if (not alias or alias == owner_l
-            or (safe_segment(match.group(2)) or "").lower()
-            != str(repo or "").strip().lower()):
-        return owner_l
-    node = await _org_repo_node(env, alias, repo)
-    if str(node or "").strip().lower() != owner_l:
-        return owner_l
-    return alias
+    alias = (safe_segment(match.group(1)) or "").lower() if match else ""
+    if (alias and alias != owner_l
+            and (safe_segment(match.group(2)) or "").lower()
+            == str(repo or "").strip().lower()
+            and str(await _org_repo_node(env, alias, repo) or "")
+            .strip().lower() == owner_l):
+        return alias
+    return await _repo_organization(env, owner_l, repo) or owner_l
 
 
 async def ap_publish_handler(env, request, owner, repo):

@@ -1,10 +1,12 @@
 # Worker footprint
 
-`world/tools/build_worker_footprint.py` measures the App's deployed Python
-source and the World's static assets, enforces the World's static budgets,
-and writes `worker-footprint.json` for the desktop's Logs → Build tab.
-Startup source size is reported as a measurement only; it is not budgeted,
-since the App runs on the core nodes rather than a hosted Worker runtime.
+Part of [the App docs](README.md); the World side is in
+[docs/world](../world/README.md). `world/tools/build_worker_footprint.py`
+measures the App's staged Python source and the World's static assets,
+enforces the World's static budgets, and can write `worker-footprint.json`
+for the desktop's Logs → Build tab. Startup source size is reported, not
+budgeted: the App runs on CPython on the core nodes
+([architecture](../architecture.md)).
 
 ## What ships
 
@@ -12,20 +14,17 @@ since the App runs on the core nodes rather than a hosted Worker runtime.
 `world/src` and every catalogued package's `content/worker/` directory,
 round-tripped through Python's AST with comments and docstrings removed.
 
-The served build does not run the footprint tool. On the cores,
-`BUILD_STEPS` in `app/host/forkmesh_host/serve.py` runs
-`build_dashboard_assets.py`, `build_worker_python.py`,
-`build_site_assets.py app` and `precompress_assets.py dist`; a release from
-`tools/next_deploy.py` (`app_build_steps`) runs the first three plus
-`build_site_assets.py world`. Only the Workers build writes the report:
-`app/wrangler.toml` `[build]` ends with
-`world/tools/build_worker_footprint.py --staged --report dist/worker-footprint.json`,
-and `app/deploy.sh` runs `build_worker_footprint.py --staged`, which checks
-the budgets without a report.
-
-So the desktop's Logs → Build fetch of `/worker-footprint.json`
-(`desktop/src/MainWindowLogs.cpp`) gets nothing from the cores and shows
-"deployment report unavailable".
+The cores' build does not run the footprint tool. `BUILD_STEPS` in
+`app/host/forkmesh_host/serve.py` runs `build_dashboard_assets.py`,
+`build_worker_python.py`, `build_site_assets.py app` and
+`precompress_assets.py dist`; a release from `tools/next_deploy.py`
+(`app_build_steps`) runs the first three plus `build_site_assets.py world`.
+Only the `[build]` command kept in `app/wrangler.toml` writes the report
+(`--staged --report dist/worker-footprint.json`, asserted by
+`app/tests/test_python_worker_startup.py`), and `app/deploy.sh` runs
+`--staged` to check budgets without one. So the desktop's fetch of
+`/worker-footprint.json` (`desktop/src/MainWindowLogs.cpp`) gets nothing
+from the cores and shows "deployment report unavailable".
 
 ## Budgets
 
@@ -38,18 +37,14 @@ the pytest that calls it) when one is exceeded:
   count and the largest single asset.
 
 Startup source is `entry.py`, `app_runtime.py`, `world_durable_objects.py`
-and the vendored SDK. Every other module must be **on-demand**: listed in
-`LAZY_MODULES`, or a marketplace package worker module
-(`_marketplace_worker_modules`).
+and the vendored SDK. Every other module must be **on-demand**, so the App
+process starts without parsing it: listed in `LAZY_MODULES`, or a marketplace
+package worker module (`_marketplace_worker_modules`).
 
 `test_every_lazily_proxied_module_is_budgeted_as_on_demand` derives the
 expected list from the `_LazyModule("name")` proxies. A proxied module that a
 startup module also imports at top level (`hidden_unicode`, imported by
 `app_runtime.py`) is parsed at startup anyway, so it stays a startup module.
-On 2026-10-24, 38 proxied modules added since the list was last kept (account
-names, comment reactions, instance console, instance home and privacy, post
-translations, pull rules, self-update and others) were added to
-`LAZY_MODULES`.
 
 ## Adding a module
 

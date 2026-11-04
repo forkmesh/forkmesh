@@ -15,10 +15,12 @@
 
 #include <functional>
 
+#include <QUrl>
+
 class QAbstractButton;
 class QFrame;
 class QLabel;
-class QProgressBar;
+class QTimer;
 class QPushButton;
 class QToolButton;
 class QVBoxLayout;
@@ -28,8 +30,10 @@ namespace forkmesh::ui {
 class SessionSidePanels : public QScrollArea
 {
 public:
+    static QUrl openTargetUrl(const QString &target);
     struct Details {
         bool session = false;
+        int sessionId = 0;
         QString machine;
         QString machineNote;
         QString machineIcon;
@@ -52,12 +56,15 @@ public:
         int dirty = -1;
         int prNumber = 0;
         bool conflicted = false;
+        bool canCommit = false;
         bool remoteAvailable = false;
         bool remoteOn = true;
         QStringList remotePhones;
         bool remoteLocal = false;
         QString remotePaired;
         qint64 remoteLastSeenMs = 0;
+        QString claudeRemote;
+        QString claudeRemoteSource;
     };
 
     struct SubSession {
@@ -81,8 +88,11 @@ public:
     void clearActivity();
     void append(const QJsonObject &event);
     void replaceActivity(const QList<QJsonObject> &events);
+    void appendActivity(const QList<QJsonObject> &events, qsizetype from);
     void setDetails(const Details &details);
+    const Details &details() const { return m_details; }
     void setRemoteActions(std::function<void(bool)> toggle, std::function<void()> connect);
+    void setCommitAction(std::function<void()> commit);
     void setSubSessions(const QList<SubSession> &subSessions, bool canStop,
                         std::function<void(const QString &)> stop);
     Feed &feed() { return m_feed; }
@@ -132,17 +142,26 @@ private:
         QPointer<QPushButton> more;
         QList<Row> rows;
         bool expanded = false;
+        bool empty = true;
     };
 
     Card &makeCard(const QString &key, const QString &title, const QString &hint);
     Row &addRow(Card &card);
+    Row makeRow(QWidget *parent, bool stop, int height);
     void setRow(const Row &row, const Item &item);
     void fillList(Card &card, const QList<Item> &items, const QString &meta);
-    void fillFixed(Card &card, const QList<Item> &items, const QString &meta);
+    bool fillFixed(Card &card, const QList<Item> &items, const QString &meta);
+    void setCardEmpty(Card &card, bool empty);
+    bool cardShown(const QString &key) const;
+    int neighbourIndex(const QString &key, int step) const;
     void refreshActivity();
+    void refreshBackground();
     void refreshDetails();
+    void refreshCommit();
     void refreshRemote();
+    void refreshMemory();
     void applyOrder();
+    void applyVisibility();
     void applyCollapsed(Card &card);
     void saveLayout() const;
     void scheduleSlice();
@@ -158,14 +177,28 @@ private:
     QSet<QString> m_hidden;
     QSet<QString> m_collapsed;
     QPointer<QWidget> m_contextBarRow;
-    QPointer<QProgressBar> m_contextBar;
+    QPointer<QWidget> m_contextBar;
     QPointer<QLabel> m_contextUsed;
     QPointer<QLabel> m_contextWindow;
+    QPointer<QWidget> m_contextGap;
+    QPointer<QPushButton> m_memoryToggle;
+    QPointer<QLabel> m_memoryChevron;
+    QPointer<QLabel> m_memoryCount;
+    QPointer<QWidget> m_memoryList;
+    QList<Row> m_memoryRows;
+    QList<sessioninsights::MemoryFile> m_memoryFiles;
+    QString m_memoryCwd;
+    qint64 m_memoryScannedMs = 0;
+    bool m_memoryOpen = false;
+    quint64 m_contextRevision = 0;
     QPointer<QWidget> m_remoteRow;
     QPointer<QAbstractButton> m_remoteSwitch;
     QPointer<QLabel> m_remoteStatus;
     std::function<void(bool)> m_remoteToggle;
     std::function<void()> m_remoteConnect;
+    QPointer<QPushButton> m_commitButton;
+    std::function<void()> m_commit;
+    QTimer *m_elapsedTimer = nullptr;
     Details m_details;
     Feed m_feed;
     std::function<void(const QString &)> m_stopSubSession;

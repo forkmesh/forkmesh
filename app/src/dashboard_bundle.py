@@ -57,6 +57,7 @@ FRAGMENTS = (
     "09-mirror-quota.js",
     "09-moderation.js",
     "09-notes.js",
+    "09-pings.js",
     "09-plugin-menu.js",
     "09-plugins.js",
     "09-post-translate.js",
@@ -65,6 +66,7 @@ FRAGMENTS = (
     "09-recent-pushes.js",
     "09-referrals.js",
     "09-repo-activity.js",
+    "09-repo-forum.js",
     "09-runners.js",
     "09-season.js",
     "09-tasks.js",
@@ -121,6 +123,7 @@ LAZY_CHUNKS = {
     "plugins": "09-plugins.js",
     "referrals": "09-referrals.js",
     "repo-activity": "09-repo-activity.js",
+    "repo-forum": "09-repo-forum.js",
     "tasks": "09-tasks.js",
     "workflows": "09-workflows.js",
 }
@@ -295,8 +298,8 @@ def _core_stub(chunk, exports):
 # ``marker`` is an element of the partial that tells it is already there;
 # ``after`` is where it goes (after that element), else the end of <body>.
 DEFERRED_MARKUP = {
-    # Profile, about, pings, provider sign-in and feedback dialogs.
-    "dialogs": {"partial": "modals", "marker": "#notificationModal",
+    # Profile, about, provider sign-in and feedback dialogs.
+    "dialogs": {"partial": "modals", "marker": "#profileModalTitle",
                 "after": None},
     # The header's "Start an agent" popover, positioned under its toggle.
     "agent": {"partial": "agent-modal", "marker": "#agentModal",

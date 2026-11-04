@@ -35,19 +35,16 @@ struct StatusScreen: View {
             List {
                 Section {
                     HStack(spacing: 12) {
-                        HStack(spacing: 12) {
-                            Image(systemName: report.overall.tone.symbol)
-                                .font(.title)
-                                .foregroundStyle(report.overall.tone.color)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(report.headline).font(.headline)
-                                Text(InsightsFeature.hostLabel).font(.caption).foregroundStyle(.secondary)
-                            }
+                        Image(systemName: report.overall.tone.symbol)
+                            .font(.title)
+                            .foregroundStyle(report.overall.tone.color)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(report.headline).font(.headline)
+                            Text(InsightsFeature.hostLabel).font(.caption).foregroundStyle(.secondary)
                         }
-                        .accessibilityElement(children: .combine)
-                        Spacer(minLength: 0)
-                        FmMessageTools(report.headline)
                     }
+                    .accessibilityElement(children: .combine)
+                    .fmMessageTools(report.headline)
                     StatusCurrentGrid(current: report.current)
                 }
                 Section("Systems") {

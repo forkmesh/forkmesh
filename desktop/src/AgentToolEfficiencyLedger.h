@@ -211,6 +211,9 @@ public:
     bool load(QString *error = nullptr);
     bool save(QString *error = nullptr) const;
     void saveLater() const;
+    QByteArray serialized() const;
+    quint64 beginBackgroundSave() const { return ++m_saveGeneration; }
+    void finishBackgroundSave(quint64 generation, const QByteArray &bytes) const;
     void clear();
     QString persistPath() const { return m_persistPath; }
 
@@ -280,4 +283,5 @@ private:
     qint64 m_totalCalls = 0;
     qint64 m_firstCallMs = 0;
     qint64 m_lastCallMs = 0;
+    mutable quint64 m_saveGeneration = 0;
 };

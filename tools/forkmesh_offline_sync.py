@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Offline, low-bandwidth, and removable-media repository sync (issue #504).
 
-Implements forkmesh-offline-media-v1 (www/docs/offline-sync.md): a signed
+Implements forkmesh-offline-media-v1 (docs/offline-sync.md): a signed
 export of refs and collaboration history to a directory (a USB stick, a shared
 folder, or any static HTTP host), a resumable chunked fetch of that directory
 over an unreliable link, and an import that verifies provenance before it

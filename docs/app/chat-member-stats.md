@@ -1,6 +1,7 @@
 # Chat member activity line
 
-The web chat's people pane (`/chat`, [web-chat-layout.md](web-chat-layout.md))
+Part of [the App docs](README.md). The web chat's people pane (`/chat`,
+[web-chat.md](web-chat.md#layout))
 shows one muted line under each person's name with up to five figures for the
 past year: pull requests opened, commits, issues opened, reviews, and how long
 ago their last contribution was. Hovering the line shows the full sentence
@@ -102,6 +103,21 @@ is safe because only one repository of a fork family counts. Pull requests
 are counted when opened; merges are not shown. Private-repository work never
 counts from either source.
 
+**The profile contribution panel reads it too.** `GET` on a profile's
+contributions (`_contribution_profile_payload` in `app/src/entry.py`) adds
+`member_repo_activity` pull requests, issues and reviews for the default
+rolling last-year window only (`contribution_rolling_range`), because the
+rows hold trailing-365-day totals, not days. `_contribution_forge_rows` is one
+indexed read by `user_bi`, at most `FORGE_ACTIVITY_MAX_REPOS` (50) public
+repositories whose figures are under two days old, so a projection that
+stopped refreshing does not keep reporting an old window. Its commit column
+is never used: it keys on git author names, which anyone can claim.
+`merge_forge_activity` (`app/src/contributions.py`) takes per logical project
+the larger of the signed snapshot and forge figure, as above, using the
+per-project snapshot rows `_contribution_activity_rows` adds. The rows join
+the profile revision hash so cached answers refresh, `coverage.forge` names
+the kinds and repository count, and calendar days are unchanged.
+
 ## Cost and caching
 
 - One request covers every row the reader can see: rows register with an
@@ -111,7 +127,8 @@ counts from either source.
   for 5 minutes (1 minute after a failed request), so the list's re-render on
   every presence change, search keystroke and channel switch reuses them
   without a request.
-- On the server a batch costs at most two D1 statements, whatever its size:
+- On the server a batch costs at most two database statements, whatever its
+  size:
   one `users` read by blind index (`user_bi IN (...)`) and one read of both
   sources (`UNION ALL`): the grouped contribution rows
   (`subject_user_bi IN (...)`, indexed by
@@ -121,11 +138,12 @@ counts from either source.
   once as one JSON value, so 50 names use 53 bound parameters. There is no
   per-row query, and the request path never reads a repository: only the
   cron phase does.
-- Each person's answer, including "not a member", is memoised in the isolate
-  for 5 minutes, at most 2,000 entries, and dropped early when this isolate
-  writes contribution or repository rows (the `contributions` watch generation
+- Each person's answer, including "not a member", is memoised in the app
+  process for 5 minutes, at most 2,000 entries, and dropped early when this
+  process writes contribution or repository rows (the `contributions` watch generation
   the profile view uses) or when the UTC day changes. The whole response is
-  also stored in the edge cache under the sorted name list and the day, and
+  also stored in the response cache (per process on a core) under the sorted
+  name list and the day, and
   sent with `Cache-Control: public, max-age=300`, because it is the same for
   every reader.
 
@@ -142,9 +160,9 @@ mirrors (`forkbot`, `claude`, `codex`, `agent`, `*-bot`, `*-agent`,
 `*-mirror`) get no line and are never asked for. Colours are the `--muted`
 token, so the line follows the light and dark themes.
 
-The line moved here from the retired `/dashboard/chat` member list on
-2026-10-23. `dashboard-chat.js` still carries that list's copy, which runs
-only where its `[data-dashboard-chat-members]` markup exists (nowhere now).
+`dashboard-chat.js` still carries a copy from the retired `/dashboard/chat`
+member list; it runs only where `[data-dashboard-chat-members]` markup exists
+(nowhere now).
 
 | Path | Responsibility |
 | --- | --- |

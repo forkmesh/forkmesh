@@ -3,7 +3,8 @@
 Everything the desktop does with a repository's discussions works in a
 browser, with nothing installed: start a discussion, reply, mark a Q&A answer,
 and, for the repository owner, close, reopen, archive, delete replies and
-delete the whole discussion.
+delete the whole discussion. Part of [the App docs](README.md); the inventory
+of web and desktop features is [web-desktop-parity.md](web-desktop-parity.md).
 
 ## Who may do what
 
@@ -29,11 +30,10 @@ public side effect: federation (`_ap_publish_repo_event` already skips
 private repositories), provider mirrors, public contribution tallies, and
 mentions, follower and assignee pings to accounts that cannot read it
 (`_private_repo_reader_filter` in `notify_mentions`, `notify_subscribers`
-and `notify_issue_assignees`). Issues and pull requests reach the tally
-through `_record_public_contributor`, which checks the repository is public
-(failing closed) before `_record_contributor`; until 2026-10-21 only
-discussions checked, so a private repository's issues and pull requests
-counted toward public profiles.
+and `notify_issue_assignees`). Issues, pull requests and discussions reach the
+tally through `_record_public_contributor`, which checks the repository is
+public (failing closed) before `_record_contributor`, so private work never
+counts toward public profiles.
 
 ## Events
 
@@ -50,19 +50,19 @@ key web issue events use). The canonical string is
 | `status` | the discussion | `status` | `status`: `open`, `closed` or `archived` |
 | `delete` | the discussion | `target` | `target`: the reply's event id, or `#discussion` for the whole discussion |
 
-`status` and `delete` are new with the web flow; the desktop, mirror gateway,
-relay and Go mirror all know them. The Go mirror removes a whole discussion's
-folder with `removeDiscussionFolder` in `server/intake.go`. It deletes plain
-files one by one and refuses a folder holding anything else, so there is no
-recursive delete. Event ids carry a random suffix
-(`comment-web-<ts>-<rand>`) because materializers skip an id they already hold.
-The opening event's `ts` is in milliseconds, like the desktop's; replies keep
-seconds, as before.
+The desktop, mirror gateway, relay and Go mirror all handle `status` and
+`delete`. The Go mirror removes a whole discussion's folder with
+`removeDiscussionFolder` in `server/intake.go`: it deletes plain files one by
+one and refuses a folder holding anything else, so there is no recursive
+delete. Event ids carry a random suffix (`comment-web-<ts>-<rand>`) because
+materializers skip an id they already hold. The opening event's `ts` is in
+milliseconds, like the desktop's; replies use seconds.
 
 ## Delivery
 
 `fetchRepoMutation(repo, "discussions", ...)` tries the repository's online
-mirrors first and the relay second, like issues:
+mirrors first and the relay second, like issues (see
+[mirroring](../mirroring.md)):
 
 - **Mirror** (`tools/mirror_gateway.py`, `_repo_collaboration`): verifies the
   signature and, for `status` and `delete`, that the portable session is the

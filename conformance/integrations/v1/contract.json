@@ -8,7 +8,7 @@
     "eventSchema": "forkmesh-event-v1",
     "cliSchema": "forkmesh-cli-v1",
     "tool": "tools/forkmesh_integration.py",
-    "documentation": "www/docs/integrations.md"
+    "documentation": "docs/integrations.md"
   },
   "services": [
     {
@@ -37,7 +37,7 @@
   "authentication": [
     {
       "id": "anonymous",
-      "summary": "Public reads. No credentials; responses may be edge cached."
+      "summary": "Public reads. No credentials; responses may be cached."
     },
     {
       "id": "loopback-operator",
@@ -95,7 +95,7 @@
       "toleranceSeconds": 300
     },
     "rateLimits": {
-      "summary": "Throttled requests answer 429 with Retry-After in seconds and usually a retryAfterMs body field. Hosted public reads are edge cached, so polling faster than minimumPollSeconds returns identical data and spends the shared daily request budget.",
+      "summary": "Throttled requests answer 429 with Retry-After in seconds and usually a retryAfterMs body field. Hosted public reads are cached, so polling faster than minimumPollSeconds returns identical data.",
       "status": 429,
       "headers": ["Retry-After"],
       "bodyFields": ["retryAfterMs"],

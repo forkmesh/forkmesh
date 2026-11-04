@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Clean-room verifier for the ForkMesh protocol suite v1.
 
-Written from the normative documents in ``www/docs/protocol`` only. It imports
+Written from the normative documents in ``docs/protocol`` only. It imports
 nothing from the ForkMesh source tree (the suite tests pin a standard-library
 import list), so agreement with the reference implementations is independent
 evidence rather than a copy of their behavior.

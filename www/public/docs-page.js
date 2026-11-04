@@ -241,28 +241,205 @@
     });
   });
 
-  const outlineLinks = Array.from(document.querySelectorAll(".dp-outline-link"));
-  if (outlineLinks.length && "IntersectionObserver" in window) {
-    const byId = new Map(
-      outlineLinks.map((link) => [link.getAttribute("href").slice(1), link]),
-    );
-    let current = null;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (!entry.isIntersecting) return;
-          const link = byId.get(entry.target.id);
-          if (!link || link === current) return;
-          if (current) current.classList.remove("active");
-          link.classList.add("active");
-          current = link;
-        });
-      },
-      { rootMargin: "-20% 0px -70% 0px", threshold: 0 },
-    );
-    byId.forEach((_, id) => {
+  const toolbar = document.querySelector(".dp-toolbar");
+  const prose = document.querySelector(".dp-prose");
+  const progress = toolbar && prose ? document.createElement("div") : null;
+  if (progress) {
+    progress.className = "dp-progress";
+    progress.setAttribute("aria-hidden", "true");
+    toolbar.append(progress);
+  }
+
+  const outline = document.querySelector(".dp-outline");
+  const outlineLinks = Array.from(document.querySelectorAll(".dp-outline .dp-outline-link"));
+  const sections = outlineLinks
+    .map((link) => {
+      const id = decodeURIComponent(link.getAttribute("href").slice(1));
       const heading = document.getElementById(id);
-      if (heading) observer.observe(heading);
+      return heading ? { id, link, heading, level: link.classList.contains("level-3") ? 3 : 2 } : null;
+    })
+    .filter(Boolean);
+  sections.forEach((section, index) => {
+    if (section.level !== 3) return;
+    for (let i = index - 1; i >= 0; i -= 1) {
+      if (sections[i].level === 2) {
+        section.parent = sections[i];
+        break;
+      }
+    }
+  });
+
+  let marker = null;
+  if (outline && sections.length) {
+    marker = document.createElement("span");
+    marker.className = "dp-outline-marker";
+    marker.setAttribute("aria-hidden", "true");
+    outline.append(marker);
+    const tools = document.createElement("div");
+    tools.className = "dp-outline-tools";
+    const top = document.createElement("button");
+    top.type = "button";
+    top.className = "dp-outline-top";
+    top.textContent = "Back to top";
+    top.addEventListener("click", () => {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      history.replaceState(null, "", window.location.pathname + window.location.search);
+    });
+    const hint = document.createElement("p");
+    hint.className = "dp-outline-hint";
+    hint.innerHTML = "<kbd>[</kbd> <kbd>]</kbd> previous / next section";
+    tools.append(top, hint);
+    outline.append(tools);
+  }
+
+  let jump = null;
+  let jumpCurrent = null;
+  if (prose && sections.length > 1) {
+    jump = document.createElement("details");
+    jump.className = "dp-outline-jump";
+    const summary = document.createElement("summary");
+    const label = document.createElement("span");
+    label.textContent = "On this page";
+    jumpCurrent = document.createElement("strong");
+    jumpCurrent.textContent = sections[0].link.textContent.trim();
+    summary.append(label, jumpCurrent);
+    const list = document.createElement("nav");
+    list.setAttribute("aria-label", "On this page");
+    sections.forEach((section) => {
+      const copy = section.link.cloneNode(true);
+      section.jumpLink = copy;
+      copy.addEventListener("click", () => {
+        jump.open = false;
+      });
+      list.append(copy);
+    });
+    jump.append(summary, list);
+    prose.parentNode.insertBefore(jump, prose);
+  }
+
+  const headingMargin = sections.length
+    ? parseFloat(window.getComputedStyle(sections[0].heading).scrollMarginTop) || 0
+    : 0;
+  const toolbarOffset = () => {
+    const bottom = toolbar ? Math.max(0, toolbar.getBoundingClientRect().bottom) : 0;
+    const jumpHeight = jump && jump.offsetParent ? jump.offsetHeight : 0;
+    if (jump && toolbar) jump.style.top = `${toolbar.offsetHeight}px`;
+    return Math.max(bottom + jumpHeight + 24, headingMargin + 12);
+  };
+
+  let active = null;
+  let lockedUntil = 0;
+  const setActive = (section) => {
+    if (section === active) return;
+    if (active) {
+      [active.link, active.jumpLink].forEach((link) => {
+        if (!link) return;
+        link.classList.remove("active");
+        link.removeAttribute("aria-current");
+      });
+      if (active.parent) active.parent.link.classList.remove("active-parent");
+    }
+    active = section;
+    if (!section) {
+      if (marker) marker.style.opacity = "0";
+      return;
+    }
+    [section.link, section.jumpLink].forEach((link) => {
+      if (!link) return;
+      link.classList.add("active");
+      link.setAttribute("aria-current", "location");
+    });
+    if (section.parent) section.parent.link.classList.add("active-parent");
+    if (jumpCurrent) jumpCurrent.textContent = section.link.textContent.trim();
+    if (marker) {
+      marker.style.opacity = "1";
+      marker.style.transform = `translateY(${section.link.offsetTop}px)`;
+      marker.style.height = `${section.link.offsetHeight}px`;
+    }
+    if (outline && outline.scrollHeight > outline.clientHeight) {
+      const top = section.link.offsetTop;
+      const bottom = top + section.link.offsetHeight;
+      if (top < outline.scrollTop + 48 || bottom > outline.scrollTop + outline.clientHeight - 48) {
+        outline.scrollTo({ top: Math.max(0, top - outline.clientHeight / 3), behavior: "smooth" });
+      }
+    }
+  };
+
+  const sectionAt = () => {
+    if (!sections.length) return null;
+    const line = toolbarOffset();
+    const doc = document.documentElement;
+    if (window.innerHeight + window.scrollY >= doc.scrollHeight - 4) {
+      const visible = sections.filter((section) => section.heading.getBoundingClientRect().top < window.innerHeight);
+      return visible.length ? visible[visible.length - 1] : sections[sections.length - 1];
+    }
+    let found = null;
+    for (const section of sections) {
+      if (section.heading.getBoundingClientRect().top - line <= 0) found = section;
+      else break;
+    }
+    return found;
+  };
+
+  let frame = 0;
+  let hashTimer = 0;
+  const onScroll = () => {
+    if (frame) return;
+    frame = window.requestAnimationFrame(() => {
+      frame = 0;
+      if (progress) {
+        const doc = document.documentElement;
+        const span = doc.scrollHeight - window.innerHeight;
+        progress.style.transform = `scaleX(${span > 0 ? Math.min(1, window.scrollY / span) : 0})`;
+      }
+      if (!sections.length || Date.now() < lockedUntil) return;
+      const section = sectionAt();
+      setActive(section);
+      window.clearTimeout(hashTimer);
+      hashTimer = window.setTimeout(() => {
+        const hash = section ? `#${encodeURIComponent(section.id)}` : "";
+        if (window.location.hash !== hash) {
+          history.replaceState(null, "", window.location.pathname + window.location.search + hash);
+        }
+      }, 400);
+    });
+  };
+
+  if (progress || sections.length) {
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    onScroll();
+  }
+
+  sections.forEach((section) => {
+    [section.link, section.jumpLink].forEach((link) => {
+      if (!link) return;
+      link.addEventListener("click", () => {
+        lockedUntil = Date.now() + 900;
+        setActive(section);
+      });
+    });
+  });
+
+  if (sections.length) {
+    document.addEventListener("keydown", (event) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.key !== "[" && event.key !== "]") return;
+      const target = event.target;
+      if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName || ""))) return;
+      event.preventDefault();
+      const index = active ? sections.indexOf(active) : -1;
+      const next = event.key === "]"
+        ? sections[Math.min(sections.length - 1, index + 1)]
+        : index > 0 ? sections[index - 1] : null;
+      if (!next) {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        return;
+      }
+      lockedUntil = Date.now() + 900;
+      setActive(next);
+      next.heading.scrollIntoView({ behavior: "smooth", block: "start" });
+      history.replaceState(null, "", `${window.location.pathname}${window.location.search}#${encodeURIComponent(next.id)}`);
     });
   }
 

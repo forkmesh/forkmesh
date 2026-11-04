@@ -226,6 +226,11 @@ def test_public_data_pages_are_www_documents_on_published_origins():
             route, "http://127.0.0.1:8787", "", published,
         ) == ("local", "")
     assert static_routes.external_site_route("/status/extra") is None
+    assert static_routes.external_site_route("/sitemap.xml") == "www"
+    assert static_routes.external_site_delivery(
+        "/sitemap.xml", "https://app.forkmesh.com", "https://forkmesh.com",
+        published,
+    ) == ("redirect", "https://forkmesh.com")
     assert "/ledger" not in run_worker_first
     assert '"/ledger"' in app_paths
 

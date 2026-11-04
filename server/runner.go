@@ -1,6 +1,6 @@
 package mirrornode
 
-// Runner role (docs/RUNNERS.md, PLAN.md Phase 5).
+// Runner role (docs/operations/runners.md, PLAN.md Phase 5).
 //
 // A runner holds no repository and serves nothing. It claims agent leases
 // from the app's runner API (POST /api/runners/claim), clones the one leased
@@ -123,7 +123,7 @@ func newRunnerAgentJobs(d *Daemon) (*agentJobRunner, error) {
 		}
 	} else {
 		log.Printf("runner: WARNING jobs run as the daemon's own user and can read its node key; " +
-			"run the daemon as root with runner.jobUid/jobUser (docs/RUNNERS.md) before serving other owners")
+			"run the daemon as root with runner.jobUid/jobUser (docs/operations/runners.md) before serving other owners")
 	}
 	if raw, err := os.ReadFile("/etc/resolv.conf"); err == nil {
 		box.dnsAllow = loopbackResolvers(string(raw))
@@ -390,7 +390,10 @@ func removeUnderRoot(root, path string) error {
 }
 
 // runnerBundleLimit caps the bundle a job hands over for publishing.
-const runnerBundleLimit = 1 << 30
+const (
+	runnerBundleLimit    = 1 << 30
+	runnerGitOutputLimit = 16 << 20
+)
 
 var runnerObjectID = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
 
@@ -418,6 +421,8 @@ func (b *runnerBackend) daemonGit(ctx context.Context, dir, grant, remote string
 		"-c", "protocol.allow=never", "-c", "protocol.https.allow=always",
 		"-c", "protocol.http.allow=" + httpAllow, "-c", "protocol.file.allow=" + fileAllow,
 		"-c", "credential.helper=", "-c", "http.followRedirects=false",
+		"-c", "core.bigFileThreshold=8m", "-c", "core.deltaBaseCacheLimit=16m",
+		"-c", "pack.threads=1", "-c", "pack.windowMemory=32m", "-c", "pack.deltaCacheSize=16m",
 	}
 	command := exec.CommandContext(ctx, "git", append(hardened, args...)...)
 	command.Dir = dir
@@ -434,12 +439,17 @@ func (b *runnerBackend) daemonGit(ctx context.Context, dir, grant, remote string
 		command.Env = append(command.Env, "GIT_CONFIG_COUNT=1",
 			"GIT_CONFIG_KEY_0=http.extraHeader", "GIT_CONFIG_VALUE_0="+runnerGrantHeader+": "+grant)
 	}
-	output, err := command.CombinedOutput()
+	output := &cappedBuffer{limit: runnerGitOutputLimit}
+	command.Stdout, command.Stderr = output, output
+	err := command.Run()
 	if err != nil {
 		// Never echo the command line or environment: the grant is there.
-		return "", fmt.Errorf("git %s: %s", firstGitVerb(args), boundedText(output, 240))
+		return "", fmt.Errorf("git %s: %s", firstGitVerb(args), boundedText(output.Bytes(), 240))
 	}
-	return strings.TrimSpace(string(output)), nil
+	if output.Len() >= runnerGitOutputLimit {
+		return "", fmt.Errorf("git %s: the output is too large", firstGitVerb(args))
+	}
+	return strings.TrimSpace(output.String()), nil
 }
 
 func firstGitVerb(args []string) string {
@@ -774,13 +784,9 @@ func (b *runnerBackend) publish(ctx context.Context, work agentWork, session *ag
 		if _, err := b.jobGit(ctx, workdir, args...); err != nil {
 			return false, err
 		}
-		data, err := readOwnedFile(bundle, b.box.uid, runnerBundleLimit)
-		if err != nil {
-			return false, fmt.Errorf("job bundle: %v", err)
-		}
 		copied := repo + ".bundle"
-		if err := os.WriteFile(copied, data, 0600); err != nil {
-			return false, err
+		if err := copyOwnedFile(bundle, copied, b.box.uid, runnerBundleLimit); err != nil {
+			return false, fmt.Errorf("job bundle: %v", err)
 		}
 		if _, err := b.daemonGit(ctx, "", "", "", true, "--git-dir="+repo, "-c", "transfer.fsckObjects=true", "fetch", "--quiet", "--no-tags",
 			"--no-write-fetch-head", copied, "+HEAD:refs/fm/result"); err != nil {

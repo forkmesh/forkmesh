@@ -9,7 +9,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 TOOL = ROOT / "tools" / "quality_gate.py"
-CONFIG = ROOT / "www" / "docs" / "engineering" / "quality-gates.json"
+CONFIG = ROOT / "docs" / "engineering" / "quality-gates.json"
 
 
 def _module():

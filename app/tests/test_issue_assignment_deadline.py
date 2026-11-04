@@ -10,7 +10,7 @@ ISSUES_IO = (JS / "03-issues-profile-io.js").read_text(encoding="utf-8")
 HELPERS = (JS / "02-helpers.js").read_text(encoding="utf-8")
 BUNDLE = (ROOT / "public" / "dashboard.js").read_text(encoding="utf-8")
 TAILWIND = (ROOT / "public" / "dashboard" / "tailwind.css").read_text(encoding="utf-8")
-DOC = (ROOT.parent / "docs" / "app" / "issue-assignment-deadline.md").read_text(encoding="utf-8")
+DOC = (ROOT.parent / "docs" / "app" / "issue-assignment.md").read_text(encoding="utf-8")
 HOUR = 3_600_000
 T0 = 1_800_000_000_000
 

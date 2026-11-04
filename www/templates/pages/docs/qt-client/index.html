@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="/styles.css" />
     <script src="/static-page.js?v=${version}" defer></script>
     <style>
-      .doc-wrap { max-width: 860px; margin: 0 auto; padding: 42px 20px 80px; }
+      .doc-wrap { overflow-wrap: break-word; max-width: 860px; margin: 0 auto; padding: 42px 20px 80px; }
       .doc-wrap h1 { font-size: clamp(32px, 5vw, 48px); margin: 0 0 12px; }
       .doc-intro { color: var(--muted); max-width: 68ch; font-size: 17px; margin: 0 0 8px; line-height: 1.6; }
       .doc-crumbs { margin: 0 0 18px; font-size: 13px; color: var(--muted); }
@@ -31,7 +31,7 @@
       .doc-body a { color: var(--link); text-decoration: underline; text-underline-offset: 2px; }
       .doc-body ul, .doc-body ol { padding-left: 22px; margin: 0 0 14px; color: var(--muted); }
       .doc-body li { margin: 6px 0; line-height: 1.6; }
-      .doc-body code { font-family: "ForkMesh Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.88em; background: rgba(127,127,127,0.14); border-radius: 4px; padding: 0.12em 0.4em; }
+      .doc-body code { overflow-wrap: anywhere; font-family: "ForkMesh Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.88em; background: rgba(127,127,127,0.14); border-radius: 4px; padding: 0.12em 0.4em; }
       .doc-body pre { background: rgba(127,127,127,0.08); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; overflow-x: auto; margin: 0 0 18px; }
       .doc-body pre code { background: none; padding: 0; font-size: 0.86em; line-height: 1.55; }
       .doc-body blockquote { margin: 0 0 16px; padding: 4px 16px; border-left: 3px solid var(--border); color: var(--muted); }
@@ -118,13 +118,13 @@
         </p>
 
         <h2 id="relay-mode">Relay Mode</h2>
-        <p>Start a local relay:</p>
-        <pre><code>cd ../app
-uvx --from workers-py pywrangler dev</code></pre>
+        <p>Start a local app on CPython with a throwaway database:</p>
+        <pre><code>cd app/host
+../../.venv/bin/python -m forkmesh_host serve --port 8080 --db sqlite:/tmp/fm.sqlite --migrate</code></pre>
         <p>The client starts without setup input and connects to the ForkMesh mainnode:</p>
         <pre><code>wss://app.forkmesh.com/api/repo/mainnode/forkmesh/rooms/general/ws</code></pre>
         <p>For local relay testing, use this server URL instead:</p>
-        <pre><code>ws://127.0.0.1:8787/api/repo/mainnode/forkmesh/rooms/general/ws</code></pre>
+        <pre><code>ws://127.0.0.1:8080/api/repo/mainnode/forkmesh/rooms/general/ws</code></pre>
         <p>
           Default rooms fetch a relay-derived shared passphrase after account
           or signed-node authentication. The client applies
@@ -177,7 +177,8 @@ uvx --from workers-py pywrangler dev</code></pre>
         <h2>More developer docs</h2>
         <ul>
           <li><a href="/docs/protocol">Protocol spec</a> — identity, signatures, HTTP API, self-hosting a mainnode</li>
-          <li><a href="/docs/cloudflare-worker">Relay &amp; website</a> — where the App and relay run</li>
+          <li><a href="/docs/self-hosting/">Self-hosting</a> — node, mirror, instance or fleet</li>
+          <li><a href="/docs/cloudflare-worker">App &amp; relay</a> — where the app runs: equal core nodes behind DNS round robin</li>
           <li><a href="/mobile">Mobile app</a> — the native iOS and Android apps</li>
           <li><a href="/changelog">Changelog</a> — release-by-release history</li>
         </ul>

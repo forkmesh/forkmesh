@@ -7,7 +7,7 @@ desktop app, or in the ForkMesh iPhone and Android apps. Free, from the ForkMesh
 The phone apps do not open this page: their Face Changer is native, built on
 the same face, background and voice engine bundled in the app, and it is where
 calls get their face, background and voice
-(`docs/app/chat-direct-calls.md`, Face Changer on the phones).
+(`docs/app/call-filters.md`, Face Changer on the phones).
 
 - `content/web/view.html` and `content/web/page.js`: the dashboard page at
   `/dashboard/face-changer`. Start camera opens the camera and microphone;

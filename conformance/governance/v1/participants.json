@@ -26,7 +26,7 @@
           "kind": "membership",
           "source": "Supporter and Pro memberships through Patreon",
           "amountPublished": false,
-          "reference": "www/docs/business-model.md"
+          "reference": "docs/business-model.md"
         },
         {
           "kind": "donation",
@@ -38,7 +38,7 @@
           "kind": "reward-pool",
           "source": "Community reward pool, bounties, and microjob payouts, which maintainers may also claim as contributors",
           "amountPublished": false,
-          "reference": "www/docs/incentive-independence.md"
+          "reference": "docs/incentive-independence.md"
         }
       ],
       "note": "Amounts are not yet published. A disclosure with an unpublished amount keeps the funding closure criterion open."

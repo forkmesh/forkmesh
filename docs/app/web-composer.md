@@ -1,8 +1,8 @@
 # Web prompt composer
 
-Every signed-in dashboard page has a prompt dock, modelled on the desktop
-prompt overlay, that starts an agent, adds a follow-up to an open session, or
-files an organization task.
+Part of [the App docs](README.md). Every signed-in dashboard page has a prompt
+dock, modelled on the desktop prompt overlay, that starts an agent, adds a
+follow-up to an open session, or files an organization task.
 
 | Path | Responsibility |
 | --- | --- |
@@ -56,9 +56,8 @@ on send:
 ## Look
 
 The composer follows the Claude app's prompt box at a compact density (13px
-controls, 14px prompt text), because the earlier card with a full-width repo
-select, tall stacked buttons and illustrated model and mode avatars read as
-heavy next to the rest of the dashboard.
+controls, 14px prompt text) so it does not read as heavy next to the rest of
+the dashboard.
 
 - **Container** (`.fmc-box`): one rounded box (12px radius, 1px border, card
   background) holding the context and target chips, attachments, the prompt
@@ -110,15 +109,14 @@ follows `visualViewport`; pages reserve `--fmc-page-clearance`. A
 `[data-composer-slot]` element (the dashboard home) hosts an always-open
 inline dock.
 
-Any session with a `nodeName` that is not a node session mounts the dock; it
-does not also need an `email`, because the dashboard writes a missing email
-back as `""`, and requiring one left the home stuck on "Loading prompt...".
-When the dashboard has booted (`forkmesh:composer-host`) and the dock still
-does not mount (a node session, an iframe), the slot is hidden rather than
-left showing its placeholder. `dashboard.js` loads first and can finish booting
-before `dashboard-composer.js` has added its listener, so the boot also sets
-`<html data-composer-host="1">` and the composer, on load, treats that flag as
-the event it missed (the home spec "hides the prompt slot" failed on this).
+Any session with a `nodeName` that is not a node session mounts the dock. It
+does not need an `email` (the dashboard writes a missing one back as `""`, and
+requiring it left the home stuck on "Loading prompt..."). When the dashboard
+has booted (`forkmesh:composer-host`) and the dock still does not mount (a node
+session, an iframe), the slot is hidden. `dashboard.js` can finish booting
+before `dashboard-composer.js` adds its listener, so the boot also sets
+`<html data-composer-host="1">`, which the composer treats on load as the
+missed event.
 
 `installErrorActions()` adds Copy and Send to prompt buttons to every
 dashboard error element; `showErrorNotice()` replaces `window.alert()`. The
@@ -127,5 +125,5 @@ dashboard error element; `showErrorNotice()` replaces `window.alert()`. The
 copies together.
 
 Not supported on the web: local transcription, video uploads, local CLI slash
-commands. See [desktop-agents-web.md](desktop-agents-web.md) and
+commands. See [agents-page.md](agents-page.md#desktop-agents-on-a-repositorys-agents-tab) and
 [agents/README.md](../agents/README.md).

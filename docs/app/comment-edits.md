@@ -1,12 +1,8 @@
 # Editing and deleting your own comments
 
-People asked for a way to fix or remove a comment they had posted. Issue
-comments already had signed `edit` and `delete` events, but the relay only
-accepted them from repository managers, so a contributor could not change
-their own words. Pull request comments had no edit at all, and the pull `delete`
-event deletes the whole pull request.
-
-Both logs stay append-only. A change is a new signed event that names the
+Part of [the App docs](README.md). Authors can edit and delete their own issue
+and pull request comments (the pull `delete` event deletes the whole pull
+request, so comments have their own events). Both logs stay append-only. A change is a new signed event that names the
 comment it changes; the original text stays in Git history.
 
 ## Pull request comments
@@ -21,8 +17,7 @@ Two event types join the `pull-comment` family:
 `target` is the `id` of a `comment`, `review`, `line-comment`,
 `thread-comment` or `thread-reply`.
 
-Reviews can be deleted too (October 2026: people asked to delete comments
-fully, and a review's text was the one thing that could not go). A
+Reviews can be deleted too. A
 `comment-delete` on a plain review (`commented`) hides it like a comment. On
 an approval or a change request it removes the text only, and wins over any
 edit, before or after it: the verdict stays, so the merge gate and
@@ -66,6 +61,36 @@ Code:
 
 Tests: `app/tests/test_pull_comment_edit_delete.py`.
 
+## Pull request descriptions
+
+A pull's description was fixed when it was opened: the pull signature covers
+title, base, head, patch and commits but not `description`, and the web
+revision drops it, so the author had no way to correct it. A description edit
+is now an ordinary `comment-edit` whose `target` is the word `description`
+(`PULL_DESCRIPTION_TARGET`). The relay, the gateways and the Go intake already
+accept and store a `comment-edit` with any non-empty target, so nothing on the
+wire changed.
+
+The same author rule applies, with the pull's `pull.md` record as the target:
+the change counts only when its signer is the pull's `author` key or its
+`authorName` account (`pullDescriptionEditApplies`). The newest such edit
+replaces the description; edits by anyone else are ignored. The description
+edits never show as timeline rows, because `foldPullCommentChanges` already
+drops every `comment-edit` and only the id-targeted ones change a comment.
+
+- web: `pullDescriptionEdit` picks the edit, `renderRepoRecordDetail` shows it
+  with "· edited", and the pull's author (`pullDescriptionEditable`: signed
+  in as the author, pull not deleted, merged and closed pulls included) gets a
+  pencil in the opening card. It opens the shared `openIssueCommentEditor`;
+  `handleWebPullDescriptionEdit` signs the event and `paintPullDescription`
+  redraws just that card;
+- `.txt` view: `folded_description` in `app/host/forkmesh_host/repo_views.py`
+  (the bundle now carries the pull's `authorName`).
+
+Tests: `app/tests/test_pull_description_edit.py`,
+`test_pull_text_shows_the_authors_newest_description_edit` in
+`app/tests/host/test_repo_views.py`.
+
 ## Issue comments
 
 `_accept_issue_submission` still lets managers sign `edit` and `delete`. When
@@ -80,13 +105,34 @@ The issue `edit` signature covers body and attachments but not `target`; the
 relay check above is what stops an edit being pointed at someone else's
 comment.
 
+### Editing your own issue
+
+The relay already accepted an `edit` of the `open` event from the person who
+opened the issue, but the web drew the title and description editors only for
+repository managers (`issueMutationAuthorized`), so someone who filed an issue
+could not fix a typo in it. `renderRepoIssueDetail` now shows the title
+**Edit** button, the description pencil, **Add a description** and the
+clickable task checkboxes when the signed-in session authored the issue's
+`open` event (`webSessionAuthored`), as well as to managers. Labels,
+assignees, milestones and the rest stay manager-only.
+
+A `title` event used to need a manager. When the manager check fails,
+`_accept_issue_submission` now calls `_issue_comment_owned_by_submitter` with
+`opening=True`, which accepts the event when its signer (the same key, or the
+session-verified account) wrote the issue's `open` event. Readers apply
+`title` events without their own check, so this relay check is the gate.
+
+`title` joins `ISSUE_REPLAY_CHECKED_EVENT_TYPES`: a stored title event resent
+later would otherwise put back an old title. The Go intake already skips any
+event whose signature it holds.
+
 ## Replayed issue events
 
 The signature on an issue `edit` covers its body and attachments but not its
-`id` or `target`, and every stored event is public. A copy of a signed event
-under a new `id` was accepted again, so anyone could put back text the author
-had replaced or move an edit onto another of the author's comments. Each
-receiver now treats a signature it already holds as already applied:
+`id` or `target`, and every stored event is public, so a copy of a signed event
+under a new `id` could put back replaced text or move an edit onto another of
+the author's comments. Each receiver treats a signature it already holds as
+already applied:
 
 - the relay (`_issue_event_signature_stored`) answers a `comment`, `edit` or
   `vote` whose signature is already in the stored issue with
@@ -105,13 +151,12 @@ Issue and pull request comments share one in-place editor,
 A line comment is drawn twice on a pull request page, once in the Conversation
 tab and once in the Files changed tab, and both copies stay in the page with
 the inactive tab hidden, so both carry the same `data-repo-pull-comment-edit`
-id. Until 2026-10-26 the editor opened beside the first copy in the page, the
-hidden Conversation one, so **Edit** in the Files changed tab did nothing you
-could see. `visibleCommentEditButton` now picks the copy that is on screen.
+id. `visibleCommentEditButton` picks the copy that is on screen, not the first
+one in the page.
 
-Closing the editor removes the textarea that had focus, which dropped keyboard
-and screen reader users back to the top of the page. Escape, **Cancel** and
-saving now return focus to the comment's **Edit** button. A save re-renders the
+Closing the editor removes the textarea that had focus, so Escape, **Cancel**
+and saving return focus to the comment's **Edit** button (otherwise keyboard
+and screen reader users land at the top of the page). A save re-renders the
 timeline and replaces that button, so `handleWebPullCommentAction` and
 `handleWebIssueAction` call `restoreCommentEditFocus` after the re-render. It
 leaves focus alone if the person has already moved somewhere else while the
@@ -121,5 +166,8 @@ save was in flight. Tests: `app/tests/test_comment_editor_focus_frontend.py`.
 
 - The phone apps do not offer comment edit or delete, and their issue
   timelines do not fold `edit`/`delete` events.
+- The desktop and the phone apps do not offer a pull description edit and
+  still show the description from `pull.md`; `PullStore::foldCommentChanges`
+  ignores the `description` target.
 - Discussion comments can still only be hard-deleted by moderators on the
   desktop.

@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.model
 
+import com.forkmesh.nativeapp.account.pingIsGoodNews
 import com.forkmesh.nativeapp.json.jsonMaps
 import com.forkmesh.nativeapp.json.jsonText
 import com.forkmesh.nativeapp.json.obj
@@ -104,7 +105,11 @@ data class ForkNotification(
 ) {
     val isUnread: Boolean get() = readAt <= 0
 
-    val kindLabel: String
+    val isGoodNews: Boolean get() = pingIsGoodNews(kind, meta)
+
+    val kindLabel: String get() = if (isGoodNews) "Good news" else typeLabel
+
+    val typeLabel: String
         get() = when (kind) {
             "mention" -> "Mention"
             "subscribed" -> "Subscribed"
@@ -139,6 +144,9 @@ data class ForkNotification(
             "badge" -> "Badge"
             "timer_finished" -> "Timer"
             "desktop_ping" -> "Desktop"
+            "agent_approval" -> "Approval"
+            "action_approval" -> "Checks to approve"
+            "action_failed" -> "Run failed"
             "repo_activity" -> "Repo activity"
             "code_push" -> "Code push"
             else -> "Notification"
@@ -154,7 +162,8 @@ data class ForkNotification(
                 kind == "bounty_paid" ||
                 kind == "credits_refilled" ||
                 kind == "timer_finished" ||
-                kind == "desktop_ping"
+                kind == "desktop_ping" ||
+                kind == "agent_approval"
             ) {
                 return "System"
             }

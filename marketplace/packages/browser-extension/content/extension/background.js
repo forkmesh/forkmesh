@@ -17,6 +17,7 @@
 // the handlers that tie them to the popup (see vault.js).
 importScripts("vault-crypto.js", "vault-client.js", "vault.js");
 importScripts("repo.js");
+importScripts("forum.js");
 
 const DEFAULT_BASE_URL = "https://app.forkmesh.com";
 const STORED = ["baseUrl", "sessionToken", "account", "organization"];
@@ -160,7 +161,7 @@ async function lookup({ email, handle, name, contact, organization }) {
   return {
     ok: true, organization: org, contact: payload.contact || null,
     matchedBy: String(payload.matchedBy || ""),
-    emails: payload.emails || [], flows: payload.flows || [],
+    emails: payload.emails || [], flows: payload.flows || [], lists: payload.lists || [],
   };
 }
 
@@ -203,6 +204,9 @@ function linkBody(message) {
     contact: contactDetails(message.contact),
     flow: String(message.flow || ""),
     stage: String(message.stage || ""),
+    list: String(message.list || ""),
+    trackToken: String(message.trackToken || ""),
+    keepWithoutContact: message.keepWithoutContact === true,
     createContact: message.createContact !== false,
   };
 }
@@ -213,7 +217,7 @@ async function link({ message, organization }) {
   return {
     ok: true, organization: org, contact: payload.contact || null,
     email: payload.email || null, emails: payload.emails || [], flows: payload.flows || [],
-    contactCreated: Boolean(payload.contactCreated), relinked: Boolean(payload.relinked),
+    lists: payload.lists || [], contactCreated: Boolean(payload.contactCreated), relinked: Boolean(payload.relinked),
   };
 }
 
@@ -222,17 +226,39 @@ const SENT_RECIPIENTS = 5;
 
 async function sentState() {
   const stored = (await chrome.storage.local.get([SENT_KEY]))[SENT_KEY] || {};
-  return { track: stored.track !== false, last: stored.last || null };
+  return {
+    track: stored.track !== false, pixel: stored.pixel !== false, autoLink: stored.autoLink !== false,
+    last: stored.last || null,
+  };
 }
 
 async function sentSettings() {
   return { ok: true, ...(await sentState()) };
 }
 
-async function setTrackSent({ track }) {
+async function setTrackSent({ track, pixel, autoLink }) {
   const state = await sentState();
-  await chrome.storage.local.set({ [SENT_KEY]: { ...state, track: Boolean(track) } });
+  const next = { ...state };
+  if (track !== undefined) next.track = Boolean(track);
+  if (pixel !== undefined) next.pixel = Boolean(pixel);
+  if (autoLink !== undefined) next.autoLink = Boolean(autoLink);
+  await chrome.storage.local.set({ [SENT_KEY]: next });
   return sentSettings();
+}
+
+const PIXEL_TOKEN_RE = /^[0-9a-f]{32}\.[0-9a-f]{24}$/;
+
+async function trackPixel() {
+  const current = await settings();
+  const state = await sentState();
+  if (!state.track || !state.pixel || !current.sessionToken || !current.organization) return { ok: true, pixel: null };
+  const payload = await api(orgPath(current.organization, "/emails/pixel"), "POST", {});
+  const token = String(payload.token || "");
+  const url = String(payload.url || "");
+  if (!PIXEL_TOKEN_RE.test(token) || !url.startsWith("https://") || !url.endsWith(`/api/crm/-/t/o/${token}.png`)) {
+    return { ok: true, pixel: null };
+  }
+  return { ok: true, pixel: { token, url } };
 }
 
 async function rememberSent(last) {
@@ -269,7 +295,27 @@ async function trackSent({ message }) {
       throw error;
     }
   }
-  return { ok: true, tracked: false };
+  const first = recipients.find((person) => person?.email);
+  if (!sent.trackToken || !first) return { ok: true, tracked: false };
+  let result;
+  try {
+    result = await link({
+      organization: current.organization,
+      message: {
+        ...sent, direction: "outbound", threadId: "", createContact: false, keepWithoutContact: true, contactId: "",
+        contactEmail: String(first.email || ""), contactName: String(first.name || ""),
+      },
+    });
+  } catch (error) {
+    if (error?.code === "contact_not_found") return { ok: true, tracked: false };
+    await rememberSent({ at: Date.now(), subject, organization: current.organization, contact: "", error: error?.message || "request failed" });
+    throw error;
+  }
+  await rememberSent({
+    at: Date.now(), subject, organization: result.organization, error: "", contactId: "",
+    contact: `${first.email} (not in the CRM; opens are reported)`,
+  });
+  return { ok: true, tracked: true, contact: null, email: result.email };
 }
 
 const CONTACT_ID_RE = /^[0-9a-f]{32}$/;
@@ -338,6 +384,8 @@ async function unlink({ emailId, organization }) {
 
 const MASTODON_SCRIPT = "fm-mastodon-";
 const MASTODON_FILES = { js: ["panel.js", "mastodon.js"], css: ["content.css"] };
+const MASTODON_SENT_SCRIPT = "fm-toot-sent-";
+const MASTODON_SENT_FILES = { js: ["mastodon-sent.js"], world: "MAIN" };
 
 // "mastodon.social", "https://mastodon.social/", or the instance half of a
 // handle typed in whole ("@grace@mastodon.social").
@@ -354,6 +402,10 @@ function instanceHost(value) {
 }
 
 const hostPattern = (host) => `https://${host}/*`;
+const mastodonScripts = (host) => [
+  { id: MASTODON_SCRIPT + host, matches: [hostPattern(host)], ...MASTODON_FILES, runAt: "document_idle" },
+  { id: MASTODON_SENT_SCRIPT + host, matches: [hostPattern(host)], ...MASTODON_SENT_FILES, runAt: "document_start" },
+];
 
 async function storedHosts() {
   const stored = await chrome.storage.local.get(["mastodonHosts"]);
@@ -368,18 +420,15 @@ async function syncMastodon() {
     if (await chrome.permissions.contains({ origins: [hostPattern(host)] })) wanted.push(host);
   }
   const registered = await chrome.scripting.getRegisteredContentScripts().catch(() => []);
-  const ours = registered.filter((script) => script.id.startsWith(MASTODON_SCRIPT));
-  const keep = new Set(wanted.map((host) => MASTODON_SCRIPT + host));
+  const ours = registered.filter((script) => script.id.startsWith(MASTODON_SCRIPT)
+    || script.id.startsWith(MASTODON_SENT_SCRIPT));
+  const scripts = wanted.flatMap(mastodonScripts);
+  const keep = new Set(scripts.map((script) => script.id));
   const stale = ours.filter((script) => !keep.has(script.id)).map((script) => script.id);
   if (stale.length) await chrome.scripting.unregisterContentScripts({ ids: stale }).catch(() => null);
   const have = new Set(ours.map((script) => script.id));
-  const missing = wanted.filter((host) => !have.has(MASTODON_SCRIPT + host));
-  if (missing.length) {
-    await chrome.scripting.registerContentScripts(missing.map((host) => ({
-      id: MASTODON_SCRIPT + host, matches: [hostPattern(host)],
-      ...MASTODON_FILES, runAt: "document_idle",
-    }))).catch(() => null);
-  }
+  const missing = scripts.filter((script) => !have.has(script.id));
+  if (missing.length) await chrome.scripting.registerContentScripts(missing).catch(() => null);
   await chrome.storage.local.set({ mastodonHosts: wanted });
   return { ok: true, hosts: wanted };
 }
@@ -401,6 +450,7 @@ async function addMastodon({ host, tabId }) {
     const target = { tabId };
     await chrome.scripting.insertCSS({ target, files: MASTODON_FILES.css }).catch(() => null);
     await chrome.scripting.executeScript({ target, files: MASTODON_FILES.js }).catch(() => null);
+    await chrome.scripting.executeScript({ target, world: MASTODON_SENT_FILES.world, files: MASTODON_SENT_FILES.js }).catch(() => null);
   }
   return result;
 }
@@ -3325,6 +3375,7 @@ const POPUP_ONLY = new Set(["fm-reddit-stats", "fm-reddit-refresh", "fm-reddit-s
   "fm-refresh-plan", "fm-refresh-run", "fm-refresh-channel"]);
 POPUP_ONLY.add("fm-toot-set-track");
 for (const type of ["fm-repo-info", "fm-repo-mirror", "fm-repo-open"]) POPUP_ONLY.add(type);
+for (const type of ["fm-forum-detect", "fm-forum-mirror"]) POPUP_ONLY.add(type);
 const CAPTURE_PAGE_ONLY = new Set(["fm-marketing-capture-job", "fm-marketing-capture-continue"]);
 
 
@@ -3368,6 +3419,7 @@ const HANDLERS = {
   "fm-track-sent": trackSent,
   "fm-sent-settings": sentSettings,
   "fm-sent-set-track": setTrackSent,
+  "fm-track-pixel": trackPixel,
   "fm-open-crm": openCrm,
   "fm-mastodon-hosts": syncMastodon,
   "fm-mastodon-add": addMastodon,
@@ -3432,6 +3484,7 @@ const HANDLERS = {
 
 const vaultBackground = self.ForkMeshVaultBackground.install({ api, settings, handlers: HANDLERS });
 self.ForkMeshRepoBackground.install({ api, settings, handlers: HANDLERS });
+self.ForkMeshForumBackground.install({ settings, handlers: HANDLERS });
 
 // The vault answers this extension's own pages only (the popup). A content
 // script has a tab behind it; whatever happens inside Gmail, Zoho Mail, a

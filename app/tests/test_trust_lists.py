@@ -197,8 +197,8 @@ def test_no_essential_path_depends_on_trust_lists():
 
 
 def test_documented_clients_exist_and_docs_link_the_protocol():
-    guide = (ROOT / "www" / "docs" / "trust-lists.md").read_text(encoding="utf-8")
-    spec = (ROOT / "www" / "docs" / "design" / "scoped-trust-lists.md").read_text(encoding="utf-8")
+    guide = (ROOT / "docs" / "trust-lists.md").read_text(encoding="utf-8")
+    spec = (ROOT / "docs" / "design" / "scoped-trust-lists.md").read_text(encoding="utf-8")
     for relative in (
         "app/src/trust_lists.py", "app/public/trust-lists.js",
         "native/ios/ForkMeshCore/Sources/FMAccount/TrustLists.swift",
@@ -207,7 +207,7 @@ def test_documented_clients_exist_and_docs_link_the_protocol():
     ):
         assert relative in guide and relative in spec
         assert (ROOT / relative).exists(), relative
-    assert "(trust-lists.md)" in (ROOT / "www" / "docs" / "README.md").read_text(encoding="utf-8")
+    assert "(trust-lists.md)" in (ROOT / "docs" / "README.md").read_text(encoding="utf-8")
     assert "forkmesh-trust-list-tests" in (ROOT / "desktop" / "CMakeLists.txt").read_text(encoding="utf-8")
     for code in re.findall(r"`([a-z_]+)`", spec):
         if code.startswith(("invalid_", "unsorted_")) or code in {"too_large", "noncanonical", "list_mismatch"}:

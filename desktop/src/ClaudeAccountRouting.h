@@ -22,6 +22,16 @@ QString claudeCredentialFile(const QString &configDir);
 
 ClaudeLoginIdentity readClaudeLoginIdentity(const QString &stateFile);
 
+struct ClaudeRemoteControl {
+    QString state;
+    QString source;
+};
+
+QString readClaudeBoolSetting(const QString &path, const QString &key);
+
+ClaudeRemoteControl readClaudeRemoteControl(const QString &settingsFile,
+                                            const QString &stateFile);
+
 struct AccountBinding {
     QString id;
     QString boundKey;

@@ -798,7 +798,10 @@ def test_store_status_key_ids_come_from_the_environment_first():
     assert mac_adhoc_deploy.asc_ids(environ, no_mac) == {"ASC_KEY_ID": "K", "ASC_ISSUER_ID": "I"}
 
 
-def test_store_status_reads_missing_key_ids_from_the_office_mac():
+def test_store_status_reads_missing_key_ids_from_the_office_mac(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("FORKMESH_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     assert mac_adhoc_deploy.asc_ids({"ASC_KEY_ID": "K"}, IdsMac) == {
         "ASC_KEY_ID": "NAU34ZR27B", "ASC_ISSUER_ID": "issuer-uuid"}
     with pytest.raises(ToolError):

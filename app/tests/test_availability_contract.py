@@ -19,7 +19,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 SUITE = ROOT / "conformance" / "availability-contract" / "v1"
-DOC = ROOT / "www" / "docs" / "availability-contract.md"
+DOC = ROOT / "docs" / "availability-contract.md"
 CLI = ROOT / "tools" / "forkmesh_availability_contract.py"
 sys.path.insert(0, str(ROOT / "app" / "src"))
 
@@ -399,9 +399,9 @@ def test_documentation_explains_every_code_and_is_linked():
     for case in CASES.values():
         for disclosure in case["expect"]["disclosures"]:
             assert disclosure["href"] == availability_contract.DOCS_URL + "#" + disclosure["code"]
-    readme = (ROOT / "www" / "docs" / "README.md").read_text(encoding="utf-8")
+    readme = (ROOT / "docs" / "README.md").read_text(encoding="utf-8")
     assert "(availability-contract.md)" in readme
-    business = (ROOT / "www" / "docs" / "business-model.md").read_text(encoding="utf-8")
+    business = (ROOT / "docs" / "business-model.md").read_text(encoding="utf-8")
     assert "(availability-contract.md)" in business
     assert "app/tests/test_availability_contract.py" in business
 

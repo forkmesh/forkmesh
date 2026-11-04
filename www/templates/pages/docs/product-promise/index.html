@@ -25,7 +25,7 @@
       .proof-command code { min-width: 0; flex: 1; overflow-x: auto; font-family: "ForkMesh Mono",ui-monospace,monospace; }
       .proof-command button { padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; color: var(--foreground); background: var(--card); cursor: pointer; }
       .proof-note { padding: 16px 18px; border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 10px; line-height: 1.6; }
-      @media (max-width: 700px) { .proof-grid { grid-template-columns: 1fr; } .proof-command { align-items: stretch; flex-direction: column; } }
+      @media (max-width: 700px) { .proof-grid { grid-template-columns: minmax(0, 1fr); } .proof-command { align-items: stretch; flex-direction: column; } }
     </style>
 {% endblock %}
 {% block body %}
@@ -53,7 +53,7 @@
           <li>The public drill does not cover private repositories, which use authorized opaque replicas.</li>
           <li>To roll back, restart <code>forkmesh-mirror-node</code> on the managed source host and wait for fresh signed health before retrying.</li>
         </ul>
-        <p><a href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/www/docs/operations/desktop-control-node.md">Read the operator controls</a> or <a href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/www/docs/operations/mirror-node.md">review mirror-node recovery</a>.</p>
+        <p><a href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/docs/operations/desktop-control-node.md">Read the operator controls</a> or <a href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/docs/operations/mirror-node.md">review mirror-node recovery</a>.</p>
       </section>
 
       <section class="proof-detail">
@@ -64,7 +64,7 @@
           <li>Managed independent server mirrors use the Linux headless service.</li>
           <li>Optional, consented telemetry records only coarse proof and clone actions—never repository names, URLs, commands, refs, or form values.</li>
         </ul>
-        <p>Maintainers, contributors, and operators use the <a href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/www/docs/product-promise.md">measurement and comprehension protocol</a> before release closure.</p>
+        <p>Maintainers, contributors, and operators use the <a href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/docs/product-promise.md">measurement and comprehension protocol</a> before release closure.</p>
       </section>
     </main>
     <div data-forkmesh-footer="standard"></div>

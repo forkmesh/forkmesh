@@ -1,6 +1,7 @@
 # Issue views
 
-An issue page shows how many people have looked at it ("12 views") in the
+Part of [the App docs](README.md). An issue page shows how many people have
+looked at it ("12 views") in the
 header line next to the comment and participant counts, and the issue list
 shows the same count in each row's meta line. It follows the repository view
 count ([repo-views.md](repo-views.md)) and reuses its helpers.
@@ -41,7 +42,7 @@ two tables, keyed like the repository ones on
 
 No names, addresses or user agents are stored. Both tables are deleted with
 the repository (`_REPO_SCOPED_TABLES`) and rekeyed by the rekey tool
-([../REKEY.md](../REKEY.md)). New tables were used instead of `repo_views`
+([rekey](../operations/rekey.md)). New tables were used instead of `repo_views`
 because those rows are keyed on the repository alone: issue rows there would
 survive a repository purge and could not be rekeyed.
 

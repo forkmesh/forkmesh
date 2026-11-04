@@ -1,5 +1,5 @@
 -- ForkMesh-hosted repositories on the Next core nodes (hosted_repos.py,
--- server/hosted.go, docs/HOSTED_REPOS.md).
+-- server/hosted.go, docs/operations/core-hosted-repositories.md).
 --
 -- hosted_repos        one repository created on the website and hosted by
 --                     every core node. data is encrypted ({owner, name,

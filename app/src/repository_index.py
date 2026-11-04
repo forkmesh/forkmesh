@@ -3,7 +3,7 @@
 Pure, builtin-only ranking over the anonymous public catalog projection (the
 validated ``/api/repositories`` snapshot). No ``js``/``env``/D1 access, so the
 whole methodology is deterministic and unit-testable, and the published rules
-in ``www/docs/repository-index.md`` describe exactly this code.
+in ``docs/repository-index.md`` describe exactly this code.
 
 Trust inputs are deliberately narrow. Every candidate row already passed the
 catalog's account-key signature check, the private/Terms/blocked-identity
@@ -507,7 +507,7 @@ def _result(entry, view, relevance, key, origin, now):
         "owner": entry["owner"],
         "name": entry["name"],
         "fullName": owner + "/" + entry["name"],
-        # Provider-independent identity (www/docs/dependency-workflows.md);
+        # Provider-independent identity (docs/dependency-workflows.md);
         # "" when the signed record has no root commit to derive it from.
         "identity": record_identity(record),
         "description": entry["description"],

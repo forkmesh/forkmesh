@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 
 
-KIT = Path(__file__).resolve().parents[1] / "docs" / "launch" / "github-outage-survival-kit.md"
+KIT = Path(__file__).resolve().parents[2] / "docs" / "launch" / "github-outage-survival-kit.md"
 X_POST_LIMIT = 280
 X_LINK_LENGTH = 23
 # X shortens anything it autolinks, bare domains included, to a 23-character link.

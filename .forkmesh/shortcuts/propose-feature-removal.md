@@ -13,7 +13,7 @@ documented capability. Dead functions and duplicated helpers belong to Steward.
 
 1. Build the candidate list from what the repository claims and what it
    actually does. Read the "What works today" list in `README.md` and the pages
-   under `www/docs/` for the promises, then find the surfaces behind them: the
+   under `docs/` for the promises, then find the surfaces behind them: the
    panels, menu actions, settings keys and feature flags in `desktop/`, the
    routes in `server/` and `app/`, the manifests under `marketplace/`, and
    the screens in `native/`. Cross-read the demand side:

@@ -37,7 +37,7 @@ struct GenieSheet: View {
                     .font(.footnote)
                     .foregroundStyle(Color(red: 1, green: 0.62, blue: 0.62))
                     .multilineTextAlignment(.center)
-                    .fmMessageTools(problem, color: Color.white.opacity(0.7))
+                    .fmMessageTools(problem)
                     .padding(.horizontal, FmSpace.x5)
             }
             controls

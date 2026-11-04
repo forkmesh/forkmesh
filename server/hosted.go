@@ -1,6 +1,6 @@
 package mirrornode
 
-// ForkMesh-hosted repositories on the core nodes (docs/HOSTED_REPOS.md).
+// ForkMesh-hosted repositories on the core nodes (docs/operations/core-hosted-repositories.md).
 //
 // A repository created on the website with no desktop node and no external
 // provider lives on every core node. The app (rqlite, replicated by Raft)

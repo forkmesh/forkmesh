@@ -33,7 +33,7 @@ PULL_STORE = (ROOT.parent / "desktop" / "src" / "PullStore.cpp").read_text(
 REWARD_SIGNER = (
     ROOT.parent / "desktop" / "src" / "RewardPoolSigner.cpp"
 ).read_text(encoding="utf-8")
-DOC = ROOT.parent / "www" / "docs" / "operations" / "microjobs.md"
+DOC = ROOT.parent / "docs" / "operations" / "microjobs.md"
 
 sys.path.insert(0, str(SRC))
 import microjobs  # noqa: E402
@@ -1185,3 +1185,10 @@ def test_issue_and_pull_composers_use_the_normal_reward_submission_flow():
     assert "Submit it here normally" in fragment
     assert "Open the pull request normally" in fragment
     assert "/api/microjobs/claims" not in fragment
+
+
+def test_canonical_scan_stays_fast_on_a_hostile_page():
+    import time
+    started = time.monotonic()
+    assert microjobs.page_canonical_url("<link " * 90_000, "https://example.com/a") in ("", None, "https://example.com/a")
+    assert time.monotonic() - started < 2

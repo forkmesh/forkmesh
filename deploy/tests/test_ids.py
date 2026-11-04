@@ -1,5 +1,5 @@
 """deploy/core/ids.py: detectors, expected changes, response state machine,
-alert fan-out, peer watch (docs/IDS.md). Everything runs against fakes and
+alert fan-out, peer watch (docs/operations/intrusion-detection.md). Everything runs against fakes and
 temp trees: no journal, no nft, no systemctl, no network."""
 
 import hashlib
@@ -44,7 +44,7 @@ def cfg(tmp_path, **extra):
 
 
 def sshd(message, ident="sshd-session"):
-    return {"SYSLOG_IDENTIFIER": ident, "MESSAGE": message}
+    return {"SYSLOG_IDENTIFIER": ident, "MESSAGE": message, "_UID": "0"}
 
 
 def accepted(fp=FLEET_FP, ip="203.0.113.9", port=50000, user="root",
@@ -103,6 +103,18 @@ def test_unknown_key_password_and_foreign_ip(tmp_path):
     # Journald lines from other programs are ignored.
     assert ssh.feed({"SYSLOG_IDENTIFIER": "cron", "MESSAGE": "Accepted "
                      "publickey for root from 1.2.3.4 port 1"}) == []
+
+
+def test_sshd_lines_from_another_uid_are_forged_and_ignored(tmp_path):
+    ssh = ids.SshMonitor(cfg(tmp_path, ssh={"fleet_fingerprints": [FLEET_FP]}))
+    forged = accepted(method="password")
+    assert ("ssh_non_key_login", "lockdown") in codes(ssh.feed(dict(forged)))
+    ssh = ids.SshMonitor(cfg(tmp_path, ssh={"fleet_fingerprints": [FLEET_FP]}))
+    assert ssh.feed(dict(forged, _UID="997")) == []
+    unstamped = dict(forged)
+    del unstamped["_UID"]
+    assert ssh.feed(unstamped) == []
+    assert ssh.pending == {}
 
 
 def test_no_fingerprints_configured_turns_the_key_check_off(tmp_path):

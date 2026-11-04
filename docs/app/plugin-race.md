@@ -19,7 +19,7 @@ constants at the top of `plugin_race.py`. The pages state the same numbers, so
 change both together.
 
 The race is separate from the points-and-squads hackathon engine
-(`hackathon.py`, [www/docs/hackathon.md](../../www/docs/hackathon.md)). Its
+(`hackathon.py`, [docs/hackathon.md](../hackathon.md)). Its
 finish line is marketplace ratings, which that engine does not model.
 
 ## Who counts
@@ -33,8 +33,8 @@ Builders and raters pass the same four checks before anything they do counts:
 | `x`, `reddit`, `mastodon` | A public post per network carrying `#ForkMeshPluginRace` |
 | `discord` | `users.discord_bi` is set, or a username an admin confirmed |
 
-The member check is the one that makes a throwaway account expensive. It is
-the same check that decides whether a referral counts.
+The member check makes a throwaway account expensive; it is the same check
+that decides whether a referral counts.
 
 Posts are reduced to one canonical URL per network and checked by one bounded
 fetch with redirects refused:
@@ -44,9 +44,9 @@ fetch with redirects refused:
 - Mastodon uses `/api/v1/statuses/<id>` on the post's instance. The host must
   be a public name, with no IP literal and no internal suffix.
 
-A page that has the tag is `confirmed`. A page without it is `missing`. A page
-we could not read is `pending` for an admin to check. A post URL belongs to
-the first account that submits it (`plugin_race_posts`).
+A page with the tag is `confirmed`, one without it `missing`, and one we could
+not read `pending` for an admin. A post URL belongs to the first account that
+submits it (`plugin_race_posts`).
 
 When every check is confirmed the entrant becomes `qualified` and
 `qualified_at` is stamped once. Re-entering re-runs the checks; a
@@ -58,9 +58,9 @@ When every check is confirmed the entrant becomes `qualified` and
   `marketplace_submissions` row published by that account in
   `forkmesh-community` since the race opened, a summary, and how to try it on
   each of desktop, iOS and web.
-- There are at most 3 entries per builder. Entries start in `review`. An
-  admin accepts or rejects them after checking that the plugin is useful and
-  really runs in all three places.
+- At most 3 entries per builder. Entries start in `review`; an admin accepts
+  or rejects them after checking the plugin is useful and runs in all three
+  places.
 - A rating counts when it is in `marketplace_reviews` for an accepted plugin,
   not hidden, 3 stars or more, from a `qualified` entrant who is not the
   builder.
@@ -96,20 +96,17 @@ Admin actions:
 
 ## Paying a prize
 
-ForkMesh holds no key on the server. Use this order:
+The server holds no wallet key:
 
 1. Run `award`.
-2. Read each winner's Solana address from the admin listing. It is the
-   `solana` field the settings page saves.
+2. Read each winner's Solana address (the `solana` field the settings page
+   saves) from the admin listing.
 3. Send 0.1 SOL from the prize wallet.
-4. Record the signature with `paid`.
+4. Record the signature with `paid`; the board shows it as proof.
 
-The board shows the signature as proof. A winner with no address after 30
-days loses the slot (rules section 3). Reject the plugin with a note: an
-unpaid winner can be rejected, which clears its rank, and the next plugin to
-cross the line takes the free slot at the next `award`. A paid plugin cannot
-be rejected.
+A winner with no address after 30 days loses the slot (rules section 3):
+reject the plugin with a note, which clears its rank, and the next plugin to
+cross the line takes the slot at the next `award`.
 
-`microjob_claims` was not reused for payouts. Its `job` column has a CHECK
-constraint, so adding a kind would mean rebuilding a table that holds live
-payouts.
+Payouts do not reuse `microjob_claims`: its `job` column has a CHECK
+constraint, so a new kind would mean rebuilding a table holding live payouts.

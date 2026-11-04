@@ -15,7 +15,7 @@ vX.Y". Anyone signed in may report abuse; administrators hide reviews.
 This module is provider-neutral: every Worker/D1 primitive arrives through the
 narrow runtime adapter in ``marketplace_runtime._MarketplaceReviewsRuntime``,
 so the whole route is testable against sqlite3. Wire format and rules:
-``docs/MARKETPLACE_RATINGS.md``.
+``docs/marketplace/ratings.md``.
 """
 
 from __future__ import annotations
@@ -39,9 +39,11 @@ FIRST_PARTY_PACKAGES = {
     "agent-watch": "Watch",
     "agents": "Agents",
     "analytics": "Analytics",
+    "apparmor": "AppArmor",
     "app-store-status": "App Store Status",
     "aquarium": "Aquarium",
     "backups": "Backups",
+    "booking": "Booking Page",
     "branches": "Branches",
     "browser-extension": "Browser Extension",
     "bug-reports": "Report a bug",
@@ -94,6 +96,7 @@ FIRST_PARTY_PACKAGES = {
     "sentry": "Sentry",
     "shortcuts": "Shortcuts",
     "sign-in": "Sign in",
+    "silent-speech": "Silent Speech",
     "sleep": "Sleep",
     "special-agents": "Special Agents",
     "spider-room": "Spider Room",
@@ -121,6 +124,7 @@ FIRST_PARTY_PACKAGES = {
     "steps": "Pedometer",
     "stretch": "Stretch Break",
     "sugar-break": "Sugar Break",
+    "surveys": "Surveys",
     "tasks": "Tasks",
     "timers": "Timers",
     "tour": "Tour",

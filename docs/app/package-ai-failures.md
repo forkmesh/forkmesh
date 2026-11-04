@@ -4,7 +4,8 @@ Package server code reaches AI only through the host capability
 `runtime.ai_json` (`_PluginApiRuntime.ai_json` → `_plugin_ai_json` in
 `app/src/entry.py`). Calorie Counter
 (`marketplace/packages/calories/content/worker/calories.py`) calls it on
-`POST /api/calories/analyze` and `POST /api/calories/receipt`.
+`POST /api/calories/analyze` and `POST /api/calories/receipt`. Part of the
+[App docs](README.md).
 
 The host creates `env.AI` only when `AI_API_URL` is set
 ([docs/host/README.md](../host/README.md)). Without it, `_plugin_ai_json`

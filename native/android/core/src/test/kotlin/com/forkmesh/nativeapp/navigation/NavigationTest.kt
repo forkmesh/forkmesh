@@ -25,14 +25,15 @@ class NavigationTest {
         Route.Release(repo, "v1/x"), Route.Project(repo, "p"), Route.Milestones(repo), Route.RepoSettings(repo, "git"),
         Route.LocalRepos, Route.LocalRepo("l1"), Route.QuickEdit("l1", "a.txt"), Route.Chat, Route.Channel("general"),
         Route.Thread("general", "m1"), Route.Dm("bob"), Route.Discord("g", null), Route.Profile("bob"), Route.People, Route.Docs,
-        Route.Search("q", SearchScope.Issues), Route.Notes, Route.Note(""), Route.Tasks("mine"), Route.Task("t"),
-        Route.Calendar("2026-09-24", CalendarMode.Week), Route.Event("e"), Route.Timers, Route.Desktops,
+        Route.Search("q", SearchScope.Issues), Route.Notes, Route.Note(""), Route.Note("n", "c1"), Route.NotePage("p1"), Route.NotePage("p1", "n1"), Route.Tasks("mine"), Route.Task("t"),
+        Route.Calendar("2026-09-24", CalendarMode.Week), Route.Event("e"), Route.Booking(null), Route.Booking("0123456789abcdef0123456789abcdef"), Route.Timers, Route.Desktops,
         Route.Desktop("d", "logs"), Route.Hosts, Route.Host("mirror35", null), Route.Provision("v1"), Route.Network(null),
         Route.Node("n"), Route.Market("installed"), Route.Package("vault"), Route.Crm(null), Route.Contact("c"),
         Route.CrmOrg("o"), Route.Marketing(null), Route.Analytics("funnels"), Route.Competitors, Route.Invoices(null, null),
-        Route.Invoices("acme", "0123456789abcdef0123456789abcdef"), Route.Ads,
+        Route.Invoices("acme", "0123456789abcdef0123456789abcdef"), Route.Surveys(null, null),
+        Route.Surveys("acme", "0123456789abcdef0123456789abcdef"), Route.Ads,
         Route.Ledger(null), Route.Vault(null), Route.Coves(repo), Route.Coves(null), Route.Cove("c"), Route.Calories,
-        Route.Steps, Route.Water, Route.Sleep, Route.SugarBreak, Route.Stretch, Route.FoodGuide, Route.Speech, Route.GlassesAlert, Route.PhoneSecurity, Route.Ember(null), Route.Strata(RepoRef("alice", "shop")), Route.Synapse(null), Route.OpenWrtRouter, Route.FaceChanger, Route.AppStoreStatus, Route.Runners, Route.Usage, Route.RssReader, Route.VideoMixDjStudio, Route.Poker(null), Route.Poker("0123456789abcdef0123456789abcdef"), Route.InstanceFeed(null), Route.InstanceFeed("0123456789abcdef0123456789abcdef"), Route.SecureDrive, Route.Files, Route.Nexus, Route.Workflows, Route.LocalAI, Route.Activity, Route.Logs, Route.Diagnostics, Route.Stats, Route.Status, Route.Admin("users"), Route.Settings("pings"),
+        Route.Steps, Route.Water, Route.Sleep, Route.SugarBreak, Route.Stretch, Route.FoodGuide, Route.Speech, Route.GlassesAlert, Route.PhoneSecurity, Route.SilentSpeech, Route.Ember(null), Route.Strata(RepoRef("alice", "shop")), Route.Synapse(null), Route.OpenWrtRouter, Route.FaceChanger, Route.AppStoreStatus, Route.Runners, Route.Usage, Route.RssReader, Route.VideoMixDjStudio, Route.Poker(null), Route.Poker("0123456789abcdef0123456789abcdef"), Route.InstanceFeed(null), Route.Mastodon, Route.InstanceFeed("0123456789abcdef0123456789abcdef"), Route.SecureDrive, Route.Files, Route.Nexus, Route.Workflows, Route.LocalAI, Route.Activity, Route.Logs, Route.Diagnostics, Route.Stats, Route.Status, Route.Admin("users"), Route.Settings("pings"),
         Route.Orgs, Route.Org("acme"), Route.InstalledApps, Route.Projects, Route.ProjectAccess("p"), Route.Tour, Route.UpdateRequired,
     )
 
@@ -104,9 +105,23 @@ class NavigationTest {
 
     fun testParsesDashboardAndCustomSchemeLinks() {
         assertEq(listOf(Route.Notes, Route.Note("n1")), RouteParser.parse("https://app.forkmesh.com/dashboard/notes/n1")!!.stack)
+        val published = "ab".repeat(16)
+        assertEq(listOf(Route.Notes, Route.Note(published)), RouteParser.parse("https://app.forkmesh.com/notes/$published")!!.stack)
+        assertEq(listOf(Route.Notes, Route.Note(published)), RouteParser.parse("https://forkmesh.com/notes/$published/")!!.stack)
+        assertEq(listOf(Route.Repo(RepoRef("notes", "n1"), null)), RouteParser.parse("https://app.forkmesh.com/notes/n1")!!.stack)
         assertEq(listOf(Route.Notes, Route.Note("n2")), RouteParser.parse("https://app.forkmesh.com/dashboard/notes?note=n2")!!.stack)
         assertEq(listOf(Route.Notes, Route.Note("n1")), RouteParser.parse("https://forkmesh.com/dashboard/notes/n1?note=n2")!!.stack)
         assertEq(listOf(Route.Notes), RouteParser.parse("https://app.forkmesh.com/dashboard/notes?note=")!!.stack)
+        assertEq(listOf(Route.Notes, Route.Note("n2", "c9")), RouteParser.parse("https://app.forkmesh.com/dashboard/notes?note=n2&comment=c9")!!.stack)
+        assertEq(listOf(Route.Notes, Route.Note("n1", "c9")), RouteParser.parse("https://forkmesh.com/dashboard/notes/n1?comment=c9")!!.stack)
+        assertEq(listOf(Route.Notes, Route.Note("n2")), RouteParser.parse("https://app.forkmesh.com/dashboard/notes?note=n2&comment=")!!.stack)
+        assertEq(mapOf("k" to "note", "id" to "n2", "comment" to "c9"), RouteCodec.toMap(Route.Note("n2", "c9")))
+        assertEq(listOf(Route.Notes, Route.NotePage("p7")), RouteParser.parse("https://app.forkmesh.com/dashboard/notes?page=p7")!!.stack)
+        assertEq(listOf(Route.Notes, Route.NotePage("p7", "n3")), RouteParser.parse("https://app.forkmesh.com/dashboard/notes?page=p7&note=n3")!!.stack)
+        assertEq(listOf(Route.Notes, Route.Note("n3")), RouteParser.parse("https://app.forkmesh.com/dashboard/notes?page=&note=n3")!!.stack)
+        assertEq(listOf(Route.Notes, Route.Note("n1")), RouteParser.parse("https://app.forkmesh.com/dashboard/notes/n1?page=p7")!!.stack)
+        assertEq(mapOf("k" to "notePage", "id" to "p7", "note" to "n3"), RouteCodec.toMap(Route.NotePage("p7", "n3")))
+        assertEq(null, RouteCodec.decode("{\"k\":\"notePage\"}"))
         assertEq(listOf(Route.Ember(null)), RouteParser.parse("https://app.forkmesh.com/dashboard/ember")!!.stack)
         assertEq(listOf(Route.Strata(RepoRef("alice", "shop"))), RouteParser.parse("https://app.forkmesh.com/dashboard/strata?repo=alice/shop")!!.stack)
         assertEq(listOf(Route.Synapse(null)), RouteParser.parse("https://app.forkmesh.com/dashboard/synapse?repo=nonsense")!!.stack)
@@ -179,6 +194,14 @@ class NavigationTest {
         assertEq("Feed", RouteCatalog.title(Route.Kind.InstanceFeed))
         assertEq("comment", RouteCatalog.icon(Route.Kind.InstanceFeed))
         expect(HubCatalog.personal.any { it.route == Route.InstanceFeed(null) && it.needsRegistration })
+        assertEq(listOf(Route.Mastodon), RouteParser.parse("https://app.forkmesh.com/dashboard/mastodon")!!.stack)
+        assertEq(listOf(Route.Mastodon), RouteParser.parse("forkmesh://mastodon")!!.stack)
+        assertEq(listOf(Route.Mastodon), RouteParser.parse("forkmesh://dashboard/mastodon")!!.stack)
+        assertEq(null, RouteParser.parse("forkmesh://mastodon/callback?code=x&state=y"))
+        assertEq(null, RouteParser.parse("https://app.forkmesh.com/dashboard/mastodon/extra"))
+        assertEq("Mastodon", RouteCatalog.title(Route.Kind.Mastodon))
+        assertEq("alternate_email", RouteCatalog.icon(Route.Kind.Mastodon))
+        expect(Route.Mastodon in HubCatalog.personal.mapNotNull { it.route })
         expect(Route.RssReader in HubCatalog.personal.mapNotNull { it.route })
         assertEq(listOf(Route.SecureDrive), RouteParser.parse("forkmesh://secure-drive")!!.stack)
         assertEq(listOf(Route.SecureDrive), RouteParser.parse("https://app.forkmesh.com/dashboard/secure-drive")!!.stack)
@@ -343,7 +366,7 @@ class NavigationTest {
     }
 
     fun testAccountOnlyBusinessItemsAskAGuestToSignIn() {
-        listOf(Route.Crm(null), Route.Marketing(null), Route.Analytics(null), Route.Competitors, Route.Invoices(null, null), Route.Ads, Route.Coves(null)).forEach {
+        listOf(Route.Crm(null), Route.Marketing(null), Route.Analytics(null), Route.Competitors, Route.Invoices(null, null), Route.Surveys(null, null), Route.Ads, Route.Coves(null)).forEach {
             expect(HubCatalog.guestAction(it) != null)
         }
         expect(HubCatalog.guestAction(Route.Market(null)) == null)
@@ -592,9 +615,9 @@ class NavigationTest {
 
     fun testGuestGateCoversEveryAccountRouteWhereverItComesFrom() {
         val gated = listOf(
-            Route.Notes, Route.Note(""), Route.Note("n1"), Route.Tasks(null), Route.Task("t"), Route.AllAgents,
+            Route.Notes, Route.Note(""), Route.Note("n1"), Route.NotePage("p1"), Route.Tasks(null), Route.Task("t"), Route.Booking(null), Route.AllAgents,
             Route.Hosts, Route.Host("mirror35", null), Route.Crm(null), Route.Contact("c"), Route.CrmOrg("o"),
-            Route.Marketing(null), Route.Analytics(null), Route.Competitors, Route.Invoices(null, null), Route.Ads, Route.Vault(null),
+            Route.Marketing(null), Route.Analytics(null), Route.Competitors, Route.Invoices(null, null), Route.Surveys(null, null), Route.Ads, Route.Vault(null),
             Route.Coves(null), Route.Cove("c1"), Route.Calories, Route.Poker(null), Route.Poker("0123456789abcdef0123456789abcdef"), Route.Approval("7/a1"), Route.InstalledApps,
         )
         for (route in gated) {

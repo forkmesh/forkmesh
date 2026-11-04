@@ -1,5 +1,7 @@
 # Payments, memberships and plans
 
+Part of the [App docs](README.md).
+
 ## Rules
 
 - **Patreon is the only payment rail.** No card data reaches the App.
@@ -29,9 +31,9 @@ reports membership, promotion state and usage meters.
 
 ## Operations
 
-- Patreon setup and secrets: `www/docs/operations/patreon.md`.
-- Trials and usage meters: `www/docs/operations/plan-trials.md`.
-- Business model: `www/docs/business-model.md`.
+- Patreon setup and secrets: [patreon.md](../operations/patreon.md).
+- Trials and usage meters: [plan-trials.md](../operations/plan-trials.md).
+- Business model: [business-model.md](../business-model.md).
 
 ## Traps
 

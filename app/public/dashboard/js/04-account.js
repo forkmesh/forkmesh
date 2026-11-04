@@ -3456,6 +3456,7 @@
         : "Verify email in profile";
     }
     applyAvatar(avatar, session);
+    renderHomeAccount(session);
     const publicProfileLink = $("[data-account-menu-public-profile]");
     if (publicProfileLink && session?.nodeName) {
       publicProfileLink.href = publicProfileUrl(session.nodeName);
@@ -4114,17 +4115,35 @@
       : range?.from;
     const missing = (Array.isArray(coverage?.missing) ? coverage.missing : [])
       .map((item) => String(item || "").trim()).filter(Boolean).slice(0, 4);
+    const hasForge = Boolean(profileContributionCount(coverage?.forge?.repositories));
     const missingLabels = missing.map((item) => ({
       commits: "commit history",
-      collaboration: "collaboration events",
+      collaboration: hasForge ? "collaboration events outside hosted repositories" : "collaboration events",
       languages: "language footprint",
       history: "earlier history",
     })[item] || item);
+    const forgeNote = profileContributionForgeNote(coverage?.forge);
     if (coverage?.status === "partial") {
-      return `Partial verified history from ${verifiedLabel || "the available sources"}${missingLabels.length ? `. Missing ${missingLabels.join(", ")}.` : "."}`;
+      return `Partial verified history from ${verifiedLabel || "the available sources"}${missingLabels.length ? `. Missing ${missingLabels.join(", ")}.` : "."}${forgeNote}`;
     }
-    if (coverage?.status === "unavailable") return "Verified contribution history is not available yet.";
-    return `Complete verified public history for ${range?.label || "this period"}.`;
+    if (coverage?.status === "unavailable") {
+      return forgeNote
+        ? `${forgeNote.trim()} Desktop-published contribution history is not available yet.`
+        : "Verified contribution history is not available yet.";
+    }
+    return `Complete verified public history for ${range?.label || "this period"}.${forgeNote}`;
+  }
+
+  function profileContributionForgeNote(forge) {
+    const repositories = profileContributionCount(forge?.repositories);
+    if (!repositories) return "";
+    const labels = { issues: "issues", pulls: "pull requests", reviews: "reviews" };
+    const kinds = (Array.isArray(forge?.kinds) ? forge.kinds : [])
+      .map((kind) => labels[kind]).filter(Boolean);
+    const what = kinds.length > 1
+      ? `${kinds.slice(0, -1).join(", ")} and ${kinds[kinds.length - 1]}`
+      : (kinds[0] || "collaboration");
+    return ` Includes ${what} recorded on ${formatCount(repositories)} public hosted repositor${repositories === 1 ? "y" : "ies"} in the last year.`;
   }
 
   function renderProfileContributionStatus(status, { hasData = false } = {}) {
@@ -4608,6 +4627,7 @@
       { kind: "device_added", label: "New device signed in", email: false },
       { kind: "timer_finished", label: "Timers and alarms", email: false },
       { kind: "desktop_ping", label: "Pings from your desktop", email: false },
+      { kind: "agent_approval", label: "Agent approvals from your desktop", email: false },
       { kind: "plugin_activity", label: "App package activity", email: false },
     ] },
   ];
@@ -5145,7 +5165,7 @@
     $$("[data-notification-bell-on]").forEach((el) => { el.classList.toggle("hidden", Boolean(until)); });
     $$("[data-notification-bell-off]").forEach((el) => { el.classList.toggle("hidden", !until); });
     const toggle = $("#notificationToggle");
-    if (toggle) toggle.title = until ? label : "Ping notifications";
+    if (toggle) toggle.title = until ? label : "Pings";
     // The status line right above already says how long, so while a pause runs
     // this only has to offer the way to change it.
     $$("[data-ping-pause-toggle]").forEach((el) => {
@@ -5471,7 +5491,7 @@
     if (locationInput && document.activeElement !== locationInput) {
       locationInput.value = session?.profileLocation || "";
     }
-    if (nameCaseInput && document.activeElement !== nameCaseInput) {
+    if (nameCaseInput && document.activeElement !== nameCaseInput && !nameCaseInput.dataset.edited) {
       nameCaseInput.value = session?.nameCase || session?.nodeName || "";
       nameCaseInput.placeholder = session?.nodeName || "username";
     }
@@ -6107,6 +6127,11 @@
         followersPublic: Boolean($("[data-profile-page-followers-public]")?.checked),
         profileLinks: collectProfileLinks(),
       });
+      const nameCaseInput = $("[data-profile-page-name-case]");
+      if (nameCaseInput) {
+        delete nameCaseInput.dataset.edited;
+        nameCaseInput.value = state.session?.nameCase || state.session?.nodeName || "";
+      }
       setProfilePageHint("[data-profile-public-hint]", "Public profile saved.", "good");
     } catch (error) {
       const messages = {

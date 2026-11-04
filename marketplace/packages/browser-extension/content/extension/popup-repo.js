@@ -89,6 +89,20 @@
     mirror.textContent = busy ? "Mirroring…" : "Mirror to my ForkMesh account";
     $("[data-repo-open]").hidden = !listing;
     $("[data-repo-private]").hidden = !repo.isPrivate || Boolean(listing);
+    const mappable = repo.provider !== "gitlab" && !repo.isPrivate;
+    document.querySelectorAll("[data-repo-map]").forEach((button) => {
+      button.hidden = repo.isPrivate;
+      button.disabled = !mappable;
+      button.title = mappable ? "" : "GitLab's public API does not list file sizes";
+    });
+  }
+
+  function openMap(view) {
+    const repo = current?.repo;
+    if (!repo || repo.provider === "gitlab" || repo.isPrivate) return;
+    const query = new URLSearchParams({ url: repo.canonicalUrl, view });
+    if (repo.defaultBranch) query.set("branch", repo.defaultBranch);
+    void chrome.tabs.create({ url: chrome.runtime.getURL(`map.html?${query}`) }).then(() => window.close());
   }
 
   function note(selector, text) {
@@ -128,6 +142,9 @@
   function bind(sender) {
     send = sender;
     $("[data-repo-mirror]").addEventListener("click", () => void mirror());
+    document.querySelectorAll("[data-repo-map]").forEach((button) => {
+      button.addEventListener("click", () => openMap(button.dataset.repoMap));
+    });
     $("[data-repo-open]").addEventListener("click", () => {
       const url = current?.forkmesh?.listing?.url;
       if (url) void send({ type: "fm-repo-open", url }).then(() => window.close());

@@ -98,7 +98,7 @@ void ClaudeStreamSession::startRuntime(const AgentRuntimeLaunch &launch)
     const QStringList disabledFamilies =
         AgentToolPolicy::disabledFamiliesFromOptions(launch.options);
     m_disallowedTools = AgentToolPolicy::claudeDisallowedTools(disabledFamilies);
-    static const QRegularExpression safeToolName(QStringLiteral("^[A-Za-z][A-Za-z0-9_]*$"));
+    static const QRegularExpression safeToolName(QStringLiteral("^[A-Za-z][A-Za-z0-9_-]*$"));
     for (const QJsonValue &value :
          launch.options.value(QStringLiteral("disallowedToolNames")).toArray()) {
         const QString name = value.toString();

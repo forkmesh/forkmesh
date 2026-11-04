@@ -99,9 +99,9 @@ final class NotesTests: XCTestCase {
         let list = NotesListModel(call: api.call, clock: clock)
         await list.load()
         XCTAssertEqual(list.rows.map(\.title), ["Launch plan", "Team handbook"])
-        XCTAssertTrue(list.rows[0].subtitle.contains("Shared with 1"))
-        XCTAssertEqual(list.rows[0].subtitle, "Edited just now · Shared with 1")
-        XCTAssertTrue(list.rows[1].subtitle.contains("Read only"))
+        XCTAssertEqual(list.rows[0].reach, .shared)
+        XCTAssertTrue(list.rows[0].subtitle.hasPrefix("Today "))
+        XCTAssertFalse(list.rows[1].subtitle.contains("Read only"))
 
         list.query = "hand"
         XCTAssertEqual(list.rows.map(\.title), ["Team handbook"])
@@ -190,7 +190,7 @@ final class NotesTests: XCTestCase {
         XCTAssertFalse(editor.showsSave)
         XCTAssertFalse(editor.canEdit)
         XCTAssertTrue(editor.meta.hasSuffix("read only"))
-        XCTAssertEqual(editor.menuItems.map(\.value), ["history", "copy_link", "export"])
+        XCTAssertEqual(editor.menuItems.map(\.value), ["history", "copy_link", "export", "export_pdf"])
         XCTAssertEqual(editor.saveState, "View only")
         XCTAssertEqual(editor.shownMode, .preview)
     }
@@ -217,13 +217,13 @@ final class NotesTests: XCTestCase {
         }
         let editor = NoteEditorModel(noteId: noteId, call: api.call, clock: clock)
         await editor.load()
-        XCTAssertEqual(editor.menuItems.map(\.value), ["history", "copy_link", "export", "share", "publish", "delete"])
+        XCTAssertEqual(editor.menuItems.map(\.value), ["history", "copy_link", "export", "export_pdf", "share", "publish", "delete"])
         editor.title = "Typed but unsaved"
         let visibility = await editor.setVisibility("public")
         XCTAssertEqual(visibility.notice?.message, "Published. Anyone with the link can read it.")
         XCTAssertEqual(api.last?.body, ["baseVersion": 3, "visibility": "public"])
         XCTAssertEqual(editor.title, "Typed but unsaved")
-        XCTAssertEqual(editor.menuItems.map(\.value), ["history", "copy_link", "open_public", "export", "share", "unpublish", "delete"])
+        XCTAssertEqual(editor.menuItems.map(\.value), ["history", "copy_link", "open_public", "export", "export_pdf", "share", "unpublish", "delete"])
 
         let history = editor.historyModel()!
         await history.load()

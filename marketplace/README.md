@@ -1,7 +1,7 @@
 # ForkMesh Marketplace packages
 
 > Developer notes for this directory (sockets, generators, host runtime,
-> traps) are in [docs/marketplace/README.md](../docs/marketplace/README.md).
+> traps) are in [docs/marketplace/package-system.md](../docs/marketplace/package-system.md).
 
 This directory is the source catalog for creations that move through the
 ForkMesh ecosystem. Software extensions, virtual goods, agents, themes and
@@ -26,7 +26,8 @@ package type, version, price/licence model, entry points, permissions,
 screenshots, dependencies and provenance. Every listing supplies at least one
 image under `preview/` with alternative text. `SIGNATURE` signs the canonical
 manifest and the digest of every archived file, so mirrors can carry the bytes
-but cannot change the creator or content.
+but cannot change the creator or content
+([mirroring and software distribution](../docs/mirroring.md)).
 
 The source tree keeps one creation under `packages/<id>/`. A package with a
 `content/` folder is a plugin; a build adds only the plugins listed in
@@ -136,7 +137,7 @@ Its package list is generated from `catalog.json`; re-run
 `python3 app/tools/build_market_catalog.py` after adding or changing a package
 (`app/tests/test_market_landing.py` fails while page and catalog disagree).
 Planned extractions are described in
-[`www/docs/plugins/README.md`](../www/docs/plugins/README.md).
+[`docs/plugins/README.md`](../docs/plugins/README.md).
 
 ## Notable packages
 
@@ -162,7 +163,10 @@ Planned extractions are described in
 | [`face-changer`](packages/face-changer/manifest.json) | Web page with the call face, outfit, background and voice changer, also opened inside the iPhone and Android apps: record and share a clip, snapshot, pop out. Video never reaches the server. |
 | [`speech`](packages/speech/README.md) | On-device text to speech in the iPhone app. |
 | [`crm`](packages/crm/manifest.json), [`marketing`](packages/marketing/manifest.json) | Organization packages with web and desktop pages and a worker API. |
+| [`spreadsheets`](packages/spreadsheets/README.md) | Spreadsheet editor on the web and desktop: sheets, 235 functions, formatting, charts, filters, pivot tables and an AI assistant; opens and saves Excel `.xls` and `.xlsx`, OpenDocument and CSV in the browser, stored sealed per account. |
+| [`booking`](packages/booking/README.md) | Personal booking page at one short link (`/meet?<name>`): people book a free time, the meeting lands on your ForkMesh calendar, and ForkMesh emails both sides. |
 | [`invoices`](packages/invoices/README.md) | Organization invoices linked to CRM contacts, emailed with a private view-and-pay link, with open, view, pay-click and overdue tracking. |
+| [`surveys`](packages/surveys/README.md) | Organization surveys with choice, text and rating questions, a private link anyone can answer, live results, response management and CSV export on the web, desktop and phones. |
 | [`poker`](packages/poker/README.md) | No-limit Texas Hold'em between ForkMesh users for virtual chips, with a dealer, bots, side pots, turn clocks and synthesized sounds on the web, desktop and phones. |
 | [`competitor`](packages/competitor/manifest.json), [`notes`](packages/notes/README.md), [`tasks`](packages/tasks/README.md), [`calendar`](packages/calendar/README.md) | Organization competitor list; dashboard pages for host notes, tasks and calendar services. |
 

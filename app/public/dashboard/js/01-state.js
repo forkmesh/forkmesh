@@ -85,7 +85,9 @@
     },
     notifications: [],
     notificationUnread: 0,
-    selectedNotificationId: "",
+    notificationTotal: 0,
+    notificationsLoaded: false,
+    notificationsFailed: false,
     issuesView: {
       filter: "open",
       items: [],
@@ -124,6 +126,10 @@
     // parsed from /blog/rss.xml. null until the feed read resolves so the card
     // can tell "loading" apart from "feed unavailable".
     homeBlogPosts: null,
+    homeChangelogNotes: null,
+    homeWork: null,
+    homeWorkSignature: "",
+    homeRepoSearchOpen: false,
     repoRemoteForks: { key: "", forks: [], canManage: false, loaded: false },
     // Organization aliases are not duplicate catalog publications: load the
     // signed-in viewer's linked aliases separately so Top repositories can

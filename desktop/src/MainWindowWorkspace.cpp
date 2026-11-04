@@ -1586,14 +1586,20 @@ void NextAccess::syncWorkspace(MainWindow &window)
             window.m_quickAddSendToAgentButton &&
             window.m_quickAddSendToAgentButton->property("enterTarget").toBool();
         const QString label = chat ? QStringLiteral("Add") : QString();
-        if (chrome->composerSend->text() != label) {
+        const bool package = chat && window.quickAddPackageAppliesToOpen();
+        const QString tip =
+            package ? window.m_quickAddSendToAgentButton->toolTip()
+            : chat  ? QStringLiteral("Add to the agent open above (Enter)")
+                    : QStringLiteral("Send (Enter)");
+        if (chrome->composerSend->text() != label ||
+            chrome->composerSend->toolTip() != tip) {
             chrome->composerSend->setText(label);
             chrome->composerSend->setFixedSize(chat ? 78 : 34, 34);
-            chrome->composerSend->setToolTip(
-                chat ? QStringLiteral("Add to the agent open above (Enter)")
-                     : QStringLiteral("Send (Enter)"));
+            chrome->composerSend->setToolTip(tip);
             chrome->composerSend->setAccessibleName(
-                chat ? QStringLiteral("Add to agent") : QStringLiteral("Send"));
+                package ? window.m_quickAddSendToAgentButton->accessibleName()
+                : chat  ? QStringLiteral("Add to agent")
+                        : QStringLiteral("Send"));
             setFlag(chrome->composerSend, "workspaceChat", chat);
             chrome->composerSend->setIcon(
                 glyph(QStringLiteral("arrow-up"),
@@ -2106,6 +2112,8 @@ void NextAccess::fillWorkspaceMenu(MainWindow &window, QMenu *menu, int which)
     if (window.m_agentStopButton && window.m_agentStopButton->isEnabled())
         addProxy(menu, window.m_agentStopButton, QStringLiteral("stop"));
     menu->addSeparator();
+    addProxy(menu, window.m_agentWorkflowButton, QStringLiteral("workflow"),
+             QStringLiteral("Open workflow"));
     addProxy(menu, window.m_agentViewTaskButton, QStringLiteral("checklist"));
     addProxy(menu, window.m_agentViewIssueButton,
              QStringLiteral("issue-opened"));
@@ -2168,11 +2176,7 @@ void NextAccess::fillWorkspaceMenu(MainWindow &window, QMenu *menu, int which)
     addProxy(menu, window.m_agentSignInRunnerButton, QStringLiteral("key"));
     menu->addSeparator();
     addProxy(menu, window.m_agentOutputModeButton, QStringLiteral("terminal"),
-             window.m_agentOutputModeButton &&
-                     window.m_agentOutputModeButton->text() ==
-                         QLatin1String("Raw")
-                 ? QStringLiteral("Show raw output")
-                 : QStringLiteral("Show transcript"));
+             QStringLiteral("Raw output window"));
     addProxy(menu, window.m_agentListenButton, QStringLiteral("unmute"));
     QAction *details =
         menu->addAction(glyph(QStringLiteral("info"), Theme::Role::FgMuted),
@@ -2187,7 +2191,7 @@ void NextAccess::fillWorkspaceMenu(MainWindow &window, QMenu *menu, int which)
              QStringLiteral("Delete session"));
 }
 
-void NextAccess::placeWorkspaceComposer(MainWindow &window, bool overDetail)
+void NextAccess::placeWorkspaceComposer(MainWindow &window, QWidget *pane)
 {
     if (!window.m_footerDock || !window.m_promptOverlayHost)
         return;
@@ -2196,7 +2200,7 @@ void NextAccess::placeWorkspaceComposer(MainWindow &window, bool overDetail)
         return;
     Chrome *chrome = chromeOf(window);
     const bool centred = chrome && chrome->applied && chrome->composerReady &&
-                         overDetail && !window.m_promptOverlayCollapsed &&
+                         pane && !window.m_promptOverlayCollapsed &&
                          !window.m_promptOverlayFloating &&
                          !window.m_promptOverlayDetached;
     if (chrome && chrome->composerReady && centred != chrome->composerDocked) {
@@ -2242,7 +2246,7 @@ void NextAccess::placeWorkspaceComposer(MainWindow &window, bool overDetail)
     window.m_promptOverlayHost->setFixedHeight(host);
     if (window.m_issueQuickAdd)
         window.m_issueQuickAdd->setMaximumHeight(QWIDGETSIZE_MAX);
-    const int available = window.m_agentDetail ? window.m_agentDetail->width() : 0;
+    const int available = pane->width();
     const int side = qMax(kComposerSidePad, (available - kComposerWidth) / 2);
     row->setContentsMargins(side, 8, side, kComposerBottomPad);
     row->invalidate();

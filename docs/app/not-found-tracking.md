@@ -1,8 +1,10 @@
-# 404 tracking and the admin 404s list
+# 404 tracking and automatic probe bans
 
-Every 404 on a ForkMesh site is counted in one grouped list in the admin
-console (Reliability → "404s", `?view=not-found`). When a group reaches 10
-hits, administrators get one Ping.
+Part of the [App docs](README.md). Every 404 on a ForkMesh site is counted in
+one grouped list in the admin console (Reliability → "404s",
+`?view=not-found`). When a group reaches 10 hits, administrators get one Ping.
+A visitor whose 404s are for files only a vulnerability scanner asks for is
+banned from every site the cores serve ([Automatic probe bans](#automatic-probe-bans)).
 
 ## Code map
 
@@ -60,18 +62,168 @@ hours are deleted; read-only mode records nothing.
 
 ## Static-site relay
 
-When the static site's asset lookup answers 404 for GET or HEAD,
+The static forkmesh.com site is the `forkmesh-www` Worker. When its asset
+lookup answers 404 for GET or HEAD,
 `reportNotFound` posts `{path, referrer, userAgent, fetchSite}` to
 `POST /api/not-found` on `APP_ORIGIN` in the background. The endpoint is
 unauthenticated by design: it can only record a 404 for a site path. The
 visitor's IP arrives through the signed edge-client header.
 
-## Auto bans
-
-Every 404 is also passed to `probe_ban.observe`; see
-[probe-auto-ban.md](probe-auto-ban.md).
-
-## Tests
+## Tests (404 log)
 
 `app/tests/test_not_found_log.py`, `www/tests/not_found_relay.test.mjs`,
 `app/tests/test_admin_shell.py`.
+
+## Automatic probe bans
+
+A visitor whose 404s are for files only a vulnerability scanner asks for
+(`.env`, `.git/config`, `wp-login.php`, `phpinfo`, `database.sql`, ...) is
+banned from every site the cores serve. Every 404 is passed to
+`probe_ban.observe` from `not_found_log.record`.
+
+### Code map
+
+| Code | Role |
+| --- | --- |
+| `app/src/probe_ban.py` | Classifier, scoring, bans, sweep, Lift, the "Auto bans" card |
+| `app/src/not_found_log.py` (`record`) | Hands every 404 to `probe_ban.observe`, before the exceptions check |
+| `app/src/app_runtime.py` (`_fetch_inner`) | Answers 403 at once on the core that made the ban (`probe_ban.denied`) |
+| `app/src/entry.py` | `_probe_ban`, the per-process `_probe_ban_local` table, the `probe-bans` cron phase |
+| Tables | `probe_visitors`, `probe_bans` |
+| `app/host/forkmesh_host/request_policy.py`, `deploy/core/request_rules.py` | Fleet-wide enforcement: a ban is a `request_block_rules` row |
+| `app/tools/sync_request_block_rules.py` | Leaves `auto-probe-*` rows out of the Cloudflare zone WAF rule it publishes |
+
+### Classification
+
+`probe_ban.classify(path)` percent-decodes the path (twice when it was
+double-encoded, as in `status%252ephp`), lower-cases it, checks the whole path
+against product signatures and then each segment; the path takes the heaviest
+class it earns. A path that spells a dot as `%2e` (`/CHANGELOG%2emd`,
+`/%2eeslintrc`) is a `script` probe whatever it names: no browser or link
+writes a dot that way, and in the 404 log every such path came from a scanner.
+
+| Class | Weight | Examples |
+| --- | --- | --- |
+| `secret` | 3 | `.env*`, `.git`, `.svn`, `.aws`, `.ssh`, `.npmrc`, `.htpasswd`, `_netrc`, `_environment`, `wgetrc`, shell and database `*_history`, `id_rsa`, `wp-config.php*`, `sftp-config.json`, `*.tfvars`, `GoogleService-Info.plist`, `google-services.json`, credential/key files (`*-key.txt`, `*_token.txt`, `creds.json`, `<provider>.json` for mail, payment, auth, database, cloud, chat and AI providers), `*.pem`/`*.key`, AI-agent configs; database dumps (`*.sql`, `*.sqlite`, `*.db`, `*.dump`, also compressed); a last segment named like a credential variable (`MAILGUN_API_KEY`, `MAIL_PASSWORD`, `aws_keys`, `*-credentials`, `service-accounts`); a last segment written as an environment variable (`MAIL_HOST`, `SES_REGION`, `ADM_SESSIONID`) in a path of one segment or three or more; a `.git/`, `.svn/`, `.hg/` or `.bzr/` directory anywhere, also under `/api/`; `/v1/secrets`, cloud metadata (`/latest/meta-data`, `/computeMetadata/v1`, `/metadata/identity`), Vault `/v1/sys/`, Rails `config/{environments,initializers}/*.rb`, Magento `app/etc/local.xml` |
+| `script` | 3 | `.php*` (also `index.php.txt`), `.asp(x)`, `.jsp`, `.do`, `.action`, `.cgi`, `.cfm`, `.rsp`, `phpinfo*`, `cgi-bin`, `/api/<x>.php`, a `%2e` dot, `..` traversal (also double-encoded), invalid UTF-8 (`%c0`), Windows drive paths; WordPress and PHP admin tools as the first segment (`wp`, `wp-*`, `wordpress`, `xmlrpc`, `phpmyadmin`, `pma`, `adminer`, `_profiler`, `_ignition`, `boaform`, `hnap1`) |
+| `cms` | 2 | `wp-*`, `xmlrpc`, `phpmyadmin`, `adminer*` deeper in a path, `actuator` (also under `/api/`), `solr`, `server-status`; first-segment products (`jenkins`, `grafana`, `kibana`, `rabbitmq`, `airflow`, `jupyter`, `administrator`, `elmah`, `nacos`, `zabbix`, `webmin`, `portainer`, debug toolbars, `fpm-status`); infrastructure APIs: pprof, Consul `/v1/{agent,catalog,status,health}/`, etcd `/v3/kv/`, Docker `/v1.NN/`, Elasticsearch `/_cat`, `/_search`, ..., Sentry `/api/0/`, GitLab `/api/v4/ci/`, `/rails/`, Metabase `api/session/properties` (also under `/metabase/`, `/bi/`, ...), XWiki `/bin/{get,view}/Main/`, Atlassian `/rest/api/1.0/`, Joomla `/media/system/js/`, Strapi `/api/users-permissions`, CKAN `/api/action/datastore_search*`, SQL endpoints `/api/{db,data,rds}/{query,execute}`, Tomcat `/manager/html`, LLM proxies (`bedrock-runtime`, `/v1/models`) |
+| `backup` | 2 | last segment ending `.bak`, `.old`, `.swp`/`.swn`, `~`, `.zip`, `.tar.gz`, `.tbz2`, `.zst`, `.war`, `.log`, `.log.N`; `db`/`database`/`dump`/`backup`/`users` `.csv`/`.json`/`.xml`; anything under `/var/log/` |
+| `config` | 1 | `.yml`, `.ini`, `.conf`, `.toml`, `config*`, `appsettings*`, `Dockerfile`, `Jenkinsfile`, `web.config`, `vercel.json`, build and dependency files (`go.sum`, `requirements.txt`, `Makefile`, `CMakeLists.txt`, `build.sh`, `pom.xml`, `manage.py`, ...), `node_modules`, `venv`, API-doc discovery (`swagger*`, `api-docs`, `openapi.json`, `graphiql`, `graphql`, `redoc`, `altair`), other dot-segments |
+| `recon` | 1 | First segment only: directory guesses (`backup/`, `db/`, `keys`, `secrets`, `certs/`, `mysql`, `redis`, `kafka`, `console`, `debug`, `shell`, `terminal`, `proxy`, `fetch`, `render`, `screenshot`, `metrics`, `whoami`, `vendor/`, `uploads/`, `themes/`, `_next/`, `terraform/`, `ansible/`, ...), mail-provider names (`mailgun`, `sendgrid`, `ses`, `smtp`, ...), version files (`README.md`, `CHANGELOG.txt`, `LICENSE.txt`, `version.json`, `build-info`, `MANIFEST.in`), build-metadata names (`BUILD_REV`, `GIT_SHA`, `BUILD_NUMBER`), `reconx-*` canaries |
+
+Product names and recon words count only as the first segment and
+credential-variable names only as the last, so a marketplace package or
+repository called `jenkins`, `kafka` or `aws-credentials` is never a probe, and
+an `/owner/MY_REPO` path is never read as an environment variable. A build-metadata name (`build`, `git`, `release`, `commit` or `version`,
+ending in `rev`, `sha`, `id`, `number`, `tag`, ...) is never an environment
+variable either: on 2026-11-03 an agent on the operator's workstation looked
+for the deployed release with `/BUILD_REV` (the marker file in each core's
+release folder) and `/version`, and the one `secret` point set banned the
+operator's IPv6 /64 from the App, World and Git for a week. It is now `recon`,
+so both requests together score 2. A name that also names a credential
+(`GIT_TOKEN`, `RELEASE_KEY`) is still `secret`. Repository
+routes win over signatures (`/rails/rails/blob/...` is a repository). Words a
+person types (`/admin`, `/login`, `/settings`, `/contact`, `/mail`, `/security`)
+stay unclassified. A recon word weighs 1, so it bans only alongside two more
+probe paths.
+
+Never classified: `/.well-known/…`, `/docs/…`, `/_host/…`, the redacted
+private-repository path, repository routes (`blob`, `tree`, `raw`, ...),
+deep or repository `/api/…` paths, and ordinary asset extensions.
+`app/tests/test_probe_ban.py` pins scanner paths and legitimate paths.
+
+### Scoring and bans
+
+- The visitor is the address the host puts in `cf-connecting-ip` (the TCP
+  peer, or the verified visitor a trusted proxy names), IPv4 or the IPv6
+  `/64`, stored only as
+  `blind_index("probe-visitor:" + address)`.
+- Each **distinct** probe path adds its weight within a one-day window;
+  repeats add nothing.
+- At **3 points** the visitor is banned, so one direct secret or server-script
+  probe (`/.env`, `/xmlrpc.php`, `/wp-json/`) bans on its own; a CMS or backup
+  path needs one more probe path, a config or recon path two more.
+- These weights come from replaying the stored 404 log: one direct `/.env`,
+  `/xmlrpc.php`, `/wp-login.php`, `/wp-json/...` or `.sql` probe is something
+  only a scanner sends (a page cannot, see Safety rules), and two-path
+  WordPress scans and paired `.php` probes are not ordinary traffic either.
+  Add new scanner paths to the table rather than lowering the line.
+- A ban lasts a week, or 30 days for a repeat within 90 days. It writes
+  `probe_bans` and a `request_block_rules` row
+  `auto-probe-<first 32 hex of the blind index>` (`ip` or `cidr`, priority 0),
+  `ON CONFLICT DO NOTHING` so operator rules are untouched.
+- The banning core refuses the visitor from memory immediately; every core's
+  `request_policy` reloads rules within 60 s and Caddy then refuses before
+  Python. `/health`, `/readyz` and `/api/fleet/*` stay exempt.
+- Operator rules (priority 100) win the 1,000-rule load; at most 500 auto
+  bans are enforced, beyond that a ban is recorded as "Observed".
+
+#### Safety rules
+
+- **Cross-site requests are never scored.** Any page can make a browser
+  request `/.env`, so a 404 is scored only when `Sec-Fetch-Site` is absent or
+  `none`. The static-site relay forwards it as `fetchSite`.
+- **Never banned:** non-routable addresses (loopback, private, link-local,
+  carrier NAT, documentation, the mesh range) and Cloudflare's ranges, which
+  the static forkmesh.com Worker relays from (`CLOUDFLARE_RANGES`, a copy of
+  the list in `deploy/core/render.py`, kept equal by a test). `FORKMESH_PROBE_BAN_ALLOW` adds more. `deploy/core/render.py`
+  writes it into each core's `app.env` with every `[[runners]]` address from
+  `deploy/fleet.toml` (the IPv4 address and the IPv6 /64): a job on a shared
+  runner can reach the public App, and one probe from it would otherwise ban
+  the runner's address, cutting off its own claims and every other owner's
+  jobs ([runners](../operations/runners.md)). Autoscaled pool runners and
+  user-run mirrors are not in the fleet file and are not covered.
+- Bans block the App, World and proxied site routes, not the static
+  forkmesh.com files.
+- **An administrator's network is never banned.** A visitor whose address
+  (the IPv4 address or the IPv6 /64) is the sign-in address of a live
+  session of an `is_admin` account (not revoked, not expired, seen in the
+  last 30 days) is not banned when it reaches 3 points: its score is reset
+  and `observe` answers `trusted`. Each sweep also lifts an active ban on
+  such a network (`lifted_by` "admin sign-in"). The operator's coding agents
+  run `curl` from the workstation, with no `Sec-Fetch-Site`, and each new
+  path they guess can look like a probe: on 2026-11-03 a `/BUILD_REV` ban
+  stayed in force after the classifier fix and kept the operator's desktop,
+  web and git out. Trust comes only from an administrator's session, so a
+  scanner cannot earn it by opening an ordinary account.
+
+### Modes
+
+`FORKMESH_PROBE_BAN`, set for the cores under `[production.vars]` in
+`deploy/fleet.toml` (the name must also be a `[vars]` name in
+`app/wrangler.toml`, which `deploy/core/render.py` checks):
+
+| Value | Effect |
+| --- | --- |
+| `ban` (default, also any unknown value) | Score, ban and block |
+| `observe` | Score and record bans ("Observed") without a rule or a 403 |
+| `off` | Nothing is scored |
+
+Outside `ban`, the next sweep deletes every `auto-probe-*` rule.
+
+### Sweep
+
+Cron phase `probe-bans`, every 5 minutes: lift active bans on an
+administrator's network (above); delete `auto-probe-*` rules without
+an active enforced ban; delete `probe_bans` rows expired over 7 days ago;
+delete `probe_visitors` unseen for 90 days and not banned; prune the memory
+table.
+
+### Admin page
+
+The 404s page marks probe paths with a "Probe" pill and has an "Auto bans"
+card (mode, threshold, counts, last 100 bans). **Lift** (CSRF-checked,
+audited as `admin.console_lift_probe_ban`) deletes the rule and resets the
+visitor's score and ban count. Ignoring a 404 path stops logging it but not
+scoring it.
+
+### Re-key
+
+A re-key ([rekey](../operations/rekey.md)) empties both tables (they are keyed by
+blind index); the next sweep then lifts all automatic bans.
+
+### Tests
+
+`app/tests/test_probe_ban.py`, `app/tests/test_not_found_log.py`,
+`www/tests/not_found_relay.test.mjs`, the `probe-bans` slot in
+`app/tests/test_cron_runner.py`.

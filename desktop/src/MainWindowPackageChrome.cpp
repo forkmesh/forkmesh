@@ -183,6 +183,8 @@ bool MainWindow::runWindowCommand(const QString &command, const QJsonObject &arg
         }
         return true;
     }
+    if (command == QLatin1String("note.openLink"))
+        return openNoteLink(args.value(QStringLiteral("href")).toString());
     if (runTaskWindowCommand(command, args))
         return true;
     if (command == QLatin1String("issue.composeFromText")) {

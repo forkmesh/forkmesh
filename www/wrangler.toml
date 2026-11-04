@@ -33,7 +33,7 @@ run_worker_first = [
   "/username-autocomplete.js",
   "/qr.js",
   # Marketing landing pages pass through the Worker so acquisition
-  # attribution can observe them server-side (docs/attribution.md). The
+  # attribution can observe them server-side (docs/app/attribution.md). The
   # Worker still serves the static asset; it only adds the fm_attr cookie
   # and forwards one observation to App inside waitUntil. Blog posts and
   # docs stay pure static assets and are not captured.
@@ -81,7 +81,7 @@ ATTRIBUTION_COOKIE_DOMAIN = "forkmesh.com"
 # (https://nN.next.forkmesh.com/_app/...). The visitor's address and country
 # are sent in an HMAC-signed x-forkmesh-edge-client header, keyed by the
 # WWW_EDGE_SECRET secret (`wrangler secret put WWW_EDGE_SECRET`, the same value
-# as the core's WWW_EDGE_SECRET credential). See deploy/core/edge_client.md.
+# as the core's WWW_EDGE_SECRET credential). See docs/www/edge-client.md.
 # Optional: APP_FETCH_TIMEOUT_MS (default 15000) and APP_FALLBACK_ORIGINS
 # (comma-separated; default the n1-n3 node origins).
 

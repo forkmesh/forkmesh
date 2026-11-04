@@ -702,11 +702,11 @@ QPushButton#repoAction::menu-indicator { width: 0; }
 
 #appNavigationRail QScrollBar:vertical { width: 6px; }
 #appNavigationRail QScrollBar::handle:vertical { border-radius: 3px; }
-#sideRail, #sideRailColumn, #sideRailScroll, #sideRailContent, #sideRailBrowserPanel, #sideRailTerminalPanel { background-color: #0d1117; }
+#sideRail, #sideRailColumn, #sideRailScroll, #sideRailContent, #sideRailBrowserPanel, #sideRailTerminalPanel, #agentPagesPanel { background-color: #0d1117; }
 #sideRailColumn { border-left: 1px solid #30363d; }
 #sideRailScroll QScrollBar:vertical { width: 6px; }
 #sideRailScroll QScrollBar::handle:vertical { border-radius: 3px; }
-#sideRailBrowserHandle:hover, #sideRailTerminalHandle:hover { background-color: #30363d; }
+#sideRailBrowserHandle:hover, #sideRailTerminalHandle:hover, #agentPagesHandle:hover { background-color: #30363d; }
 QLabel#sideRailBrowserTitle { color: #8b949e; font-size: 9px; font-weight: 600; }
 QFrame#sideRailSeparator { color: #30363d; background-color: #30363d; border: none; max-height: 1px; }
 QPushButton[sideRailTool="true"], QToolButton#sideRailItem {
@@ -1982,11 +1982,6 @@ QCheckBox#quickAddAgentCheck::indicator:checked {
     font-size: 12px;
 }
 
-QPushButton#quickAddSlashButton {
-    background: #0d1117; border: 1px solid #30363d; border-radius: 5px;
-    color: #8b949e; font-weight: 600; font-size: 12px; padding: 0;
-}
-QPushButton#quickAddSlashButton:hover { border-color: #58a6ff; color: #e6edf3; }
 
 #slashActionsPopup {
     background: #161b22; border: 1px solid #30363d; border-radius: 8px;
@@ -2902,8 +2897,8 @@ QPushButton#repoAction::menu-indicator { width: 0; }
 
 #appNavigationRail QScrollBar:vertical { width: 6px; }
 #appNavigationRail QScrollBar::handle:vertical { border-radius: 3px; }
-#sideRail, #sideRailColumn, #sideRailScroll, #sideRailContent, #sideRailBrowserPanel, #sideRailTerminalPanel { background-color: #ffffff; }
-#sideRailBrowserHandle:hover, #sideRailTerminalHandle:hover { background-color: #d0d7de; }
+#sideRail, #sideRailColumn, #sideRailScroll, #sideRailContent, #sideRailBrowserPanel, #sideRailTerminalPanel, #agentPagesPanel { background-color: #ffffff; }
+#sideRailBrowserHandle:hover, #sideRailTerminalHandle:hover, #agentPagesHandle:hover { background-color: #d0d7de; }
 #sideRailScroll QScrollBar:vertical { width: 6px; }
 #sideRailScroll QScrollBar::handle:vertical { border-radius: 3px; }
 QLabel#sideRailBrowserTitle { color: #656d76; font-size: 9px; font-weight: 600; }
@@ -4223,11 +4218,6 @@ QCheckBox#quickAddAgentCheck::indicator:checked {
     font-size: 12px;
 }
 
-QPushButton#quickAddSlashButton {
-    background: #ffffff; border: 1px solid #d0d7de; border-radius: 5px;
-    color: #57606a; font-weight: 600; font-size: 12px; padding: 0;
-}
-QPushButton#quickAddSlashButton:hover { border-color: #0969da; color: #1f2328; }
 #slashActionsPopup {
     background: #ffffff; border: 1px solid #d0d7de; border-radius: 8px;
 }

@@ -27,8 +27,7 @@ struct CoveRouteScreen: View {
                 Label("Cove link not recognised", systemImage: "lock.trianglebadge.exclamationmark")
             } description: {
                 Text("Open coves from their repository, or from a forkmesh://cove link.")
-            } actions: {
-                FmMessageTools("Cove link not recognised: \(id). Open coves from their repository, or from a forkmesh://cove link.")
+                    .fmMessageTools("Cove link not recognised: \(id). Open coves from their repository, or from a forkmesh://cove link.")
             }
         }
     }
@@ -448,10 +447,10 @@ private struct CoveLinkBody: View {
                     Text(cove.accountScoped || cove.accessMode.isEmpty
                         ? "Your account has no key grant for it, or it needs its password."
                         : "Enter the cove's password to open it.")
-                } actions: {
-                    FmMessageTools(cove.accountScoped || cove.accessMode.isEmpty
+                    .fmMessageTools(cove.accountScoped || cove.accessMode.isEmpty
                         ? "This cove is locked. Your account has no key grant for it, or it needs its password."
                         : "This cove is locked. Enter the cove's password to open it.")
+                } actions: {
                     Button("Enter password") { unlocking = true }.buttonStyle(.borderedProminent)
                 }
                 .sheet(isPresented: $unlocking) {
@@ -462,8 +461,7 @@ private struct CoveLinkBody: View {
                     Label("Cove not found", systemImage: "questionmark.folder")
                 } description: {
                     Text("It is not in \(model.repo.slug), or its change has not been merged yet.")
-                } actions: {
-                    FmMessageTools("Cove not found. It is not in \(model.repo.slug), or its change has not been merged yet.")
+                        .fmMessageTools("Cove not found. It is not in \(model.repo.slug), or its change has not been merged yet.")
                 }
             }
         }

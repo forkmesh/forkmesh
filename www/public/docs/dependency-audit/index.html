@@ -90,7 +90,7 @@ html.dark{--da-accent:#8ab4f8;--gA:#4cc38a;--gB:#8fc95f;--gC:#e6b04a;--gD:#f08a5
 <p class="lede">The world and www pages load no scripts from CDNs at runtime; three.js is served from the repository.</p>
 <h2>Recommended actions</h2>
 <ol class="actions"><li>Keep forkmesh-mirror-node on the current Go toolchain release.</li><li>Bump Kotlin to 2.4.20 and the Android Gradle Plugin to 9.4.0.</li><li>npm update in both browser-test projects (Playwright 1.63, three 0.186) and the VS Code extension (@types/node 26, TypeScript 7, checking the engines.vscode floor).</li></ol>
-<p class="foot">Source data and method: docs/dependency-security-audit-2026-09-13.md in the repository. Scores are a screening heuristic from public registry signals, not a code review of each package.</p>
+<p class="foot">Source data and method: docs/security/dependency-security-audit.md in the repository. Scores are a screening heuristic from public registry signals, not a code review of each package.</p>
 </div>
 <script>
 (function(){var q=document.getElementById('q'),g=document.getElementById('g'),c=document.getElementById('count');var rows=Array.prototype.slice.call(document.querySelectorAll('table.pk tbody tr'));function apply(){var t=(q.value||'').toLowerCase(),gr=g.value,n=0;rows.forEach(function(r){var ok=(!t||r.getAttribute('data-name').toLowerCase().indexOf(t)>=0)&&(!gr||r.getAttribute('data-grade')===gr);r.hidden=!ok;if(ok)n++;});c.textContent=(t||gr)?n+' of '+rows.length+' shown':'';}q.addEventListener('input',apply);g.addEventListener('change',apply);})();

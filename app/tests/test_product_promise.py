@@ -55,14 +55,14 @@ def test_every_named_surface_links_to_the_working_proof_path():
     assert 'recordProductAction?.("repository-clone-copied")' in dashboard
 
     docs_index = (WWW_PUBLIC / "docs" / "index.html").read_text(encoding="utf-8")
-    source_index = (ROOT / "www" / "docs" / "README.md").read_text(encoding="utf-8")
+    source_index = (ROOT / "docs" / "README.md").read_text(encoding="utf-8")
     assert 'href="/docs/product-promise"' in docs_index
     assert "[Product promise](product-promise.md)" in source_index
 
 
 def test_proof_uses_real_actions_and_documents_failure_and_recovery():
     html = _visible_text(WWW_PUBLIC / "docs" / "product-promise" / "index.html")
-    markdown = (ROOT / "www" / "docs" / "product-promise.md").read_text(encoding="utf-8")
+    markdown = (ROOT / "docs" / "product-promise.md").read_text(encoding="utf-8")
 
     for marker in (
         "01 / COLLABORATE",
@@ -95,14 +95,14 @@ def test_proof_uses_real_actions_and_documents_failure_and_recovery():
     for action in (
         'href="https://app.forkmesh.com/forkmesh/forkmesh/issues"',
         'href="https://app.forkmesh.com/dashboard/network"',
-        'href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/www/docs/operations/desktop-control-node.md"',
-        'href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/www/docs/operations/mirror-node.md"',
+        'href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/docs/operations/desktop-control-node.md"',
+        'href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/docs/operations/mirror-node.md"',
     ):
         assert action in public_html
 
 
 def test_comprehension_gate_and_linked_evidence_are_explicit():
-    guide = (ROOT / "www" / "docs" / "product-promise.md").read_text(encoding="utf-8")
+    guide = (ROOT / "docs" / "product-promise.md").read_text(encoding="utf-8")
     normalized = " ".join(guide.split())
     for marker in (
         "every five-person cohort",

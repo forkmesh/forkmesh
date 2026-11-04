@@ -1,6 +1,6 @@
 # Face stream
 
-When a call cannot carry real video (below about 150 kbps), the sender stops
+Part of [the App docs](README.md). When a call cannot carry real video (below about 150 kbps), the sender stops
 sending camera frames and sends a *face stream* instead: per frame, the head's
 3D pose, the 68 landmarks and seven expression channels, about 37 bytes at
 30 fps (9 kbit/s), plus now and then a *reference picture*, a real, recent
@@ -12,16 +12,13 @@ so the receiver can show real lips, teeth and a real mouth interior instead of
 a painted one. This is idea 1 of "Beyond FaceTime" in
 [../server/fm-media.md](../server/fm-media.md).
 
-Version 2 of the receiver (October 2026, "v2" below) reworked the hair edge,
-the mouth, the body and the evaluation after the first renders showed slivers
-of background around the hair, a flat dark band for a mouth, a smeared torso
-and a "truth" that was itself a warped photo. Everything that changed and why
-is in "Receiver" and "Quality harness"; the measured before/after is in
+The current receiver is "v2"; how it differs from the first one (hair edge,
+mouth, body, evaluation) is in "Receiver", and the measured comparison in
 "Quality harness".
 
 The face pipeline this builds on (landmarks, `liveHead`, `warpVertices`, the
 custom-photo stand-in, the native ports) is described in
-[chat-direct-calls.md](chat-direct-calls.md), "Head swap", "Native face math"
+[call-filters.md](call-filters.md), "Head swap", "Native face math"
 and "Native face renderer (iOS)".
 
 ## Where the code is
@@ -40,9 +37,8 @@ and "Native face renderer (iOS)".
 | Shared fixture | `server/rtc/facestream/testdata/face-stream-parity.json`, copied byte for byte to `native/ios/ForkMeshCore/Tests/FMChatTests/Fixtures/` and `native/android/core/src/test/resources/chat/` |
 
 The browser renderer reuses the face changer's warp pass: the face changer's
-renderer now exports `FACE_WARP` (its warp shaders and its `compile`,
-`texture` and `target` helpers), which changes nothing else in it. The native
-call pages that inline the face modules were regenerated for the new export
+renderer exports `FACE_WARP` (its warp shaders and its `compile`, `texture`
+and `target` helpers). The native call pages inline the face modules
 (`app/tools/sync_native_call_faces.py`).
 
 ## Wire format
@@ -83,13 +79,10 @@ the end. A frame costs about one byte of coder overhead.
 The cap of 8 matches the decoder's sanity check (a frame that reads more than
 8 bytes past its end is refused as corrupt). The decoder reads exactly as many
 bytes as the encoder wrote before trimming, so trimming more than 8 would make
-a valid frame look corrupt. That happened: a face that holds perfectly still
-codes every symbol as its most likely value, the whole payload is zero bytes,
-the first encoder trimmed all of them, and every decoder refused the next delta
-frame. The first real-video run hit it within 31 frames. Packets that trimmed
-8 or fewer zeros are unchanged, so older fixtures still match; the "still"
-stream in the fixture locks the behaviour in all four ports. Only integer arithmetic is involved,
-so the four ports produce the same bytes.
+a valid frame look corrupt. A face that holds perfectly still codes an
+all-zero payload, which is exactly that case; the "still" stream in the
+fixture locks the behaviour in all four ports. Only integer arithmetic is
+involved, so the four ports produce the same bytes.
 
 **Integers.** A signed value is a zero flag (with a context: was the previous
 value in the same class non-zero), a sign, the bit length in unary (one
@@ -348,10 +341,10 @@ reference arrives (`prepareFaceStreamReference`):
 5. **unmix** (`faceStreamUnmix`): where the matte is partial (hair edges),
    the plate's colour is taken out, `F = (I - (1 - a) P) / a`, so a moved
    strand carries the hair's colour and not the wall it was in front of. This
-   and step 2 are what removed the slivers of original background at the hair;
+   and step 2 are what keep slivers of original background out of the hair;
 6. **stand-in photo** (`buildFaceStreamFace`): the unmixed picture, padded by
    20% on each side by repeating its edge pixels (a head cut by the top of the
-   camera frame no longer shows a straight cut when it moves down), is placed
+   camera frame shows no straight cut when it moves down), is placed
    in a 512 px photo at 96 px per eye span with the eyes at (256, 210). The
    face changer's placement (118 px per span, eyes at y 285) ended 0.17 spans
    below the chin, so the neck could not move with the head. The face

@@ -1,10 +1,15 @@
-# Desktop: the interface redesign
+# Desktop: the new interface
 
-Part of [the desktop docs](README.md). The desktop has two designs: **Classic**
-(the default) and **New (preview)**, internally `next`. Next is a calm,
-neutral interface: near-black or white surfaces, hairline borders, one accent
-colour, grouped settings rows, a labelled sidebar, a welcome and sign-in card
-and a command palette. No feature may differ in behaviour between the designs.
+The desktop has two designs: **Classic** (the default) and **New (preview)**,
+internally `next`. Next is a calm, neutral interface: near-black or white
+surfaces, hairline borders, one accent colour, grouped settings rows, a
+labelled sidebar, a welcome and sign-in card and a command palette. No feature
+may differ in behaviour between the designs. This page is the home of the
+design system (tokens, components, how the Next sheets are built), the two
+layout modes, the shell around every page, and the Next layout of pages that
+have no topic page of their own.
+
+Part of [Desktop](README.md).
 
 ## Decisions
 
@@ -57,7 +62,8 @@ only for unread); text labels over icon-with-caption.
 | `accent` | `#4d7ef7` | `#2f6fed` | Primary button, selection, focus, toggle on |
 | `accentHover`, `accentPressed` | `#6b93fa`, `#3d6be0` | `#2860d6`, `#2254bd` | Button states |
 | `accentFg` | `#7ea4ff` | `#2f6fed` | Links, active tab underline |
-| `accentSubtle` | `#1a2338` | `#eaf1fe` | Current-item background |
+| `accentSubtle` | `#1d2438` | `#d6e2fb` | Current-item background |
+| `selection` | `#1d2438` | `#c6d6f8` | Selected rows and text (`QPalette::Highlight`) |
 | `onAccent` | `#ffffff` | `#ffffff` | Text on accent, danger and success fills |
 | `success` | `#3fb871` | `#1f9d55` | Status only |
 | `warning` | `#d9a440` | `#b7791f` | Status only |
@@ -66,10 +72,25 @@ only for unread); text labels over icon-with-caption.
 `success`, `warning` and `danger` each have a `Subtle` background. Chat has its
 own tone table (`kChatTones`, `@chat*` in QSS, `Theme::chatColor` in code).
 
+The light `selection` and `accentSubtle` were `#e8eefb`, too faint to see a
+selected row on the near-white page; they are now a clear pale blue that
+still keeps `fg` text readable. An instance theme blends them at 32% and 24%
+of its primary colour in light mode for the same reason.
+
 **Type.** Base 14 px; the Next sheet caps `font-weight` at 600. Next uses the
 bundled Geist and Geist Mono (`desktop/resources/fonts`, SIL OFL, registered by
 `Theme::ensureBundledFonts()`). The base `QWidget` rule must set no font family
 (a family there beats every monospace `setFont`).
+
+**Colour emoji.** `main.cpp` puts Noto Color Emoji, Apple Color Emoji and Segoe
+UI Emoji after the UI face in the application font's family list. A platform
+theme (GNOME, KDE, macOS, Windows) also gives Qt one font per widget class
+(`QListView`, `QLabel`, `QPushButton`, menus…), each with a single family, and
+Qt refills that table on every `setStyleSheet`. Those widgets lost both Geist
+and the emoji fallback, so fontconfig drew emoji in monochrome Symbola (the
+sessions list showed `[50%] … 🔄` as a black outline). `applyTheme()` calls
+`Theme::adoptInterfaceFamiliesForWidgetClasses()` after the sheet, which keeps
+each class font's size and swaps in the application's families.
 
 **Shape and space.** Radii 4, 6, 8, 12, 16 and full; spacing 4–32; control
 heights 28, 32, 36. Buttons: primary is accent with white text, secondary a
@@ -107,42 +128,6 @@ Below the themes it has two more entries:
   entry is greyed out while those three settings are already at their defaults
   (`appearanceIsDefault`).
 
-**Two layout modes: Control Tower and Focus.** In the new interface the
-view menu's **Layout** section (and the Agents page's ⋯ → **Layout**) picks
-one mode for the whole app; it replaced the separate "Agents layout" and "Git
-layout" choices on 2026-10-27. Code: `src/LayoutMode.h` (`layoutMode()`,
-`setLayoutMode()`, setting `app/layoutMode` = `controlTower` or `focus`),
-switched live by `NextAccess::applyLayoutMode`, which re-syncs the Agents
-workspace and re-applies the Git page.
-
-The iPhone app has the same two names under Settings > Appearance > Layout
-(`appearance/layoutMode`, a phone setting, not synced with the desktop's).
-The CRM uses it first: see "iPhone layout" in
-`marketplace/packages/crm/README.md`.
-
-| Page | Control Tower | Focus |
-| --- | --- | --- |
-| Agents | The earlier page: action bar, list views, detail buttons, terminal dock | Session cards, one conversation header, side panel for diff, terminal, browser and details |
-| Git | Changed files over history, branch picker, Fetch and Pull in the history header | Page header with Changes and History tabs beside branches, remotes, worktrees and tags |
-
-- Control Tower is the cockpit: compact, every control in view. Focus is where
-  the recent designs are headed: one thing at a time, controls behind menus.
-- The page checks stay as they were (`workspaceLayoutClassic()`,
-  `workspaceLayoutNew()`, `gitLayoutCompact()`); they now read the mode.
-- A box that never chose a mode keeps what it had: `layoutModeFromSettings`
-  reads `agents/workspaceLayout` = `classic` or `git/layout` = `compact` as
-  Control Tower, anything else as Focus. Choosing a mode writes
-  `app/layoutMode` and drops the two old keys.
-- "Focus" here is the layout, not the **Focus** view (`AppViewMode::Focus`,
-  rail and status strip hidden); the two combine freely.
-- **Changing a layout.** Make the change in the mode the user is running
-  (`app/layoutMode` in their settings; Focus when it is missing and neither old
-  key says otherwise), then check the other mode still works: switch modes
-  with the change in place and make sure the page builds, its controls still
-  act, and switching back restores it. The window tests switch both ways
-  (`workspace_snapshots.cpp`, the Git layout check in `test_window_resize.cpp`);
-  extend them when a change touches what either mode shows.
-
 **Halloween is a built-in theme, not a Market skin.** `halloween` always uses the
 dark base and installs `Theme::halloweenRoleColors()` (pumpkin-orange accent,
 bone text on near-black purple, slime-green success, candle-yellow warning)
@@ -159,29 +144,23 @@ only in compact density, `96-edge-indicators.qss` only when edge indicators are
 on. `desktop/CMakeLists.txt` generates `theme.qrc` from a glob, so a new sheet
 needs no registration.
 
-**One colour per role, and plain widgets paint nothing** (2026-10-28). The
-user found boxes in a slightly different colour behind the top bar's dots, the
-sidebar's arrows and many sections, each fitting the element's outline. There
-were two causes:
+**One colour per role, and plain widgets paint nothing.** Otherwise plain
+widgets show up as slightly different boxes behind dots, arrows and sections:
 
 - *Classic's base rule.* Classic opens with `QWidget { background-color: … }`,
-  which paints every plain container, label and tool button the page colour.
-  Inside the sidebar or top bar (`bgSubtle`), a card (`surface`) or a dialog,
-  that showed up as a lighter or darker box. More than 900
-  `background: transparent` rules patched it one widget at a time.
-  `nextStyleSheet` now removes the background from that first rule
-  (`dropBaseWidgetBackground`), so a plain widget shows its parent.
+  which paints every plain container, label and tool button the page colour,
+  a visible box inside the sidebar or top bar (`bgSubtle`), a card
+  (`surface`) or a dialog. `nextStyleSheet` removes the background from that
+  first rule (`dropBaseWidgetBackground`), so a plain widget shows its parent.
   `paletteForDesign` sets `Window` and `Base` to `bg`, so windows, dialogs and
   item views still have an opaque page colour. The window's page stack
-  (`#appWindowFrame > QStackedWidget` in `10-shell.qss`) paints `bgSubtle`.
-  Without it, the 1 px `border`-coloured window frame showed through the
-  splitter handle's transparent sides beside the content card. Classic keeps
-  the rule.
-- *Too many greys.* The remap tables sent Classic's neutrals to about ten
-  near-duplicates of each role, for example `#08080a` next to `bgSubtle`
-  `#0c0c0e`, and light `#ffffff` against `bg` `#fdfdfd`. Each entry now maps
-  to exactly one role value from `kRoles`. Light `#ffffff` goes to `bg`, and
-  instance themes, which override by role value, now reach those rules too.
+  (`#appWindowFrame > QStackedWidget` in `10-shell.qss`) paints `bgSubtle`, so
+  the 1 px window frame does not show through the splitter handle's
+  transparent sides. Classic keeps the rule.
+- *One grey per role.* Each entry of the remap tables maps a Classic neutral
+  to exactly one role value from `kRoles` (light `#ffffff` goes to `bg`), so
+  there are no near-duplicate greys and instance themes, which override by
+  role value, reach every rule.
 
 A new container needs no transparent rule in Next. Give it a background only
 when it really is a surface, and use a role for it.
@@ -210,12 +189,11 @@ application event filter applied in Next and undone in Classic):
   `ChildAdded`). Property `floatingSurface` tells the sheet whether corners can
   be rounded. Qt sets `WA_NoSystemBackground` along with
   `WA_TranslucentBackground`, which skips the sheet's background on a
-  top-level widget. Menus paint their own panel, but the app's popups
+  top-level widget. Menus paint their own panel; for the app's popups
   (`#agentMetaPopup`, `#reactionPicker`, `#slashActionsPopup`, `#mentionPopup`,
-  `#globalSearchPopup`, all `QFrame` or `QListWidget`) painted nothing, so their
-  text sat on the page behind them. The filter now paints their `PE_Widget`
-  background on `Paint` (`paintFloatingBackground`), which keeps the rounded,
-  see-through corners. `forkmesh-ui-kit-tests` checks each popup in Next light
+  `#globalSearchPopup`, all `QFrame` or `QListWidget`) the filter paints their
+  `PE_Widget` background on `Paint` (`paintFloatingBackground`), which keeps
+  the rounded, see-through corners. `forkmesh-ui-kit-tests` checks each popup in Next light
   and dark for an opaque inside and a transparent corner.
 - *Combo rows.* `kit::prepareComboPopup` swaps in a `QStyledItemDelegate` so
   `::item` rules apply.
@@ -229,12 +207,9 @@ application event filter applied in Next and undone in Classic):
   (`#issueTable` keeps `surfaceActive`, `40-issues.qss`); `91-tables.qss`
   only adds the slim item-view scrollbars and corner, so a rule lives in one
   place instead of being overridden by a later file. The column-menu header
-  (`KebabHeaderView`) painted its chevron over the caption: the caption's
-  rectangle never left room for it, so a section narrower than its caption
-  (dragged, capped, or measured before the sheet applied) ran under the
-  glyph. In Next it now elides the caption before the menu button and sort
-  arrow, draws its own sort arrow, and shows the menu chevron only on the
-  hovered column.
+  (`KebabHeaderView`) in Next elides the caption before the menu button and
+  sort arrow, draws its own sort arrow, and shows the menu chevron only on the
+  hovered column, so a narrow section's caption never runs under the glyph.
 
 **Hooks instead of header edits.** `MainWindow.h` and `MainWindowInternal.h` are
 in the precompiled header. `MainWindow` declares
@@ -255,20 +230,47 @@ and drop and context menus are unchanged.
 `KeyHint`, `InlineNotice`, `EmptyState`, `SegmentedControl`, `Spinner`, and
 helpers `groupHeading`, `pageTitle`, `pageLede`, `labeledField`, `tintedIcon`.
 The special agents roster's empty state (`#teammateEmpty`) is an `EmptyState`
-in Next: its own labels painted the page colour as dark boxes on the card, and
-the centred layout sized the wrapped body to its one-line hint, cutting its
-descenders.
+in Next.
 
-## Shell features
+## Two layout modes: Control Tower and Focus
 
-- **Expanded sidebar** (`ui/railExpanded`): labelled rows; folders open the same
-  pop-out as before. Toggled by the top-bar button, Settings, or the palette (no
-  window shortcut, to keep `^B` for the built-in terminal).
-  Its width is adjustable: drag the thin handle on its right edge
-  (`railResizeHandle`, `NextAccess::railResizeHandle`/`setRailWidth`) between
-  160 and 380 px; double-click resets it to 196. The width is
-  `railExpandedItemWidth()`, saved in `ui/railExpandedWidth` when the drag
-  ends. The handle shows only while the sidebar is expanded.
+In the new interface the view menu's **Layout** section (and the Agents
+page's ⋯ → **Layout**) picks one mode for the whole app. Code:
+`src/LayoutMode.h` (`layoutMode()`, `setLayoutMode()`, setting
+`app/layoutMode` = `controlTower` or `focus`), switched live by
+`NextAccess::applyLayoutMode`, which re-syncs the Agents workspace and
+re-applies the Git page.
+
+The iPhone app has the same two names under Settings > Appearance > Layout
+(`appearance/layoutMode`, a phone setting, not synced with the desktop's).
+The CRM uses it first: see "iPhone layout" in
+[marketplace/packages/crm/README.md](../../marketplace/packages/crm/README.md).
+
+| Page | Control Tower | Focus |
+| --- | --- | --- |
+| Agents | Action bar, list views, detail buttons, terminal dock | Session cards, one conversation header, side panel for diff, terminal, browser and details |
+| Git | Changed files over history, branch picker, Fetch and Pull in the history header | Page header with Changes and History tabs beside branches, remotes, worktrees and tags |
+
+- Control Tower is the cockpit: compact, every control in view. Focus shows
+  one thing at a time, with controls behind menus.
+- The page checks (`workspaceLayoutClassic()`, `workspaceLayoutNew()`,
+  `gitLayoutCompact()`) read the mode.
+- A box that never chose a mode keeps what it had: `layoutModeFromSettings`
+  reads `agents/workspaceLayout` = `classic` or `git/layout` = `compact` as
+  Control Tower, anything else as Focus. Choosing a mode writes
+  `app/layoutMode` and drops the two old keys.
+- "Focus" here is the layout, not the **Focus** view (`AppViewMode::Focus`,
+  rail and status strip hidden); the two combine freely.
+- **Changing a layout.** Make the change in the mode the user is running
+  (`app/layoutMode` in their settings; Focus when it is missing and neither old
+  key says otherwise), then check the other mode still works: switch modes
+  with the change in place and make sure the page builds, its controls still
+  act, and switching back restores it. The window tests switch both ways
+  (`workspace_snapshots.cpp`, the Git layout check in `test_window_resize.cpp`);
+  extend them when a change touches what either mode shows.
+
+## Shell
+
 - **Match the instance's theme** (Settings → General → Appearance,
   `ui/matchInstanceTheme`, off): the app wears the colours the connected
   instance's admin picked (Settings → Instance theme on the web). The desktop
@@ -283,17 +285,6 @@ descenders.
   `Theme::hex` return them, `nextPalette` and `overridePalette` recolour the
   base stylesheet, so both interfaces follow. A Market skin wins over the
   instance theme. An instance on the default theme clears the overrides.
-- **Movable top-bar clock** (both designs): the Timers package's clock and its
-  chips sit left beside the agent/node/action indicators, in the middle beside
-  search, or right before the view button. Drag the clock and drop it in the
-  left, middle or right third of the top bar, or pick a spot under "Clock
-  position" in the clock's menu or the top bar's right-click menu. A drag
-  swallows the release, so it never opens the clock menu. The spot is
-  `ui/timersClockPlacement` (`center` or `right`; removed for the default
-  `left`), kept when the package is removed. The clock is the Timers plugin's
-  top-bar widget (`TimersClock`, [package modules](package-modules.md#top-bar-widgets));
-  `installNativePackageChromeSlots` records the three rows and
-  `placeNativePackageChrome` moves the widget between them.
 - **Welcome and sign-in card**: an overlay on the shell, never a gate
   (`onboarding/welcomeSignInSeenV1`). The sign-in panel is modal over the window.
   Account notices route through `NextAccess::accountNotice`.
@@ -316,15 +307,14 @@ descenders.
   resizes of the overlay host and the Agents detail pane, but prompt drag and
   grip moves go through `schedulePositionGlobalFooterOverlays`, one queued
   pass per event-loop turn; the button release runs a still-queued pass first
-  so the stored size is the dragged one. The pass no longer shows the footer dock
-  before deciding whether it is visible (showing a hidden dock re-ran its whole
-  height-for-width layout on every drag move while the prompt floated) and
-  invalidates the dock row only when its spacer or prompt alignment changed.
+  so the stored size is the dragged one. The pass decides whether the footer
+  dock is visible before showing it (showing a hidden dock re-runs its whole
+  height-for-width layout) and invalidates the dock row only when its spacer
+  or prompt alignment changed.
 - **Stacks sized to the current page** (`src/CurrentPageStack.h`): hidden
-  pages get an Ignored size policy. The stack used to re-apply every page's
-  policy, with a dynamic-property read per page, on each `LayoutRequest`; it
-  now remembers the pages and policies it set and re-applies only when the
-  current page, the page list or a page's policy has moved.
+  pages get an Ignored size policy. The stack remembers the pages and
+  policies it set and re-applies only when the current page, the page list or
+  a page's policy has moved, not on every `LayoutRequest`.
 - **Density** (`ui/density`: `auto`, `comfortable`, `compact`;
   `FORKMESH_DENSITY`): compact appends `95-compact.qss` and drops font sizes by
   one; auto is compact under 1,500 px available width. Next only.
@@ -359,8 +349,8 @@ descenders.
   paragraphs, breaks, lists, tables or `pre`) all of them are left-aligned
   instead, because centred lists are hard to read. Qt's own grid keeps an
   indent column beside the text, and the 340 px button row spans it, so the
-  grid split that width in half and pushed the text into the right half with
-  the buttons on the right edge (issue 2482); `layoutMessageCard` therefore
+  grid splits that width in half and pushes the text into the right half with
+  the buttons on the right edge; `layoutMessageCard` therefore
   replaces the grid on `Show` with a `QVBoxLayout` holding the grid's widgets
   in row order, minus the icon. `forkmesh-ui-gallery` snapshots four alerts
   (`*-alert-*.png`) in each design.
@@ -387,48 +377,21 @@ Enter triggers (`enterTarget`) is the accent primary, the other is a raised
 secondary, and "chat" (sends to the current channel) is a ghost. Object names, layout positions, settings
 keys, tooltips and Classic are unchanged.
 
-### Mockup shell (October 2026)
+### Chrome and content card
 
-The Next shell follows the desktop mockup (`forkmesh2/desktop-electron`,
-`src/index.css` and `src/components/shell/`). Its translucent "glass" tokens
-are flattened onto the window colour to give opaque roles, so the role table
-above now carries those values.
+The Next shell follows the mockup's `src/index.css` and
+`src/components/shell/`. Its translucent "glass" tokens are flattened onto the
+window colour to give opaque roles, so the role table above carries those
+values. Code: `MainWindowNextShell.cpp`, `MainWindowNavigation.cpp` (group
+headings) and `MainWindowSideRail.cpp`, with styles in `10-shell.qss`; Classic
+is unchanged.
 
 - **One chrome colour, one content card.** The top bar, sidebar and side rail
   share `bgSubtle` with no hairlines between them. The section stack sits in
   `#shellContentCard` (`bg`, 1 px `border`, 12 px corners), inset 8 px from
   the right and bottom by `refreshShellContentCard`. It is padded 4 px inside
   so square page corners never cover the rounded edge.
-- **Sidebar header and footer** (`NextAccess::buildSidebarHeader`,
-  `buildSidebarFooter`, refreshed every 2 s by `refreshSidebarChrome`).
-  - The header has the workspace button (logo, instance name, this machine's
-    node name and the online node count), which opens the account menu, and
-    New session (`startNewSessionInSessionsPage`, also Ctrl/⌘+N in Next).
-  - The footer has the account button: initials avatar with an online dot,
-    the handle, then email or Offline. It opens the same account menu above
-    itself; the menu's anchor comes from the `accountMenuAt` /
-    `accountMenuAbove` window properties.
-  - In Next the account menu also lists Settings, Offline mode and the app
-    version.
-  - Rows are 8 px rounded; labels use regular weight; counts are plain
-    `fgSubtle` text (urgent counts keep the red pill).
-- **Top bar** (`NextAccess::installTopBar`).
-  - Back/forward move next to the sidebar toggle, followed by the current page
-    name.
-  - A right-hand cluster holds the online node count (opens Network), the pings
-    bell (a dot when pings are waiting), the dark/light toggle (through
-    `m_themeCombo` like the view menu), the terminal button
-    (`topTerminalButton`, opens the terminal launcher) and the side-rail
-    toggle (`topSideRailButton`, `setSideRailEnabled`); see
-    [side-rail-and-terminals.md](side-rail-and-terminals.md).
-  - The bell opens `#pingsPopover`: the six newest non-quiet local pings. Rows
-    open like Home's "Needs you", "Mark all read" moves the local seen
-    watermark, and "View all" opens Pings.
-  - On macOS, close, minimise and zoom move to the left as traffic lights
-    (`trafficLight` property).
-  - Every existing chrome control stays.
-- **Side rail.** The team rail of special agent chips was replaced on
-  2026-10-24 by the generic side rail (terminal, browser, and dragged-in
+- **Side rail.** The generic side rail (terminal, browser, and dragged-in
   workflows, pages and links), in both designs; see
   [side-rail-and-terminals.md](side-rail-and-terminals.md).
 - **Home's prompt replaces the footer prompt on Home.**
@@ -437,10 +400,167 @@ above now carries those values.
   there is never a second prompt on screen. A detached prompt window is left
   alone.
 
+### Sidebar
+
+- **Expanded sidebar** (`ui/railExpanded`): labelled rows; folders open the same
+  pop-out as in the icon rail. Toggled by the top-bar button, Settings, or the palette (no
+  window shortcut, to keep `^B` for the built-in terminal).
+  Its width is adjustable: drag the thin handle on its right edge
+  (`railResizeHandle`, `NextAccess::railResizeHandle`/`setRailWidth`) between
+  160 and 380 px; double-click resets it to 196. The width is
+  `railExpandedItemWidth()`, saved in `ui/railExpandedWidth` when the drag
+  ends. The handle shows only while the sidebar is expanded.
+- **Header and footer** (`NextAccess::buildSidebarHeader`,
+  `buildSidebarFooter`, refreshed every 2 s by `refreshSidebarChrome`).
+  - The header has the workspace button (logo, instance name, this machine's
+    node name and the online node count), 40 px with a 13 px semibold title
+    and an up/down chevron (`chevronsUpDownPixmap`), which opens the
+    workspace switcher, and New session (`startNewSessionInSessionsPage`, also
+    Ctrl/⌘+N in Next), whose key hints are 18 px `surface` keycaps
+    (`sidebarKbd`).
+  - The footer has the account button: initials avatar with an online dot,
+    the handle, then email or Offline. It opens the account menu above
+    itself, with every entry; the menu's anchor comes from the
+    `accountMenuAt` / `accountMenuAbove` window properties. In Next the
+    account menu also lists Settings, Offline mode and the app version.
+- **Rows** (`paintRailButtonHook`, `paintTabButtonHook`).
+  - Expanded rows are 32 px tall (`kNextRowHeight` in `MainWindowNextShell.cpp`;
+    `kRailRowHeight` in `NextShellHooks.h` is unused) and 8 px rounded, with
+    regular-weight labels.
+  - The hover and active fill is inset 10 px on each side, so it lines up
+    with the header and footer buttons. The 16 px icon sits at 18 px and the
+    13 px regular label at 44 px.
+  - Counts on rail buttons and on rail tab rows (Code, Git and so on) are
+    right-aligned 11 px `fgSubtle` numbers with thousands separators. Urgent
+    counts keep the red pill, and pending-sync counts keep the amber pill.
+- **Group headings** (`RailGroupHeadingStyle`, an event filter that
+  `refreshRailGroupSeparators` installs on every `railGroupSeparator`).
+  - In the expanded Next sidebar, a heading is 36 px tall: 12 px of space,
+    then the group name in 11 px medium uppercase `fgSubtle` with a little
+    letter spacing, at the row icon's 18 px inset.
+  - In the collapsed Next rail it is a centred 20 px hairline, like the
+    mockup's collapsed sidebar.
+  - The filter repaints the widget and keeps its height. Because
+    `followRailCaptionPreference` resets the size, the filter re-fits it on
+    `Resize`/`Show`.
+  - A custom group being dragged over gets an accent underline instead of
+    Classic's green line.
+  - Right-click menus, drag and drop, tooltips, group ids and the
+    `ui/railGrouped` setting are unchanged.
+  - Clicking a heading folds or unfolds its group (README, "Folding a rail
+    group"). A folded heading shows a right-pointing chevron at its right
+    end, an unfolded one a down chevron while hovered; in the collapsed rail a
+    folded group's hairline breaks around a small chevron.
+
+### Workspace switcher
+
+`QMenu#workspaceMenu`, rows `workspaceMenuRow`.
+
+- **Relay** heading (`workspaceMenuHeading`), then one two-line row per
+  configured relay in `m_servers`.
+  - The row shows the `broadcast` icon and the relay's name. Under it are its
+    host (when that differs from the name) and the last measured latency from
+    `m_relayHostLatency`, when one exists. The menu starts no probe of its own.
+  - The active relay has an accent check.
+  - A row calls `switchToServer(i)`, the same path as the relay menu. While
+    the project's instance is still unchosen, it calls
+    `promptChooseProjectInstance()` instead, as the relay menu does.
+- "Add a relay…" calls `promptAddServer()`.
+- **Organization** lists the organizations in `m_organizations`, once the
+  desktop has loaded them (`m_organizationsKnown`), each with a letter tile. A
+  row opens Settings → Organizations with that organization selected
+  (`m_organizationPendingSelection`, or `selectRow` when the table is already
+  built). "New organization" opens the same section and focuses its name
+  field. The whole Organization part is left out while the Organizations
+  section is hidden by its package surface.
+- The chosen row runs after `exec()` returns, so a dialog it opens never runs
+  inside the menu's event loop.
+
+### Top bar
+
+`NextAccess::installTopBar`. Every existing chrome control stays.
+
+- Back/forward sit next to the sidebar toggle, followed by the current page
+  name. On macOS, close, minimise and zoom sit on the left as traffic lights
+  (`trafficLight` property).
+- **Search field.** `#globalSearch` is 28 px tall, at most 440 px wide, and
+  uses 13 px text. In Next its default placeholder reads "Search or jump to…"
+  (`createGlobalSearchBox` and `updateRepoActivityRail` in
+  `MainWindowRepoDetail.cpp`); the per-page placeholders (tasks, issues,
+  agents, specials) are unchanged. While the field is empty it shows ⌘ K
+  keycaps (`topSearchKbd`, Ctrl K off macOS) for the existing global search
+  shortcut; its right text margin reserves room for them.
+- **Status buttons** share the `topStatusButton` style. **"N agents"**
+  (`topAgentsButton`, accent dot) counts agent sessions that are running and
+  not merged, opens Agents, and is hidden when none run. **"N nodes"** says
+  "N nodes online · open Network" in its tooltip.
+- A right-hand cluster holds the online node count (opens Network), the pings
+  bell (a dot when pings are waiting), the dark/light toggle (through
+  `m_themeCombo` like the view menu), the terminal button
+  (`topTerminalButton`, opens the terminal launcher) and the side-rail toggle
+  (`topSideRailButton`, `setSideRailEnabled`); see
+  [side-rail-and-terminals.md](side-rail-and-terminals.md).
+- The bell opens `#pingsPopover`: the six newest non-quiet local pings. Rows
+  open like Home's "Needs you", "Mark all read" moves the local seen
+  watermark, and "View all" opens Pings.
+- **Movable top-bar clock** (both designs): the Timers package's clock and its
+  chips sit left beside the agent/node/action indicators, in the middle beside
+  search, or right before the view button. Drag the clock and drop it in the
+  left, middle or right third of the top bar, or pick a spot under "Clock
+  position" in the clock's menu or the top bar's right-click menu. A drag
+  swallows the release, so it never opens the clock menu. The spot is
+  `ui/timersClockPlacement` (`center` or `right`; removed for the default
+  `left`), kept when the package is removed. The clock is the Timers plugin's
+  top-bar widget (`TimersClock`, [package modules](package-modules.md#top-bar-widgets));
+  `installNativePackageChromeSlots` records the three rows and
+  `placeNativePackageChrome` moves the widget between them.
+
+### Left out of the shell on purpose
+
+- *MORE fold chevron by `hide()`*: hiding would make
+  `refreshRailGroupSeparators` drop the heading and fight every feature that
+  toggles rail buttons, so groups fold by parking their buttons instead
+  (README, "Folding a rail group").
+- *WORKSPACE / BUSINESS / SYSTEM group names.* The headings show the app's
+  own groups (Work, People, Network, Insights, Packages, Tools, Shortcuts,
+  More, and custom groups). They appear only when grouping is on in the
+  rail's sort menu (`ui/railGrouped`, off by default). Renaming the built-in
+  groups or turning grouping on by default would change settings and
+  behaviour.
+- *Settings row in the sidebar footer.* Settings stays where it is in the
+  rail, because rail shortcuts and remembered page buttons address rail
+  buttons by position and object name. The account menu also lists
+  Settings.
+- *Relay version and kind ("1.2.8 · ForkMesh cloud").* The desktop keeps no
+  per-relay version or hosting kind, so the row shows the host and the
+  measured latency instead.
+- *A check on the current organization.* The desktop has no active
+  organization to switch between. Organizations are administered in
+  Settings → Organizations, so organization rows open that page, and none
+  is marked current.
+- *Plan line ("Max plan").* There is no subscription plan field
+  (`m_accountTier` is only active or free), so the footer keeps the email,
+  "Offline" or "Not connected".
+
+## Pages
+
+Each page below is restyled only in Next, after the desktop mockup
+(`forkmesh2/desktop-electron`); Classic keeps its old layout, and object names,
+settings keys, connections and behaviour stay unless a section says otherwise.
+Where a page's Next layout is built once, a live design switch shows it only
+after the page is rebuilt; its "Live switch" line says which parts.
+
+Pages with a topic page carry their Next layout there:
+[Tasks](tasks-page.md#new-interface),
+[Network](networking.md#new-interface),
+[Stats, Component health and Memory](diagnostics.md#pages-health-memory-and-stats),
+[Git](branch-diffs.md#new-interface), and the Agents and Sessions pages in
+[agents-ui.md](agents-ui.md).
+
 ### Home
 
 In Next, Home (`MainWindow::buildHomeGridSection`, `MainWindowHome.cpp`) is a
-centred column instead of a bare icon grid; Classic keeps the old layout. From
+centred column instead of a bare icon grid. From
 the top:
 
 - **Greeting and summary.** "Good evening, Kaif": the first word of
@@ -485,67 +605,16 @@ Home's widgets are built once, the first time the page is shown, so switching
 design while running keeps the old Home until restart, like the other widgets
 noted under Remaining work.
 
-### Sessions
+### Sessions and Transcript
 
-In Next, the Sessions page (`MainWindowSessions.cpp`, `63-sessions.qss`)
-follows the desktop mockup; Classic keeps the old layout.
-
-- **Sidebar** (264 px).
-  - A search field and a filter button. Its menu holds the "Between sessions
-    only" filter, which toggles the existing, now hidden,
-    `sessionsBetweenFilter`, and a Group by Repository or Status choice kept in
-    memory.
-  - Sessions sit under foldable repository headings, live groups first. A
-    heading's "+" opens new-session mode with that repository picked, when it
-    has a local checkout.
-  - `SessionsNextRowDelegate` paints 32 px rows: status icon, title, age, the
-    relay count and unread dot. On hover a "…" opens the existing context
-    menu. The old repo · branch · model line moved into the tooltip.
-  - Headings use a third sentinel id, so `sessionsHeaderId()` now filters
-    them.
-- **Centre header** (one 48 px row): title with a chevron menu (the same
-  context menu), a monospace branch badge, the status chip, the meta line,
-  ghost Stop, Continue and Open in Agents buttons, and a toggle for a 288 px
-  details panel.
-- **Details panel.** Foldable cards built only from real data:
-  - Environment: machine, worktree path, branch with ahead and behind from
-    `m_agentDiffStats`, agent, mode.
-  - Context: context-window use, tokens, cost.
-  - Changes: +/− lines, files, uncommitted, pull request, conflicts.
-- **Left out on purpose.** The mockup's remote-control switch, token breakdown,
-  file list, Commit and Open PR buttons, task list, and terminal, files and
-  browser buttons: nothing on this page backs them.
-- **Transcript and composer.**
-  - The transcript column is capped at 808 px and centred.
-  - The composer is a centred rounded card with ghost pickers, the open
-    session's mode and model, and a round send button.
-- **New-session mode.** The header is hidden. The composer moves under a
-  centred "Start a new session" heading with three starter cards, which fill
-  the prompt but never send.
-
-### Transcript
-
-In Next the agent transcript (`ClaudeTranscriptView.cpp`) follows the mockup
-on both the Sessions and Agents pages.
-
-- **User turns** are right-aligned `surfaceActive` bubbles: 16 px corners with
-  a small bottom-right one, at most 80% of the column wide, with the time below
-  in `fgSubtle`.
-- **Commands.** Back-to-back shell commands fold into one "Ran N commands
-  (M failed)" row. It opens to a bordered card listing each command with a
-  status dot.
-- **Assistant prose.** Finished prose is 15 px with 165% line height, and
-  inline code shows as mono chips.
-  - The prose is converted once per message through `QTextDocument` and
-    cached, because a markdown `QLabel` cannot take line height or code
-    backgrounds.
-  - Streaming text is converted only when it completes, so the 60 ms flush
-    stays cheap.
+The Next layout of the Sessions page is in
+[sessions-page.md](sessions-page.md#new-interface); the Next styling of the
+agent transcript is in [agents-ui.md](agents-ui.md#transcript-in-the-new-interface).
 
 ### Code
 
 In Next, the repository page (`MainWindowRepoDetail.cpp`, `30-repo.qss`)
-reads like a GitHub repository home; Classic keeps the old layout.
+reads like a GitHub repository home.
 
 - **Header row** (`#repoNextHeader`): a repo tile, the owner and name, and a
   pill saying Public, Private, Local only or Preview.
@@ -580,7 +649,7 @@ reads like a GitHub repository home; Classic keeps the old layout.
 In Next, the CRM page (Market package `crm`,
 `marketplace/packages/crm/content/desktop/`) follows the mockup. The package
 includes `DesignTokens.h`, as Docs does, and `CrmFeature::applyNextStyle`
-sets one `@role` sheet on `crmSection`. Classic is unchanged.
+sets one `@role` sheet on `crmSection`.
 
 - **Header.**
   - The title sits over a muted summary line.
@@ -605,120 +674,10 @@ sets one `@role` sheet on `crmSection`. Classic is unchanged.
 - **Live switch.** The header layout is built once, so a live design switch
   shows the new header only after the page is rebuilt.
 
-### Shell: sidebar, top bar, workspace switcher, side rail
-
-This continues "Mockup shell (October 2026)". The code is in
-`MainWindowNextShell.cpp`, `MainWindowNavigation.cpp` (group headings) and
-`MainWindowSideRail.cpp`, with styles in `10-shell.qss`. Classic is
-unchanged.
-
-- **Sidebar rows** (`paintRailButtonHook`, `paintTabButtonHook`).
-  - Expanded rows are 32 px tall (`kNextRowHeight` in `MainWindowNextShell.cpp`;
-    `kRailRowHeight` in `NextShellHooks.h` is no longer read).
-  - The hover and active fill is inset 10 px on each side, so it lines up
-    with the header and footer buttons. The 16 px icon sits at 18 px and the
-    13 px regular label at 44 px.
-  - Counts on rail buttons and on rail tab rows (Code, Git and so on) are
-    right-aligned 11 px `fgSubtle` numbers with thousands separators. Tab rows
-    used to draw them as a grey pill. Urgent counts keep the red pill, and
-    pending-sync counts keep the amber pill.
-- **Group headings** (`RailGroupHeadingStyle`, an event filter that
-  `refreshRailGroupSeparators` installs on every `railGroupSeparator`).
-  - In the expanded Next sidebar, a heading is 36 px tall: 12 px of space,
-    then the group name in 11 px medium uppercase `fgSubtle` with a little
-    letter spacing, at the row icon's 18 px inset.
-  - In the collapsed Next rail it is a centred 20 px hairline, like the
-    mockup's collapsed sidebar.
-  - The filter repaints the widget and keeps its height. Because
-    `followRailCaptionPreference` resets the size, the filter re-fits it on
-    `Resize`/`Show`.
-  - A custom group being dragged over gets an accent underline instead of
-    Classic's green line.
-  - Right-click menus, drag and drop, tooltips, group ids and the
-    `ui/railGrouped` setting are unchanged.
-  - Clicking a heading folds or unfolds its group (see the README's
-    "Folding a rail group"). A folded heading shows a right-pointing chevron
-    at its right end, an unfolded one a down chevron while hovered; in the
-    collapsed rail a folded group's hairline breaks around a small chevron.
-- **Sidebar header** (`buildSidebarHeader`).
-  - The workspace button is 40 px with a 13 px semibold title and an up/down
-    chevron (`chevronsUpDownPixmap`). It now opens the workspace switcher
-    instead of the account menu. The account menu still opens from the
-    footer and keeps every entry.
-  - New session's key hints are 18 px `surface` keycaps (`sidebarKbd`).
-- **Workspace switcher** (`QMenu#workspaceMenu`, rows `workspaceMenuRow`).
-  - **Relay** heading (`workspaceMenuHeading`), then one two-line row per
-    configured relay in `m_servers`.
-    - The row shows the `broadcast` icon and the relay's name. Under it are
-      its host (when that differs from the name) and the last measured
-      latency from `m_relayHostLatency`, when one exists. The menu starts no
-      probe of its own.
-    - The active relay has an accent check.
-    - A row calls `switchToServer(i)`, the same path as the relay menu.
-      While the project's instance is still unchosen, it calls
-      `promptChooseProjectInstance()` instead, as the relay menu does.
-  - "Add a relay…" calls `promptAddServer()`.
-  - **Organization** lists the organizations in `m_organizations`, once the
-    desktop has loaded them (`m_organizationsKnown`), each with a letter
-    tile. A row opens Settings → Organizations with that organization
-    selected (`m_organizationPendingSelection`, or `selectRow` when the table
-    is already built). "New organization" opens the same section and focuses
-    its name field.
-  - The whole Organization part is left out while the Organizations section
-    is hidden by its package surface.
-  - The chosen row runs after `exec()` returns, so a dialog it opens never
-    runs inside the menu's event loop.
-- **Top bar** (`installTopBar`).
-  - **Search field.**
-    - `#globalSearch` is 28 px tall, at most 440 px wide, and uses 13 px text.
-    - In Next its default placeholder reads "Search or jump to…"
-      (`createGlobalSearchBox` and `updateRepoActivityRail` in
-      `MainWindowRepoDetail.cpp`). The per-page placeholders (tasks,
-      issues, agents, specials) are unchanged.
-    - While the field is empty it shows ⌘ K keycaps (`topSearchKbd`, Ctrl K
-      off macOS) for the existing global search shortcut. Its right text
-      margin reserves room for them.
-  - **"N agents"** (`topAgentsButton`, accent dot): the number of agent
-    sessions that are running and not merged. Clicking it opens Agents. It
-    is hidden when none are running.
-  - **"N nodes"** now says "N nodes online · open Network" in its tooltip.
-  - Both status buttons share the `topStatusButton` style.
-- **Side rail.** It replaced the team rail; the chip spacing and dashed
-  create tile described here before no longer exist
-  ([side-rail-and-terminals.md](side-rail-and-terminals.md)).
-
-**Left out on purpose.**
-
-- *MORE fold chevron* was left out until 2026-10-31: folding by `hide()`
-  would have made `refreshRailGroupSeparators` drop the heading and fought
-  every feature that toggles rail buttons. Groups now fold by parking their
-  buttons instead (README, "Folding a rail group").
-- *WORKSPACE / BUSINESS / SYSTEM group names.* The headings show the app's
-  own groups (Work, People, Network, Insights, Packages, Tools, Shortcuts,
-  More, and custom groups). They appear only when grouping is on in the
-  rail's sort menu (`ui/railGrouped`, off by default). Renaming the built-in
-  groups or turning grouping on by default would change settings and
-  behaviour.
-- *Settings row in the sidebar footer.* Settings stays where it is in the
-  rail, because rail shortcuts and remembered page buttons address rail
-  buttons by position and object name. The account menu also lists
-  Settings.
-- *Relay version and kind ("1.2.8 · ForkMesh cloud").* The desktop keeps no
-  per-relay version or hosting kind, so the row shows the host and the
-  measured latency instead.
-- *A check on the current organization.* The desktop has no active
-  organization to switch between. Organizations are administered in
-  Settings → Organizations, so organization rows open that page, and none
-  is marked current.
-- *Plan line ("Max plan").* There is no subscription plan field
-  (`m_accountTier` is only active or free), so the footer keeps the email,
-  "Offline" or "Not connected".
-
 ### Control
 
 In Next, the Control page (`MainWindow::buildControlNodeSection`,
-`MainWindowControlNode.cpp`, `81-control.qss`) follows the desktop mockup;
-Classic keeps the old layout. Everything is built only when `Theme::isNext()`
+`MainWindowControlNode.cpp`, `81-control.qss`) follows the desktop mockup. Everything is built only when `Theme::isNext()`
 is true at build time, and every rule in the sheet is scoped under
 `#controlNodeSection`.
 
@@ -800,146 +759,6 @@ is true at build time, and every rule in the sheet is scoped under
   a live design switch shows them only after the page is rebuilt; the tab
   painting and the sheet follow at once.
 
-### Network
-
-In Next, the Network page (`buildNetworkDiagnosticsSection` in
-`MainWindowNetworkDiagnostics.cpp`, `buildNodesSection` in
-`MainWindowNodes.cpp`, `buildMirrorNodesSection` in `MainWindowReleases.cpp`,
-`82-network.qss`) follows the desktop mockup. Classic keeps the old layout.
-
-- **Header.**
-  - The title is 15 px semibold, with the "About network diagnostics" help
-    button beside it.
-  - Under the title is one muted summary line (`networkRole="summary"`):
-    "N of M nodes online · E endpoints · c / n websocket connected · X sent,
-    Y received". The nodes part comes from the Nodes table and the rest from
-    `refreshNetworkDiagnostics`. Each side stores its part in a dynamic
-    property (`nextNodesPart`, `nextDiagPart`) on `m_networkDiagnosticsStatus`
-    and joins both. The Classic text, with frame counts, becomes the line's
-    tooltip.
-  - On the right are the page's one Refresh (`repoAction`, ghost through
-    `networkRole="ghost"`, same slot) and an inverse "Add node" button
-    (`networkAddNodeButton`). Add node opens the Add a host section of the
-    Hosts rail beside the node list and focuses its address field. It adds no
-    new flow.
-- **Tabs.** `#networkTabs` uses underline tabs (accent underline on the
-  current tab) in place of the pills from `10-shell.qss`. Tabs that were
-  title case are renamed in sentence case in Next ("Web requests",
-  "Firewall rules", "Recent firewall decisions"). Every tab stays, in the
-  same order and at the same index. Each tab page gets 16 px top padding.
-  The five diagnostics tables get 36 px rows and a 12 px rounded hairline
-  frame (`networkGrid`).
-- **Nodes tab.** It is a left column plus a right detail panel. Every widget
-  still belongs to the Nodes page.
-  - **Stat cards** (`networkStatOnline`, `networkStatLatency`,
-    `networkStatTraffic`, `networkStatRepos`):
-    - Nodes online: online and total rows, with an offline breakdown.
-    - Median latency: median of the Latency column, with how many nodes were
-      measured.
-    - Relay traffic: bytes sent plus received over the relay websockets this
-      session.
-    - Repositories served: distinct repositories in the roster's mirror
-      lists, and how many nodes hold them.
-
-    The cards are refreshed at the end of `sortNodesTable` and in
-    `refreshNetworkDiagnostics`.
-  - **Repository mirrors bar.** `#mirrorNodesSection` becomes a rounded card
-    with the repository picker, the count, the Online only switch, Reset
-    integrity pin, Refresh nodes and "Update all from this binary".
-    - Online only is a `kit::Toggle` (a `QCheckBox`), with the same text,
-      default and slot.
-    - The update button keeps its text and object name, so a rail shortcut
-      to it still resolves by label. It sits in the bar's
-      `mirrorNodesHeaderRow`.
-  - **Filter bar** (`networkNodesToolbar`).
-    - A segmented control built from `nodesRoleFilter`'s items: All, Core,
-      Runners, Mirrors, Desktop nodes, Relays. It sets the combo's index, so
-      the saved setting and the filtering code are unchanged. The combo and
-      its label are hidden, and the two stay in sync both ways.
-    - The "Filter nodes" field hides rows whose name, role, owner, status,
-      region, platform and endpoint all lack the text. It filters only what
-      the role filter already shows, and hides child copy rows with their
-      node.
-    - The long lede moved into an "About nodes" help button.
-    - Sorting lives here, not in the column headers: a "Sort: <field>"
-      combo (`networkNodesSort`, every column but Actions, in display order)
-      and an ascending/descending button (`networkNodesSortOrder`). Both set
-      the header's sort indicator, so `sortNodesTable` is unchanged; the
-      choice is saved as `network/nodesSort` (the column's caption) and
-      `network/nodesSortOrder` (`asc`/`desc`).
-  - **Nodes table.**
-    - The model keeps all 44 columns, its actions, context menus and
-      double-click behaviour, but the table shows far fewer: the header is
-      hidden (`nodePairs` property) and each shown cell holds two different
-      fields, one per line (`nextNodePairs`):
-      - Status over Activity, Latency over Checked, Health over Integrity,
-        Revision over Message and Author, Route over Reach, Repos over
-        Mirrors, Size over Git DB, Issues over Pulls and Discussions,
-        Commits over Branches, Artifacts over Worktrees, Clones over Web
-        hits, Caps over Scope.
-      - CPU, RAM and Disk share one cell as three small meters.
-      - Each line is its icon, a muted caption (left out where the value
-        says what it is: status, activity, latency, revision, message) and
-        the value. An empty value is a plain dash.
-      - A count's sync-back backlog (`nextNodeBacklogColumn`) follows it in
-        the warning colour as "↑N", instead of taking its own column.
-    - Role, owner, platform (or region), endpoint and version are folded
-      into the Node cell's second line, which absorbs the spare width
-      (`makeColumnsResizable` keeps Node flexible). Node id is only in the
-      details panel.
-    - `nextFitNodeColumns` (run at the end of `applyNodeRoleFilter`) hides a
-      cell whose fields are empty in every row the role and text filters
-      show, so a role tab only lists the columns its nodes report.
-    - Rows are 48 px.
-    - `NextNodeCellDelegate` paints:
-      - Node: a status dot (green online, grey offline, amber behind, red
-        integrity failing), the mono name, and a soft "You" badge or outline
-        "Source of truth" and "Active relay" badges.
-      - Child copy rows: indented under "└".
-      - Muted columns: role, scope, status ("Online · serving"), activity,
-        owner, latency, region.
-      - Version and Revision: mono.
-    - `NextNodesTableChrome` (a viewport event filter) paints the hairlines,
-      the whole-row hover fill and the selected-node band. The table stays
-      `NoSelection`.
-  - **Detail panel** (`networkNodePanel`, 320 px).
-    - A click on a row opens it, and × closes it. The node is remembered by
-      key (`nextPanelKey`) and refilled after every refresh.
-    - Content, all read from that row's cells:
-      - Header: a role icon tile, the mono name, "This node", and role ·
-        region (or platform).
-      - An offline notice made of the status and its tooltip.
-      - Latency, Synced and Version tiles.
-      - CPU, Memory and Disk bars (`kProgressBarRole`).
-      - A Details list: status, activity, owner, platform, revision,
-        endpoint, health, node id.
-    - Footer: Profile (`showNodeProfile`), the row's own action (Website or
-      Logs, through `activateNodeDirectoryRow`), and "…", which offers the
-      row's Delete button by clicking it.
-  - `m_nodesStatus` stays as a footnote under the table.
-- **Left out on purpose.**
-  - Topology graph: the app has no node-to-node link data and no graph
-    widget.
-  - Activity · 24h sparklines and the panel's Load · last 24h: no per-node
-    history exists. Activity stays the existing text column.
-  - The panel's Uptime tile: no uptime is reported. Synced is shown instead.
-  - The Services list with running dots: nodes report no services.
-    Capabilities stay in the Caps column tooltip.
-  - Open shell and Restart: the Nodes directory has no per-node shell or
-    restart. Those stay on saved hosts in the Hosts rail.
-  - The Relay traffic delta ("+12%"), and the mockup's mesh invite command
-    and dialog: no such data or flow exists.
-  - The mockup hides most columns. Here they are paired two to a cell or
-    folded into the Node cell instead, so no field is lost.
-- **Hosts.** The Hosts tab is gone: saved hosts, fleet servers, runners and
-  directory instances are rows of the node list, and the host controls sit in
-  a compact rail beside it ([networking.md](networking.md#network--nodes)).
-- **Tests.** `test_window_resize.cpp` pins compact two-line node rows (40 to
-  52 px) and the "Web Requests" tab label. Both hold in Classic, the test
-  default. The Next values are cosmetic.
-- **Live switch.** The layout is built once, so a live switch shows it after
-  the page is rebuilt.
-
 ### Node profile
 
 In Next, the node profile panel (`buildNodeProfilePanel` and
@@ -985,7 +804,7 @@ the old two-column layout. Every action, object name and visibility rule stays.
   (`#settingsSectionsContent #nodeProfileContent QLabel#statTile` and the
   others) without editing that file.
 - **Settings navigation.** The sub-section list still comes from the visible
-  `sectionLabel` headings, sorted by position. The title now reads "USER
+  `sectionLabel` headings, sorted by position. The title reads "USER
   PROFILE" and the new "THIS MACHINE" heading sits above the machine card; the
   old one inside the actions block is hidden. So the list reads User profile,
   This machine, This machine's power switch, Details, and so on.
@@ -999,8 +818,7 @@ the old two-column layout. Every action, object name and visibility rule stays.
 ### Files
 
 In Next, the Files page (`MainWindow::buildFilesSection`, `MainWindowFiles.cpp`,
-`32-files.qss`) reads like a file browser with the editor as its preview pane;
-Classic keeps the old layout. The page layout is now an outer `QHBoxLayout`
+`32-files.qss`) reads like a file browser with the editor as its preview pane. The page layout is an outer `QHBoxLayout`
 (`frame`) holding the old column, so the places column can sit beside it; in
 Classic the column is the only item and the margins are the old 20/18/20/20.
 Every new widget is a child of the page or the editor column, built in both
@@ -1048,7 +866,7 @@ design switch (`arrangeFilesHeader`).
 - **List.** The filesystem tree gains a Kind column (logical column 3, moved
   to visual position 1 in Next, hidden in Classic), filled from
   `QMimeDatabase` by extension in Next only, so Classic listing costs
-  nothing more. `FilesTreeDelegate` now paints 36 px rows (32 compact)
+  nothing more. `FilesTreeDelegate` paints 36 px rows (32 compact)
   across the full width with a hairline under each, `accentSubtle` for the
   selection and `surfaceRaised` on hover, and tints file icons `fgSubtle` and
   folders `fgMuted`. The trees lose their card border; the header is a 36 px
@@ -1080,134 +898,12 @@ design switch (`arrangeFilesHeader`).
 - **Sizes.** The mockup source's 36 px rows (`h-9`) are used; the
   screenshot is scaled about 1.38x, which is why rows measure 50 px there.
 
-### Memory
-
-In Next, the Memory page (`MainWindow::buildMemorySection`,
-`MainWindowMemory.cpp`, `MemoryUsageChart.cpp`, `83-memory.qss`) follows the
-mockup. It is built once, so a live design switch keeps the layout it was
-built with; the chart and table colours still follow the switch.
-
-- **Header.** "Memory" over the existing status line ("N mappings in M
-  groups · read in X ms · time"), then a 24 px gutter and a hairline under
-  it (`memoryRule`). The actions keep their order and code: the Filter field
-  (160 px, a search icon), the interval combo, Pause (a painted pause/play
-  icon that follows its state), Trim heap on Linux, Copy report, Memory map
-  and Agent governor as ghost buttons with `fgMuted` octicons
-  (`nextIconRole`).
-- **Tiles.** The eight `statsTile` frames are 12 px rounded `surface` cards
-  in a 4-column grid with 12 px gaps: a 12 px muted label, a 22 px semibold
-  value and the existing caption in `fgSubtle` (`memoryRole` property on each
-  label).
-- **Chart.** `MemoryUsageChart` gains a Next painting mode, switched on by
-  colour properties the page sets (`nextAccent`, `nextBorder`, …), because the
-  file is also built into `forkmesh-process-memory-tests`, which does not
-  link the design tokens. The page re-sets them on `Polish`, `StyleChange`
-  and `PaletteChange` (`MemoryLookHook`) and clears them in Classic. In Next
-  the chart is a 244 px card: a 40 px header with "Resident memory · last 5
-  minutes" and the newest total on the right, dashed gridlines with byte
-  labels, HH:mm:ss time labels, and one 2 px accent line of the summed
-  bands. Hover draws a rule and a dot; the tooltip still lists every group.
-  Classic keeps the stacked bands.
-- **Tabs and tables.** "By mapping" and "Inside the app" are underline tabs
-  (document mode, accent underline). Both trees are 12 px bordered tables on
-  `bg` with 36 px `fgSubtle` headers, 40 px rows with hairlines, no
-  alternating rows, `accentSubtle` selection and right-aligned numeric
-  headers. Growth in the Change column is `warning` and shrinkage `success`
-  in Next (`Theme::nextOr`); Classic keeps its red and green.
-- **Left out on purpose.** The mockup's fixed captions ("not shared with
-  other processes", "peak 63" threads) are replaced by the captions the page
-  already computes, and its feature ranking under "Inside the app" by the
-  existing allocator, toolkit and probe tree; nothing else is measured.
-
-### Tasks
-
-In Next, the Tasks page (`TasksPage::buildOrganizationTasksSection`,
-`marketplace/packages/tasks/content/desktop/TasksPage.cpp`, `41-tasks.qss`) is a board with a side panel, after
-the mockup; Classic keeps the old list layout. The Next layout is built once,
-inside the builder, so a live design switch shows it only after restart.
-
-- **Header** (`#tasksNextHeader`).
-  - "Tasks" over a muted summary (`#tasksNextSummary`): open, with agents
-    (open tasks assigned to the bot), in progress, closed, and "manager" when
-    the account can manage tasks. The old summary label is hidden.
-  - Filter tasks (`#tasksNextFilter`) writes the same search mirror the top
-    bar search feeds (`m_organizationTasksSearchMirror`), so it filters with
-    the existing matcher; a top-bar search or a section change still wins and
-    the field follows it.
-  - The assignee picker (`#tasksNextAssignee`, "Everyone ▾") lists the people
-    strip's buttons (Everyone, each member, Bot, Unassigned) with their open
-    counts and clicks the chosen button, so the strip's own toggle logic
-    decides. The strip itself is hidden in Next.
-  - Board / List toggle (`#tasksNextViewSwitch`), Refresh (still showing its
-    age), Delete closed, and New task as the one inverse button.
-- **Chip row** (`#tasksNextChips`): the Open, Closed and All status tabs and
-  Mine are painted as rounded chips with their counts (accent when checked);
-  on the right the list density button (list mode only) and the sort menu
-  ("Newest ▾").
-- **Buttons.** Existing `VerticalIconButton`s keep their object names, menus,
-  connections and enable/visible rules. `TasksNextButtonStyler`, an event
-  filter, paints them in Next as ghost icon buttons, ghost text buttons,
-  chips or the inverse primary, and shows the button's caption as a tooltip
-  when it has none. Start shows a stop glyph while its caption is Stop.
-- **Board** (`#tasksNextBoardScroll`). Five rounded `bgSubtle` lanes
-  (`#tasksBoardColumn`): Ready, Queued, In progress, In QA (QA requested and
-  not reviewed) and Done, each with a status icon, title and count; Ready has
-  a "+" that clicks New task (managers only). Lanes follow the Open / Closed
-  / All filter: Open hides Done, Closed shows only Done. Each lane is a
-  `TasksBoardList` (`QListWidget`) whose `TasksBoardCardDelegate` paints
-  12 px cards: short task id (mono) and repository or department, the
-  priority number (`P12`), the title on up to three lines, then the
-  assignee's face (agent face, person face, or a dashed empty avatar), a
-  checklist count read from the details' task boxes (or progress percent),
-  the work-item branch, attachment count, QA state and age. The card tooltip
-  is the list's hover card. The board shows every task the filters match;
-  clicking a card selects its row in the (hidden) table, loading further
-  pages of rows if needed, so every detail action keeps working from the
-  table selection. Double-click edits, as in the list.
-- **Drag to change status.** Dropping a card on another lane selects the task
-  and clicks the button that already performs that move: Start (to In
-  progress), Stop (back to Ready), Mark undone (Done to Ready), Complete (to
-  Done, with its completion-note prompt) or Send to QA (with its steps
-  prompt). A move none of them offers, or one the account may not make, only
-  says so in the footer status. The drop runs after the drag has finished.
-  The footer (`#tasksNextFooter`) carries the drag hint (board mode) and the
-  task status line.
-- **List.** The List toggle shows the existing table with its Full /
-  Compact / Zen rows, paging label and spinners unchanged.
-- **Detail panel** (`#tasksNextDetailPanel`, splitter right side).
-  - Header: the short task id (mono, full id in the tooltip), a "…" menu
-    (`#tasksNextDetailMore`) with Edit and Move to trash, which mirror and
-    click the Edit and Delete buttons (both hidden from the row), and ×,
-    which hides the panel until a card or row is clicked.
-  - Icon row (`#tasksNextDetailActions`): every other action button.
-  - Body (`#tasksNextDetailScroll`): the title (`#tasksNextDetailTitle`,
-    18 px), the property editors (Status, Priority, Progress, Assignee,
-    Department, Team, Repository, Follows task) restyled in place, then the
-    detail browser grown to its document height: details, How to test and
-    Completion note when present, attachments, the fields that used to sit in
-    the side browser under DETAILS (Destination, Created by, Agent session
-    link, QA, Updated, Last reminder, Work items, Task ID), and ACTIVITY rows
-    with an avatar, "@who did what" and a right-aligned age. The side fields
-    browser is hidden in Next because its rows and links now render, through
-    the same link handler, in the detail browser.
-  - Comment bar: the quick comment field and its Comment button in a rounded
-    surface box; Ctrl+Enter still posts.
-- **Left out on purpose.** Backlog and "In review" (pull request) columns,
-  "2 due today", due dates, comment counts on cards, linked PR numbers, the
-  priority bars' urgent/high/medium/low buckets, People/Bots/Blocked chips,
-  blocked state, Copy link and Duplicate, subtask checklists in the panel,
-  the PR card, "Hand this task to an agent" in the comment field, the list
-  view grouped by status, and the signed-out lock card: the catalog carries
-  no due date, comment count, PR link, blocked flag or task URL, and there is
-  no duplicate action, so each would be invented. The board/list choice is
-  kept in memory, not in settings.
-
 ### Chat
 
 In Next, the Chat page (`buildChatSection` and its builders in
 `MainWindowIssues.cpp`, the rows in `MessageRow.cpp`, the data-driven parts in
 `MainWindowMessages.cpp`, sheets `70-chat.qss` and `71-chat-sidebar.qss`)
-follows the desktop mockup. Classic is unchanged. The chat sheets now use the
+follows the desktop mockup. The chat sheets use the
 standard roles (`@bg`, `@surface`, `@border`, `@fgMuted`, `@accent`…) instead of
 the Discord-like `@chat*` tones, so Chat matches the rest of the shell.
 
@@ -1227,7 +923,7 @@ the Discord-like `@chat*` tones, so Chat matches the rest of the shell.
     match (`setHidden` on the items; a collapsed group keeps its collapse
     state). Enter opens the first match through the lists' own
     `currentItemChanged`, Esc clears. The filter is re-applied after the lists
-    are rebuilt. `fitToRows` now skips hidden list rows; nothing is hidden in
+    are rebuilt. `fitToRows` skips hidden list rows; nothing is hidden in
     Classic.
   - Section headings read "Channels" and "Direct messages" with the chevron
     before the label; their "+" buttons stay. "All unread" stays as a row; the
@@ -1337,16 +1033,15 @@ design tokens.
   moved to the right of the same row, and the hairline between sections at
   the top of each section instead of under its title (hidden on the first
   visible one). 28 px above and below an open section.
-- **Lit heading.** In October 2026 the user asked for the heading on the page
-  to light up with the entry lit in the list, so the eye can find where a
-  jump landed. `SettingsSectionsView::syncLitHeading` runs whenever the lit
+- **Lit heading.** The heading on the page lights up with the entry lit in
+  the list, so the eye can find where a jump landed. `SettingsSectionsView::syncLitHeading` runs whenever the lit
   list row or sub-row changes and sets `settingsLit` on exactly the label the
   list lights: the sub-section's `sectionLabel` when a sub-row is lit, the
   section title otherwise. Next paints it `accentFg` on `accentSubtle`; Classic
   uses the list's selection blue. Titles and sub-headings carry the same
   padding lit or not, so lighting one never moves the page.
-- **Pinned heading.** In October 2026 the user asked for the section heading
-  and the sub-heading being read to stay in view. `#settingsStickyHeader`, a
+- **Pinned heading.** The section heading and the sub-heading being read
+  stay in view. `#settingsStickyHeader`, a
   child of the scroll area's viewport (so it does not scroll), shows the
   current section's icon and title once the real title has gone above the top
   edge, and under it the lit sub-heading once that one has gone under the
@@ -1509,7 +1204,7 @@ keeps the old layout. The page carries the `usersNextPage` property.
   name and section titles, muted labels) is set in code, because the rail's
   stylesheet lives in the Next theme only.
 - **Avatars after a session restart.** `startSession` empties `m_avatars`;
-  it now empties `m_chatDirectoryAvatarDigests` too. The directory only
+  it also empties `m_chatDirectoryAvatarDigests` too. The directory only
   decodes an avatar whose digest changed, so keeping the digests left every
   row without its picture until that person uploaded a new one.
 - **Left out on purpose.** "Invite people", the Pending invites and Roles
@@ -1597,144 +1292,16 @@ detail pane `pingsNext`.
 - **Live switch.** The header, list and pane are set up when the page is
   built; a live design switch shows them after a rebuild.
 
-### Stats
-
-In Next, the Stats page (`MainWindow::buildStatsSection`, `MainWindowStats.cpp`,
-`86-stats.qss`) follows the mockup's `pages/Stats.tsx`; Classic keeps the old
-layout.
-
-- **Header.**
-  - "Stats" sits over the muted summary (`m_statsStatus`, `statsRole="summary"`,
-    "N tiles · updated HH:mm:ss"), with a hairline under the header
-    (`#statsHeaderDivider`).
-  - The actions are on the right in the mockup's order: ghost Reset and
-    Refresh (`statsRole="action"`, muted icons through `nextIconRole`), then
-    one inverse Add tile (`statsRole="create"`, `@fg` fill, `@bg` text and
-    icon).
-  - The header row is attached before its buttons are added, and the order on
-    screen comes from `insertWidget`. So the buttons keep the creation order
-    and parent they have in Classic, and their rail-shortcut paths stay the
-    same. Object names, tooltips, menus and connections are unchanged.
-- **Board** (`StatsDashboard`).
-  - The board sits under a 24 px page padding. Tiles are hairline `@surface`
-    cards with 12 px corners and a `@surfaceRaised` hover fill, padded 16 px
-    across and 12 px down. Each tile shows a 12 px muted title, a 22 px
-    semibold value (28 px on tiles bigger than one square), and a 12 px
-    `fgSubtle` note.
-  - Time series draw a 1.75 px accent line with no area fill. Bars use the
-    accent. Ticks are 10 px `fgSubtle` and the baseline is `@border`.
-  - Status shows as a tinted border (`success`, `warning`, `danger`). The
-    coloured left edge is drawn only when edge indicators are on.
-  - The resize and remove controls are small bordered squares with
-    `fgSubtle` glyphs.
-  - While a tile is dragged, its landing slot shows as an `accentSubtle` box
-    with an accent edge. The tile being dragged gets a `borderStrong` edge
-    and no shadow.
-  - The empty board is a dashed `borderStrong` box with the heading "No tiles
-    on the board" and the hint "Use Add tile, or Reset…".
-- **Colours.** `StatsDashboard.cpp` is also built into
-  `forkmesh-stats-dashboard-tests`, which does not link the design tokens.
-  So the window passes the role colours in as the dynamic property
-  `nextColors` (a `QVariantMap`, plus `edges` for edge indicators) instead of
-  calling `Theme::` there.
-  - The map is set by `applyNextChartColors`: at build, on every refresh, and
-    on the board's `StyleChange`, `PaletteChange` and `Show` events, through
-    an event filter (`NextChartColorSync`).
-  - The board re-lays itself out on `DynamicPropertyChange`.
-  - Classic never sets the property, so the board paints exactly as before.
-  - The packing, square cells, hit areas and every edit, menu and tooltip are
-    unchanged.
-- **Left out on purpose.**
-  - The mockup's horizontal "breakdown" bars and its fixed-height
-    (non-square) tiles: the board's square packing, point hit-testing and
-    the Network-tile click-through depend on them.
-  - The grip handle: the whole tile already drags.
-
-### Component health
-
-In Next, Component health (`MainWindow::buildComponentHealthSection`,
-`MainWindowComponentHealth.cpp`, `ComponentHealthBoard.cpp`, `87-health.qss`)
-follows the mockup's `pages/Health.tsx`; Classic keeps the old layout.
-
-- **Header.**
-  - "Component health" sits over the muted scan summary
-    (`m_componentHealthStatus`, `healthRole="summary"`), with Rescan as a
-    ghost action on the right.
-  - Source files and Binary size become underline tabs below the summary
-    (`healthRole="tab"`): the active one has `@fg` text and an `@accentFg`
-    underline. A hairline (`#healthHeaderDivider`) ends the header.
-- **Toolbar.**
-  - The existing source tools widget (`m_componentHealthSourceTools`,
-    `healthRole="toolbar"`) becomes a full-width row with a bottom hairline:
-    All files (back), the filter at 224 px with a search icon, then a
-    right-aligned "N files" / "N functions" count (`#healthCardCount`) and
-    the sort menu.
-  - It still hides on the Binary size tab.
-- **Cards** (`ComponentHealthBoard`).
-  - Cards follow the mockup's `auto-fill, minmax(176px, 1fr)` grid: 92 px
-    high, a 10 px gap and 24 px padding.
-  - Each card is hairline `@surface` with 12 px corners and a
-    `@surfaceRaised` hover fill. It shows:
-    - the name, 14 px medium, elided from the left;
-    - the component, 12 px muted;
-    - "N lines" over the stall and flag facts (or "No flags"), in
-      `fgSubtle`;
-    - the score, 18 px semibold, in the success, warning or danger role.
-      The 80 and 55 band thresholds are unchanged.
-  - Cards scoring under 80 get a border tinted in their band's colour.
-  - Colours come through the same `nextColors` property as Stats
-    (`applyNextHealthColors`, `NextHealthColorSync`), because the board is
-    also built into `forkmesh-component-health-board-tests`.
-- **Detail panel** (`#healthDetailPanel`, 360 px, Next only).
-  - It opens beside the function board when a file is open (the existing
-    drill-in) and closes on All files, the panel's ×, or the Binary size
-    tab. The × (`#healthDetailClose`) calls the same
-    `showComponentHealthOverview()` as All files.
-  - It shows only data from `FileHealth`:
-    - the name and the path, in mono and selectable;
-    - the component and line count;
-    - the score with a band word: Healthy, Needs attention or At risk;
-    - a facts card: code lines, functions, longest function, stall
-      attributed, acknowledged in code, and last changed;
-    - "FLAGS · N" with one row per finding kind ("N × kind"), or "Nothing
-      flagged in this file".
-- **Binary size.**
-  - Four stat tiles (`#healthStatTile` inside `#healthBinaryTiles`) are read
-    from the existing report: total size, symbols, object files, and the
-    largest top-level part with its share. They are hidden while there is no
-    report.
-  - The breadcrumb line (`healthRole="crumbs"`) and the treemap are
-    unchanged.
-- **Widget paths.** Every existing widget keeps its parent and creation order.
-  The new containers are named `QFrame`s, so the class-index paths of the
-  existing `QWidget`, `QPushButton` and `QLabel` siblings do not move. Object
-  names, sort modes, the filter, the drill-in, Rescan, the progress row and
-  every tooltip are unchanged.
-- **Left out on purpose.**
-  - Component picker and "Only flagged" switch: the page has no such
-    filters, and adding them would be new logic.
-  - The four score-part progress bars (Size, Complexity, Stalls, Flags):
-    the scanner computes a single score.
-  - Open in editor and "Draft a fix with an agent": the page has no such
-    actions.
-  - The selected-card highlight: a click drills in instead of selecting.
-  - "Size by component" ranked list and "Biggest symbols" table: the treemap
-    already shows both and zooms. The binary's delta since the last
-    release is not recorded.
-- **Live switch.** The header, toolbar and panel are built once, so a live
-  design switch shows them only after the page is rebuilt. The boards' colours
-  do follow dark/light and design switches.
-
 ### Calendar
 
 In Next, the Calendar page (`MainWindow::buildCalendarSection`,
 `MainWindowCalendar.cpp`, `46-calendar.qss`) closes the remaining gaps to the
-mockup; Classic keeps the old layout.
+mockup.
 
 - **Header.** The title sits over a muted line: "Today is Friday, October 23"
   (refreshed on Show) and the existing `m_calendarStatus` (event count and time
   zone), so the time-zone chip is hidden as a duplicate. On the right: an
-  outline Today, ghost ‹ › steps, the range label (`m_calendarHeading`, now
+  outline Today, ghost ‹ › steps, the range label (`m_calendarHeading`, in the
   "Oct 19 – 25, 2026" style in Next via `calendarNextRangeLabel`), a segmented
   Day / Week / Month / Agenda control (`#calendarViewTabs`) and New event. The
   segmented buttons only call `setCurrentIndex` on the existing mode combo,
@@ -1822,7 +1389,7 @@ In Next, the Calorie Counter package
 (`marketplace/packages/calories/content/desktop/CaloriesFeature.{h,cpp}`)
 follows the mockup. Like CRM it includes `DesignTokens.h` and
 `CaloriesFeature::applyNextStyle` sets one `@role` sheet on `caloriesSection`;
-`arrangeNextHeader` rebuilds the header. Classic is unchanged.
+`arrangeNextHeader` rebuilds the header.
 
 - **Header.** "Calorie counter" over the muted summary; on the right the
   status line, a ghost Export my data and a "…" menu (`#caloriesMoreButton`)
@@ -1870,7 +1437,7 @@ follows the mockup. Like CRM it includes `DesignTokens.h` and
 
 In Next, the Repos page (`MainWindow::buildNetworkReposSection`,
 `MainWindowNetworkRepos.cpp`, `31-repos.qss`) follows the mockup's
-Repositories page; Classic keeps the old layout. The page carries the
+Repositories page. The page carries the
 `reposNextPage` property, the tab widget and both tables `reposNext`.
 
 - **Header.**
@@ -1966,136 +1533,11 @@ Repositories page; Classic keeps the old layout. The page carries the
   rebuilt. Cards are rebuilt on every render; the delegate and charts check
   the design when they paint.
 
-### Git
-
-In Next, the Git page (sidebar Git; `MainWindow::buildSourceControlPanel` in
-`MainWindowSourceControl.cpp`, `52-git.qss`) follows the desktop mockup: a
-page header with underline tabs over three columns. Classic keeps the old
-layout. The page around the panel is still built by `buildRepoCommitsTab`
-(`MainWindowRepoDetail.cpp`, not edited); the Next chrome is added from the
-panel's own `ScmDesignHook`, one event-loop turn after the panel is polished
-or shown, so it only runs once the workspace exists. `ScmNextChrome` (a child
-of the panel, object name `scmNextChrome`) holds the Next widgets and
-re-arranges both ways on a live design switch: Next to Classic puts every
-moved widget back where `buildRepoCommitsTab` placed it, in the same order.
-A window that starts in Classic is never touched.
-
-- **Git page in each layout mode** (see "Two layout modes" above;
-  `GitLayout.h`, `gitLayoutCompact()`). Focus is the page described below.
-  Control Tower brings back the page as it was before this restyle (commit
-  68b35e6386): changed files on top of the left column and history
-  underneath, no branches column and no page header, with the branch picker, Fetch, Pull and rescan back in the
-  history header and the "▾ CHANGES" caption showing the count again. Only
-  the page arrangement changes (`arrangePage(false)`); the change rows, the
-  commit box and the history rows keep the new design. The commit box now
-  sits in the files pane, so Control Tower gives the change list a three-row
-  minimum height and raises the files pane's 130 px floor to what the panel
-  needs; without them the files/history splitter squeezed the list to
-  nothing and cut off the Commit button in a short window. Switching back
-  restores the 130 px floor. Switching runs
-  `MainWindow::applyGitLayout`, which re-applies the page at once.
-- **Header** (`QFrame#gitNextHeader`, inserted above `m_gitWorkspaceStack`
-  in the same page layout).
-  - "Git" (`#gitNextTitle`) over a muted summary (`#gitNextSummary`): the
-    repository name and "N ahead" from the outgoing probe the page already
-    runs (`m_scmOutgoingProbePendingCount`, only when it was read for this
-    checkout).
-  - On the right, the real history-header controls, moved (not copied) out of
-    `#gitHistoryHeader`: the branch picker pair (`m_commitsBranchButton` with
-    its compare arrow and compare-base button, so its menu, Create new branch
-    and switching are unchanged), Fetch (`m_commitsFetchButton`), Pull
-    (`m_commitsPullButton`) and the rescan button (`m_scmRefreshButton`).
-    Leaderboard stays in the history header.
-  - A new Push button with "↑N" calls `pushCurrentRepoUpstream`, the same
-    slot as Sync Changes. It is disabled while a push or sync runs, when there
-    is no working tree, and when the probe says nothing is ahead.
-  - Outline buttons are 28 px on `surface` with a hairline; icons are
-    `fgMuted`.
-- **Tabs** (`QPushButton#gitNextTab`, `accentFg` underline when checked).
-  "Changes (N)" uses the count the Changes header already shows
-  (`m_scmCountLabel`). Changes shows the file pane (`m_gitFilesSlot`) and
-  History the commit list (`m_gitHistorySlot`) in the left column of
-  `gitWorkspaceSplit`, which used to stack them. The tab follows the detail
-  stack: opening a commit selects History, the changes or branch-range page
-  selects Changes. Clicking Changes leaves an open commit for the changes
-  page and runs `refreshSourceControl()`; clicking History runs
-  `refreshCommitMarkersIfStale()` and reopens the last commit when it is in
-  the loaded list. Both are the refreshes the page runs when it is shown,
-  since a hidden pane skips them.
-- **Left column** (`GitSidePanel`, `QFrame#gitNextSide`, 240 px, hairline on
-  the right), beside `m_gitWorkspaceStack` in a new row layout of the same
-  page (the stack keeps its parent). `GitSideRow` paints 28 px rows: foldable
-  small-caps headings with a right count, the current branch on
-  `accentSubtle` with an `accentFg` check, muted icons, mono `fgSubtle` path
-  lines. It shows only data the page already holds, read when the menus are
-  rebuilt (`ChildAdded` on their buttons) and on every source-control
-  refresh:
-  - Branches: the checkable entries of the branch picker's menu; a row
-    triggers that entry (`switchToBranch`).
-  - Remotes (folded): the entries of the Code toolbar's remotes menu; a row
-    triggers it (copies the URL).
-  - Worktrees: the rows of the Worktrees table when it was loaded for this
-    repository (name and home-shortened path; a row calls
-    `switchToWorktree`). Otherwise the toolbar badge's count and an "Open the
-    worktree list" link that clicks the Worktrees button.
-  - Tags (folded): the toolbar badge's count and an "Open tags and releases"
-    link that clicks the Tags button.
-- **Change list** (middle column).
-  - Groups are `ScmGroupRow`s: "STAGED 2" / "UNSTAGED 5" (11 px medium,
-    letter-spaced, `fgSubtle`), with "Unstage all" / "Stage all" text buttons
-    (`#scmGroupAction`) that call `scmUnstageAll` / `scmStageAll`. They take
-    the place of the "−" and "+" glyphs, which stay in Classic; Open all and
-    Discard all stay in both. Range view reads "AGAINST main 3".
-  - Rows (`ScmFileRow`, now 32 px) are arranged per design from the same
-    widgets (`ScmRowParts`): a checkbox (`#scmStageCheck`, staged = ticked;
-    it calls `scmStagePath` / `scmUnstagePath`), the status letter in mono
-    (A and ? `success`, D `danger`, M `fgMuted`), the muted directory with a
-    trailing slash, then the file name. The hover actions (stage, unstage,
-    discard, open) and the context menu are unchanged. Classic keeps icon,
-    name, directory, status. The checkbox is created only when the row is
-    built in Next, so after a live switch it appears with the next refresh.
-  - The tree drops the root chevrons in Next (groups still fold by
-    double-click or the keyboard) and indents only in folder mode.
-  - The "▾ CHANGES" caption and its count are hidden; the tab carries the
-    count. Prev, Next, Folders, All repos and the auto-view eye stay.
-- **Commit box** (bottom of the middle column, under a hairline
-  `#scmNextCommitRule`).
-  - "Summary (required)" (`#scmSummaryInput`) and "Description"
-    (`#scmDescriptionInput`) mirror the existing message box
-    (`m_scmMessage`, hidden in Next): the message is the summary, a blank
-    line and the description; auto-fill and Generate write the message box
-    and the fields follow. Commit reads `m_scmMessage` as before. Ctrl+Enter
-    commits from either field. The sparkle and "⋯" generation buttons sit
-    beside the summary.
-  - "Commit to <branch>" is the existing Commit button (accent, commit icon;
-    the branch is read from the working tree's HEAD file). Its "▾" half
-    (`#scmNextCommitMore`) opens a menu that clicks the existing Commit,
-    Commit & push and Stage & push buttons, which are hidden in Next. The
-    controls row is a plain row in Next and the original `FlowLayout` in
-    Classic. The Sync Changes row and its live status line stay.
-- **History rows** (`ScmCommitRowDelegate`, now 36 px): the short hash
-  (mono, `fgSubtle`) and the relative age from the list's own hash and date
-  columns are painted on the right, before the ref chips.
-- **Diff pane.** Unchanged: it already uses the Next diff renderer (status
-  glyph, mono path, +/− counts, hunk rows, line gutters and success/danger
-  bands).
-- **Left out on purpose.**
-  - "N behind", "Pull ↓N" and "Last fetched …": the page never computes how
-    far the upstream is ahead or when the last fetch ran; each would need a
-    new git call.
-  - Stashes: the app reads no stash list.
-  - Remote branches under Remotes and the tag list under Tags: only remote
-    names and the tag count are in memory.
-  - The mockup's per-row "⋯" menu, its discard dialog and "Tick a file to
-    stage it": the existing hover buttons, context menu and confirmations
-    cover these.
-  - Commit author avatars in History: author names stay as text.
-
 ### Ledger
 
 In Next, the Ledger page (`MainWindow::buildLedgerSection`,
 `MainWindowLedger.cpp`, `89-ledger.qss`) follows the desktop mockup
-(screenshots 19 and 20, `pages/Ledger.tsx`). Classic keeps the old layout.
+(screenshots 19 and 20, `pages/Ledger.tsx`).
 
 The Market package's `LedgerFeature.{h,cpp}` holds no widgets (records,
 totals, wallets, the payout plan), so it is unchanged. The page carries the
@@ -2207,8 +1649,7 @@ In Next, the Analytics page (Market package `analytics`,
 follows the mockup. Like CRM and Calories it includes `DesignTokens.h`; the
 constructor builds the Next layout when `Theme::isNext()` is on, and the
 overlay `desktop/resources/theme/next/77-analytics.qss` styles it through
-`analyticsRole` properties and object names under `#analyticsSection`.
-Classic is unchanged. The Conversions and Experiments pages
+`analyticsRole` properties and object names under `#analyticsSection`. The Conversions and Experiments pages
 (`AnalyticsManage.cpp`) are not restyled; they only get 24 px page margins.
 
 - **Header.** "Analytics" (`pageTitle`) over the muted status line
@@ -2253,8 +1694,7 @@ Classic is unchanged. The Conversions and Experiments pages
   "12 visitors".
 - **Campaigns, Recordings, setup.** Campaigns is a full-width card with a
   plain hairline table (`analyticsRole="grid"`, 36 px rows). Below it, the
-  Recordings panel (`#analyticsRecordingsPanel`, no longer a fixed 380 px
-  side column) and an "Add this project to a site" card
+  Recordings panel (`#analyticsRecordingsPanel`, not a fixed side column) and an "Add this project to a site" card
   (`#analyticsSetupCard`: Copy snippet with a copy icon, the write key line in
   a monospace box, plain text) share a row. The recordings table shows only
   when there are recordings; the note and Turn on recordings stay.
@@ -2354,8 +1794,7 @@ branch is behind `Theme::isNext()` and the sheet is a Next overlay.
 - **Left out on purpose.** The "Extensions" pill (the Market has no such
   category filter; the four existing categories and All are shown), the
   illustrated placeholder thumbnails (each card shows the package's own
-  preview). The details used to expand inside the card so every control
-  stayed a descendant of it; the window tests run Classic, and the search
+  preview). The window tests run Classic, and the search
   filter walks only the list layouts, so the pane does not affect them.
 - **Live switch.** The header, tabs and grid are built once, so a live design
   switch shows them after the page is rebuilt; cards rebuilt in the other

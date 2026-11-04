@@ -160,6 +160,7 @@ struct RecycleBinScreen: View {
                 Label("Delete", systemImage: "trash")
             }
         }
+        .textSelection(.disabled)
         .contextMenu {
             Button {
                 restore([agent.id])

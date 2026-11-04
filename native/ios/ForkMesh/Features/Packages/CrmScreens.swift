@@ -271,9 +271,22 @@ struct CrmHeader: View {
                     .shellGlass(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .padding(.horizontal)
             }
+            if !model.contactsStatus.isEmpty {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.mini)
+                    Text(model.contactsStatus)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("crm-contacts-loading")
+            }
             switch model.section {
             case .contacts:
-                CrmTabChips(model: model, items: data.contactTabs)
+                CrmTabChips(model: model, items: data.contactTabs, networks: data.networkTabs)
             case .activity:
                 CrmTabChips(model: model, items: data.workspaceTabs)
             default:
@@ -294,7 +307,7 @@ struct CrmTabContent: View {
 
     var body: some View {
         switch model.activeTab {
-        case .list, .pipeline, .noPipeline:
+        case .list, .pipeline, .noPipeline, .network:
             CrmContactList(model: model, data: data, selecting: $selecting, selection: $selection, present: present)
         case .activity:
             CrmActivityPane(model: model, data: data, present: present)

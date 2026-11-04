@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    "SurveysModel.h",
+    "SurveysModel.cpp",
+    "SurveysPage.h",
+    "SurveysPage.cpp"
+  ],
+  "mocHeaders": [],
+  "testSources": [
+    "tests/test_surveys_model.cpp",
+    "tests/test_surveys_page.cpp",
+    "SurveysModel.h",
+    "SurveysModel.cpp",
+    "SurveysPage.h",
+    "SurveysPage.cpp"
+  ],
+  "testLibraries": [
+    "Qt6::Core",
+    "Qt6::Network",
+    "Qt6::Svg",
+    "Qt6::Widgets"
+  ],
+  "testHostSources": [
+    "NativePackageExtension.h",
+    "NativePackageExtension.cpp",
+    "DesignTokens.h",
+    "DesignTokens.cpp"
+  ]
+}

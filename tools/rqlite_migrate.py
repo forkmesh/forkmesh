@@ -13,7 +13,7 @@
 * rqlite rewrites ``RANDOM()`` and ``'now'`` time functions into literals
   before replicating. That keeps DML deterministic but *freezes* a CREATE
   TRIGGER / CREATE VIEW body at creation time (see
-  app/host/RQLITE_FINDINGS.md). A file whose trigger/view body calls one of
+  docs/host/rqlite-findings.md). A file whose trigger/view body calls one of
   those functions is therefore sent with ``norwtime&norwrandom``; every other
   file keeps the rewrite, so replicas compute the same values.
 * Afterwards it stamps ``schema_meta`` with ``schema_fingerprint:<fp>`` =

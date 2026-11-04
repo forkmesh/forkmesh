@@ -1,12 +1,14 @@
 # Side rail, terminal tabs and the side browser
 
-On 2026-10-24 the desktop's right-hand team rail became a generic **side rail**.
-It no longer lists special agents by itself; it holds a terminal button, a
-browser button and whatever the user drags onto it. Terminals open as tabs in
-a **terminal pane** on the right of the window (since 2026-10-24, before that
-on a full Terminals page), and agents (including Claude Code or Codex started
-in one of those tabs) can read and type into them through the ForkMesh MCP
-server, the way Claude Code's desktop app lets a session drive its own panes.
+Part of [Desktop](README.md). The **side rail** on the right of the window
+holds a terminal button, a browser button and the workflows, pages and links
+the user drags onto it. Terminals open as tabs in a **terminal pane** beside
+it, and agents (including Claude Code or Codex started in one of those tabs)
+can read and type into them through the ForkMesh MCP server
+([agent tools](../agents/tools.md#forkmesh-mcp-server)), the way Claude
+Code's desktop app lets a session drive its own panes. This page covers the
+rail's items and drag rules, the side browser, the terminal pane and
+launcher, and the terminal tools for agents.
 
 ## Side rail
 
@@ -15,8 +17,8 @@ Code: `desktop/src/MainWindowSideRail.cpp` (widgets and menus) and
 `forkmesh-side-rail-tests`). Styles: `10-shell.qss` in Next, `Theme.h` in
 Classic.
 
-- **Where.** `#sideRail` sits at the right of the window in the slot the team
-  rail used, after the channel status rail. It hides below 1000 px of window
+- **Where.** `#sideRail` sits at the right edge of the window, after the
+  channel status rail. It hides below 1000 px of window
   width, in reduced view modes, and when turned off with the top-bar panel
   button (`topSideRailButton`), the rail's own menu or **Settings > Appearance
   > Show the side rail on the right** (`ui/showSideRail`; the first read falls
@@ -62,26 +64,18 @@ Classic.
   also pins: dropping one pins it to the right rail in `ui/workflowPins`
   (the same list the Workflows page edits), and `siderail::withWorkflows`
   drops stored workflow items that are no longer pinned right and appends
-  right-rail pins that were made elsewhere. The separate right-hand pin strip
-  is gone; right-rail pins show only in the side rail.
+  right-rail pins that were made elsewhere. Right-rail pins show only in the
+  side rail.
+- **Special agents** have no chips of their own on the side rail. One shows
+  there when its workflow row is dragged from the Workflows page or pinned
+  with **Pin to rail > Right**; everything else about them is on the Special
+  Agents page ([special-agents.md](special-agents.md)).
 - **Refreshes.** Rebuilds are coalesced (150 ms) and wait while a popup is
   open or a side-rail item is being dragged, and pin strips do not rebuild
   during a pin drag (`m_workflowPinDragging`), so a drop never deletes the
   widget the drag started from. A pin that is already on a strip moves to the
   side rail even when its repository is not open here; a new workflow needs
   its checkout.
-
-### What happened to the team rail
-
-The special agent chips, their hover controls and the "create needed special
-agent" tile left the rail. Special agents are still on the Special Agents page
-(video tiles and cards keep the run, mood, menu and payout buttons), and any of
-them can be put on the side rail by dragging its row from the Workflows page or
-choosing **Pin to rail > Right**. **Create needed special agent** stays in
-each special agent's menu (`showTeammateRailMenu`) on the Special Agents page
-and its home pages. `restoreTeammateRunState` keeps
-loading the finder sessions and done-unseen runs, and its 30 s clock still
-refreshes the Special Agents home pages.
 
 ## Side browser
 
@@ -94,7 +88,22 @@ pages in the system browser. Only `http` and `https` load. The panel's width is
 dragged on its left edge (280 to 1200 px, `ui/sideRailBrowserWidth`, default
 420); whether it is open and the last address are kept in
 `ui/sideRailBrowserOpen` and `ui/sideRailBrowserUrl`. Agents keep using their
-own browser windows (`open_browser_window`); the side browser is the user's.
+own browser pages (`open_browser_window`, below); the side browser is the user's.
+
+## Agent pages
+
+`#agentPagesPanel` sits to the left of the side browser and holds the pages
+agents open with `open_browser_window`, one tab each (`#agentPagesTabs`,
+closable and movable, titled with the agent and page title). Opening a page
+turns the side rail on if it was off, shows the panel and selects the page's
+tab; a transcript link to the page selects it again. Closing a tab closes the
+agent's window, and the panel hides when its last tab goes; the **x** in the
+header closes every page. The width is dragged on the left edge (280 to
+1200 px, `ui/agentPagesWidth`, default 640). Pages still float in their own
+window when the side rail does not fit. Why: a floating window covered the
+transcript and had to be moved by hand on every page; docked, the page and
+the agent's work are side by side. Details:
+[MCP desktop tools](../tools/mcp-desktop-tools.md#browser-windows).
 
 ## Terminal pane and launcher
 
@@ -105,15 +114,19 @@ requests), `MainWindowSideRail.cpp` (the pane, `revealTerminals`,
 `TerminalWidget` (the existing pty terminal, which gained `sendInput`,
 `plainText` and an `outputArrived` signal).
 
+Only the sign-in terminals (the host agent login and the VM settings login)
+call `setOpensSignInLinks(true)`, so only they open a provider's sign-in page
+on their own when the output prints one. Any other terminal would open a
+real sign-in page for anything that prints its URL, such as `cat` on a repo
+file, which helps device-code phishing.
+
 - **One click.** The top bar's terminal button (in Next `topTerminalButton`,
   between the theme toggle and the side-rail toggle; in Classic a title-bar
   button with the `terminalLauncherButton` property, before the view
   switcher) and the side rail's Terminal button call `toggleTerminals`: with
   no tab open they open a shell straight away in the pane; with tabs open
   they show the pane, or hide it when it is showing. Hidden tabs keep
-  running. The user asked for a terminal that opens at once beside their
-  work, like an editor's terminal panel, rather than a dialog and a separate
-  page.
+  running, like an editor's terminal panel.
 - **Pane.** `#sideRailTerminalPanel` sits between the side browser and the
   rail's button column. Its width is dragged on its left edge
   (`#sideRailTerminalHandle`, 280 to 1200 px, `ui/sideRailTerminalWidth`,
@@ -187,6 +200,11 @@ Rules:
 - An agent below Auto mode (`agenthub::permissionRank` < 3) may list and read
   but not open, type or close (`mode_too_low`), because typing runs commands
   with the user's account.
+- An Auto agent whose run rules check its commands (external calls, destructive
+  commands, teammate permissions) or lock its folders gets `rules_gated` for
+  the same calls (`agentrules::agentTerminalWritesAllowed`). A terminal runs
+  outside the hook and the Landlock lock, so typing there would skip every
+  check; see [agent boundaries](../security/agent-host-boundaries.md).
 - Private tabs are left out of the list and refuse reads and input
   (`not_shared`), except the caller's own tab.
 - Tabs the user opened are not closed for an agent (`user_terminal`).

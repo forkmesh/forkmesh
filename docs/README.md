@@ -1,134 +1,234 @@
-# ForkMesh developer documentation
+# ForkMesh documentation
 
-Index of the developer documentation. Source files hold code only
-(`AGENTS.md`); the reasons behind code live on the matching page here. Each
-subsystem has one home page; topic pages sit next to it and are linked from
-it. Public, user-facing documentation lives in `www/docs/` and is published to
-forkmesh.com/docs; code and tests refer to those files by path, so do not move
-or rename them.
+ForkMesh keeps the source code and releases of a project reachable and
+verifiable when a hosting provider, domain or network fails it. Git stays the
+source of truth; signed repositories replicate to independent mirrors, and the
+desktop, web and phone apps work on them through one protocol.
 
-Start with [architecture.md](architecture.md), then [PLAN.md](PLAN.md) and
-[OPERATIONS.md](OPERATIONS.md) for the stack that serves forkmesh.com.
+This folder is the one source of truth for every ForkMesh document. It is
+published at [forkmesh.com/docs](https://forkmesh.com/docs/library/), in the
+desktop app's Docs tab and in the phone apps, with
+[page history](https://forkmesh.com/docs/history/) and a
+[document index](https://forkmesh.com/docs/documents/).
 
-## Subsystems
+```text
+   your desktop node        independent mirrors          phones · browser
+   holds and serves         carry copies, serve          read, review, commit,
+   your repositories        clone and fetch              steer agents
+          │                        ▲                           │
+          │ signed push            │ signed refs events        │ HTTPS
+          ▼                        │                           ▼
+  ┌──────────────────────────────────────────────────────────────────────┐
+  │  three equal core nodes · DNS round robin · no proxy in front        │
+  │  accounts · web app · Git over HTTPS · chat · routing catalog        │
+  └──────────────────────────────────────────────────────────────────────┘
+            every record is signed, so any copy can be checked
+```
 
-| Subsystem | Code | Home page |
+## The six pillars
+
+Everything ForkMesh promises rests on six short pages. Read them in order the
+first time; each one links to the full detail.
+
+```text
+    ┌─────────────────────────────────────────────────────────────────────┐
+    │       Code and releases stay reachable and provably authentic,      │
+    │           whichever host, domain, account or network fails          │
+    └─────────────────────────────────────────────────────────────────────┘
+    ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐
+    │    1    │ │    2    │ │    3    │ │    4    │ │    5    │ │    6    │
+    │         │ │         │ │         │ │         │ │         │ │         │
+    │  Archi- │ │ Encryp- │ │ Mirror- │ │  Self-  │ │ Censor- │ │  Threat │
+    │ tecture │ │   tion  │ │   ing   │ │ hosting │ │   ship  │ │  model  │
+    │         │ │         │ │         │ │         │ │  resil- │ │         │
+    │         │ │         │ │         │ │         │ │  ience  │ │         │
+    └─────────┘ └─────────┘ └─────────┘ └─────────┘ └─────────┘ └─────────┘
+    ═══════════════════════════════════════════════════════════════════════
+           Git, signed .forkmesh/ records and an open protocol suite
+```
+
+| | Pillar | Read it to learn | In one line |
+| --- | --- | --- | --- |
+| 🏗️ | **[Architecture and availability](architecture.md)** | How the network is built, and why no single server has to stay up | Three equal cores behind DNS round robin; with two down the third serves read-only |
+| 🔐 | **[Encryption and signatures](encryption.md)** | What is signed and encrypted, with which algorithms, and the known gaps | Ed25519 everywhere; chat, calls and private repositories use X25519 + ML-KEM-768 |
+| 🪞 | **[Mirroring and software distribution](mirroring.md)** | How copies stay in step, how clones are verified, how releases reach users | Clones go only to a mirror whose refs match the signed pin, and fail closed otherwise |
+| 🏠 | **[Self-hosting](self-hosting.md)** | Run a node, a mirror, an instance or a fleet yourself | Four levels, from a desktop node to a fleet; an instance takes about 15 minutes |
+| 🛡️ | **[Censorship resilience](censorship-resilience.md)** | What still works when a host, domain, account or network is blocked | Mirrors, Tor and I2P transports, USB bundles and portable keys, with the limits stated |
+| 🎯 | **[Threat model](protocol/threat-model.md)** | What the protocol defends against, and what is still open | A numbered register of threats, each with its severity, its status and the controls that answer it |
+
+## Find your way
+
+| I want to… | Start here |
+| --- | --- |
+| 🚀 Install ForkMesh and make my first repository | [Getting started](getting-started.md) |
+| 💾 Keep a safe copy of a GitHub project | [Back up a GitHub repository](back-up-a-github-repository.md) |
+| 📱 Use ForkMesh on my phone or watch | [Phone apps](mobile/README.md) |
+| 🧩 Add ForkMesh to Chrome | [Browser extension](browser-extension.md) |
+| 🤖 Work with coding agents | [Working with coding agents](coding-agents.md) |
+| 🖥️ Run my own server | [Self-hosting](self-hosting.md) |
+| 🆘 Save a project that is under threat right now | [Crisis preservation](crisis-preservation.md) |
+| 🛠️ Change ForkMesh itself | [How the codebase fits together](codebase.md) |
+
+## Use ForkMesh
+
+### Get started
+
+[Getting started](getting-started.md) ·
+[ForkMesh apps](apps.md) · [Desktop app guide](qt-client.md) ·
+[Installation support matrix](install-support-matrix.md) ·
+[Back up a GitHub repository](back-up-a-github-repository.md) ·
+[Working with coding agents](coding-agents.md) ·
+[Git errors](git-errors.md)
+
+### Apps on every screen
+
+| | App | Guide |
 | --- | --- | --- |
-| Desktop app (Qt) | `desktop/` | [desktop/README.md](desktop/README.md) |
-| Agent runs | `desktop/src/*Agent*`, `server/`, `app/src` | [agents/README.md](agents/README.md) |
-| Go daemon (mirror, core, runner roles) | `server/` | [server/README.md](server/README.md) |
-| App (Python on the core nodes) | `app/` | [app/README.md](app/README.md) |
-| CPython host for the app | `app/host/` | [host/README.md](host/README.md) |
-| Website and docs library | `www/` | [www/README.md](www/README.md) |
-| Office (2D) | `office/` | [office/README.md](office/README.md) |
-| World (3D) | `world/` | [world/README.md](world/README.md) |
-| World voice, camera and channels | `world/public/world/world-voice*.js`, `world-channels.js`, `app/public/call-avatar-*.js` | [world/voice.md](world/voice.md) |
-| World Genie spider | `world/public/world/scene/genie-spider.js`, `scene/runtime/genie-spider.js` | [world/genie-spider.md](world/genie-spider.md) |
-| Native apps (iOS, watchOS, Android) | `native/` | [native/README.md](native/README.md) |
-| Marketplace packages | `marketplace/` | [marketplace/README.md](marketplace/README.md) |
-| Plugins and the core: which plugins a build adds | `marketplace/plugins.json`, `marketplace/tools/marketplace_lib.py`, `desktop/cmake/ForkMeshPackageModules.cmake`, `app/tools/build_app_plugins.py` | [marketplace/plugins.md](marketplace/plugins.md) |
-| Plugin console: the admin page for every Market package (installs, tables, logs) | `app/src/plugin_console.py`, `app/public/dashboard/js/09-plugins.js` | [marketplace/plugin-console.md](marketplace/plugin-console.md) |
-| Codebase analysis (Code Map, Size Map, Strata, Ember, Synapse) | `desktop/src/RepoInsight*`, `marketplace/packages/{code-map,size-map,strata,ember,synapse}/`, `native/ios/ForkMeshCore/Sources/FMCodeInsight`, `native/android/core/.../codeinsight`, `native/fixtures/insight` | [marketplace/codebase-analysis.md](marketplace/codebase-analysis.md) |
-| Releases and installers | `tools/package/`, release tooling, `.forkmesh/releases/` | [release/README.md](release/README.md) |
-| Changelog (forkmesh.com/changelog and the apps' What's new) | `changelog/changelog.json`, `tools/changelog.py` | [changelog.md](changelog.md) |
-| Fleet rendering and operator tools | `deploy/`, `tools/next_*.py` | [deploy/README.md](deploy/README.md) |
-| Security | cross-cutting | [security/README.md](security/README.md) |
-| Tools | `tools/` | [tools/README.md](tools/README.md) |
-| Conformance suites | `conformance/` | [conformance/README.md](conformance/README.md) |
-| Marketing | `marketplace/packages/marketing/`, marketing special agents | [marketing/README.md](marketing/README.md) |
-| Invoicing (CRM-linked invoices, email, open tracking) | `marketplace/packages/invoices/` | [marketplace/invoices.md](marketplace/invoices.md) |
-| Poker (Texas Hold'em for virtual chips on web, desktop, iPhone and Android) | `marketplace/packages/poker/`, `native/ios/.../Poker*`, `native/android/.../poker` | [marketplace/poker.md](marketplace/poker.md) |
+| 🖥️ | Desktop (Linux, Windows, macOS) | [Desktop app guide](qt-client.md) |
+| 📱 | iPhone, iPad and Android | [Phone apps](mobile/README.md) · [Getting started on a phone](mobile/getting-started.md) · [Android](mobile/android.md) · [Privacy and security on the phone](mobile/privacy-and-security.md) |
+| ⌚ | Apple Watch | [Apple Watch](mobile/apple-watch.md) |
+| 🧩 | Chrome and Chromium browsers | [Browser extension](browser-extension.md) |
+| 🌐 | Web | [ForkMesh apps](apps.md) |
 
-## Served stack
+Phone guides: [Mobile node contract](mobile/mobile-node-contract.md) ·
+[Owned Git engine](mobile/owned-git-engine-spec.md) · [Siri](mobile/siri.md) ·
+[Apple Health](mobile/apple-health.md) · [File editing](mobile/mobile-file-editing.md) ·
+[Agent access](mobile/mobile-agent-access.md)
 
-| Document | Covers |
-| --- | --- |
-| [PLAN.md](PLAN.md) | architecture of the served stack and which host serves what |
-| [OPERATIONS.md](OPERATIONS.md) | bring-up, routine operations, recovery, hardening |
-| [NEXT_ADOPTION.md](NEXT_ADOPTION.md) | operator files and growing the fleet |
-| [CUTOVER.md](CUTOVER.md) | the move from the Worker stack, switches and cutover tools |
-| [VAULT.md](VAULT.md) | sealed secrets vault and peer unseal |
-| [REKEY.md](REKEY.md) | offline `DATA_KEY` rotation |
-| [IDS.md](IDS.md) | host intrusion detection, lockdown and quarantine |
-| [RUNNERS.md](RUNNERS.md) | runner tier, job sandbox, sign-in, burst pool |
-| [fleet/AUTOSCALING.md](fleet/AUTOSCALING.md) | app-replica and burst-runner autoscaling |
-| [NODE_LOGS.md](NODE_LOGS.md) | node journals on the operator desktop |
-| [NODE_OWNERSHIP.md](NODE_OWNERSHIP.md) | node account ownership and version fields |
-| [deploy/auto-deploy.md](deploy/auto-deploy.md) | automatic deploys of `main` |
-| [deploy/self-deploy.md](deploy/self-deploy.md) | phone-approved deploys run by the cores |
-| [deploy/ssh-port.md](deploy/ssh-port.md) | the fleet's sshd port (`ssh_port`) and moving a node to it |
-| [HOSTED_REPOS.md](HOSTED_REPOS.md) | repositories hosted on the cores |
-| [CORE_PUSH.md](CORE_PUSH.md) | owner pushes, tag moves and branch deletes on the cores |
-| [INSTANCES.md](INSTANCES.md) | self-hosted white-label instances started from `forkmesh.com/start`; user guide [www/docs/start-your-own-instance.md](../www/docs/start-your-own-instance.md) |
-| [MAIL_LOG.md](MAIL_LOG.md) | the #email-log channel, mail tracking and core mail delivery |
+### Repositories
 
-## Features and topics
+[Reading and cloning without an account](accountless-reading.md) ·
+[Hosted repositories](hosted-repositories.md) ·
+[Contribute with git only](contributing-with-git.md) ·
+[Repository imports](repository-imports.md) ·
+[GitHub and forge sync](forge-sync.md) ·
+[Folder About boxes](folder-about.md) ·
+[Subscribing by feed or email](feeds-and-email.md) ·
+[Mirror and deploy a Cloudflare Worker](cloudflare-workers.md) ·
+[Workers AI coding agent](cloudflare-workers-ai-coding-agent.md)
 
-- [finance/grants/README.md](finance/grants/README.md): the ranked grant list, its CRM import and one-click ChatGPT drafts.
-- [APPS.md](APPS.md): third-party apps through OAuth; `examples/apps/hello-app` is the worked example.
-- [desktop/networking.md](desktop/networking.md) ("Visualizer"): the desktop Log → Visualizer, including opening a table bubble in the Database tab.
-- [app/account-data.md](app/account-data.md): Settings > Data: phone settings saved encrypted to the account, the inventory of everything ForkMesh keeps about a person, the export and per-item delete.
-- [marketplace-usage-feed-mastodon.md](marketplace-usage-feed-mastodon.md): privacy and federation boundaries for the Usage, Feed, and Mastodon packages.
-- [MARKETPLACE_RATINGS.md](MARKETPLACE_RATINGS.md): Market ratings and reviews.
-- [attribution.md](attribution.md): acquisition attribution.
-- [app/instance-legal-pages.md](app/instance-legal-pages.md): Terms, Privacy and Security pages on self-hosted instances.
-- [app/ai-review.md](app/ai-review.md): automated AI review of pull requests with Cloudflare Workers AI (instance settings, per-repository opt-in, budgets, privacy, prompt-injection handling).
-- [app/privacy-mode.md](app/privacy-mode.md): privacy mode for self-hosted instances: no visitor logs, what remains and why.
-- [app/accounts-and-moderation.md](app/accounts-and-moderation.md): email-free sign-up with recovery codes, random usernames, moderators, blocks, hidden posts, locked threads, first-post approval and new-account limits.
-- [app/instance-federation.md](app/instance-federation.md): self-hosted instances joining the forkmesh.com directory and the ForkMesh World.
-- [app/security-advisories.md](app/security-advisories.md): private vulnerability reporting, security advisories (OSV export, signed repository ledger) and researcher credits.
-- [app/recent-push-banner.md](app/recent-push-banner.md): the "had recent pushes · Compare & pull request" bar for branches the signed-in account just pushed.
-- [app/comment-reactions.md](app/comment-reactions.md): emoji reactions on issue, pull request and discussion comments (storage, API, limits, first paint, picker, gratitude group and Thank you sticker, custom reactions, animation).
-- [app/translations.md](app/translations.md): on-device post translation (browser Translator API, no network) and signed community translations attached to posts.
-- [app/repo-media.md](app/repo-media.md): uploading videos into issue and pull request markdown, stored in the replicated database and served with Range support.
-- [app/pull-revisions.md](app/pull-revisions.md): updating a pull request with new commits or a rewritten branch (signed revisions, no force push).
-- [app/comment-edits.md](app/comment-edits.md): editing and deleting your own issue and pull request comments (signed `comment-edit`/`comment-delete` events).
-- [app/comment-gifs.md](app/comment-gifs.md): GIFs and stickers in comment composers (GIPHY proxy, key handling, rendering, reduced motion).
-- [app/seasonal-theme.md](app/seasonal-theme.md): the Halloween theme an administrator or moderator switches on in Settings, Appearance (orange colours, spider web, witch hats, auto-off).
-- [app/comment-tips.md](app/comment-tips.md): wallet-to-wallet Solana Pay tips on comments (requests, read-only verification, limits, settings).
-- [app/branch-protection.md](app/branch-protection.md): protected default branches (merge only an owner- or admin-approved pull request) and the per-repository Actions switch.
-- [app/username-autocomplete.md](app/username-autocomplete.md): the shared username picker on chat channel invites, new channels, repository collaborators and advisory credits, and account search behind every @mention list.
-- [app/profile-links.md](app/profile-links.md): usernames and @mentions link to the person's profile on the web, desktop, server pages, world and phones.
-- [app/diff-viewer.md](app/diff-viewer.md): the full-screen web diff viewer for pull requests, branch comparisons and commits.
-- [app/issue-views.md](app/issue-views.md): the per-issue view count on issue pages and the issue list, deduplicated per viewer and day, with automated clients not counted.
-- [app/issue-assignment-deadline.md](app/issue-assignment-deadline.md): the optional assignee deadline bar on issues, set with `assignmentHours` in `.forkmesh/issues.json`.
-- [app/issue-assignment-limit.md](app/issue-assignment-limit.md): the issue page's Assign button and the one-open-issue rule for self-assignment (freed by a linked pull request), set with `assignmentLimit` in `.forkmesh/issues.json`.
-- [app/bot-avatars.md](app/bot-avatars.md): built-in avatars for bots and system accounts (Actions, git node, runners, AI review, `[bot]` names) and the account override.
-- [app/profile-avatar.md](app/profile-avatar.md): how profile and header avatars fall back to the account lookup and contributor rosters, like issue avatars.
-- [app/ai-disclosure.md](app/ai-disclosure.md): the "AI model(s) used" field on pull requests (optionally required per repository) and the copyable AI prompt on open issues.
-- [app/pull-review-prompt.md](app/pull-review-prompt.md): the "Diff and files" box on open pull requests: diff, patch and file links, Summarize in ChatGPT, and the copyable review prompt with its security-minded default and `.forkmesh/pulls.json` `reviewPromptTemplate`.
-- [PERF_PAGES.md](PERF_PAGES.md): page performance techniques.
-- [GIT_ERROR_MESSAGES.md](GIT_ERROR_MESSAGES.md): what failing Git commands show.
-- [Folder About boxes](../www/docs/folder-about.md): the `<folder>/.forkmesh/info.json` file format for a folder's own About box and logo (user guide); [app/directory-about.md](app/directory-about.md) has the API, caching and permissions.
-- [engineering/destructive-actions.md](engineering/destructive-actions.md): guarded deletes and the contract test.
-- [engineering/github-actions.md](engineering/github-actions.md): pings when a GitHub Actions workflow on `main` breaks or recovers, `tools/github_actions_status.py`, and failure annotations readable without a GitHub login.
-- [security/NODE_LINK_GRANT.md](security/NODE_LINK_GRANT.md), [security/agent-host-boundaries.md](security/agent-host-boundaries.md), [security/sentinel.md](security/sentinel.md), [security/findings.md](security/findings.md).
-- [dependency-security-audit-2026-09-13.md](dependency-security-audit-2026-09-13.md): dependency audit snapshot.
-- [engineering/third-party-dependencies.md](engineering/third-party-dependencies.md): which third-party packages we removed or replaced with our own code, which we keep and why, and the next candidate.
-- [release/linux-baseline.md](release/linux-baseline.md), [release/apt.md](release/apt.md), [release/self-setup-node.md](release/self-setup-node.md).
+### Availability
 
-## Special agents
+[Synchronization status](sync-status.md) ·
+[Mirror goals](mirror-quota.md) ·
+[Availability proof](availability-proof.md) ·
+[Repository availability contracts](availability-contract.md) ·
+[Crisis preservation](crisis-preservation.md) ·
+[Offline and low-bandwidth sync](offline-sync.md) ·
+[Transports and anonymity postures](transports.md) ·
+[Dependency workflows](dependency-workflows.md)
 
-Each special agent is a workflow in `.forkmesh/workflows/` that the desktop
-runs; see [app/workflows.md](app/workflows.md#desktop-workflows-and-special-agents).
+### Chat and calls
 
-| Agent | Charter |
-| --- | --- |
-| CFO (financial review, payouts) | [finance/cfo.md](finance/cfo.md) |
-| Hearth (Discord community) | [community/hearth.md](community/hearth.md) |
-| Reddit scout | [community/reddit.md](community/reddit.md) |
-| Site crawler | [www/site-crawler.md](www/site-crawler.md) |
-| Sentinel (security) | [security/sentinel.md](security/sentinel.md) |
+[Voice and video calls](calls.md) ·
+[Safety numbers and trusted devices](chat-safety-numbers.md) ·
+[Mentions and username suggestions](mentions-and-autocomplete.md) ·
+[DJ Studio jams](dj-studio.md)
 
-## Coding agents
+### Identity, trust and social
 
-`app/public/forkmesh-agent.md`, served at
-`https://app.forkmesh.com/forkmesh-agent.md`, is the one guide written for
-outside coding agents: starting an instance, working on a repository, and the
-pull request workflow. The start page copies a one-line prompt that points an
-agent at it. Keep it in step with [INSTANCES.md](INSTANCES.md),
-`www/docs/start-config.md` and the pull request section of `CONTRIBUTING.md`;
-`app/tests/test_start_instance_page.py` checks the parts that must match.
-User guide: [www/docs/coding-agents.md](../www/docs/coding-agents.md).
+[Portable identities and recovery](portable-identities.md) ·
+[Trust lists](trust-lists.md) · [Portable social signals](social-signals.md) ·
+[Fediverse digests, mention review and Lemmy threads](fediverse.md)
 
-Repository rules: `AGENTS.md`, `CONTRIBUTING.md`, `SECURITY.md`.
+### World
+
+[Community services, soundtrack licence and ad governance](world-community-services.md)
+
+## Run ForkMesh
+
+| | Area | Start with |
+| --- | --- | --- |
+| 🏠 | Your own node, mirror or instance | [Self-hosting](self-hosting.md), [Start your own instance](start-your-own-instance.md), [Start from a settings file](start-config.md), [mirror node](operations/mirror-node.md) |
+| 🛰️ | The served stack and its runbook | [Operations](operations/README.md): [served stack](operations/served-stack.md), [runbook](operations/runbook.md), [vault](operations/vault.md), [runners](operations/runners.md), [instances](operations/instances.md) |
+| 🧯 | Recovery | [Disaster recovery](disaster-recovery/README.md) and its [printable runbook](disaster-recovery/runbook.md) |
+| 🔒 | Security | [Security](security/README.md): trust boundaries, keys, [private repositories](security/private-repository-confidentiality.md), [chat encryption](security/sealed-chat.md), [organization roles](security/organization-roles.md), [secret scanning](security/secret-scanning.md) |
+| 🔎 | What outside services see, and what the service keeps | [External dependency map](external-dependency-map.md), [Relay data retention and deletion](relay-data-retention.md) |
+| 📦 | Releases and installers | [Releases](release/README.md) |
+
+## Reference
+
+| | Reference | What it holds |
+| --- | --- | --- |
+| 📜 | [Protocol suite](protocol/README.md) | The normative wire protocol, signatures and routing |
+| 🧠 | [Design decisions](design/README.md) | Collaboration, trust lists, review threads, release publishing and federation |
+| 🔌 | [Integration contract](integrations.md) | What outside tools can rely on |
+| 🧪 | [Git compatibility matrix](git-compatibility.md) · [Conformance suites](conformance/README.md) | Evidence that stock Git and other implementations work |
+| 🗺️ | [Surface capability matrix](capability-matrix.md) · [Searchable repository index](repository-index.md) | Which app does what, and where each repository lives |
+| ✍️ | [Terminology and voice guide](terminology.md) | The words ForkMesh uses, and how it writes |
+
+Machine-readable `*.schema.json` files sit in this folder.
+
+## Product and project
+
+[Product promise](product-promise.md) ·
+[Category comparisons](category-comparisons.md) ·
+[Business model](business-model.md) ·
+[Incentive independence](incentive-independence.md) ·
+[Activation-to-revenue scorecard](activation-revenue-scorecard.md) ·
+[Monthly outcome review](outcome-review.md) ·
+[Admin dashboard](admin-dashboard.md) ·
+[Hackathon](hackathon.md) ·
+[Governance](governance/README.md) and its [decision register](governance/decision-register.md) ·
+[Public-interest funding](funding/README.md) and its [funding register](funding/funding-register.md) ·
+[Definition of done](engineering/definition-of-done.md) ·
+[Contributing](../CONTRIBUTING.md)
+
+## Build ForkMesh
+
+[How the codebase fits together](codebase.md) is the developer entry page.
+Each part has one home page; its topic pages link back to it.
+
+| | Part | Code | Home page |
+| --- | --- | --- | --- |
+| 🖥️ | Desktop app (Qt) | `desktop/` | [desktop/README.md](desktop/README.md) |
+| 🤖 | Agent runs | `desktop/src/*Agent*`, `server/`, `app/src` | [agents/README.md](agents/README.md) |
+| 🐍 | App (Python on the core nodes) | `app/` | [app/README.md](app/README.md) |
+| 🧱 | CPython host for the app | `app/host/` | [host/README.md](host/README.md) |
+| 🐹 | Go daemon (mirror, core, runner roles), calls | `server/` | [server/README.md](server/README.md) |
+| 🌐 | Website, docs site and the Cloud Dragon mascot | `www/`, `app/tools/docs_site.py` | [www/README.md](www/README.md), [Cloud Dragon](www/cloud-dragon.md) |
+| 📱 | Phone apps (iOS, watchOS, Android) | `native/` | [native/README.md](native/README.md) |
+| 🛍️ | Marketplace packages and plugins | `marketplace/` | [marketplace/README.md](marketplace/README.md) |
+| 🧰 | Plugin console: the web admin page for every package (installs, instance places, tables, logs) | `app/src/plugin_console.py`, `app/public/dashboard/js/09-plugins.js` | [marketplace/plugin-console.md](marketplace/plugin-console.md) |
+| 🧩 | Browser extension | `marketplace/packages/browser-extension/` | [marketplace/browser-extension.md](marketplace/browser-extension.md) |
+| 🌍 | World (3D) and Office (2D) | `world/`, `office/` | [world/README.md](world/README.md), [office/README.md](office/README.md) |
+| 🛰️ | Fleet, deploys and operator tools | `deploy/`, `tools/next_*.py` | [operations/README.md](operations/README.md) |
+| 📦 | Releases and installers | `tools/package/`, `.forkmesh/releases/` | [release/README.md](release/README.md) |
+| 🧰 | Repository tools | `tools/` | [tools/README.md](tools/README.md) |
+| 📏 | Engineering rules | cross-cutting | [engineering/README.md](engineering/README.md) |
+
+Special agents are workflows in `.forkmesh/workflows/`
+([app/workflows.md](app/workflows.md#desktop-workflows-and-special-agents)):
+[CFO](finance/cfo.md), [Hearth](community/hearth.md),
+[Reddit scout](community/reddit.md), [site crawler](www/site-crawler.md) and
+[Sentinel](security/sentinel.md). The
+guide for outside coding agents is `app/public/forkmesh-agent.md`, served at
+`https://app.forkmesh.com/forkmesh-agent.md`. Keep it in step with
+[instances](operations/instances.md), [start-config.md](start-config.md) and the
+pull request section of `CONTRIBUTING.md`; `app/tests/test_start_instance_page.py`
+checks the parts that must match.
+
+## Writing docs
+
+- **One home per topic.** Before adding a page, find the page that already
+  covers the topic and extend it; link to it from elsewhere instead of
+  repeating it. Summaries belong on the core pages above, detail on the area
+  page.
+- **Where a page goes.** User guides sit at the top of this folder (their
+  addresses on forkmesh.com/docs stay fixed); everything else goes in the
+  area folder of the code it describes. Source files hold no comments, so the
+  reason behind a change goes on the page for that code (`AGENTS.md`).
+- **Publishing.** `app/tools/docs_site.py` renders every page here except the
+  internal `finance/`, `marketing/` and `community/` folders; the phone apps
+  carry the user-facing areas. Code and tests read many pages by path: move or
+  rename a page only together with every reference, and add a redirect in
+  `www/public/_redirects` for a public address that goes away.
+- **Look.** Open a page with one sentence on what it covers. Draw a diagram as
+  a `text` code block of box-drawing characters (no emoji inside it, since
+  they break the column widths); it renders the same on the site, in the
+  desktop and in the phone apps. An icon is one emoji in a table's first
+  column or at the start of a list item, never in a heading, so heading
+  anchors stay the same in every renderer. Tables beat long paragraphs for
+  lists of facts.
+- **Style.** Short sentences, present tense, facts over stories. Say what still
+  depends on one provider; never claim more than the design delivers.

@@ -9,7 +9,7 @@
 
 The app variables live in the ``host_secrets`` table, AES-256-GCM encrypted
 under a key derived from ``DATA_KEY`` (app/host/forkmesh_host/vault_crypto.py;
-docs/VAULT.md). ``DATA_KEY`` exists only on this desktop:
+docs/operations/vault.md). ``DATA_KEY`` exists only on this desktop:
 ``<config>/DATA_KEY`` (one line, mode 0400/0600; preferred when present) or
 the ``DATA_KEY=`` line of ``<config>/secrets.env``.
 
@@ -21,7 +21,7 @@ the ``DATA_KEY=`` line of ``<config>/secrets.env``.
   through an SSH tunnel to any core node with a healthy rqlite (rqlite
   forwards the transaction to its leader). It refuses
   when the vault holds rows sealed under another key (rotation: TODO, see
-  docs/VAULT.md). ``--prune`` deletes rows for names no longer listed. The
+  docs/operations/vault.md). ``--prune`` deletes rows for names no longer listed. The
   unsealed nodes then re-read the vault (``reload``) unless ``--no-reload``.
 * ``unseal`` pipes the key over SSH **stdin** into
   ``/usr/local/sbin/fmnext-unseal`` on each node, which hands it to the
@@ -35,7 +35,7 @@ the ``DATA_KEY=`` line of ``<config>/secrets.env``.
   ``--restart`` also ends the app process (``seal-restart``: the dropped
   values are overwritten and the memory goes back to the kernel); systemd
   restarts it sealed, and its peers unseal it again unless it is
-  quarantined (docs/IDS.md).
+  quarantined (docs/operations/intrusion-detection.md).
 
 **Dry-run is the default**: nothing is sent without ``--execute``. No value
 (secret or key) is ever printed; ``status`` shows names and key ids only.
@@ -317,7 +317,7 @@ def sync(fleet, ssh, runner, prune=False, reload=True, opener=None, clock=time.t
                 raise GuardError(
                     "the vault holds rows sealed under another DATA_KEY (%s; "
                     "local key_id %s). Key rotation is not implemented "
-                    "(docs/VAULT.md)" % (", ".join(foreign), key.key_id))
+                    "(docs/operations/vault.md)" % (", ".join(foreign), key.key_id))
             now = int(clock())
             statements = [[UPSERT_SQL, r["name"], r["nonce"], r["ciphertext"],
                            r["key_id"], now] for r in rows]

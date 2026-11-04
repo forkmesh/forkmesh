@@ -19,10 +19,12 @@ struct FmGlassSurface<Content: View>: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     private let cornerRadius: CGFloat
+    private let floating: Bool
     private let content: Content
 
-    init(cornerRadius: CGFloat = FmRadius.full, @ViewBuilder content: () -> Content) {
+    init(cornerRadius: CGFloat = FmRadius.full, floating: Bool = false, @ViewBuilder content: () -> Content) {
         self.cornerRadius = cornerRadius
+        self.floating = floating
         self.content = content()
     }
 
@@ -69,7 +71,7 @@ struct FmGlassSurface<Content: View>: View {
             .background { backdrop }
             .overlay { shape.strokeBorder(edge, lineWidth: 0.5) }
             .clipShape(shape)
-            .shadow(color: Color.black.opacity(fm.dark ? 0.45 : 0.10), radius: 12, x: 0, y: 8)
+            .shadow(color: Color.black.opacity(floating ? (fm.dark ? 0.4 : 0.07) : 0), radius: 18, x: 0, y: 6)
     }
 }
 
@@ -135,8 +137,8 @@ struct FmCard<Content: View>: View {
     }
 }
 
-/// FmSectionHeader: an uppercase eyebrow with an optional icon and a trailing
-/// view or count.
+/// FmSectionHeader: a sentence-case heading with an optional icon, a quiet count
+/// after the title, and an optional trailing view.
 struct FmSectionHeader: View {
     @Environment(\.fmPalette) private var fm
 
@@ -152,28 +154,27 @@ struct FmSectionHeader: View {
         self.count = count
     }
 
-    @ViewBuilder private var trailingView: some View {
-        if let trailing = trailing {
-            trailing.padding(.leading, FmSpace.x3)
-        } else if let count = count {
-            Text(String(count))
-                .fmText(.bodySmall, tabular: true)
-                .padding(.leading, FmSpace.x3)
-        }
-    }
-
     var body: some View {
-        HStack(spacing: 0) {
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
             if let icon = icon {
-                FmIcon(icon, size: 14, color: fm.textTertiary)
+                FmIcon(icon, size: 15, color: fm.textSecondary)
                     .padding(.trailing, FmSpace.x2)
             }
-            Text(title.uppercased())
-                .fmText(.labelSmall)
+            Text(title)
+                .fmText(.labelLarge, color: fm.textSecondary)
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            trailingView
+                .accessibilityAddTraits(.isHeader)
+            if let count = count {
+                Text(String(count))
+                    .fmText(.bodyLarge, color: fm.textTertiary, height: FmType.leadingTight, tabular: true)
+                    .padding(.leading, FmSpace.x1 + 2)
+                    .fixedSize()
+            }
+            Spacer(minLength: FmSpace.x3)
+            if let trailing = trailing {
+                trailing
+            }
         }
     }
 }
@@ -210,29 +211,49 @@ struct FmEmptyState: View {
     private let icon: String
     private let title: String
     private let message: String?
+    private let art: AnyView?
+    private let actionLabel: String?
+    private let onAction: (() -> Void)?
 
-    init(icon: String, title: String, message: String? = nil) {
+    init(
+        icon: String,
+        title: String,
+        message: String? = nil,
+        art: AnyView? = nil,
+        actionLabel: String? = nil,
+        onAction: (() -> Void)? = nil
+    ) {
         self.icon = icon
         self.title = title
         self.message = message
+        self.art = art
+        self.actionLabel = actionLabel
+        self.onAction = onAction
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            FmIcon(icon, size: 40, color: fm.textTertiary)
+            if let art = art {
+                art
+            } else {
+                FmIcon(icon, size: 40, color: fm.textTertiary)
+            }
             Text(title)
-                .fmText(.titleMedium)
+                .fmText(art == nil ? .titleMedium : .titleLarge)
                 .multilineTextAlignment(.center)
-                .padding(.top, FmSpace.x4)
+                .padding(.top, art == nil ? FmSpace.x4 : FmSpace.x5)
             if let message = message {
                 Text(message)
-                    .fmText(.bodyMedium, color: fm.textSecondary)
+                    .fmText(art == nil ? .bodyMedium : .bodyLarge, color: fm.textSecondary)
                     .multilineTextAlignment(.center)
                     .padding(.top, FmSpace.x2)
             }
-            FmMessageTools(message.map { "\(title)\n\($0)" } ?? title)
-                .padding(.top, FmSpace.x2)
+            if let actionLabel = actionLabel, let onAction = onAction {
+                FmFilledButton(actionLabel, onPressed: onAction)
+                    .padding(.top, FmSpace.x4)
+            }
         }
+        .fmMessageTools(message.map { "\(title)\n\($0)" } ?? title)
         .padding(.horizontal, FmSpace.x5)
         .padding(.vertical, FmSpace.x7)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
@@ -451,6 +472,7 @@ struct FmIconButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
+            .textSelection(.disabled)
             .background {
                 Circle()
                     .fill(highlight)
@@ -489,7 +511,7 @@ struct FmConnectionBanner: View {
             Text("You are offline. Messages and live updates are paused.")
                 .fmText(.bodyMedium, weight: FmType.medium)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            FmMessageTools("You are offline. Messages and live updates are paused.")
+                .fmMessageTools("You are offline. Messages and live updates are paused.")
             if let onRetry = onRetry {
                 FmTextButton("Retry", onPressed: onRetry)
             }

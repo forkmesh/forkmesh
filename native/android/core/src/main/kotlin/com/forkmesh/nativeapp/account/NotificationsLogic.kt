@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.account
 
+import com.forkmesh.nativeapp.json.str
 import com.forkmesh.nativeapp.model.ForkNotification
 import com.forkmesh.nativeapp.model.NotificationDeepLink
 import com.forkmesh.nativeapp.model.RepoDetailTab
@@ -38,6 +39,9 @@ fun notificationIconForKind(kind: String): String = when (kind.trim().lowercase(
     "plugin_activity" -> "extension_outlined"
     "timer_finished" -> "timer_outlined"
     "desktop_ping" -> "desktop_windows_outlined"
+    "agent_approval" -> "verified_user_outlined"
+    "action_approval" -> "verified_user_outlined"
+    "action_failed" -> "error_outline"
     "repo_activity" -> "commit_outlined"
     "code_push" -> "commit_outlined"
     "security_alert" -> "gpp_maybe_outlined"
@@ -49,6 +53,44 @@ fun notificationIconForKind(kind: String): String = when (kind.trim().lowercase(
     "reaction" -> "add_reaction_outlined"
     "pull_attention" -> "rate_review_outlined"
     else -> NOTIFICATION_LINE_ICON
+}
+
+enum class PingTone { Danger, Success, Warning, Info, Accent, Neutral }
+
+fun notificationToneForKind(kind: String): PingTone = when (kind.trim().lowercase()) {
+    "error", "error_group", "operational_alert", "security_alert", "local_failure", "action_failed" -> PingTone.Danger
+    "agent-done", "agent_done", "host_online", "repository_hosted", "badge" -> PingTone.Success
+    "issue", "issue_opened", "issue_assigned", "host_offline", "agent_approval", "agent-approval", "pull_attention",
+    "action_approval", "security_advisory",
+    -> PingTone.Warning
+    "mention", "subscribed", "repo", "repo_shared", "repo_activity", "code_push", "pending_inbox",
+    "mirror", "mirror_request", "calendar_invitation", "calendar_reminder", "calendar_rsvp",
+    "plugin_activity", "timer_finished", "account_email_sent", "prompt", "device_added", "package_review",
+    "reaction",
+    -> PingTone.Info
+    "action", "organization_task_started", "organization_task_activity", "organization_task_update",
+    "pull", "pull_submitted", "review_requested", "pull_review_requested", "bounty_funded", "bounty_paid",
+    "credits_refilled", "pending_reward", "tip_sent", "release", "release_published", "org_succession",
+    "chat", "comment", "discussion", "chat_webhook", "channel_unread", "direct_unread", "hackathon_squad", "hackathon_reward",
+    -> PingTone.Accent
+    else -> PingTone.Neutral
+}
+
+fun pingIsGoodNews(kind: String, meta: Map<String, Any?>): Boolean =
+    kind.trim().lowercase() == "operational_alert" && meta.str("state").trim().lowercase() == "up"
+
+fun notificationIcon(kind: String, meta: Map<String, Any?>): String =
+    if (pingIsGoodNews(kind, meta)) "check_circle_outline" else notificationIconForKind(kind)
+
+fun notificationTone(kind: String, meta: Map<String, Any?>): PingTone {
+    if (pingIsGoodNews(kind, meta)) return PingTone.Success
+    if (kind.trim().lowercase() == "desktop_ping") {
+        when (meta.str("category").trim()) {
+            "agent-finished" -> return PingTone.Success
+            "agent-failed", "ci-failed" -> return PingTone.Danger
+        }
+    }
+    return notificationToneForKind(kind)
 }
 
 val NOTIFICATION_FILTERS: List<String> = listOf("All", "Unread", "Mentions", "Repo", "System")
@@ -260,8 +302,6 @@ fun pingWebLink(href: String): String? {
 }
 
 const val PING_DETAIL_TITLE = "Ping"
-const val PING_DETAIL_BACK = "All pings"
-const val INBOX_ITEM_BACK = "Inbox"
 const val PING_DELETE_LABEL = "Delete ping"
 const val PING_DELETE_TITLE = "Delete this ping?"
 const val PING_DELETE_BODY = "It is removed from your ForkMesh inbox on every device. This cannot be undone."

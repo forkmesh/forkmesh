@@ -306,7 +306,7 @@ class HostASGI:
         return _js.Request(url, method, headers, body, None, cf)
 
     def _edge_client(self, scope, headers, method):
-        """x-forkmesh-edge-client (deploy/core/edge_client.md): always
+        """x-forkmesh-edge-client (docs/www/edge-client.md): always
         stripped; when it verifies and the request came through Caddy
         (loopback peer), its visitor replaces cf-connecting-ip/country."""
         value = headers.get(request_guard.EDGE_HEADER)
@@ -641,6 +641,7 @@ class HostASGI:
             except Exception as error:
                 error_log.report("read surface failed on %s" % path, error)
         if (self.serve_assets and method in ("GET", "HEAD")
+                and "%" not in path
                 and not self.rules.worker_first(path)):
             assets = getattr(self.runtime.env, "ASSETS", None)
             if assets is not None and assets.exists(path):
@@ -735,7 +736,7 @@ class HostASGI:
                 _js.Headers({"content-type": "text/plain; charset=utf-8"}))
 
     def _world_health(self, scope, method):
-        """world.next's /health/mobile (world_health.py): static-file
+        """world.forkmesh.com's /health/mobile (world_health.py): static-file
         contracts only, no secrets, so it answers even while sealed."""
         del method
         from . import world_health

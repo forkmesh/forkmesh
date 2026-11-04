@@ -4,7 +4,8 @@ Every text field on the web, the desktop and both phone apps removes
 invisible Unicode characters as the user types or pastes, and the app server
 removes them again from every parsed request body. One policy,
 `forkmesh-hidden-unicode-v1`, is shared by all of them and pinned by
-`conformance/hidden-unicode/v1/vectors.json`.
+`conformance/hidden-unicode/v1/vectors.json`. Part of
+[Security](README.md).
 
 ## Why
 
@@ -88,8 +89,7 @@ be seen.
 The desktop guard runs from an application-wide filter on every widget's
 `Polish` event, so `guardWidget` checks the widget's type before reading its
 `forkmeshHiddenUnicodeGuard` property: a dynamic-property read is a string
-search through the class's properties, and it used to run for every label,
-button and frame created.
+search, too costly to run for every label, button and frame.
 
 ### Exactness exceptions
 
@@ -113,11 +113,10 @@ Some text has to stay byte for byte:
   `suggestionPatch` and `anchorLines` stay exact on the server. They are git
   patches, commit mboxes and code lines: their author signs them byte for
   byte and the owner replays them with git. Code may legitimately contain any
-  of these characters (a test that asserts U+2028 never appears does), and
-  rewriting it both breaks the signature (`bad_signature`) and corrupts the
-  patch. Hidden characters in code are a review concern, not a rewrite. Prose
-  fields of the same events (`title`, `body`) are still cleaned, so a signed
-  title or comment that carries hidden characters is refused.
+  of these characters, and rewriting it breaks the signature and corrupts the
+  patch; hidden characters in code are a review concern. Prose fields of the
+  same events (`title`, `body`) are still cleaned, so a signed title or
+  comment that carries hidden characters is refused (see below).
 - **IME composition.** Text is cleaned only once composition ends, so CJK and
   other input methods are not disturbed.
 - **Read-only desktop views.** These show text exactly as received. Editable
@@ -156,12 +155,9 @@ fails if one slips into the policy files.
 
 ## Signed code in pull requests
 
-A pull request's `patch` and `commits` are code and are signed byte for byte,
-so cleaning them broke every pull whose code holds a character on the list (a
-UTF-8 byte-order mark at the top of a Windows file, a zero-width space inside
-a string, a whitespace table written with literal characters) with
-`bad_signature`, and would otherwise have changed the code silently.
-`pulls_handler` reads the body once more without cleaning
+Cleaning a pull's `patch` and `commits` would fail every pull whose code
+holds a listed character (a UTF-8 byte-order mark in a Windows file, a
+zero-width space inside a string) with `bad_signature`. `pulls_handler` reads the body once more without cleaning
 (`bounded_json_request_with_raw`), verifies the signature over the exact
 `patch` and `commits`, keeps them exact, and stores `hiddenUnicode: true` on
 the pull when either holds a character this policy removes, so a reviewer and

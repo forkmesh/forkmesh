@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ForkMesh fleet autoscaler, operator side (docs/fleet/AUTOSCALING.md).
+"""ForkMesh fleet autoscaler, operator side (docs/operations/autoscaling.md).
 
 The scaler runs on the cores. This tool is the desktop's signed control plane:
 

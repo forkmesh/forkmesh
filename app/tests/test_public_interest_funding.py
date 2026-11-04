@@ -344,7 +344,7 @@ def test_register_detects_hand_edits(tmp_path):
 
 
 def test_gate_is_wired_into_quality_profiles_and_ci():
-    config = json.loads((ROOT / "www/docs/engineering/quality-gates.json").read_text(encoding="utf-8"))
+    config = json.loads((ROOT / "docs/engineering/quality-gates.json").read_text(encoding="utf-8"))
     gate = next(item for item in config["gates"] if item["id"] == "public-interest-funding")
     assert gate["command"] == ["{python}", "tools/public_interest_funding.py", "gate"]
     assert "public-interest-funding" in config["profiles"]["core"]
@@ -357,7 +357,7 @@ def test_gate_is_wired_into_quality_profiles_and_ci():
 
 
 def test_program_guide_documents_operations():
-    guide = (ROOT / "www/docs/funding/README.md").read_text(encoding="utf-8")
+    guide = (ROOT / "docs/funding/README.md").read_text(encoding="utf-8")
     for marker in (
         "## Eligibility", "## Selection", "## Conflicts", "## Payment rails", "## Independence",
         "## Disclosure and reporting", "## Community review", "## Failure, rollback, and recovery", "## Measures",
@@ -366,7 +366,7 @@ def test_program_guide_documents_operations():
         "(funding-register.md)",
     ):
         assert marker in guide, marker
-    index = (ROOT / "www/docs/README.md").read_text(encoding="utf-8")
+    index = (ROOT / "docs/README.md").read_text(encoding="utf-8")
     assert "(funding/README.md)" in index
-    incentives = (ROOT / "www/docs/incentive-independence.md").read_text(encoding="utf-8")
+    incentives = (ROOT / "docs/incentive-independence.md").read_text(encoding="utf-8")
     assert "[public-interest funding](funding/README.md)" in incentives

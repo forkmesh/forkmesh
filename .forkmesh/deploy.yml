@@ -19,9 +19,9 @@ jobs:
       - name: Refuse Cloudflare deploys from this repository
         run: |
           echo "Cannot deploy: production runs on the core nodes n1-n3."
-          echo "Pushes to main deploy them through the Deploy nodes workflow (.forkmesh/deploy-nodes.yml, docs/deploy/auto-deploy.md)."
-          echo "The Cloudflare app and world Workers are decommissioned (docs/CUTOVER.md, step 21)."
-          echo "The production www Worker deploys by hand from main with www/wrangler.production.toml (docs/CUTOVER.md)."
+          echo "Pushes to main deploy them through the Deploy nodes workflow (.forkmesh/deploy-nodes.yml, docs/operations/auto-deploy.md)."
+          echo "The Cloudflare app and world Workers are decommissioned (docs/operations/served-stack.md, step 21)."
+          echo "The production www Worker deploys by hand from main with www/wrangler.production.toml (docs/operations/served-stack.md)."
           exit 1
       # Node 22 reserves a large sparse virtual range when Wrangler loads its
       # WebAssembly BLAKE3/Pyodide modules. This is not resident memory: the

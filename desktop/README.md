@@ -22,11 +22,11 @@ on Ubuntu 24.04 and Debian 12 (OpenSSL 3.0) configure once with
 `-DFORKMESH_BUNDLED_OPENSSL=ON` to build a pinned 3.5
 ([details](../docs/desktop/build-and-test.md#openssl)). For dependencies, first-run setup, UI workflows, pull requests, data
 locations, logs, and troubleshooting, use the
-[Qt client guide](../www/docs/qt-client.md).
+[Qt client guide](../docs/qt-client.md).
 
 Developer documentation (code map, architecture, build and test internals,
 diagnostics, networking, Windows, agents): [docs/desktop/](../docs/desktop/README.md).
 
-New to ForkMesh? Start with [Getting started](../www/docs/getting-started.md).
+New to ForkMesh? Start with [Getting started](../docs/getting-started.md).
 Changing the project? Read [Contributing](../CONTRIBUTING.md) before opening a
 pull request.

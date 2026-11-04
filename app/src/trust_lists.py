@@ -1,7 +1,7 @@
 """Scoped, community-operated trust lists.
 
 This module is the dependency-free reference implementation of
-``forkmesh-trust-list-v1`` (www/docs/design/scoped-trust-lists.md).  A client
+``forkmesh-trust-list-v1`` (docs/design/scoped-trust-lists.md).  A client
 hands it raw signed documents -- list versions, revocations, and appeals --
 plus its *local* follows and overrides, and receives one deterministic
 resolution.  The JavaScript (app/public/trust-lists.js), Swift

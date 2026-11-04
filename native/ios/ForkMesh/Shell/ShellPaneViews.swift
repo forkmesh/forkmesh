@@ -83,12 +83,6 @@ final class ShellDetailHost {
         pages[tab] = nil
         current.release()
     }
-
-    func clearAll() {
-        for tab in Array(pages.keys) {
-            clear(tab)
-        }
-    }
 }
 
 private struct ShellDetailDestination<Item: Hashable, Page: View>: ViewModifier {
@@ -303,6 +297,7 @@ struct ShellSideRail: View {
         switch entry.slot {
         case let .item(item):
             cell(item)
+                .textSelection(.disabled)
                 .contextMenu {
                     ShellBarItemMenu(
                         item: item, items: items, prefs: prefs,

@@ -1,12 +1,13 @@
 # FM Media in the browser (phase 6)
 
-Phase 6 of [FM Media](../server/fm-media.md): the browser's client for the
+Part of [the App docs](README.md). Phase 6 of [FM Media](../server/fm-media.md): the browser's client for the
 call server of [fmm-server.md](../server/fmm-server.md). The engine core
 (datagrams, fragmentation, FEC, congestion control and pacing, jitter
 buffers, the session layer) is a JavaScript port of the Go core in
 `server/rtc/fmm`, held to it by shared fixtures. Media goes through
 WebTransport, WebCodecs and an AudioWorklet, encrypted with call e2ee v2
-([call-e2ee.md](../server/call-e2ee.md)). Built 2026-10-21. Browsers without
+([call-e2ee.md](../server/call-e2ee.md); overview in
+[encryption](../encryption.md)). Browsers without
 WebTransport, WebCodecs or a call signer stay on the WebRTC path of
 [chat-group-calls.md](chat-group-calls.md), unchanged.
 

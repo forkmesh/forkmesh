@@ -5,7 +5,8 @@
 and complexity of any repository open in ForkMesh, or any folder picked with
 **Folder…**. It is our own take on NDepend, built on the shared analysis engine
 described in [codebase-analysis.md](codebase-analysis.md): modules are folder
-groups, so it works for every language the engine reads.
+groups, so it works for every language the engine reads. Part of
+[Marketplace](README.md).
 
 ## Code map
 

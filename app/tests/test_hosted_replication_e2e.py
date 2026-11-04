@@ -12,7 +12,7 @@ key (``_https_mirror_push_proxy`` / ``hosted_private_read`` in production).
 create (first commit on the primary) -> the replica fetches it -> push to the
 primary -> the replica converges -> clone from the replica -> make it private
 -> the public route goes dark while a capability still clones it.
-docs/HOSTED_REPOS.md.
+docs/operations/core-hosted-repositories.md.
 """
 
 import asyncio

@@ -29,20 +29,20 @@ object PackageGate {
     const val TOUR = "tour"
     const val WORKFLOWS = "workflows"
 
-    val ORGANIZATION_PACKAGES: Set<String> = setOf(CRM, "marketing", "analytics", "competitor", "invoices")
+    val ORGANIZATION_PACKAGES: Set<String> = setOf(CRM, "marketing", "analytics", "competitor", "invoices", "surveys")
 
     val STARTER: Set<String> = setOf(AGENTS, CHAT, INBOX, CODE, TOUR)
 
     val DESKTOP_RELIANT: Set<String> = setOf(AGENTS, "desktops", "special-agents", "shortcuts", "hosts", "usage")
 
     val HUB_ITEMS: Map<String, String> = mapOf(
-        "notes" to "notes", "tasks" to "tasks", "calendar" to "calendar", "timers" to "timers",
+        "notes" to "notes", "tasks" to "tasks", "calendar" to "calendar", "booking" to "booking", "timers" to "timers",
         "desktops" to "desktops", "allAgents" to AGENTS, "teammates" to "special-agents", "shortcuts" to "shortcuts",
         "hosts" to "hosts", "network" to "network",
-        "crm" to CRM, "marketing" to "marketing", "analytics" to "analytics", "competitors" to "competitor", "invoices" to "invoices",
+        "crm" to CRM, "marketing" to "marketing", "analytics" to "analytics", "competitors" to "competitor", "invoices" to "invoices", "surveys" to "surveys",
         "ledger" to "ledger", "vault" to "vault", "coves" to "coves", "calories" to "calories",
         "steps" to "steps", "water" to "water", "sleep" to "sleep", "sugarBreak" to "sugar-break", "stretch" to "stretch", "foodGuide" to "food-guide", "speech" to "speech",
-        "glassesAlert" to "glasses-alert", "phoneSecurity" to "phone-security", "ember" to "ember", "strata" to "strata", "synapse" to "synapse", "openWrtRouter" to "openwrt", "faceChanger" to "face-changer", "appStoreStatus" to "app-store-status", "runners" to "runners", "usage" to "usage", "rssReader" to "rss-reader", "videoMixDjStudio" to "video-mix-dj-studio", "poker" to "poker", "instanceFeed" to "instance-feed", "secureDrive" to "secure-drive", "files" to "files", "localAI" to "on-device-ai", "activity" to "activity", "logs" to "logs", "diagnostics" to "diagnostics",
+        "glassesAlert" to "glasses-alert", "phoneSecurity" to "phone-security", "silentSpeech" to "silent-speech", "ember" to "ember", "strata" to "strata", "synapse" to "synapse", "openWrtRouter" to "openwrt", "faceChanger" to "face-changer", "appStoreStatus" to "app-store-status", "runners" to "runners", "usage" to "usage", "rssReader" to "rss-reader", "videoMixDjStudio" to "video-mix-dj-studio", "poker" to "poker", "instanceFeed" to "instance-feed", "mastodon" to "mastodon", "secureDrive" to "secure-drive", "files" to "files", "localAI" to "on-device-ai", "activity" to "activity", "logs" to "logs", "diagnostics" to "diagnostics",
         "stats" to "stats", "status" to "status-page", "orgs" to "organizations", "reportBug" to BUG_REPORTS,
         "tour" to "tour", "world" to "world", "people" to "people", "docs" to "docs", "designSystem" to "design-system",
         "signIn" to SIGN_IN, "signOut" to SIGN_IN, "workflows" to WORKFLOWS,
@@ -59,9 +59,10 @@ object PackageGate {
         put(DISCUSSIONS, Route.Kind.Discussion)
         put(ACTIONS, Route.Kind.Run)
         put(RELEASES, Route.Kind.Release)
-        put("notes", Route.Kind.Notes, Route.Kind.Note)
+        put("notes", Route.Kind.Notes, Route.Kind.Note, Route.Kind.NotePage)
         put("tasks", Route.Kind.Tasks, Route.Kind.Task)
         put("calendar", Route.Kind.Calendar, Route.Kind.Event)
+        put("booking", Route.Kind.Booking)
         put("timers", Route.Kind.Timers)
         put("desktops", Route.Kind.Desktops, Route.Kind.Desktop)
         put("special-agents", Route.Kind.Teammates, Route.Kind.Teammate, Route.Kind.TeammateEditor)
@@ -73,6 +74,7 @@ object PackageGate {
         put("analytics", Route.Kind.Analytics)
         put("competitor", Route.Kind.Competitors)
         put("invoices", Route.Kind.Invoices)
+        put("surveys", Route.Kind.Surveys)
         put("ledger", Route.Kind.Ledger)
         put("vault", Route.Kind.Vault)
         put("coves", Route.Kind.Coves, Route.Kind.Cove)
@@ -86,6 +88,7 @@ object PackageGate {
         put("speech", Route.Kind.Speech)
         put("glasses-alert", Route.Kind.GlassesAlert)
         put("phone-security", Route.Kind.PhoneSecurity)
+        put("silent-speech", Route.Kind.SilentSpeech)
         put("ember", Route.Kind.Ember)
         put("strata", Route.Kind.Strata)
         put("synapse", Route.Kind.Synapse)
@@ -98,6 +101,7 @@ object PackageGate {
         put("video-mix-dj-studio", Route.Kind.VideoMixDjStudio)
         put("poker", Route.Kind.Poker)
         put("instance-feed", Route.Kind.InstanceFeed)
+        put("mastodon", Route.Kind.Mastodon)
         put("secure-drive", Route.Kind.SecureDrive)
         put("files", Route.Kind.Files)
         put(WORKFLOWS, Route.Kind.Workflows)

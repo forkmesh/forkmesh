@@ -79,6 +79,18 @@ import com.forkmesh.nativeapp.ui.kit.FmSkeletonList
 import com.forkmesh.nativeapp.ui.kit.FmSliverFadeIn
 import com.forkmesh.nativeapp.ui.kit.FmStatusBadge
 import com.forkmesh.nativeapp.ui.kit.FmTooltip
+import com.forkmesh.nativeapp.ui.kit.FmAvatar
+import com.forkmesh.nativeapp.ui.kit.FmSegmentTab
+import com.forkmesh.nativeapp.ui.kit.FmSegmentTabBar
+import com.forkmesh.nativeapp.ui.kit.fmGlass
+import com.forkmesh.nativeapp.feature.localrepos.LocalRepoActions
+import com.forkmesh.nativeapp.feature.navigation.NavigationFeature
+import com.forkmesh.nativeapp.navigation.Route
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import com.forkmesh.nativeapp.ui.navigation.LocalShellPaneOpen
 import com.forkmesh.nativeapp.ui.navigation.Navigator
 import com.forkmesh.nativeapp.ui.navigation.Screen
@@ -97,6 +109,7 @@ internal class ReposScreen : Screen() {
     private var searchText by mutableStateOf("")
     private var query by mutableStateOf("")
     private var filter by mutableStateOf(RepoFilter.All)
+    private var visibility by mutableStateOf<RepoFilter?>(null)
     private var sort by mutableStateOf(RepoSort.RecentlyUpdated)
     private val repos = AsyncValue<List<Repository>>().apply { reload { repoApi.repositories() } }
     private var desktop: DesktopReposModel? = null
@@ -161,27 +174,33 @@ internal class ReposScreen : Screen() {
                 syncDesktop()
             }
         }
+        val local = LocalReposFeature.rememberActions(navigator)
         Column(Modifier.fillMaxSize()) {
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .padding(FmSpace.x4),
+                    .padding(start = FmSpace.x4, end = FmSpace.x4, top = FmSpace.x1),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    SearchField(Modifier.weight(1f))
-                    Spacer(Modifier.width(FmSpace.x2))
+                    Text("Repos", Modifier.weight(1f).semantics { heading() }, style = Fm.text.displaySmall)
                     RefreshButton()
+                    if (local != null) {
+                        Spacer(Modifier.width(FmSpace.x2))
+                        AddMenu(local)
+                    }
                 }
-                Spacer(Modifier.height(FmSpace.x3))
-                CatalogControls()
+                Spacer(Modifier.height(FmSpace.x2))
+                SearchField(Modifier.fillMaxWidth())
             }
+            CatalogControls()
+            visibility?.let { shown -> ActiveFilterPill(shown.label) { visibility = null } }
             Box(
                 Modifier
                     .weight(1f)
                     .fillMaxWidth()
                     .background(Fm.colors.listSurface),
             ) {
-                Catalog(navigator)
+                Catalog(navigator, local)
             }
         }
     }
@@ -198,7 +217,7 @@ internal class ReposScreen : Screen() {
                 searchText = it
                 query = RepoCatalog.normalizeQuery(it)
             },
-            modifier = modifier.height(48.dp),
+            modifier = modifier.height(40.dp),
             singleLine = true,
             textStyle = Fm.text.bodyLarge.copy(color = c.textPrimary),
             cursorBrush = SolidColor(c.accent),
@@ -207,11 +226,11 @@ internal class ReposScreen : Screen() {
                 Row(
                     Modifier
                         .fillMaxSize()
-                        .background(c.bgRaised, shape)
+                        .background(c.bgOverlay, shape)
                         .then(if (focused) Modifier.border(1.2.dp, c.accent, shape) else Modifier),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Box(Modifier.width(48.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.width(40.dp), contentAlignment = Alignment.Center) {
                         FmIcon("search", size = 18.dp, tint = c.textTertiary)
                     }
                     Box(
@@ -221,7 +240,7 @@ internal class ReposScreen : Screen() {
                     ) {
                         if (searchText.isEmpty()) {
                             Text(
-                                "Find a repository...",
+                                "Find a repository",
                                 maxLines = 1,
                                 style = Fm.text.bodyLarge.copy(color = c.textTertiary),
                             )
@@ -240,9 +259,8 @@ internal class ReposScreen : Screen() {
         FmTooltip("Refresh repositories") {
             Box(
                 Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(FmRadius.lg))
-                    .background(c.bgRaised)
+                    .size(44.dp)
+                    .fmGlass(CircleShape, shadow = false, interactive = true)
                     .clickable {
                         haptics.tap()
                         reload()
@@ -253,111 +271,168 @@ internal class ReposScreen : Screen() {
                     },
                 contentAlignment = Alignment.Center,
             ) {
-                FmIcon("refresh", size = 24.dp, tint = c.textSecondary)
+                FmIcon("refresh", size = 22.dp, tint = c.textPrimary)
+            }
+        }
+    }
+
+    @Composable
+    private fun AddMenu(local: LocalRepoActions) {
+        val c = Fm.colors
+        var open by remember { mutableStateOf(false) }
+        Box {
+            FmTooltip("New repository") {
+                Box(
+                    Modifier
+                        .size(44.dp)
+                        .fmGlass(CircleShape, shadow = false, interactive = true)
+                        .clickable(enabled = !local.busy) { open = true }
+                        .semantics {
+                            contentDescription = "New, import or mirror a repository"
+                            role = Role.Button
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    FmIcon("add", size = 22.dp, tint = c.textPrimary)
+                }
+            }
+            FmDropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                FmDropdownMenuItem("New repository", icon = "add", onClick = {
+                    open = false
+                    local.create()
+                })
+                FmDropdownMenuItem("Import from Files", icon = "drive_folder_upload_outlined", onClick = {
+                    open = false
+                    local.importFiles()
+                })
+                FmDropdownMenuItem("Mirror a repository", icon = "cloud_sync_outlined", onClick = {
+                    open = false
+                    local.mirror()
+                })
+                if (local.canSync) {
+                    FmDropdownMenuItem(local.syncLabel, icon = "sync", onClick = {
+                        open = false
+                        local.sync()
+                    })
+                }
             }
         }
     }
 
     @Composable
     private fun CatalogControls() {
+        val haptics = FmHaptics.current
+        val data = repos.data
+        val base = data.orEmpty().filter { RepoCatalog.matchesQuery(it, query) && RepoCatalog.matchesVisibility(it, visibility) }
+        val reach = RepoCatalog.reachFilters
+        val tabs = reach.map { option -> FmSegmentTab(option.label, if (data == null) null else base.count { RepoCatalog.matchesFilter(it, option) }) }
+        FmSegmentTabBar(
+            tabs,
+            reach.indexOf(filter).coerceAtLeast(0),
+            onChanged = { index ->
+                haptics.selection()
+                filter = reach[index]
+            },
+            modifier = Modifier.padding(horizontal = FmSpace.x2),
+            trailing = { FilterButton() },
+        )
+    }
+
+    @Composable
+    private fun FilterButton() {
         val c = Fm.colors
         val haptics = FmHaptics.current
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            FmEdgeFadeScroll(
-                Modifier
-                    .weight(1f)
-                    .height(36.dp),
-            ) { state ->
-                Row(
+        var open by remember { mutableStateOf(false) }
+        val active = visibility != null || sort != RepoSort.RecentlyUpdated
+        Box {
+            FmTooltip("Filter and sort") {
+                Box(
                     Modifier
-                        .fillMaxHeight()
-                        .horizontalScroll(state),
-                    horizontalArrangement = Arrangement.spacedBy(FmSpace.x2),
-                    verticalAlignment = Alignment.CenterVertically,
+                        .size(40.dp)
+                        .fmGlass(CircleShape, shadow = false, interactive = true)
+                        .clickable { open = true }
+                        .semantics {
+                            contentDescription = "Filter and sort repositories, ${visibility?.label ?: "any visibility"}, ${sort.buttonLabel}"
+                            role = Role.Button
+                        },
+                    contentAlignment = Alignment.Center,
                 ) {
-                    for (option in RepoFilter.entries) {
-                        val selected = option == filter
-                        val shape = RoundedCornerShape(FmRadius.md)
+                    FmIcon("filter_list", size = 20.dp, tint = c.textPrimary)
+                    if (active) {
                         Box(
                             Modifier
-                                .height(32.dp)
-                                .clip(shape)
-                                .background(if (selected) c.accentSubtle else c.bgRaised)
-                                .border(1.dp, if (selected) c.accent else c.border, shape)
-                                .selectable(selected = selected, role = Role.RadioButton) {
-                                    haptics.selection()
-                                    filter = option
-                                }
-                                .padding(horizontal = 10.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                option.label,
-                                style = Fm.text.labelMedium.copy(color = if (selected) c.accent else c.textSecondary),
-                            )
-                        }
+                                .align(Alignment.TopEnd)
+                                .padding(top = 8.dp, end = 8.dp)
+                                .size(7.dp)
+                                .background(c.accent, CircleShape),
+                        )
                     }
                 }
             }
-            Spacer(Modifier.width(FmSpace.x2))
-            SortButton()
+            FmDropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                val check: @Composable () -> Unit = { FmIcon("check", size = 20.dp, tint = c.accent) }
+                FmDropdownMenuItem("Any visibility", icon = "visibility_outlined", onClick = {
+                    open = false
+                    haptics.selection()
+                    visibility = null
+                }, trailing = if (visibility == null) check else null)
+                for (option in RepoCatalog.visibilityFilters) {
+                    FmDropdownMenuItem(option.label, icon = if (option == RepoFilter.Private) "lock_outline" else "public", onClick = {
+                        open = false
+                        haptics.selection()
+                        visibility = option
+                    }, trailing = if (visibility == option) check else null)
+                }
+                HorizontalDivider(Modifier.padding(vertical = FmSpace.x1), thickness = 0.5.dp, color = c.border)
+                for (option in RepoSort.entries) {
+                    FmDropdownMenuItem(option.menuLabel, onClick = {
+                        open = false
+                        haptics.selection()
+                        sort = option
+                    }, trailing = if (option == sort) check else null)
+                }
+            }
         }
     }
 
     @Composable
-    private fun SortButton() {
+    private fun ActiveFilterPill(label: String, onClear: () -> Unit) {
         val c = Fm.colors
-        var open by remember { mutableStateOf(false) }
-        val shape = RoundedCornerShape(FmRadius.full)
-        Box {
-            FmTooltip("Sort repositories") {
-                Row(
-                    Modifier
-                        .height(36.dp)
-                        .clip(shape)
-                        .background(c.bgRaised)
-                        .border(1.dp, c.border, shape)
-                        .clickable { open = true }
-                        .semantics {
-                            contentDescription = "Sort repositories, ${sort.buttonLabel}"
-                            role = Role.Button
-                        }
-                        .width(36.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center,
-                ) {
-                    FmIcon("sort", size = 16.dp, tint = c.textSecondary)
-                }
-            }
-            FmDropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-                for (option in RepoSort.entries) {
-                    FmDropdownMenuItem(
-                        text = option.menuLabel,
-                        onClick = {
-                            open = false
-                            sort = option
-                        },
-                        modifier = if (option == sort) Modifier.background(c.textPrimary.copy(alpha = .08f)) else Modifier,
-                    )
-                }
+        Row(Modifier.padding(start = FmSpace.x4, bottom = FmSpace.x2)) {
+            Row(
+                Modifier
+                    .height(28.dp)
+                    .clip(RoundedCornerShape(FmRadius.full))
+                    .background(c.bgOverlay)
+                    .clickable(onClick = onClear)
+                    .semantics {
+                        contentDescription = "Showing $label only. Clear"
+                        role = Role.Button
+                    }
+                    .padding(start = FmSpace.x3, end = FmSpace.x2),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(label, style = Fm.text.labelMedium.copy(color = c.textPrimary))
+                Spacer(Modifier.width(FmSpace.x1))
+                FmIcon("close", size = 14.dp, tint = c.textSecondary)
             }
         }
     }
 
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
-    private fun Catalog(navigator: Navigator) {
+    private fun Catalog(navigator: Navigator, local: LocalRepoActions?) {
         val waiting = repos.waiting
         val error = repos.error
         val visible = if (waiting || error != null) {
             emptyList()
         } else {
-            RepoCatalog.filterAndSort(repos.data.orEmpty(), query, filter, sort)
+            RepoCatalog.filterAndSort(repos.data.orEmpty(), query, filter, sort).filter { RepoCatalog.matchesVisibility(it, visibility) }
         }
         val networkState = when {
             waiting -> "loading"
             error != null -> "error"
-            else -> RepoCatalog.listStateKey(filter, sort, query, visible.size)
+            else -> RepoCatalog.listStateKey(filter, sort, query, visible.size) + "-${visibility?.key.orEmpty()}"
         }
         val density = LocalDensity.current
         var sectionHeight by remember { mutableStateOf(0.dp) }
@@ -375,8 +450,15 @@ internal class ReposScreen : Screen() {
                                     rows = desktopRows.filter { it.matches(query) },
                                     problem = desktopProblem,
                                 ) { row -> navigator.push(RepoDetailScreen(row.repository)) }
+                            } else if (desktop == null && NavigationFeature.isRegistered(Route.Kind.Desktops)) {
+                                PairDesktopRow { NavigationFeature.open(Route.Desktops) }
                             }
-                            LocalReposFeature.LocalReposSection(navigator)
+                            if (local != null) LocalReposFeature.LocalReposSection(local)
+                            FmSectionHeader(
+                                title = "Network",
+                                count = if (waiting || error != null) null else visible.size,
+                                modifier = Modifier.padding(start = FmSpace.x4, top = FmSpace.x4, end = FmSpace.x4, bottom = FmSpace.x2),
+                            )
                         }
                     }
                     when {
@@ -399,7 +481,7 @@ internal class ReposScreen : Screen() {
                         }
                         visible.isEmpty() -> item {
                             FmSliverFadeIn(networkState) {
-                                val active = RepoCatalog.hasActiveControls(query, filter)
+                                val active = RepoCatalog.hasActiveControls(query, filter) || visibility != null
                                 Box(
                                     Modifier
                                         .fillMaxWidth()
@@ -445,25 +527,28 @@ private fun CatalogError(message: String, onRetry: () -> Unit) {
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun RepoTile(repo: Repository, local: LocalRepoRecord?, selected: Boolean = false, onTap: () -> Unit) {
     val c = Fm.colors
     val online = RepoCatalog.isOnline(repo)
+    val owner = repo.displayOwner
     FmListRow(
         modifier = Modifier.shellPaneSelected(selected),
         title = repo.fullName,
         minHeight = 64.dp,
         padding = PaddingValues(horizontal = FmSpace.x4, vertical = FmSpace.x3),
         leading = {
-            FmIconTile(if (repo.isPrivate) "lock_outline" else "book_outlined", tint = c.accent, size = 40.dp)
+            FmAvatar(owner.ifEmpty { "?" }, 36.dp, textStyle = Fm.text.labelMedium)
         },
         titleContent = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    repo.fullName,
+                    buildAnnotatedString {
+                        withStyle(SpanStyle(color = c.textSecondary, fontWeight = FmType.regular)) { append("$owner/") }
+                        append(repo.name)
+                    },
                     modifier = Modifier.weight(1f, fill = false),
-                    maxLines = 2,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     style = Fm.text.titleSmall,
                 )
@@ -477,24 +562,40 @@ private fun RepoTile(repo: Repository, local: LocalRepoRecord?, selected: Boolea
                     Spacer(Modifier.height(1.dp))
                     Text(
                         repo.description,
-                        maxLines = 2,
+                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         style = Fm.text.bodyMedium.copy(color = c.textSecondary),
                     )
                 }
-                Spacer(Modifier.height(FmSpace.x2))
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(FmSpace.x3),
-                    verticalArrangement = Arrangement.spacedBy(FmSpace.x1),
-                    itemVerticalAlignment = Alignment.CenterVertically,
-                ) {
-                    for (item in RepoCatalog.metaItems(repo)) RepoMeta(item)
-                }
+                Spacer(Modifier.height(FmSpace.x1))
+                Text(
+                    RepoCatalog.metaLine(repo),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = Fm.text.bodySmall.copy(color = c.textTertiary, fontFeatureSettings = FmType.tabular),
+                )
             }
         },
         trailing = local?.let { record -> { FmStatusBadge(if (record.isCloned) "Cloned" else "On device", c.accent) } },
         onTap = onTap,
     )
+}
+
+@Composable
+private fun PairDesktopRow(onTap: () -> Unit) {
+    val c = Fm.colors
+    Column(Modifier.fillMaxWidth()) {
+        FmSectionHeader(
+            "Desktop",
+            modifier = Modifier.padding(start = FmSpace.x4, top = FmSpace.x2, end = FmSpace.x4, bottom = FmSpace.x2),
+        )
+        FmListRow(
+            title = "Pair your desktop",
+            subtitle = "See the repositories on your Mac or PC",
+            leading = { FmIcon("desktop_windows_outlined", size = 22.dp, tint = c.textSecondary) },
+            onTap = onTap,
+        )
+    }
 }
 
 @Composable
@@ -510,7 +611,6 @@ private fun DesktopReposSection(
         FmSectionHeader(
             title,
             modifier = Modifier.padding(start = FmSpace.x4, top = FmSpace.x2, end = FmSpace.x4, bottom = FmSpace.x2),
-            icon = "desktop_windows_outlined",
             count = count,
         )
         if (count == 0 && problem != null) {
@@ -539,7 +639,7 @@ private fun DesktopRepoRow(repo: DesktopRepo, selected: Boolean = false, onTap: 
         minHeight = 52.dp,
         padding = PaddingValues(horizontal = FmSpace.x4, vertical = FmSpace.x2),
         leading = {
-            FmIconTile(if (repo.isPrivate) "lock_outline" else "desktop_windows_outlined", tint = c.accent, size = 36.dp)
+            FmIcon(if (repo.isPrivate) "lock_outline" else "desktop_windows_outlined", size = 22.dp, tint = c.textSecondary)
         },
         titleContent = {
             Row(verticalAlignment = Alignment.CenterVertically) {

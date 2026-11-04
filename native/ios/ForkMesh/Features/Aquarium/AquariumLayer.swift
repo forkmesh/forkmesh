@@ -101,6 +101,7 @@ final class AquariumDirector {
 struct AquariumLayer: View {
     var hidden: Bool = false
     var floor: CGFloat? = nil
+    var keepSides: Bool = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
@@ -137,7 +138,7 @@ struct AquariumLayer: View {
                 }
             }
         }
-        .ignoresSafeArea()
+        .ignoresSafeArea(edges: keepSides ? .vertical : .all)
         .opacity(hidden ? 0 : 1)
         .task(id: running) {
             guard running else {

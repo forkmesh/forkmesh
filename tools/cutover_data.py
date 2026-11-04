@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The production cutover's data move (docs/CUTOVER.md, section "Data")."""
+"""The production cutover's data move (docs/operations/served-stack.md, section "Data")."""
 
 from __future__ import annotations
 

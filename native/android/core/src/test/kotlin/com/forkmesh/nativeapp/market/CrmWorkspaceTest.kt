@@ -12,12 +12,21 @@ class CrmWorkspaceTest {
     private val listB = "2".repeat(32)
     private val pipeA = "3".repeat(32)
 
-    private fun contact(id: String, name: String, flow: String, stage: String, views: List<String> = emptyList(), value: Long = 0, owner: String = "", tags: List<String> = emptyList(), updated: Long = 0) =
+    private fun contact(id: String, name: String, flow: String, stage: String, views: List<String> = emptyList(), value: Long = 0, owner: String = "", tags: List<String> = emptyList(), updated: Long = 0, socials: Map<String, String> = emptyMap()) =
         mapOf(
             "id" to id, "organization" to "acme", "name" to name, "email" to name.lowercase() + "@x.test", "flow" to flow, "stage" to stage,
             "views" to views, "value" to value, "owner" to owner, "tags" to tags, "updatedAt" to updated,
             "fields" to mapOf("twitter_followers" to "120", "empty" to ""),
-        )
+        ) + socials
+
+    private fun networkedSummary() = summary(
+        contacts = listOf(
+            contact(hexA, "Ada", "investment", "sourced", listOf(listA), 500, "alice", listOf("vip"), 3, mapOf("mastodon" to "@ada@x.test", "github" to "ada")),
+            contact(hexB, "Bob", "investment", "meeting", value = 100, owner = "bob", updated = 2, socials = mapOf("github" to "   ", "linkedin" to "")),
+            contact(hexC, "Cy", "customers", "lead", listOf(listA, listB), updated = 1, socials = mapOf("github" to "cy")),
+            contact(hexD, "Dee", "retired", "lead", socials = mapOf("twitter" to "dee")),
+        ),
+    )
 
     private fun summary(extraViews: List<Map<String, Any?>> = emptyList(), contacts: List<Map<String, Any?>>? = null, flows: List<Map<String, Any?>>? = null): Map<String, Any?> = mapOf(
         "organization" to "acme", "role" to "owner", "canManageSettings" to true,
@@ -97,6 +106,48 @@ class CrmWorkspaceTest {
         )
         assertEq(listOf("Ada"), split.contactsFor(CrmTab.Sheet(pipeA)).map { it.name })
         assertEq(listOf("Bob"), split.contactsFor(CrmTab.Sheet(hexC)).map { it.name })
+    }
+
+    fun testNetworksGroupEveryListByProfile() {
+        val data = CrmOrganizationData.fromJson(networkedSummary())
+        assertEq(listOf("mastodon", "bluesky", "twitter", "linkedin", "github"), CrmNetwork.ALL.map { it.id })
+        assertEq(listOf("Mastodon", "Bluesky", "X (Twitter)", "LinkedIn", "GitHub"), CrmNetwork.ALL.map { it.name })
+        val tabs = data.networkTabs
+        assertEq(listOf(CrmTab.Network("mastodon"), CrmTab.Network("twitter"), CrmTab.Network("github")), tabs.map { it.tab })
+        assertEq(listOf("Mastodon", "X (Twitter)", "GitHub"), tabs.map { it.title })
+        assertEq(listOf(1, 1, 2), tabs.map { it.count })
+        expect(tabs.all { it.view == null && it.flow == null })
+        assertEq(listOf("Ada", "Cy"), data.contactsFor(CrmTab.Network("github")).map { it.name })
+        assertEq(listOf("Dee"), data.contactsFor(CrmTab.Network("twitter")).map { it.name })
+        assertEq(emptyList<CrmContact>(), data.contactsFor(CrmTab.Network("linkedin")))
+        assertEq(emptyList<CrmContact>(), data.contactsFor(CrmTab.Network("myspace")))
+        assertEq(null, data.flowFor(CrmTab.Network("github")))
+        assertEq(null, data.viewFor(CrmTab.Network("github")))
+        expect(data.contactTabs.none { it.tab is CrmTab.Network })
+        assertEq("network:github", CrmTab.Network("github").id)
+        expect(CrmTab.Network("github").isContacts)
+        assertEq(emptyList<CrmTabItem>(), CrmOrganizationData.fromJson(summary()).networkTabs)
+    }
+
+    fun testNetworkTabNarrowsWithSearchAndFilters() {
+        val model = loaded(FakeTransport(), networkedSummary())
+        model.select(CrmTab.Network("github"))
+        assertEq(CrmTab.Network("github"), model.activeTab)
+        assertEq("GitHub", model.activeTitle)
+        assertEq(null, model.activeFlow)
+        assertEq(null, model.activeView)
+        assertEq(listOf("Ada", "Cy"), model.visibleContacts.map { it.name })
+        model.query = "cy"
+        assertEq(listOf("Cy"), model.visibleContacts.map { it.name })
+        model.query = ""
+        model.filter = model.filter.copy(owner = "alice")
+        assertEq(listOf("Ada"), model.visibleContacts.map { it.name })
+        model.filter = model.filter.copy(owner = "", stage = "lead")
+        assertEq(listOf("Cy"), model.visibleContacts.map { it.name })
+        model.show(CrmSection.CONTACTS)
+        assertEq(CrmTab.Network("github"), model.activeTab)
+        model.tab = CrmTab.Network("myspace")
+        assertEq(CrmTab.Sheet(listA), model.activeTab)
     }
 
     fun testFilterSortAndHelpers() {

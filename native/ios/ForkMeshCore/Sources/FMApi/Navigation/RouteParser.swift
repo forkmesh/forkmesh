@@ -29,6 +29,7 @@ public enum RouteParser {
 
     private static let safeSegment = try! NSRegularExpression(pattern: "^[A-Za-z0-9._-]+$")
     private static let commitHash = try! NSRegularExpression(pattern: "^[0-9a-f]{7,64}$")
+    private static let publishedNoteId = try! NSRegularExpression(pattern: "^[0-9a-f]{32}$")
     private static let packageIdPattern = try! NSRegularExpression(pattern: "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$")
     static let marketReservedSegments: Set<String> = ["previews"]
 
@@ -72,6 +73,8 @@ public enum RouteParser {
         }
         switch first.lowercased() {
         case "dashboard": return dashboard(Array(segments.dropFirst()), query: query, me: me)
+        case "notes" where first == "notes" && segments.count == 2 && matches(publishedNoteId, segments[1]):
+            return [.notes, .note(id: segments[1])]
         case "ledger.html": return segments.count == 1 ? [.ledger(section: nil)] : nil
         case "market.html": return segments.count == 1 ? [.market(filter: nil)] : nil
         case "status.html": return segments.count == 1 ? [.status] : nil
@@ -123,7 +126,7 @@ public enum RouteParser {
         case let .teammateEditor(id):
             if let id = id, !id.isEmpty { return [.teammates, .teammate(id: id), route] }
             return [.teammates, route]
-        case .note:
+        case .note, .notePage:
             return [.notes, route]
         case .task:
             return [.tasks(filter: nil), route]
@@ -237,7 +240,13 @@ public enum RouteParser {
         switch page {
         case "chat": return [.chat]
         case "notes":
-            if let id = first ?? nonEmpty(query["note"]) { return [.notes, .note(id: id)] }
+            if first == nil, let page = nonEmpty(query["page"]).flatMap({ isSafe($0) ? $0 : nil }) {
+                return [.notes, .notePage(id: page, note: nonEmpty(query["note"]).flatMap { isSafe($0) ? $0 : nil })]
+            }
+            if let id = first ?? nonEmpty(query["note"]) {
+                let comment = nonEmpty(query["comment"]).flatMap { isSafe($0) ? $0 : nil }
+                return [.notes, .note(id: id, comment: comment)]
+            }
             return [.notes]
         case "tasks":
             if let id = first { return [.tasks(filter: nil), .task(id: id)] }
@@ -249,6 +258,8 @@ public enum RouteParser {
         case "network": return [.network(section: first)]
         case "ads": return [.ads]
         case "invoices": return tail.isEmpty ? invoiceRoutes(query) : nil
+        case "surveys": return tail.isEmpty ? surveyRoutes(query) : nil
+        case "booking": return tail.isEmpty ? [.booking(id: bookingId(query["booking"]))] : nil
         case "apps": return tail.isEmpty ? [.settings(section: "apps")] : nil
         case "calories": return [.calories]
         case "steps": return [.steps]
@@ -261,6 +272,7 @@ public enum RouteParser {
         case "glasses-alert": return [.glassesAlert]
         case "phone-security": return [.phoneSecurity]
         case "eye-control": return [.eyeControl]
+        case "silent-speech": return [.silentSpeech]
         case "ember": return tail.isEmpty ? [.ember(query["repo"].flatMap(RepoRef.init(slug:)))] : nil
         case "strata": return tail.isEmpty ? [.strata(query["repo"].flatMap(RepoRef.init(slug:)))] : nil
         case "synapse": return tail.isEmpty ? [.synapse(query["repo"].flatMap(RepoRef.init(slug:)))] : nil
@@ -275,6 +287,7 @@ public enum RouteParser {
         case "runners": return tail.isEmpty ? [.runners] : nil
         case "rss", "rss-reader": return tail.isEmpty ? [.rssReader] : nil
         case "instance-feed": return tail.isEmpty ? [.instanceFeed(post: instanceFeedPost(query["post"]))] : nil
+        case "mastodon": return tail.isEmpty ? [.mastodon] : nil
         case "secure-drive": return tail.isEmpty ? [.secureDrive] : nil
         case "spider-room": return tail.isEmpty ? [.spiderRoom] : nil
         case "workflows": return tail.isEmpty ? [.workflows] : nil
@@ -294,6 +307,19 @@ public enum RouteParser {
             value.count == 32 && value.allSatisfy { $0.isHexDigit && !$0.isUppercase } ? value : nil
         }
         return [.invoices(organization: org, invoice: invoice)]
+    }
+
+    private static func surveyRoutes(_ query: [String: String]) -> [Route] {
+        let org = nonEmpty(query["org"]).flatMap { isSafe($0) ? $0.lowercased() : nil }
+        let survey = query["survey"].flatMap { value in
+            value.count == 32 && value.allSatisfy { $0.isHexDigit && !$0.isUppercase } ? value : nil
+        }
+        return [.surveys(organization: org, survey: survey)]
+    }
+
+    private static func bookingId(_ value: String?) -> String? {
+        guard let value, value.count == 32, value.allSatisfy({ $0.isHexDigit && !$0.isUppercase }) else { return nil }
+        return value
     }
 
     private static func pokerTable(_ value: String?) -> String? {
@@ -339,6 +365,8 @@ public enum RouteParser {
             return tail.isEmpty ? [.rssReader] : nil
         case "instance-feed":
             return tail.isEmpty ? [.instanceFeed(post: instanceFeedPost(query["post"]))] : nil
+        case "mastodon":
+            return tail.isEmpty ? [.mastodon] : nil
         case "secure-drive":
             return tail.isEmpty ? [.secureDrive] : nil
         case "poker":

@@ -1,5 +1,6 @@
 # Voice, camera and channels in the World
 
+Part of [World](README.md).
 People in the World can turn on their microphone and camera and talk to each
 other: in the whole World, in one World channel, in a voice room they start,
 or inside a privacy bubble with the people next to them. The camera does not
@@ -7,7 +8,7 @@ send video by default. It moves the person's avatar: head direction, every
 facial expression on the avatar's face, arms and hands, and hand gestures that
 send reactions to whoever is speaking. Each speaker wears a live word count.
 One Discord-style list holds every World channel, voice room, Office room,
-private channel and direct message. Added 2026-10-24.
+private channel and direct message.
 
 It is one system with the `/chat` calls: the same group-call engine
 (`chat-group-calls.js`), the same face changer and voice changer, the same
@@ -64,6 +65,9 @@ the 16-person room limit are the ones `/chat` uses. A bubble's id is
 `bubble:` plus the first 16 hex of `SHA-256("forkmesh-world-bubble-v1\n" +
 secret)`; the route checks that the secret matches the id and keys the call
 room on the secret, so knowing a bubble's public id is not enough to get in.
+The same proof guards signalling: a presence frame naming a bubble needs the
+matching `voiceSecret`, which the server checks and never stores or forwards.
+Without it the sender is in no room and receives no frame keys.
 FM Media is off for World rooms because it needs a sealed-room signing
 identity; World rooms use the WebRTC engine.
 
@@ -158,11 +162,7 @@ fronts face -Z, the avatar's right is +X).
 
 The camera's default face is the person's avatar: their uploaded photo, or
 the drawn portrait only for someone with no photo or who chose "generated" in
-settings. Until 2026-10-25 your own avatar showed the drawn portrait whenever
-the camera was on: the local puppet never got the photo's 68 anchor points
-(they were only sent to others), and anyone whose photo had no detectable
-face, or whose anchors had not arrived yet, fell back to the drawing too. Now
-`createAvatarPuppets` warps the photo whenever there is one: with the photo's
+settings. `createAvatarPuppets` warps the photo whenever there is one: with the photo's
 own anchors when they are known, otherwise with `portraitFaceAnchors()`, the
 face template placed where a centred head-and-shoulders portrait has it (eyes
 at 42% of the height, face 62% of the width). Your own photo comes from the
@@ -188,11 +188,11 @@ same `createFmmLocal` stages `/chat` uses.
 
 ## Hands and reactions
 
-**Better arm and hand following (2026-10-25).**
+**Arm and hand following.**
 
 - Searching for a hand runs every 0.3 s while none is followed (0.9 s with
   one), and a hand already followed is kept down to a 0.32 presence score
-  (0.5 for a new one), so hands no longer flicker out between frames.
+  (0.5 for a new one), so hands do not flicker out between frames.
 - Hand tracking runs on every camera frame when it takes under 14 ms.
 - With two hands, the one on the image's left is always the right hand and
   the other the left, so both arms move instead of one arm jumping between
@@ -291,31 +291,27 @@ The # button on the chat box opens the list (`world-channels.js`):
   the chat box's channel menu opens channels and DMs here too, falling back to
   a new tab if the list cannot load.
 
-The Office meeting rooms are the person's chat channels. `openLobby` now loads
+The Office meeting rooms are the person's chat channels. `openLobby` loads
 them (`fetchRooms`), and `joinRoom` loads them when asked for a room it does
-not know yet. Before this, `fetchRooms` was never called, so the Office
-meeting board only ever offered #general.
+not know yet; without that the meeting board offers only #general.
 
 ## Camera and microphone permission
 
-The World page and the chat it embeds must be allowed to use the camera.
-Until 2026-10-24 every World route inherited the site-wide
-`Permissions-Policy: camera=()` from `www/public/_headers`, so turning on the
-camera logged "Permissions policy violation: camera is not allowed in this
-document" and the avatar never moved. Now:
+The World page and the chat it embeds must be allowed to use the camera;
+the site-wide `Permissions-Policy: camera=()` from `www/public/_headers`
+otherwise blocks it ("Permissions policy violation: camera is not allowed in
+this document") and the avatar never moves.
 
 - `/world` and `/world/*` in `www/public/_headers` replace the policy with
   `camera=(self), microphone=(self)`; everything else stays blocked.
 - The World's index handle in `deploy/core/caddy_routes.py` serves `/`,
   `/world` and `/world/`, but Caddy evaluates header matchers before the
-  rewrite to `/world/index.html`, so `world.forkmesh.com/` only got the
-  `/*` rule. The handle now also applies the `/world` rule
-  (`path_rule_directives`), so the same document gets the same headers on
-  every index path.
-- `/chat?embed=world` reaches the App worker on the World host, and
-  `_apply_browser_security_headers` (`app/src/entry.py`) used to give it
-  `camera=()`. It now gives `/chat` and `/chat.html` the device-page policy
-  and `mediastream:` in `media-src`, the same as the static `/chat` rule.
+  rewrite to `/world/index.html`, so the handle also applies the `/world`
+  rule (`path_rule_directives`) and every index path gets the same headers.
+- `/chat?embed=world` reaches the App on the World host;
+  `_apply_browser_security_headers` (`app/src/entry.py`) gives `/chat` and
+  `/chat.html` the device-page policy and `mediastream:` in `media-src`, the
+  same as the static `/chat` rule.
 
 ## Performance badge and diagnostic report
 
@@ -361,19 +357,13 @@ diagnostics chart" in the panel hides it (`forkmesh.world.voiceChart`).
 - `world/tests/test_world_voice_live_hud.py`: the chart's window, gaps,
   scales and summary; reaction pops' burst, placement, cap and reduced
   motion; the on-air and live-face wiring.
-- 2026-10-25, headless Chromium (SwiftShader) against the production backend:
-  the On air sign under the corner face, a big thumbs-up pop over your own
-  avatar and the chart drawn from samples all rendered.
-- In headless Chromium with a fake camera playing the Frania talking clip from
-  `tools/testdata/face-stream/`: the face was tracked in every frame, mouth
-  opening ran 0.05-0.77, and both the drawn face and a photo avatar (a still
-  of the Keshav clip) opened and closed their mouths, blinked and raised their
-  brows with her. A mocked World socket carried rig frames to a second avatar,
-  which turned its head and raised its hand; the World loaded, the HUD
-  buttons, voice panel, channel list, performance badge and diagnostic report
-  worked end to end, and mic join reported the server's "calls_unavailable"
-  plainly. The software renderer reached 3-8 fps there; real GPUs are needed
-  for numbers worth quoting.
+- Headless Chromium (SwiftShader) with a fake camera playing a talking clip
+  from `tools/testdata/face-stream/`: the face was tracked in every frame;
+  drawn and photo avatars moved mouth, eyes and brows with it; a mocked World
+  socket carried rig frames to a second avatar; the HUD, voice panel, channel
+  list, badge, chart, reaction pops and diagnostic report worked, and mic join
+  reported "calls_unavailable" plainly. The software renderer reached 3-8 fps;
+  real GPUs are needed for numbers worth quoting.
 
 ## Not done yet
 
@@ -387,11 +377,8 @@ diagnostics chart" in the panel hides it (`forkmesh.world.voiceChart`).
   no native port.
 - When face tracking cannot start (no WebGL float render targets, a model
   that fails to load), the camera stays on and sends plain video if "Also
-  send video" is ticked; only without it does the camera turn back off. Until
-  2026-10-25 any tracking failure stopped the camera, so it flashed on and
-  off. The failure reason is logged to the console as
+  send video" is ticked; only without it does the camera turn back off. The failure reason is logged to the console as
   `World camera: face tracking failed to start`.
 - When the browser refuses the camera, the notice names why
   (`cameraErrorMessage`): blocked for the site, in use by another app, or no
-  camera found. Before 2026-10-25 every refusal read "Allow the camera…",
-  which sent people to a permission setting when the camera was missing.
+  camera found.

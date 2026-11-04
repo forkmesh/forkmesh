@@ -16,11 +16,14 @@ const exported = [
   "crmMastodonKey", "crmBlueskyActor", "crmGithubUser", "crmLiveAccounts",
   "crmHttpsUrl", "crmPictureUrl", "crmPlainText", "crmGithubEventLine",
   "crmContactLabel", "crmContactUrl", "crmListUrl", "crmDeleteColumnItems", "crmVisibleColumns",
-  "selectCrmTableView", "crmTableViewId", "state",
+  "selectCrmTableView", "crmTableViewId", "state", "makeCrmTableViewDefault", "crmTableViewMenuItems",
   "crmSetColumnHidden", "crmTableViewDraftFields", "saveCrmTableViewDraft",
   "crmOwnerMatches", "crmFocusMatches", "crmFlow", "crmInvestorFlow",
   "crmAccountChip", "crmAccountProof",
   "crmNextContact", "crmNextChannels", "crmZohoComposeUrl",
+  "crmPersonGroups", "crmOnePerPerson", "crmPersonOpen", "crmPersonChip",
+  "crmBoxIndex", "crmGroups", "crmGroupChip", "crmRegistrableDomain", "crmMailBox", "crmBoxActivity",
+  "crmMailBoxChip", "crmDetailBoxHtml", "renderCrmBox", "openCrmBox", "crmBoxByName",
   "crmQueueReachMastodon", "crmMastodonLatest", "crmNextCardHtml", "CRM_NEXT_MODES", "refreshCrmMastodonNow",
   "crmRetryAfterMs", "crmGrantsTarget",
   "crmAiPrompt", "crmAiAngle", "crmAiTargetUrl", "crmAiMessageText", "crmAiDefaultFormat", "crmAiMode", "crmAiBrief",
@@ -261,6 +264,19 @@ same(page.crmTableViewId(), "default", "a deleted view falls back to Default");
        "Save view names the new view on its own");
   same(page.crmTableViewId(), saved.id, "the saved view is the one open");
   same(page.crmTableViewDraftFields(), null, "a saved view is no longer modified");
+  const menuLabel = () => page.crmTableViewMenuItems().find((item) => /default|open in/i.test(item.label || ""));
+  same([menuLabel().label, menuLabel().disabled], ["Make default view", false], "a custom view can be made the default");
+  await page.makeCrmTableViewDefault();
+  same(puts.at(-1), { defaultTableView: saved.id }, "Make default view stores the view for the organization");
+  same(page.state.crmView.settings.defaultTableView, saved.id, "the page keeps the new default");
+  same([menuLabel().label, menuLabel().disabled], ["Lists open in this view", true], "the default view says so");
+  page.selectCrmTableView("all");
+  same(page.crmTableViewId(), "all", "another view can still be picked");
+  page.selectCrmTableView("default");
+  same(page.crmTableViewId(), "default", "the built-in Default view can still be picked");
+  page.selectCrmTableView("view-gone");
+  same(page.crmTableViewId(), saved.id, "an unknown view falls back to the organization's default");
+  page.state.crmView.settings = { ...page.state.crmView.settings, defaultTableView: "" };
 
   {
     const day = 86400000; const now = 1_800_000_000_000;
@@ -311,6 +327,51 @@ same(page.crmTableViewId(), "default", "a deleted view falls back to Default");
     same(page.crmNextContact("follow", now).contact?.id, "new-reply", "a never-contacted lead who wrote in is a follow-up");
     check(page.crmNextContact("reach", now).contact?.id !== "new-reply", "and not a new lead");
     view.contacts = saved.contacts; view.emails = saved.emails; view.settings = saved.settings;
+  }
+
+  {
+    const view = page.state.crmView;
+    const saved = { contacts: view.contacts, emails: view.emails };
+    const day = 86400000; const now = 1_800_000_000_000;
+    view.emails = [];
+    view.contacts = [
+      { id: "box", name: "sing-box", email: "c@sager.example", personKeys: ["email:c@sager.example", "x:sager"], createdAt: now - day, fields: { rank: "1" } },
+      { id: "go", name: "cronet-go", twitter: "@sager", personKeys: ["x:sager"], createdAt: now - day, fields: { rank: "2" } },
+      { id: "net", name: "core", twitter: "@sagercore", personKeys: ["email:c@sager.example", "x:sagercore"], createdAt: now - day, fields: { rank: "3" } },
+      { id: "solo", name: "solo", email: "s@example.com", personKeys: ["email:s@example.com"], createdAt: now - day, fields: { rank: "9" } },
+    ];
+    let people = page.crmPersonGroups();
+    const person = people.get("box").id;
+    same(["go", "net"].map((id) => people.get(id).id), [person, person],
+         "records sharing an email or an X account, even through a third record, are one person");
+    same(people.get("solo").members.map((one) => one.id), ["solo"], "a record sharing nothing stands alone");
+    let reach = page.crmNextContact("reach", now);
+    same([reach.contact?.id, reach.due, reach.upcoming.map((one) => one.id)], ["box", 2, ["solo"]],
+         "reach out offers each person once, through their best-ranked record");
+    check(reach.reason.includes("Same person as 2 other records (c@sager.example, @sager on X, @sagercore on X)"),
+          `the reason says why the others are left out: ${reach.reason}`);
+    view.nextSkipped.add("go");
+    same(page.crmNextContact("reach", now).contact?.id, "solo", "skipping any record skips the person");
+    view.nextSkipped.clear();
+    view.contacts[1].lastContactedAt = now - 2 * day;
+    people = page.crmPersonGroups();
+    reach = page.crmNextContact("reach", now);
+    same([reach.contact?.id, reach.due], ["solo", 1], "contacting one record takes the whole person off reach out");
+    same(page.crmNextContact("follow", now).contact, null, "and the person is not due a follow-up two days later");
+    check(!page.crmFocusMatches(view.contacts[0], "uncontacted", people), "Never contacted leaves the person out");
+    view.contacts[1].lastContactedAt = now - 40 * day;
+    const follow = page.crmNextContact("follow", now);
+    same([follow.contact?.id, follow.due], ["box", 1], "a quiet person is followed up once");
+    same(page.crmOnePerPerson(view.contacts, people).map((one) => one.id), ["box", "solo"],
+         "the list keeps one row per person");
+    check(page.crmPersonChip(view.contacts[0], people, true).includes("+2 same person"), "and the kept row offers the other two");
+    page.crmPersonOpen.add(person);
+    same(page.crmOnePerPerson(view.contacts, people).map((one) => one.id), ["box", "go", "net", "solo"],
+         "opening the chip lists the others under it");
+    check(page.crmPersonChip(view.contacts[1], people, false).includes("same person"), "each marked as the same person");
+    page.crmPersonOpen.clear();
+    same(page.crmPersonChip(view.contacts[3], people, true), "", "a record alone gets no chip");
+    view.contacts = saved.contacts; view.emails = saved.emails;
   }
 
   {
@@ -525,6 +586,59 @@ same(page.crmTableViewId(), "default", "a deleted view falls back to Default");
     check(section.hidden, "a build without Invoicing hides the section");
     delete hosts["[data-crm-detail-invoices]"];
     Object.assign(view, { organization: saved.organization, detailInvoices: saved.invoices });
+  }
+
+  {
+    const view = page.state.crmView;
+    const saved = { contacts: view.contacts, emails: view.emails, mail: view.mail, organization: view.organization, boxes: view.boxes };
+    view.organization = "acme";
+    view.contacts = [
+      { id: "ada", name: "Ada", email: "ada@sager.example", personKeys: ["email:ada@sager.example"], noteLog: [{ at: 30, by: "bob", text: "Call back" }] },
+      { id: "bob", name: "Bob", email: "bob@sager.example", personKeys: ["email:bob@sager.example"] },
+      { id: "cy", name: "Cy", email: "cy@gmail.com", personKeys: ["email:cy@gmail.com"] },
+    ];
+    view.emails = [{ contactId: "bob", direction: "outbound", status: "sent", subject: "Hello Bob", sentAt: 20, opens: 2, clicks: 1 }];
+    view.mail = [
+      { id: "m1", from: "Dee <dee@mail.sager.example>", to: "us@forkmesh.example", subject: "From the team", receivedAt: 40 },
+      { id: "m2", from: "us@forkmesh.example", to: "ada@sager.example", sent: true, subject: "Re: hi", receivedAt: 10 },
+      { id: "m3", from: "eve@elsewhere.example", to: "us@forkmesh.example", subject: "Spam", receivedAt: 50 },
+    ];
+    view.boxes = page.crmBoxIndex([
+      { id: "b1", name: "SagerNet", named: false, notes: "", contacts: ["ada", "bob"], keys: ["domain:sager.example", "email:ada@sager.example", "email:bob@sager.example"] },
+      { id: "b2", name: "Cy", named: false, notes: "", contacts: ["cy"], keys: ["email:cy@gmail.com"] },
+    ]);
+    same(page.crmRegistrableDomain("mail.tsinghua.edu.cn"), "tsinghua.edu.cn", "a country's second level keeps three labels, like the worker");
+    same(page.crmRegistrableDomain("mail.sager.example"), "sager.example", "and other hosts keep two");
+    const groups = page.crmGroups();
+    same(groups.get("bob").id, "box:b1", "the table groups by the box");
+    same(groups.get("bob").members.map((one) => one.id), ["ada", "bob"], "with every member of it");
+    same(page.crmOnePerPerson(view.contacts, groups).map((one) => one.id), ["ada", "cy"], "one row per box");
+    const chip = page.crmGroupChip(view.contacts[0], groups, true);
+    check(chip.includes('data-crm-box-open="b1"') && chip.includes(">SagerNet<") && chip.includes("+1"), `the lead row names its box and counts the rest: ${chip}`);
+    same(page.crmGroupChip(view.contacts[2], groups, true), "", "a box of one, named automatically, adds no chip");
+    same([page.crmMailBox(view.mail[0])?.box.id, page.crmMailBox(view.mail[0])?.how], ["b1", "domain"],
+         "mail from a new address at the company's domain lands in its box");
+    same(page.crmMailBox(view.mail[1])?.how, "email", "mail we sent to a member matches by address");
+    same(page.crmMailBox(view.mail[2]), null, "mail from elsewhere matches no box");
+    check(page.crmMailBoxChip(view.mail[0]).includes("same company"), "the inbox chip says why");
+    const activity = page.crmBoxActivity(view.boxes.byId.get("b1"), view.contacts.slice(0, 2));
+    same(activity.map((item) => item.label), [
+      "Mail from dee@mail.sager.example · same company", "Note · bob · Ada",
+      "Sent · Email · 2 opens · 1 click · Bob", "Mail to ada@sager.example"],
+      "the box's activity merges every member's emails, opens, clicks and notes with the company's mail");
+    check(page.crmDetailBoxHtml(view.contacts[0]).includes(">SagerNet<"), "the contact card names its box");
+    same(page.crmBoxByName(" sagernet ")?.id, "b1", "a typed box name finds the box whatever its case");
+    const dialog = { open: false, showModal() { this.open = true; }, close() { this.open = false; } };
+    const head = { innerHTML: "" }; const body = { innerHTML: "" };
+    hosts["[data-crm-box-dialog]"] = dialog; hosts["[data-crm-box-head]"] = head; hosts["[data-crm-box-body]"] = body;
+    page.openCrmBox("b1");
+    check(dialog.open && head.innerHTML.includes('value="SagerNet"') && head.innerHTML.includes("2 people"), "the box card opens with its name and people");
+    check(body.innerHTML.includes('data-crm-person-detail="bob"') && body.innerHTML.includes("Hello Bob") && body.innerHTML.includes("data-crm-box-merge"),
+          "and lists the people, the activity and the merge button");
+    page.openCrmBox("missing");
+    same(view.boxId, "b1", "an unknown box opens nothing");
+    delete hosts["[data-crm-box-dialog]"]; delete hosts["[data-crm-box-head]"]; delete hosts["[data-crm-box-body]"];
+    Object.assign(view, saved);
   }
 
   if (failures) {

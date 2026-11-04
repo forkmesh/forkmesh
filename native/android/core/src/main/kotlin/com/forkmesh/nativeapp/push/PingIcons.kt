@@ -3,6 +3,8 @@ package com.forkmesh.nativeapp.push
 const val PING_DEFAULT_ICON = "🔔"
 const val PING_CHAT_ICON = "💬"
 const val PING_DIRECT_MESSAGE_ICON = "📨"
+const val PING_PULL_CONFLICT_ICON = "⚠️"
+const val PING_GOOD_NEWS_ICON = "✅"
 
 val PING_KIND_ICONS: Map<String, String> = mapOf(
     "mention" to "📣",
@@ -42,6 +44,9 @@ val PING_KIND_ICONS: Map<String, String> = mapOf(
     "plugin_activity" to "🧩",
     "timer_finished" to "⌛",
     "desktop_ping" to "💻",
+    "agent_approval" to "✋",
+    "action_approval" to "🚦",
+    "action_failed" to "❌",
     "repo_activity" to "📦",
     "code_push" to "📤",
     "security_alert" to "🚨",
@@ -56,10 +61,13 @@ val PING_DESKTOP_ALARM_ICONS: Map<String, String> = mapOf(
 val PING_DESKTOP_CATEGORY_ICONS: Map<String, String> = mapOf(
     "agent-finished" to "🤖",
     "agent-failed" to "⚠️",
+    "ci-failed" to "❌",
 )
 
 fun pingIcon(kind: String, meta: Map<String, Any?> = emptyMap()): String {
     val clean = kind.trim()
+    if (clean == "pull_attention" && meta["reason"] == "conflict") return PING_PULL_CONFLICT_ICON
+    if (clean == "operational_alert" && meta["state"] == "up") return PING_GOOD_NEWS_ICON
     if (clean == "desktop_ping") {
         PING_DESKTOP_ALARM_ICONS[pingAlarm(clean, meta)]?.let { return it }
         PING_DESKTOP_CATEGORY_ICONS[(meta["category"] as? String)?.trim().orEmpty()]?.let { return it }

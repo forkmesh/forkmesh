@@ -12,7 +12,7 @@
   },
   "version": "1.0.0",
   "updated": "2026-09-14",
-  "documentation": "www/docs/crisis-preservation.md",
+  "documentation": "docs/crisis-preservation.md",
   "fixture": "conformance/crisis-preservation/v1/fixture.json",
   "referenceImplementation": "app/src/crisis_preservation.py",
   "implementations": [

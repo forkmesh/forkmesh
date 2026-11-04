@@ -1,9 +1,12 @@
 # Agent tools inventory
 
-Every tool a ForkMesh agent can call, by where the agent runs. The run
-lifecycle is in [README.md](README.md); access rules in
+Every tool a ForkMesh agent can call, by where the agent runs: desktop Claude
+Code, Codex and legacy script runs, mirror and runner runs, phone agents, the
+ForkMesh MCP server and remote MCP. Access rules are in
 [access-rules.md](access-rules.md); the desktop UI in
 [../desktop/agents-ui.md](../desktop/agents-ui.md).
+
+Part of [Agents](README.md).
 
 ## Summary
 
@@ -78,16 +81,14 @@ background waits instead of foreground sleeps, test output piped through
 network gate. It refuses a Read with no `offset`, `limit` or `pages` of a text
 file over 32 KB (`kReadGuardBytes`, about 8K tokens) and tells the agent the
 file's line count, to Grep first and read a range, and that `offset 1` with a
-`limit` reads it all. Whole-file Reads were the largest Claude Code cost in
-the improvement log (about 1M tokens a week, mostly 4-13K token Swift, Kotlin
-and docs files) although the prompt already asked for ranges. Images, PDFs,
+`limit` reads it all. Whole-file Reads were the largest Claude Code token
+cost even with the prompt asking for ranges. Images, PDFs,
 notebooks, binary files and missing paths pass. The improvement log files the
 refusal as "whole-file read refused".
 
-Codex has no hook here, and its oversized shell results (about 2.3M tokens a
-week) were mostly chained `sed -n` reads of several files and `git diff` /
-`git log --stat` over whole branches. The prompt now says a chain or loop
-shares one output budget (`{ ...; } | head -n 300`) and how to read history
+Codex has no hook here; its oversized shell results are mostly chained
+`sed -n` reads and whole-branch `git diff` / `git log --stat`. The prompt says
+a chain or loop shares one output budget (`{ ...; } | head -n 300`) and how to read history
 (`--oneline`, `--stat` first, one path, default context), and the improvement
 log files those results as "chained reads" and "git history" with matching
 suggestions.
@@ -108,11 +109,11 @@ Every run gets `--mcp-config <data>/core/agent-mcp/session-<id>.json`
 (mode 0600, rewritten on each launch by `MainWindow::addAgentRunMcpConfig`):
 the `forkmesh` server (`forkmesh::mcp::configJson`, the same file the
 terminal tabs get) with the run's `FORKMESH_AGENT_INTAKE` and
-`FORKMESH_AGENT_INTAKE_TOKEN` in its `env`. Without it a run had no ForkMesh
-tools at all: a non-interactive `claude` skips a checked-in `.mcp.json` until
-the user approves it in an interactive session (`enabledMcpjsonServers`), and
-other repositories have no `.mcp.json`. So the terminal, window, browser and
-hub tools ([../tools/mcp-claude-code-desktop.md](../tools/mcp-claude-code-desktop.md))
+`FORKMESH_AGENT_INTAKE_TOKEN` in its `env`. This is needed because a
+non-interactive `claude` skips a checked-in `.mcp.json` until the user
+approves it in an interactive session (`enabledMcpjsonServers`), and other
+repositories have no `.mcp.json`. So the terminal, window, browser and
+hub tools ([../tools/mcp-desktop-tools.md](../tools/mcp-desktop-tools.md))
 reach every run, as Claude Code's desktop app gives its sessions their panes.
 The flag adds to the user's own servers (no `--strict-mcp-config`), and a run
 with guardrails gets the config file and the server's folder as read-only
@@ -148,6 +149,53 @@ MCP server from ForkMesh (it does not read `.mcp.json`).
   `git_restore`, `run_tests`, `lint_project`. The Cloudflare path calls
   Workers AI directly with the desktop's locally stored token.
 - `openai` and fallbacks: `codex -a never exec --sandbox danger-full-access`.
+
+### Gate environment
+
+The legacy providers run Python scripts: `tools/forkmesh_coding_agent.py`
+(embedded as `desktop/src/CloudflareAgentScript.h` by
+`tools/sync_coding_agent_header.py`; `local-llama` and `cloudflare-ai`) and
+the one-tool script in `desktop/src/ClaudeAgentScript.h` (Claude API). The
+desktop passes:
+
+| Variable | Meaning |
+| --- | --- |
+| `FORKMESH_AGENT_GATE` | Gate socket path. Every shell-running tool asks first with one JSON line `{"v":1,"session","label","tool":"Bash","input":{"command"},"cwd","env":{"values","hidden"}}`; a denial returns to the model as the tool result |
+| `FORKMESH_AGENT_GATE_SESSION`, `FORKMESH_AGENT_GATE_LABEL` | Copied into each request |
+| `FORKMESH_AGENT_DISABLED_TOOL_FAMILIES` | Comma-separated family ids from `AgentToolCatalog.cpp`; those tools are not offered and refuse if called |
+| `FORKMESH_AGENT_ALLOWED_TOOL_FAMILIES` | When non-empty, only listed families are offered |
+| `FORKMESH_AGENT_ALLOWED_DIRECTORIES` | JSON list of repository-relative directories the file tools may touch; `[]` allows none; default `["."]` |
+| `FORKMESH_AGENT_GUARDRAILS` | `off` turns path guardrails off, only when no allowlist is given |
+
+`git_*` tools send their equivalent command line to the gate; `run_tests`
+and `lint_project` send the configured command. Commands the model runs do
+not inherit `FORKMESH_AGENT_GATE*`. Tests: `app/tests/test_coding_agent.py`,
+`tools/test_forkmesh_coding_agent_guardrails.py`.
+
+### Cloudflare path
+
+`cloudflare-ai` runs call Cloudflare directly. `agentConfigForProvider`
+(`MainWindowAgentLaunch.cpp`) passes the token from Settings as
+`FORKMESH_AGENT_API_TOKEN` and the account as `FORKMESH_AGENT_ACCOUNT_ID`; the
+script builds `https://api.cloudflare.com/client/v4/accounts/<id>/ai/v1/chat/completions`
+from them and stops with "Cloudflare endpoint or account ID is required" when
+neither an endpoint nor an account is set. The model picker reads
+`/ai/models/search` and the workspace namer calls the same chat endpoint. The
+relay's `POST /api/ai/agent` (a per-run `FORKMESH_AI_AGENT_AUTH` ticket signed
+as `forkmesh-ai-agent-v1`) stays only for older clients.
+
+### End-to-end test
+
+`app/tests/test_forkbot.py` runs the embedded script end to end
+(`_run_cloudflare_agent`): it extracts the Python from the header and drives it
+against a local stub of the chat-completions endpoint in a throwaway Git
+repository with a fake `HOME`. Small Workers AI models loop on one command,
+stop before committing, or answer with an empty turn, so the repeat guard
+(adhoc #279, #1633), steering from stdin, retries of a 5xx (adhoc #1633),
+the uncommitted-work check and the empty-turn check are exercised rather than
+grepped. The script echoes a tool call in the OpenAI `tool_calls` shape
+(adhoc #1683); whether the chat-completions endpoint keeps them is not yet
+checked against a live model.
 
 ## Mirror node and runner runs
 
@@ -189,17 +237,24 @@ matching `FORKMESH_MCP_TOKEN` gives write access and anything else is
 read-only. CRM tools and `list_tasks`/`get_task` need the token even to read.
 Agent, window and release tools need the desktop's intake socket
 (`FORKMESH_AGENT_INTAKE`).
+`link_branch` is left out of `tools/list` entirely without both intake
+variables (`INTAKE_ONLY_TOOLS`), since it can only ever act on the calling
+desktop session. It fixes an agent that started in the main checkout
+(no branch, no worktree) and later moved its work to a branch: once linked,
+the desktop's diff viewer, task link and merge flow use that branch
+([../tools/mcp-create-agent.md](../tools/mcp-create-agent.md#linking-a-branch-to-your-own-session-link_branch)).
+`tools/test_forkmesh_mcp_server.py` drops the intake variables before it
+pins the tool names, so it passes inside a desktop agent too.
 
 The issue, milestone, project and pull stores (`.forkmesh/issues`,
 `.forkmesh/projects`, `.forkmesh/pulls`) are read and written in the working
 tree, so every path goes through `checked_store_path`. It refuses a path
 with a symlink at any component below the repository root, the same rule
 `notes_root` applies to notes. Listings (`search_issues`,
-`existing_pr_for_head`) skip such entries. Without this check a repository
-author could commit `.forkmesh/pulls/<n>/changes.patch` as a link to
-`/proc/self/environ` or the identity key, and `get_pr_diff` returned the
-target's bytes. A symlinked `milestones.json` or issue record was also
-written through to wherever it pointed.
+`existing_pr_for_head`) skip such entries. Otherwise a repository author
+could commit `.forkmesh/pulls/<n>/changes.patch` as a link to
+`/proc/self/environ` or the identity key for `get_pr_diff` to return, or make
+a write land wherever a symlinked record points.
 
 | Group | Tools | Notes |
 | --- | --- | --- |
@@ -209,8 +264,9 @@ written through to wherever it pointed.
 | Issues and planning | `search_issues`, `create_issue`, `comment_on_issue`, `create_milestone`, `update_milestone`, `create_project`, `update_project` | Signed tracker writes |
 | Pull requests | `open_pr_from_branch`, `get_pr_diff` | The PR carries the MCP marker |
 | CRM | `crm_list_organizations`, `crm_get_pipeline`, `crm_list_contacts`, `crm_get_contact`, `crm_list_activity`, `crm_update_contact`, `crm_find_duplicates`, `crm_check_accounts`, `crm_merge_contacts` | Signed CRM API |
+| Booking | `booking_get_page`, `booking_update_page` | Signed `/api/booking` as the account; an update sets the page up when there is none and checks every value first, because the API quietly swaps a value it does not accept for the default ([../marketplace/booking.md](../marketplace/booking.md)) |
 | Tasks | `list_tasks`, `get_task`, `create_task`, `update_task`, `complete_task`, `reopen_task`, `attach_work_item`, `detach_work_item`, `delete_task`, `restore_task` | Signed `/api/tasks`; delete is soft |
-| Agents | `create_agent` | Desktop socket; 12 per 10 minutes; `task` / `handoff` hand an organization task to the new agent |
+| Agents | `create_agent`, `link_branch` | Desktop socket; `create_agent` 12 per 10 minutes, `task` / `handoff` hand an organization task to the new agent; `link_branch` (listed only when the socket is there) links a branch the calling agent created to its own session |
 | Releases | `list_releases`, `create_release`, `publish_release` | Desktop socket; 6 per 10 minutes |
 | Ledger | `record_expense` | Signed `POST /api/ledger/expenses`; the signed-in account must be an administrator with two-factor sign-in ([../finance/cfo.md](../finance/cfo.md#recording-expenses)) |
 | Email | `send_email` | Sends through the local Zoho Mail account set up with `tools/zoho_mail.py`, no confirmation step, then logs outside recipients in the CRM's Initiatives list ([../tools/zoho-mail.md](../tools/zoho-mail.md)) |
@@ -218,8 +274,7 @@ written through to wherever it pointed.
 | Agents and runners | `list_agents`, `send_agent_message`, `list_runners`, `notify_user` | Desktop socket; messages only reach desktop agents whose mode allows no more than the sender's; 30 messages and 10 notifications per 10 minutes |
 
 Details: [../tools/mcp-create-agent.md](../tools/mcp-create-agent.md),
-[../tools/mcp-agent-windows.md](../tools/mcp-agent-windows.md),
-[../tools/mcp-claude-code-desktop.md](../tools/mcp-claude-code-desktop.md)
+[../tools/mcp-desktop-tools.md](../tools/mcp-desktop-tools.md)
 (how these map to Claude Code desktop's own tools),
 [../tools/mcp-releases.md](../tools/mcp-releases.md).
 
@@ -244,9 +299,9 @@ Skills live in `.forkmesh/skills/`.
 
 ## Server-side AI
 
-No relay code gives an LLM tools to run on the server: ForkBot chat uses
+No app code on the core nodes gives an LLM tools to run on the server: ForkBot chat uses
 JSON-schema intent classification, other AI calls are tool-less, and
-marketplace package workers and ForkMesh Apps ([../APPS.md](../APPS.md))
+marketplace package workers and ForkMesh Apps ([OAuth apps](../app/oauth-apps.md))
 expose fixed APIs, not LLM tools.
 
 ## Known gaps
@@ -263,8 +318,6 @@ expose fixed APIs, not LLM tools.
 
 ## Related docs
 
-- [README.md](README.md): agent runs and sandboxing
-- [../security/agent-host-boundaries.md](../security/agent-host-boundaries.md)
-- [../desktop/agents-ui.md](../desktop/agents-ui.md)
-- [../server/agent-jobs.md](../server/agent-jobs.md), [../RUNNERS.md](../RUNNERS.md)
+- [Agent host boundaries](../security/agent-host-boundaries.md)
+- [../server/agent-jobs.md](../server/agent-jobs.md), [runners](../operations/runners.md)
 - [../tools/README.md](../tools/README.md)

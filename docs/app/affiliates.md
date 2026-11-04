@@ -1,7 +1,7 @@
 # Affiliate program
 
 Part of [the App docs](README.md). The September Revenue Contest
-([www/docs/hackathon.md](../../www/docs/hackathon.md)), kept open all year
+([docs/hackathon.md](../hackathon.md)), kept open all year
 without its leaderboard. People with a verified ForkMesh account join as
 affiliates, claim companies before any outreach, and bring them onto a paid
 plan through the Patreon link on the homepage. They earn 50% of each eligible
@@ -11,7 +11,7 @@ affiliate named as its source.
 | Area | Where |
 | --- | --- |
 | Rules, validation and routes | `app/src/affiliates.py` |
-| Worker adapter | `app/src/programs_runtime.py` (`_AffiliatesRuntime`) |
+| Runtime adapter | `app/src/programs_runtime.py` (`_AffiliatesRuntime`) |
 | Lead hand-off to the CRM | `plugin_data.deliver_lead` → the CRM's `record_lead` hook |
 | Page | `www/templates/pages/affiliates.html`, `www/public/assets/hackathon/affiliates.js` |
 | Schema | `app/migrations/0262_affiliates_and_plugin_race.sql` (`affiliates`, `affiliate_leads`) |
@@ -50,11 +50,10 @@ The terms come from the contest's official rules
   ForkMesh to have it.
 - A claim whose email or domain matches the affiliate's own email is refused
   as a self-referral.
-- A claim whose email is already a CRM contact is stored as `known`: it never
-  earns commission, holds no claim and does not count toward the open limit.
-  That is how "already in an active sales conversation" is decided
-  automatically. Anything subtler, such as related accounts, the customer's
-  own payment method or coordinated purchases, is for an admin to judge.
+- A claim whose email is already a CRM contact is stored as `known` ("already
+  in an active sales conversation"): it never earns commission, holds no claim
+  and does not count toward the open limit. Subtler cases (related accounts,
+  the customer's own payment method, coordinated purchases) are for an admin.
 - `won` and `paid` need `firstMonthCents`; the commission is half of it,
   rounded down to the cent.
 
@@ -101,17 +100,9 @@ individuals) or W-8BEN-E (non-US entities). The line is in the page's "What
 counts" list, its FAQ and text mirror, and the API's `terms`
 (`program()` in `app/src/affiliates.py`).
 
-It started as the tax-form sentence in the Revenue Contest's decision D6,
-which was never approved before that contest ended. On 2026-10-25 the owner
-approved it for affiliates, with two changes:
-
-- **Companies can be paid**, so W-8BEN-E was added; W-8BEN covers non-US
-  individuals only.
-- **No outside licensed review.** ForkMesh does its own CPA work, so the owner
-  approved the wording without one.
-
-No referral had been completed by then, so no one was paid under the earlier
-terms.
+The owner approved this wording on 2026-10-25. W-8BEN-E is there because
+companies can be paid (W-8BEN covers non-US individuals only); ForkMesh does
+its own CPA work, so there was no outside licensed review.
 
 ## Data
 

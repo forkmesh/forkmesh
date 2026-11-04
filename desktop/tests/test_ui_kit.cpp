@@ -4,10 +4,12 @@
 
 #include <QApplication>
 #include <QElapsedTimer>
+#include <QFontMetrics>
 #include <QFrame>
 #include <QHeaderView>
 #include <QImage>
 #include <QLabel>
+#include <QListWidget>
 #include <QStyleOptionViewItem>
 #include <QStyledItemDelegate>
 #include <QTableWidget>
@@ -38,6 +40,32 @@ int main(int argc, char **argv)
     qputenv("QT_QPA_PLATFORM", "offscreen");
     QApplication app(argc, argv);
 
+    {
+        const QFont original = QApplication::font();
+        QFont appFont = original;
+        appFont.setFamilies({QStringLiteral("Cantarell"),
+                             QStringLiteral("Noto Color Emoji")});
+        QApplication::setFont(appFont);
+        QFont themeListFont = appFont;
+        themeListFont.setFamilies({QStringLiteral("Cantarell")});
+        themeListFont.setPixelSize(15);
+        QApplication::setFont(themeListFont, "QListView");
+        QListWidget before;
+        before.ensurePolished();
+        check(!before.font().families().contains(QStringLiteral("Noto Color Emoji")),
+              "a platform theme's QListView font drops the emoji fallback");
+        Theme::adoptInterfaceFamiliesForWidgetClasses();
+        QListWidget after;
+        after.ensurePolished();
+        check(after.font().families() == appFont.families(),
+              "list views keep the app's colour emoji fallback");
+        check(after.font().pixelSize() == 15,
+              "list views keep the theme's size");
+        check(QApplication::font("QPushButton").families() == appFont.families(),
+              "classes the theme left alone still use the app font");
+        QApplication::setFont(original);
+    }
+
     check(kit::cellDisplayText(QStringLiteral("short")) == QStringLiteral("short"),
           "a short cell keeps its text");
     const QString huge(2'000'000, QLatin1Char('x'));
@@ -50,6 +78,26 @@ int main(int argc, char **argv)
     const QString emojiCut = kit::cellDisplayText(emoji);
     check(!emojiCut.at(emojiCut.size() - 2).isHighSurrogate(),
           "the cut never splits a surrogate pair");
+
+    {
+        const QFontMetrics metrics(QApplication::font());
+        check(kit::elideRightToWidth(QStringLiteral("short"), metrics, 400) ==
+                  QStringLiteral("short"),
+              "a line that fits is not elided");
+        QString line;
+        while (line.size() < 2'000'000)
+            line += QStringLiteral("step done ") + QString::fromUtf8("\xE2\x9C\x85 ");
+        QElapsedTimer timer;
+        timer.start();
+        const QString shown = kit::elideRightToWidth(line, metrics, 300);
+        check(timer.elapsed() < 250,
+              "eliding a two-million-character line shapes only what the width can show");
+        check(shown.endsWith(QChar(0x2026)) && metrics.horizontalAdvance(shown) <= 300 &&
+                  line.startsWith(shown.chopped(1)),
+              "the elided line is the start of the text with an ellipsis, within the width");
+        check(kit::elideRightToWidth(line.left(40), metrics, 2000) == line.left(40),
+              "a short prefix that fits a wide row is shown whole");
+    }
 
     Theme::setActiveDesign(Theme::Design::Next, true);
     kit::installStockPolish();

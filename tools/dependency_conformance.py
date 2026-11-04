@@ -2,7 +2,7 @@
 """Exercise stock dependency managers against provider-independent routes.
 
 Implements the forkmesh-dependency-workflows-v1 contract
-(conformance/dependencies/v1/contract.json, www/docs/dependency-workflows.md).
+(conformance/dependencies/v1/contract.json, docs/dependency-workflows.md).
 Disposable loopback providers serve one fixture repository. Every install runs
 an unmodified client (Git, pip, npm, Go, Cargo) against one logical URL, and
 Git's ``url.<base>.insteadOf`` points that URL at whichever provider is active.

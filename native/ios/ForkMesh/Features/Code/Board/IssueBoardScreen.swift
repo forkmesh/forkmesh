@@ -58,9 +58,9 @@ struct IssueBoardScreen: View {
                 Label("Could not load issues", systemImage: "exclamationmark.triangle")
             } description: {
                 Text(error)
+                    .fmMessageTools(error)
             } actions: {
                 Button("Try again") { Task { await board.refresh() } }
-                FmMessageTools(error)
             }
         } else if board.loading && board.issues.isEmpty {
             ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -153,6 +153,7 @@ struct IssueBoardScreen: View {
             .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
         }
         .buttonStyle(.plain)
+        .textSelection(.disabled)
         .contextMenu {
             Menu("Move to…") {
                 ForEach(board.columns.filter { $0 != column.name }, id: \.self) { (target: String) in

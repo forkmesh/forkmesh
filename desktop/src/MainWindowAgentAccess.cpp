@@ -15,6 +15,7 @@
 #include "ClaudeTranscriptView.h"
 #include "CodexAppServerSession.h"
 #include "CommandVariables.h"
+#include "ComposerConnectors.h"
 #include "DestructiveCommandReview.h"
 #include "NetworkLogArchive.h"
 #include "ProjectAgentAccess.h"
@@ -28,6 +29,8 @@
 
 #include <QAbstractTextDocumentLayout>
 #include <QFontDatabase>
+#include <QPlainTextEdit>
+#include <QRandomGenerator>
 #include <QHostAddress>
 #include <QHostInfo>
 #include <QJsonArray>
@@ -75,6 +78,20 @@ int gateSessionId(const QString &token)
 QString gateTargetLabel(const QString &target)
 {
     return target == QLatin1String("web-search") ? QStringLiteral("web search") : target;
+}
+
+QString fullCallText(const forkmesh::agentnet::Request &request)
+{
+    const QString command = request.input.value(QStringLiteral("command")).toString();
+    if (!command.isEmpty())
+        return command;
+    const QString url = request.input.value(QStringLiteral("url")).toString();
+    if (!url.isEmpty())
+        return QStringLiteral("Fetch %1").arg(url);
+    const QString query = request.input.value(QStringLiteral("query")).toString();
+    if (!query.isEmpty())
+        return QStringLiteral("Search the web for %1").arg(query);
+    return request.call.summary;
 }
 
 void openDeleteRuleDialog(QWidget *parent, const QStringList &paths, const QString &scratch,
@@ -211,6 +228,17 @@ forkmesh::agentrules::RunRules MainWindow::agentRunRules(int sid) const
                 networkLogPath(), forkmesh::netlog::archiveDir(networkLogPath()));
         rules.access.allowedHosts += forkmesh::agentrules::teammateAllowedHosts(teammate.second);
     }
+    QStringList inherited = m_startingAgentDeniedPermissions;
+    for (const AgentSession &session : std::as_const(m_agentSessions))
+        if (session.id == sid) {
+            inherited += session.deniedPermissions;
+            break;
+        }
+    for (const QString &permission : std::as_const(inherited))
+        if (!rules.deniedPermissions.contains(permission))
+            rules.deniedPermissions.append(permission);
+    if (rules.deniedPermissions.contains(QStringLiteral("external-tools")))
+        rules.externalBlocked = true;
     return rules;
 }
 
@@ -245,7 +273,12 @@ QJsonObject MainWindow::agentRunLaunchOptions(int sid, bool codex) const
         (!forkmesh::projects::webSearchAllowed(rules.access) || rules.externalBlocked))
         disabled << QStringLiteral("web_search");
     options = AgentToolPolicy::optionsWithDisabledFamilies(options, disabled);
-    const QStringList names = forkmesh::agentrules::teammateDisallowedTools(rules.deniedPermissions);
+    QStringList names = forkmesh::agentrules::teammateDisallowedTools(rules.deniedPermissions);
+    if (!codex)
+        for (const QString &tool : forkmesh::composerconnectors::disallowedTools(
+                 QSettings().value(kDisabledComposerConnectorsSetting).toStringList()))
+            if (!names.contains(tool))
+                names << tool;
     if (!names.isEmpty())
         options.insert(QStringLiteral("disallowedToolNames"), QJsonArray::fromStringList(names));
     if (!codex)
@@ -366,10 +399,11 @@ void MainWindow::answerAgentGateRequest(const forkmesh::agentnet::Request &reque
     using Verdict = forkmesh::agentrules::Verdict;
     if (!m_agentNetworkGate)
         return;
-    const QString target = request.call.target;
-    const QString host = forkmesh::projects::normalizeHost(target);
     const int sid = gateSessionId(request.session);
-    const QString shown = gateTargetLabel(target);
+    QStringList shownList;
+    for (const QString &target : request.call.destinations())
+        shownList.append(gateTargetLabel(target));
+    const QString shown = shownList.join(QStringLiteral(", "));
 
     if (decision.verdict == Verdict::Run) {
         m_agentNetworkGate->answer(request.id, Decision::Allow);
@@ -390,83 +424,189 @@ void MainWindow::answerAgentGateRequest(const forkmesh::agentnet::Request &reque
         promptAgentDestructiveCommand(request, decision);
         return;
     }
+    const QString id = request.id;
+    promptAgentExternalCall(
+        id, request.session, sid, request.label, request.call.destinations(),
+        decision.pendingTargets, fullCallText(request),
+        [this, id](bool allowed, const QString &reason) {
+            if (!m_agentNetworkGate)
+                return;
+            m_agentNetworkGate->answer(id,
+                                       allowed ? forkmesh::agentnet::Server::Decision::Allow
+                                               : forkmesh::agentnet::Server::Decision::Deny,
+                                       reason);
+        });
+}
 
-    auto *box = new QMessageBox(this);
+void MainWindow::promptAgentExternalCall(
+    const QString &promptId, const QString &session, int sid, const QString &label,
+    const QStringList &destinations, const QStringList &pending, const QString &call,
+    std::function<void(bool allowed, const QString &reason)> done)
+{
+    QStringList shownPending;
+    QStringList hosts;
+    bool allHosts = true;
+    for (const QString &target : pending) {
+        shownPending.append(gateTargetLabel(target));
+        const QString host = forkmesh::projects::normalizeHost(target);
+        if (host.isEmpty())
+            allHosts = false;
+        else
+            hosts.append(host);
+    }
+    const QString shown = shownPending.join(QStringLiteral(", "));
+
+    auto *box = new QDialog(this);
+    box->setObjectName(QStringLiteral("agentExternalCallPrompt"));
     box->setAttribute(Qt::WA_DeleteOnClose);
     box->setWindowModality(Qt::NonModal);
-    box->setIcon(QMessageBox::Question);
     box->setWindowTitle(QStringLiteral("External call"));
-    box->setText(QStringLiteral("%1 wants to reach <b>%2</b>.")
-                     .arg(request.label.isEmpty() ? QStringLiteral("An agent")
-                                                  : request.label.toHtmlEscaped(),
-                          shown.toHtmlEscaped()));
-    box->setTextFormat(Qt::RichText);
-    box->setInformativeText(QStringLiteral("<code>%1</code><br><br>The agent waits until "
-                                           "you answer.")
-                                .arg(request.call.summary.toHtmlEscaped()));
-    QPushButton *once = box->addButton(QStringLiteral("Allow once"), QMessageBox::AcceptRole);
-    QPushButton *run = box->addButton(QStringLiteral("Allow for this run"),
-                                      QMessageBox::AcceptRole);
-    QPushButton *always = nullptr;
-    if (!host.isEmpty())
-        always = box->addButton(QStringLiteral("Always allow %1").arg(shown),
-                                QMessageBox::AcceptRole);
-    QPushButton *deny = box->addButton(QStringLiteral("Deny"), QMessageBox::RejectRole);
-    box->setDefaultButton(deny);
-    box->setEscapeButton(deny);
+    const QRect screen = this->screen()->availableGeometry();
+    auto *outer = new QVBoxLayout(box);
+    outer->setSpacing(10);
+    const QString who = label.isEmpty() ? QStringLiteral("An agent") : label;
+    auto *heading = new QLabel(
+        pending.size() == 1
+            ? QStringLiteral("%1 wants to reach <b>%2</b>.")
+                  .arg(who.toHtmlEscaped(), shown.toHtmlEscaped())
+            : QStringLiteral("%1 wants to reach <b>%2 destinations</b>.")
+                  .arg(who.toHtmlEscaped())
+                  .arg(pending.size()));
+    heading->setObjectName(QStringLiteral("agentExternalCallHeading"));
+    heading->setTextFormat(Qt::RichText);
+    heading->setWordWrap(true);
+    outer->addWidget(heading);
 
-    const QString id = request.id;
-    const QString session = request.session;
-    m_agentGatePrompts.insert(id, box);
-    forkmesh::ui::onMessageBoxClicked(box, this,
-            [this, id, session, target, host, shown, sid, once, run,
-             always](QAbstractButton *button) {
-                m_agentGatePrompts.remove(id);
-                if (!m_agentNetworkGate)
-                    return;
-                if (button == run) {
-                    m_agentGateSessionHosts[session].insert(target);
-                } else if (always && button == always) {
-                    forkmesh::projects::AgentAccess saved = savedProjectAccess();
-                    if (!saved.allowedHosts.contains(host))
-                        saved.allowedHosts.append(host);
-                    QString error;
-                    if (!forkmesh::projects::saveAgentAccess(forkmesh::paths::projectDir(),
-                                                             saved, &error))
-                        flashMessage(error, true);
-                }
-                const bool allowed = button == once || button == run ||
-                                     (always && button == always);
-                m_agentNetworkGate->answer(
-                    id, allowed ? forkmesh::agentnet::Server::Decision::Allow
-                                : forkmesh::agentnet::Server::Decision::Deny,
-                    allowed ? QString()
-                            : QStringLiteral("The user denied this call to %1. Do not try "
-                                             "another way to reach it; continue without it "
-                                             "or ask the user.")
-                                  .arg(shown));
-                if (m_agentTranscript)
-                    m_agentTranscript->refreshCommandApprovals();
-                if (sid > 0)
-                    noteAgentSessionNotice(
-                        sid,
-                        QStringLiteral("External call to %1 %2.")
-                            .arg(shown, allowed ? QStringLiteral("allowed")
-                                                : QStringLiteral("denied")),
-                        /*error=*/false);
-            });
-    // Closing the prompt any other way counts as a denial. finished, not
-    // destroyed: the window's own teardown deletes open prompts after its
-    // members are gone.
-    connect(box, &QDialog::finished, this, [this, id] {
-        if (m_agentGatePrompts.take(id) && m_agentNetworkGate)
-            m_agentNetworkGate->answer(id, forkmesh::agentnet::Server::Decision::Deny,
-                                       QStringLiteral("The user dismissed the request."));
+    QString details = QStringLiteral("Needs your approval:\n  ") +
+                      shownPending.join(QStringLiteral("\n  "));
+    QStringList alreadyAllowed;
+    for (const QString &target : destinations)
+        if (!pending.contains(target))
+            alreadyAllowed.append(gateTargetLabel(target));
+    if (!alreadyAllowed.isEmpty())
+        details += QStringLiteral("\n\nAlso reaches, already allowed:\n  ") +
+                   alreadyAllowed.join(QStringLiteral("\n  "));
+    details += QStringLiteral("\n\nThe call:\n") + call;
+    auto *view = new QPlainTextEdit(box);
+    view->setObjectName(QStringLiteral("agentExternalCallDetails"));
+    view->setReadOnly(true);
+    view->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+    view->setPlainText(details);
+    const int cap = qMax(160, screen.height() * 55 / 100);
+    const int wanted = (view->document()->blockCount() + details.size() / 80 + 2) *
+                       view->fontMetrics().lineSpacing();
+    view->setMinimumHeight(qMin(qMax(120, wanted), cap));
+    view->setMaximumHeight(cap);
+    outer->addWidget(view, 1);
+    auto *waits = new QLabel(QStringLiteral("The agent waits until you answer."));
+    waits->setObjectName(QStringLiteral("modeHint"));
+    outer->addWidget(waits);
+
+    auto *buttons = new QHBoxLayout;
+    auto *deny = new QPushButton(QStringLiteral("Deny"));
+    deny->setObjectName(QStringLiteral("agentExternalCallDeny"));
+    auto *once = new QPushButton(QStringLiteral("Allow once"));
+    once->setObjectName(QStringLiteral("agentExternalCallOnce"));
+    auto *run = new QPushButton(QStringLiteral("Allow for this run"));
+    run->setObjectName(QStringLiteral("agentExternalCallRun"));
+    QPushButton *always = nullptr;
+    if (allHosts && !hosts.isEmpty()) {
+        always = new QPushButton(pending.size() == 1
+                                     ? QStringLiteral("Always allow %1").arg(shown)
+                                     : QStringLiteral("Always allow these %1").arg(pending.size()));
+        always->setObjectName(QStringLiteral("agentExternalCallAlways"));
+        always->setAutoDefault(false);
+        buttons->addWidget(always);
+    }
+    buttons->addStretch(1);
+    once->setAutoDefault(false);
+    run->setAutoDefault(false);
+    deny->setDefault(true);
+    buttons->addWidget(run);
+    buttons->addWidget(deny);
+    buttons->addWidget(once);
+    outer->addLayout(buttons);
+
+    m_agentGatePrompts.insert(promptId, box);
+    const auto answer = [this, box, promptId, session, sid, pending, hosts, shown,
+                         done](bool allowed, bool forRun, bool saveRule) {
+        m_agentGatePrompts.remove(promptId);
+        box->close();
+        if (forRun)
+            for (const QString &target : pending)
+                m_agentGateSessionHosts[session].insert(target);
+        if (saveRule) {
+            forkmesh::projects::AgentAccess saved = savedProjectAccess();
+            for (const QString &host : hosts)
+                if (!saved.allowedHosts.contains(host))
+                    saved.allowedHosts.append(host);
+            QString error;
+            if (!forkmesh::projects::saveAgentAccess(forkmesh::paths::projectDir(), saved, &error))
+                flashMessage(error, true);
+        }
+        done(allowed, allowed ? QString()
+                              : QStringLiteral("The user denied this call to %1. Do not try "
+                                               "another way to reach it; continue without it "
+                                               "or ask the user.")
+                                    .arg(shown));
+        if (m_agentTranscript)
+            m_agentTranscript->refreshCommandApprovals();
+        if (sid > 0)
+            noteAgentSessionNotice(sid,
+                                   QStringLiteral("External call to %1 %2.")
+                                       .arg(shown, allowed ? QStringLiteral("allowed")
+                                                           : QStringLiteral("denied")),
+                                   /*error=*/false);
+    };
+    connect(deny, &QPushButton::clicked, box, [answer] { answer(false, false, false); });
+    connect(once, &QPushButton::clicked, box, [answer] { answer(true, false, false); });
+    connect(run, &QPushButton::clicked, box, [answer] { answer(true, true, false); });
+    if (always)
+        connect(always, &QPushButton::clicked, box, [answer] { answer(true, false, true); });
+    connect(box, &QDialog::finished, this, [this, promptId, done] {
+        if (m_agentGatePrompts.take(promptId))
+            done(false, QStringLiteral("The user dismissed the request."));
     });
+    box->resize(qMin(820, screen.width() - 80), box->sizeHint().height());
     box->show();
     box->raise();
     box->activateWindow();
+    deny->setFocus();
     QApplication::alert(this);
+}
+
+void MainWindow::gateAgentBrowserUrl(int sid, const QUrl &url,
+                                     std::function<void(const QString &refusal)> done)
+{
+    using Verdict = forkmesh::agentrules::Verdict;
+    const forkmesh::agentrules::Decision decision =
+        forkmesh::agentrules::decideUrl(agentRunRules(sid), url, agentRunApprovals(sid));
+    if (decision.verdict == Verdict::Run) {
+        done(QString());
+        return;
+    }
+    if (decision.verdict == Verdict::Deny) {
+        done(decision.reason);
+        return;
+    }
+    const QString token = QStringLiteral("browser:%1:%2")
+                              .arg(sid)
+                              .arg(QRandomGenerator::global()->generate64(), 16, 16,
+                                   QLatin1Char('0'));
+    QString label = QStringLiteral("Agent #%1").arg(sid);
+    const QString title = agentWindowLabel(sid);
+    if (!title.isEmpty())
+        label += QStringLiteral(" (%1)").arg(title);
+    promptAgentExternalCall(token, QStringLiteral("%1:browser").arg(sid), sid, label,
+                            decision.pendingTargets, decision.pendingTargets,
+                            QStringLiteral("Open in a browser window: %1")
+                                .arg(url.toDisplayString(QUrl::RemoveUserInfo)),
+                            [done](bool allowed, const QString &reason) {
+                                done(allowed ? QString()
+                                             : reason.isEmpty()
+                                                   ? QStringLiteral("The user denied this page.")
+                                                   : reason);
+                            });
 }
 
 void MainWindow::promptAgentDestructiveCommand(const forkmesh::agentnet::Request &request,
@@ -474,15 +614,22 @@ void MainWindow::promptAgentDestructiveCommand(const forkmesh::agentnet::Request
 {
     using Lean = forkmesh::destructive::Review::Lean;
     const QString rule = decision.runKey.mid(QStringLiteral("destructive:").size());
+    const QStringList kinds = decision.pendingKinds.isEmpty() ? QStringList{rule}
+                                                              : decision.pendingKinds;
+    const QString kindList = kinds.join(QStringLiteral(", "));
     const QString command =
         request.risk.command.isEmpty() ? request.risk.summary : request.risk.command;
-    const bool matched = request.risk.matchStart >= 0 && request.risk.matchLength > 0 &&
-                         request.risk.matchStart + request.risk.matchLength <= command.size();
+    const std::pair<qsizetype, qsizetype> kindSpan = request.risk.kindSpans.value(
+        rule, std::pair<qsizetype, qsizetype>{request.risk.matchStart, request.risk.matchLength});
+    const qsizetype matchStart = kindSpan.first;
+    const qsizetype matchLength = kindSpan.second;
+    const bool matched =
+        matchStart >= 0 && matchLength > 0 && matchStart + matchLength <= command.size();
     const QString scratch = forkmesh::commandvars::trustedScratch(request.environment);
     const forkmesh::destructive::Review review = forkmesh::destructive::review(
-        command, rule, request.risk.matchStart, request.risk.matchLength,
+        command, rule, matchStart, matchLength,
         forkmesh::commandvars::valuesAt(command, request.environment,
-                                        matched ? request.risk.matchStart : command.size()),
+                                        matched ? matchStart : command.size()),
         scratch);
 
     auto *box = new QDialog(this);
@@ -510,7 +657,7 @@ void MainWindow::promptAgentDestructiveCommand(const forkmesh::agentnet::Request
         QStringLiteral("%1 wants to run a destructive command (<b>%2</b>).")
             .arg(request.label.isEmpty() ? QStringLiteral("An agent")
                                          : request.label.toHtmlEscaped(),
-                 rule.toHtmlEscaped()));
+                 kindList.toHtmlEscaped()));
     title->setTextFormat(Qt::RichText);
     title->setWordWrap(true);
     headerText->addWidget(title);
@@ -538,7 +685,7 @@ void MainWindow::promptAgentDestructiveCommand(const forkmesh::agentnet::Request
     view->document()->setDefaultFont(fixed);
     const bool dark = view->palette().color(QPalette::Base).lightness() < 128;
     view->setHtml(forkmesh::destructive::commandHtml(
-        command, matched ? request.risk.matchStart : -1, request.risk.matchLength, request.cwd,
+        command, matched ? matchStart : -1, matchLength, request.cwd,
         QDir::homePath(), dark));
     view->setToolTip(QStringLiteral("Links open the documentation for that program, or the "
                                     "file or folder it names."));
@@ -681,7 +828,7 @@ void MainWindow::promptAgentDestructiveCommand(const forkmesh::agentnet::Request
     outer->addWidget(note);
 
     auto *buttons = new QHBoxLayout;
-    auto *always = new QPushButton(QStringLiteral("Always allow %1").arg(rule));
+    auto *always = new QPushButton(QStringLiteral("Always allow %1").arg(kindList));
     always->setObjectName(QStringLiteral("agentDestructiveCommandAlways"));
     auto *alwaysMenu = new QMenu(always);
     QAction *alwaysProject = alwaysMenu->addAction(
@@ -700,7 +847,7 @@ void MainWindow::promptAgentDestructiveCommand(const forkmesh::agentnet::Request
         alwaysFolder->setEnabled(known);
     }
     always->setMenu(alwaysMenu);
-    auto *run = new QPushButton(QStringLiteral("Allow %1 for this run").arg(rule));
+    auto *run = new QPushButton(QStringLiteral("Allow %1 for this run").arg(kindList));
     auto *deny = new QPushButton(QStringLiteral("Deny"));
     auto *once = new QPushButton(QStringLiteral("Allow once"));
     run->setAutoDefault(false);
@@ -715,10 +862,12 @@ void MainWindow::promptAgentDestructiveCommand(const forkmesh::agentnet::Request
     outer->addLayout(buttons);
 
     const QString id = request.id;
-    const QString key = decision.runKey;
+    QStringList keys;
+    for (const QString &kind : kinds)
+        keys.append(QStringLiteral("destructive:") + kind);
     m_agentGatePrompts.insert(id, box);
     enum class Answer { Deny, Once, Run, Project, Global, Rule };
-    const auto answer = [this, box, request, key, rule](Answer choice) {
+    const auto answer = [this, box, request, keys, kinds, kindList](Answer choice) {
         m_agentGatePrompts.remove(request.id);
         box->close();
         if (!m_agentNetworkGate)
@@ -736,34 +885,38 @@ void MainWindow::promptAgentDestructiveCommand(const forkmesh::agentnet::Request
             return;
         }
         if (choice == Answer::Run)
-            m_agentGateSessionHosts[request.session].insert(key);
+            for (const QString &key : keys)
+                m_agentGateSessionHosts[request.session].insert(key);
         QString error;
         if (choice == Answer::Project) {
             forkmesh::projects::AgentAccess saved = savedProjectAccess();
-            if (!saved.allowedDestructive.contains(rule))
-                saved.allowedDestructive.append(rule);
+            for (const QString &kind : kinds)
+                if (!saved.allowedDestructive.contains(kind))
+                    saved.allowedDestructive.append(kind);
             if (!forkmesh::projects::saveAgentAccess(forkmesh::paths::projectDir(), saved,
                                                      &error))
                 flashMessage(error, true);
             else
                 flashMessage(QStringLiteral("Agents in this project now run %1 commands "
                                             "without asking.")
-                                 .arg(rule));
+                                 .arg(kindList));
         } else if (choice == Answer::Global) {
             const QString path =
                 forkmesh::projects::globalRulesPath(forkmesh::paths::homeDir());
             forkmesh::projects::GlobalAgentRules rules = forkmesh::projects::loadGlobalRules(path);
-            if (!rules.defaults.allowedDestructive.contains(rule))
-                rules.defaults.allowedDestructive.append(rule);
+            for (const QString &kind : kinds)
+                if (!rules.defaults.allowedDestructive.contains(kind))
+                    rules.defaults.allowedDestructive.append(kind);
             if (!forkmesh::projects::saveGlobalRules(path, rules, &error))
                 flashMessage(error, true);
             else
                 flashMessage(QStringLiteral("Agents in every project now run %1 commands "
                                             "without asking.")
-                                 .arg(rule));
+                                 .arg(kindList));
         }
         QSet<QString> approved = m_agentGateSessionHosts.value(request.session);
-        approved.insert(key);
+        for (const QString &key : keys)
+            approved.insert(key);
         answerAgentGateRequest(request, forkmesh::agentrules::decide(agentRunRules(sid),
                                                                      request.call, request.risk,
                                                                      approved));

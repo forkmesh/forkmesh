@@ -329,7 +329,7 @@ export const FORKMESH_SONG = Object.freeze({
   name: "ForkMesh Forever (Indie Pop)",
   videoUrl: "https://www.youtube.com/watch?v=EsQMZuS6lbE",
   licenseUrl:
-    "https://github.com/forkmesh/forkmesh/blob/main/www/docs/world-soundtrack-license.md",
+    "https://github.com/forkmesh/forkmesh/blob/main/docs/world-community-services.md#world-song",
 });
 
 export function landmarkById(id) {

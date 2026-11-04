@@ -56,7 +56,6 @@ struct InboxItemScreen: View {
         }
         .listStyle(.insetGrouped)
         .background(fm.canvas)
-        .navigationTitle(item.kindLabel)
         .navigationBarTitleDisplayMode(.inline)
         .shellKeepsNavigationBar()
         .task {
@@ -79,9 +78,6 @@ struct InboxItemScreen: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 10) {
-            FmTextButton("Inbox", icon: "chevron_left", minHeight: 36, onPressed: { dismiss() })
-                .padding(.leading, -FmSpace.x3)
-                .accessibilityIdentifier("ping-detail-back")
             HStack(spacing: 12) {
                 FmIconTile(icon: item.icon, tint: fm.accent, size: 40, iconSize: 20)
                 VStack(alignment: .leading, spacing: 2) {

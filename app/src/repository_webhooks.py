@@ -4,7 +4,7 @@ ForkMesh already specifies the outbound webhook wire format — canonical JSON
 body, HMAC-SHA256 signature over
 ``forkmesh-webhook-v1\\n<ts>\\n<id>\\n<body>``,
 the five ``ForkMesh-*`` headers and the retry/dead-letter rules (see
-``www/docs/integrations.md`` and ``tools/forkmesh_integration.py``). Until now
+``docs/integrations.md`` and ``tools/forkmesh_integration.py``). Until now
 the only sender was that client-side tool, which polls the public catalog: a CI
 provider could not be told "build when this repository moves" without somebody
 running a watcher.

@@ -1,6 +1,8 @@
 # Desktop: saved searches and security alarms
 
-Part of [the desktop docs](README.md).
+Saved searches on the search results page, the pings they raise for new hits, the security-pertinent searches that raise an alarm, and the exclusions, hidden terms and scrubbing that keep terms out of search and logs.
+
+Part of [Desktop](README.md).
 
 ## Saved searches
 
@@ -20,8 +22,8 @@ full-file rewrites are too costly for growing seen-key lists).
   `MainWindowSearch.cpp`) searches every file on disk in the repository's
   working folder: `git grep --untracked`, so uncommitted edits and new files
   count, not only the committed tree that **Code** reads. Files matched by
-  `.gitignore` are skipped: including them took over 60 s on the ForkMesh
-  checkout (build trees, `.worktrees/`) against about 4 s without. A mirror
+  `.gitignore` are skipped (build trees and `.worktrees/` make the search
+  over ten times slower). A mirror
   (no `.git` entry, so no working folder) and an unscoped search have no
   project folder. The results page and background runs both search it, and a
   hit opens the file from disk.
@@ -38,9 +40,7 @@ unacknowledged results:
 
 - a red banner (`#securityAlarmBanner`, `buildSecurityAlarmBanner` in
   `MainWindowSecurityAlarm.cpp`) shows on every page with **Open results** and
-  **Acknowledge** (the octicon `check`, `resources/icons/octicons/check.svg`;
-  before it was vendored the button drew no icon and Qt logged
-  `Cannot open file ':/icons/codicons/check.svg'`);
+  **Acknowledge** (the octicon `check`, `resources/icons/octicons/check.svg`);
 - the Error cue plays every 3 seconds through `UiSounds::preview` (even with
   interface sounds off, but never offscreen or in test mode);
 - when first raised by a run, the window requests attention and a warning Ping

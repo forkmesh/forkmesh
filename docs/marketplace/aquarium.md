@@ -6,7 +6,8 @@ desktop window into an aquarium while ForkMesh is not the active app, and lets
 the same fish swim over the iPhone app. Every agent is a fish whose look and
 behaviour follow its status, changed files and merge conflicts; the fish play
 with the window's own buttons, headings, rows and text boxes, and with the
-Genie spider ([../desktop/genie.md](../desktop/genie.md)).
+Genie spider ([../desktop/genie.md](../desktop/genie.md)). Part of
+[Marketplace](README.md); see also [spider-room.md](spider-room.md).
 
 ## Code map
 

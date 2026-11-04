@@ -143,6 +143,7 @@ def test_a_successful_merge_is_recorded_once_and_the_outcome_is_pinged(module):
     assert asyncio.run(loaded.announce(Env())) == 1
     assert {p[0] for p in pings} == {"root", "jett"}
     assert pings[0][2] == "Deployed cccccccccccc to the cores"
+    assert pings[0][3]["meta"]["state"] == "up"
     assert asyncio.run(loaded.announce(Env())) == 0
     [item] = asyncio.run(loaded.recent(Env()))
     assert item["status"] == "deployed" and item["commit"] == AFTER
@@ -178,3 +179,12 @@ def test_the_merge_body_accepts_an_approval_only_for_merges():
     source = ast.get_source_segment(entry, node)
     assert '"deployApproval"' in source
     assert 'if profile.get("override")' in source
+
+
+def test_announcement_state_marks_good_and_bad_outcomes(module):
+    loaded = module[0]
+    row = {"id": 4, "status": "deployed"}
+    assert loaded.announcement_meta(row) == {
+        "approval": 4, "status": "deployed", "state": "up"}
+    assert loaded.announcement_meta(dict(row, status="failed"))["state"] == "down"
+    assert "state" not in loaded.announcement_meta(dict(row, status="skipped"))

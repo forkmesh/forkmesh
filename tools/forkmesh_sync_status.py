@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Explain a ForkMesh synchronization status from evidence or a mirrors payload.
 
-Implements the forkmesh-sync-status-v1 model (www/docs/sync-status.md) by
+Implements the forkmesh-sync-status-v1 model (docs/sync-status.md) by
 reusing the Worker's reference implementation, so the CLI, the API, and the
 shared fixture always agree.
 

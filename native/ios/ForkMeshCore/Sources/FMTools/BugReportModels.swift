@@ -313,6 +313,115 @@ public final class BugReportInboxModel {
     }
 }
 
+public typealias MyBugReportsLoad = @MainActor (_ offset: Int) async -> MyBugReports
+public typealias MyBugReportConfirm = @MainActor (_ id: String) async -> MyBugReportConfirmation
+
+@MainActor
+@Observable
+public final class MyBugReportsModel {
+    public static let tabMine = "My reports"
+    public static let empty = "You haven't reported any bugs yet."
+    public static let confirmLabel = "Confirm it's fixed"
+    public static let confirmingLabel = "Confirming…"
+
+    @ObservationIgnored private let loader: MyBugReportsLoad?
+    @ObservationIgnored private let confirmer: MyBugReportConfirm?
+    public private(set) var reports: [MyBugReport] = []
+    public private(set) var counts: [String: Int] = [:]
+    public private(set) var nextOffset: Int?
+    public private(set) var problem = ""
+    public private(set) var loading = false
+    public private(set) var loaded = false
+    public private(set) var confirming: Set<String> = []
+
+    public init(load: MyBugReportsLoad?, confirm: MyBugReportConfirm? = nil) {
+        loader = load
+        confirmer = confirm
+    }
+
+    public convenience init(api: ApiService?) {
+        let load: MyBugReportsLoad? = api.map { api in
+            { offset in await api.myBugReports(offset: offset) }
+        }
+        let confirm: MyBugReportConfirm? = api.map { api in
+            { id in await api.confirmBugReportFixed(id: id) }
+        }
+        self.init(load: load, confirm: confirm)
+    }
+
+    public func reload() async {
+        await fetch(offset: 0)
+    }
+
+    public func more() async {
+        guard let offset = nextOffset else { return }
+        await fetch(offset: offset)
+    }
+
+    private func fetch(offset: Int) async {
+        if loading { return }
+        guard let loader else {
+            problem = "Your reports are unavailable in this build."
+            loaded = true
+            return
+        }
+        loading = true
+        let page = await loader(offset)
+        loading = false
+        if page.cancelled { return }
+        loaded = true
+        if !page.ok {
+            problem = page.message
+            if offset == 0 { reports = [] }
+            nextOffset = nil
+            return
+        }
+        problem = ""
+        counts = page.counts
+        reports = offset == 0 ? page.reports : reports + page.reports
+        nextOffset = page.nextOffset
+    }
+
+    public func confirmFixed(_ id: String) async {
+        guard !confirming.contains(id),
+              let current = reports.first(where: { $0.id == id }), !current.confirmedFixed else { return }
+        guard let confirmer else {
+            problem = "Confirming a fix is unavailable in this build."
+            return
+        }
+        confirming.insert(id)
+        let result = await confirmer(id)
+        confirming.remove(id)
+        if !result.ok {
+            problem = result.message
+            return
+        }
+        problem = ""
+        if !result.counts.isEmpty { counts = result.counts }
+        guard let index = reports.firstIndex(where: { $0.id == id }) else { return }
+        if let updated = result.report, updated.id == id {
+            reports[index] = updated
+        } else {
+            reports[index].status = "closed"
+            reports[index].confirmedFixedAt = max(reports[index].confirmedFixedAt, 1)
+        }
+    }
+
+    public static func statusLabel(_ report: MyBugReport) -> String {
+        if report.confirmedFixed { return "Fixed, confirmed by you" }
+        switch report.status {
+        case "new": return "Received"
+        case "triaged": return "In progress"
+        case "closed": return "Closed"
+        default: return report.status.capitalized
+        }
+    }
+
+    public static func details(_ report: MyBugReport) -> String {
+        [report.platform, report.appVersion, report.screen].filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+}
+
 /// BugReportOverlay's geometry. The position is kept as a fraction of the vertical travel plus a
 /// side, never as points, so rotation or a split window never strands the control off screen.
 public struct BugButtonGeometry: Equatable, Sendable {

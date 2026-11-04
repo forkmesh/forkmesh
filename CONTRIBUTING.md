@@ -3,11 +3,12 @@
 ForkMesh is a developer platform where nodes mirror repositories so code stays
 reachable when its source host goes offline. Human and AI contributors follow
 the same workflow. New to ForkMesh? Start with
-[Getting started](www/docs/getting-started.md); desktop dependencies, logs and
-troubleshooting are in the [Qt client guide](www/docs/qt-client.md). The
+[Getting started](docs/getting-started.md); desktop dependencies, logs and
+troubleshooting are in the [Qt client guide](docs/qt-client.md). The
 developer documentation for each subsystem starts at
-[docs/README.md](docs/README.md); the served stack is described in
-[docs/PLAN.md](docs/PLAN.md).
+[docs/README.md](docs/README.md); how the pieces fit is in
+[Architecture and availability](docs/architecture.md), and the served stack
+in [docs/operations/served-stack.md](docs/operations/served-stack.md).
 
 ## Ways to contribute
 
@@ -21,24 +22,8 @@ developer documentation for each subsystem starts at
 
 ## Repository layout
 
-```text
-desktop/      Qt 6 desktop node
-app/          Product UI, Python API, Git and realtime room code; app/host/ runs it on CPython
-www/          Marketing, docs and blog site
-world/        World code and media
-server/       Go daemon: mirror, core and runner roles
-deploy/       Fleet file, node renderer, certsync, IDS, systemd units
-native/       Native iOS and watchOS (Swift) and Android (Kotlin) apps
-marketplace/  Package catalog and packages
-conformance/  Versioned contracts, vectors and shared fixtures
-tools/        Release, fleet, ledger and agent helpers
-office/       Office (2D) code and media
-changelog/    The one changelog: forkmesh.com/changelog and the apps' What's new
-examples/     Example third-party apps (see docs/APPS.md)
-docs/         Developer documentation, one home page per subsystem
-.github/      Forge compatibility: PR template and the GitHub mirror's CI
-.forkmesh/    Signed in-repo data: issues, discussions, releases, workflows
-```
+The top-level folders are listed in the [README](README.md#repository-layout);
+each subsystem's developer page is in [docs/README.md](docs/README.md).
 
 ## Prepare a working copy
 
@@ -57,15 +42,14 @@ The workflow is fork, branch, commit, signed pull request:
    ```
 
 Use a prefix such as `fix/`, `feat/`, `docs/` or `test/`. Never develop on
-`main`, and keep unrelated cleanup out of the branch. Branches can also be
-created in **Code → Branches → New branch**; Git and the desktop UI share the
-same working copy.
+`main`, and keep unrelated cleanup out of the branch. **Code → Branches → New
+branch** in the desktop does the same on the same working copy.
 
 ## Building and testing
 
 Build and test the component you changed. Changes to repository transport or
 Git-facing behavior also need the
-[stock-Git conformance suite](www/docs/git-compatibility.md#run-the-suite).
+[stock-Git conformance suite](docs/git-compatibility.md#run-the-suite).
 
 | Component | Requirements | Command |
 | --- | --- | --- |
@@ -136,7 +120,7 @@ python3 tools/quality_gate.py run --profile release   # adds the real-browser Wo
 A documentation-only change may rely on configuration validation and link
 checks; say so in the PR. Record every command and result, and never report a
 skipped suite as passing. The policy is the
-[definition of done](www/docs/engineering/definition-of-done.md).
+[definition of done](docs/engineering/definition-of-done.md).
 
 ### 3. Open the pull request
 
@@ -144,9 +128,7 @@ In the desktop client, open your fork, choose **Pulls → New pull request**, se
 **Target node** to `forkmesh`, **Base** to `main` and **Head** to your branch,
 then submit. The signed patch series is queued in the owner's inbox even while
 that node is offline. Base and head must differ and the branch must contain a
-committed diff. See the
-[Qt client PR guide](www/docs/qt-client.md#create-a-pull-request) for other
-cases. MCP-capable agents can use `open_pr_from_branch`, which creates the same
+committed diff ([Qt client PR guide](docs/qt-client.md#create-a-pull-request)). MCP-capable agents can use `open_pr_from_branch`, which creates the same
 signed record and grants no review bypass.
 
 A pull request is a signed record that carries the patch and the commits, not
@@ -193,7 +175,7 @@ ForkMesh are checked by the reviewer, so run it yourself if in doubt.
 
 - A change a user can notice adds one sentence to the changelog with
   `python3 tools/changelog.py add --area <Area> "<sentence>"`
-  ([docs/changelog.md](docs/changelog.md)).
+  ([docs/engineering/changelog.md](docs/engineering/changelog.md)).
 - A change a phone user can see is made in both `native/ios` and
   `native/android` in the same pull request
   ([docs/native/README.md](docs/native/README.md)).
@@ -235,7 +217,7 @@ To hand ForkMesh work to Claude Code or another agent, give it the
 [agent guide](https://app.forkmesh.com/forkmesh-agent.md) (source:
 [`app/public/forkmesh-agent.md`](app/public/forkmesh-agent.md)). It covers
 starting an instance, working on a repository and the pull request rules
-above. [Working with coding agents](www/docs/coding-agents.md) shows how to
+above. [Working with coding agents](docs/coding-agents.md) shows how to
 keep a copy in your clone without committing it.
 
 ## Code of conduct

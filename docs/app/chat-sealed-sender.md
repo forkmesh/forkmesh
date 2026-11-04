@@ -1,6 +1,8 @@
 # Sealed sender for direct messages (proposed)
 
-Status: proposed 2026-10-16, not implemented. Chat protocol v4
+Part of [the App docs](README.md); see also the
+[threat model](../protocol/threat-model.md). Status: proposed
+2026-10-16, not implemented. Chat protocol v4
 ([chat-protocol-v4.md](chat-protocol-v4.md)) closed the first gap with Signal
 (per-message forward secrecy). This page is the plan for the second: Signal's
 server does not learn who sent a message, while ours knows both accounts of
@@ -45,8 +47,8 @@ recipient of each message, never the conversation.
    history; a new device of the same account gets it from an approved device
    of that account (a sealed sync message), as Signal's linked devices do.
 5. **Receipts and typing become end-to-end messages.** Delivered, read,
-   view-once state and typing are sealed DM frames; the server no longer
-   produces `forkmesh-delivered` / `forkmesh-read` for DMs.
+   view-once state and typing become sealed DM frames; the server stops
+   producing `forkmesh-delivered` / `forkmesh-read` for DMs.
 6. **What stays at the server:** the recipient of each message, its time and
    size, and the connecting IP. Unread counts, reminders and the "N messages
    on the server" count become per mailbox.

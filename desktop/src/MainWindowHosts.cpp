@@ -2144,6 +2144,7 @@ AgentLoginDialogParts buildAgentLoginDialog(QWidget *parent,
     parts.layout->addWidget(parts.autoOpenStatus);
     parts.terminal = new TerminalWidget(parts.dialog);
     parts.terminal->setObjectName(QStringLiteral("hostAgentLoginTerminal"));
+    parts.terminal->setOpensSignInLinks(true);
     parts.layout->addWidget(parts.terminal, 1);
     QLabel *autoOpenStatus = parts.autoOpenStatus;
     QObject::connect(
@@ -5022,6 +5023,20 @@ void MainWindow::refreshRunners(std::function<void()> then)
         return;
     const QUrl url = forkmesh::runners::runnersListUrl(catalogApiUrl());
     const QString token = accountSessionTokenForUrl(url);
+    if (m_networkAccess && token.isEmpty() && hasActiveAccountSession()) {
+        m_runnersFetchInFlight = true;
+        ensureAccountSession([this, url, finish](const QString &error) {
+            m_runnersFetchInFlight = false;
+            if (error.isEmpty() && !accountSessionTokenForUrl(url).isEmpty()) {
+                refreshRunners();
+                return;
+            }
+            if (m_runnersStatus && !error.isEmpty())
+                m_runnersStatus->setText(error);
+            finish();
+        });
+        return;
+    }
     if (!m_networkAccess || token.isEmpty()) {
         if (m_runnersStatus)
             m_runnersStatus->setText(QStringLiteral(
@@ -5089,6 +5104,12 @@ void MainWindow::requestRunnerAccountChange(
     const forkmesh::runners::RunnerAccountInfo &account,
     const QString &action)
 {
+    if (waitForAccountSession(
+            forkmesh::runners::runnerAccountsUrl(catalogApiUrl(), runner),
+            [this, runner, provider, account, action] {
+                requestRunnerAccountChange(runner, provider, account, action);
+            }))
+        return;
     const QString label = forkmesh::runners::runnerProviderLabel(provider);
     if (action == QLatin1String("remove") &&
         QMessageBox::question(
@@ -5157,8 +5178,7 @@ void MainWindow::fillAgentRunnerAccountsMenu(QMenu *menu,
                                              const QString &provider)
 {
     const QUrl url = forkmesh::runners::runnersListUrl(catalogApiUrl());
-    const bool signedIn =
-        m_networkAccess && !accountSessionTokenForUrl(url).isEmpty();
+    const bool signedIn = m_networkAccess && hasActiveAccountSession();
     const QString emptyText =
         !signedIn ? QStringLiteral("Sign in to your ForkMesh account to "
                                    "manage runner accounts")

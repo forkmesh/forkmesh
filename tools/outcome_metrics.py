@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Validate ForkMesh's outcome metric dictionary and build a review report.
 
-``www/docs/outcome-metrics.json`` is the single definition of every KPI. The
+``docs/outcome-metrics.json`` is the single definition of every KPI. The
 ``review`` command turns an aggregate observation file into per-metric values
 with freshness, confidence, and small-cell suppression. A missing or
 unreconciled observation is reported as unknown, never as zero, and an input
@@ -19,7 +19,7 @@ import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DICTIONARY_PATH = ROOT / "www" / "docs" / "outcome-metrics.json"
+DICTIONARY_PATH = ROOT / "docs" / "outcome-metrics.json"
 DICTIONARY_SCHEMA = "forkmesh-outcome-metric-dictionary-v2"
 OBSERVATIONS_SCHEMA = "forkmesh-outcome-observations-v1"
 CADENCES = ("weekly", "monthly")

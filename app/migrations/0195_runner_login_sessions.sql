@@ -1,4 +1,4 @@
--- Web sign-in of a runner's provider CLI (runner_logins.py, docs/RUNNERS.md).
+-- Web sign-in of a runner's provider CLI (runner_logins.py, docs/operations/runners.md).
 --
 -- runner_login_sessions one relayed `claude auth login` / `codex login
 --                       --device-auth` terminal on one runner; at most one

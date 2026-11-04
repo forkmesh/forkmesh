@@ -351,6 +351,7 @@ int MainWindow::startAgentForIssue(const Issue &issue, const QString &provider,
         session.mode = m_quickAddModeSelector->currentText();
     session.contextWindow =
         qMax(1000, QSettings().value(kAgentContextSetting, 32000).toInt());
+    session.deniedPermissions = m_startingAgentDeniedPermissions;
     session = m_agentStore->createSession(session);
     session.branchName =
         QStringLiteral("agent/issue-%1-s%2-%3")
@@ -1032,6 +1033,7 @@ int MainWindow::startAdHocAgentForRepo(int repoIndex, const QString &task,
     session.baseBranch = requestedBaseBranch;
     session.baseRef = requestedBaseRef;
     session.held = held;
+    session.deniedPermissions = m_startingAgentDeniedPermissions;
     session = m_agentStore->createSession(session);
     if (!direct) {
         const QString sharedName =
@@ -1209,7 +1211,8 @@ int MainWindow::startAgentOnExistingBranch(int repoIndex, const QString &branch,
                                            int prNumber, const QString &title,
                                            const QString &task,
                                            const QString &provider,
-                                           const QString &model, bool held)
+                                           const QString &model, bool held,
+                                           const QString &modeOverride)
 {
     if (!m_agentStore || branch.trimmed().isEmpty() || task.trimmed().isEmpty())
         return 0;
@@ -1295,9 +1298,11 @@ int MainWindow::startAgentOnExistingBranch(int repoIndex, const QString &branch,
     // Codex's.
     session.model = agentIsCodexProvider(provider) ? codexChatGptModelId(model)
                                                    : model.trimmed();
-    if ((provider == QLatin1String("claude-code") ||
-         agentIsCodexProvider(provider)) &&
-        m_quickAddModeSelector)
+    if (!modeOverride.trimmed().isEmpty())
+        session.mode = modeOverride.trimmed();
+    else if ((provider == QLatin1String("claude-code") ||
+              agentIsCodexProvider(provider)) &&
+             m_quickAddModeSelector)
         session.mode = m_quickAddModeSelector->currentText();
     session.contextWindow =
         qMax(1000, QSettings().value(kAgentContextSetting, 32000).toInt());
@@ -1305,6 +1310,7 @@ int MainWindow::startAgentOnExistingBranch(int repoIndex, const QString &branch,
     session.baseRef = head;
     session.baseBranch = baseBranch.trimmed();
     session.held = held;
+    session.deniedPermissions = m_startingAgentDeniedPermissions;
     session = m_agentStore->createSession(session);
     // The worktree directory can only be named once the id exists; the branch
     // is the pull request's and is set above.
@@ -2171,6 +2177,15 @@ void MainWindow::purgeSessionState(int sessionId)
     m_streamEventsLoading.remove(sessionId);
     m_streamEventsAbsent.remove(sessionId);
     m_agentQueue.removeAll(sessionId);
+    m_claudeDesktopPending.remove(sessionId);
+    for (auto it = m_claudeDesktopLinkOwners.begin(); it != m_claudeDesktopLinkOwners.end();) {
+        if (it.value() == sessionId) {
+            m_claudeDesktopLinkQueue.removeAll(it.key());
+            it = m_claudeDesktopLinkOwners.erase(it);
+        } else {
+            ++it;
+        }
+    }
     if (m_agentTranscriptRenderSession == sessionId) {
         ++m_agentTranscriptRenderGeneration;
         m_agentTranscriptRenderSession = -1;

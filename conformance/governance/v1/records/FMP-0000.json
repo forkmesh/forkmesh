@@ -12,7 +12,7 @@
   "disclosures": ["DISC-0001"],
   "links": [
     {"label": "Issue #512", "href": "https://app.forkmesh.com/forkmesh/forkmesh/issues/512"},
-    {"label": "Certification program", "href": "www/docs/protocol/certification.md"}
+    {"label": "Certification program", "href": "docs/protocol/certification.md"}
   ],
   "timeline": {
     "opened": "2026-09-14",

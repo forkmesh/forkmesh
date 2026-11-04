@@ -20,12 +20,18 @@ generic package sockets and generated registries.
   lists the contact is on (`views`).
 - **Lists** (sheets): created by CSV import (named after the file, columns in
   the file's order) or by hand. Columns can be renamed, hidden or reordered.
+  In the **All** view a list shows its own layout on the web and the desktop
+  alike: only its shown columns, in its order, under its labels (1.46.1; the
+  desktop used to show every built-in column first, which pushed imported
+  columns such as a fit score far to the right). Its labels also name the
+  columns in the other views and in a contact's details.
   A list can be bound to a pipeline (`flow`, owners and admins only).
 - **Pipelines**: ordered stages. A contact is on a pipeline list when it is in
   that pipeline and the list is the first of the pipeline's lists (in the
   organization's order) among the lists it was put on; a contact on none of
   them shows on the pipeline's first list. The worker (`_contact_in_view`),
-  the web page (`crmContactInView`) and the desktop (`contactInSheet`) apply
+  the web page (`crmContactInView`), the desktop (`contactInSheet`) and the
+  browser extension's panel (`contactLists`) apply
   the same rule. Renaming a pipeline never moves contacts; removing one leaves
   its contacts without a pipeline.
 - **Pipeline types** (`FLOW_ICONS`, drawn by `CRM_FLOW_ICONS` on the web and
@@ -41,8 +47,88 @@ generic package sockets and generated registries.
   sets shared across the organization. **Default** and **All** are built in;
   any member may save `tableViews`, every other setting is for owners and
   admins. Deleted built-in columns are recorded in `removedColumns`.
+- **Default view** (`defaultTableView` in settings): the view every list
+  opens in, a saved view's id or `all`; empty means the built-in Default. Any
+  member may set it from the view menu (**Make default view**), like
+  `tableViews`. The worker clears it when that view is deleted
+  (`_default_table_view`). A view a person picks still wins: the web page keeps
+  the pick in the browser until they pick the default again, and the desktop
+  keeps it for the session.
 
-## Adding a contact
+## Loading and paging
+
+Every contact is sealed, so the worker opens each row it returns; an
+organization with a few thousand contacts took 5 to 6 seconds to answer the
+whole list in one response (October 2026, 2,800 contacts, 600 KB gzipped).
+Paging keeps the first screen fast without moving list filters to the server,
+which cannot read sealed list memberships.
+
+- **Contacts API**: `GET /api/crm/<org>/contacts?limit=<n>&cursor=<c>` answers
+  up to `n` contacts (at most `CONTACT_PAGE_MAX`, 1000), newest edit first,
+  and `next`, the cursor for the following page (`<updated_at>.<contact id>`,
+  empty after the last page). Without `limit` it answers every contact, as
+  before, so older desktop and phone builds are unchanged.
+- **Summary**: `GET /api/crm/<org>?contacts=<n>` sends only the first `n`
+  contacts, with `contactsNext` (the cursor for the rest) and
+  `contactsTotal`. `summary.contacts` is the total; `summary.customers` is left
+  out because it would need every row, and the client counts it as pages
+  arrive. The revision also covers the count, latest and summed edit times of
+  all contacts, so a Refresh still notices a change on a page not yet sent.
+- **Web**: the page asks for the first 250 contacts, renders them, then reads
+  the rest 1000 at a time in the background (`crmLoadRemainingContacts`) and
+  re-renders after each page; the pager reads "loading contacts, N of M"
+  meanwhile. A newer read, or switching organization, drops an older load. A
+  failed page clears the revision so the next Refresh reads everything again.
+- **Row pager**: the table and the phone cards render one page of the filtered
+  rows (50, 100, 250 or 500, remembered in the browser as
+  `forkmesh.crm.rowPageSize`, 100 by default), with Previous and Next. Changing
+  the list, search, filters or sort returns to the first page. Selection,
+  **Select all** and bulk actions still cover every filtered row, not only the
+  page shown. The board and People layouts are not paged.
+- **Desktop** asks for the first 250 contacts too (`kContactFirstPage`), then
+  reads the rest 1000 at a time (`CrmFeature::loadRemainingContacts`) and
+  re-applies the summary after each page, with "Loading contacts, N of M" in
+  the status line. It saves its on-disk copy only once every page is in, so a
+  saved copy is never partial; a newer load or another organization drops an
+  older one, and a failed page clears the revision. The desktop table is not
+  row-paged.
+- **Desktop row widgets**: the Actions buttons (Email, Copy prompt, Edit,
+  Delete) and the Mastodon cell's refresh button are real widgets, and every
+  one is polished against the application style sheet. Built for every row,
+  3,222 contacts made about 20,000 widgets, and each 100-row fill chunk
+  stalled the window for 500 ms or more (diagnostic report #24, November
+  2026). `fillContactRows` now puts in only the text items;
+  `attachVisibleRowWidgets` builds the widgets for the rows in view plus six
+  rows above and below (`kRowWidgetMargin`), and drops rows more than three
+  screens away, so scrolling back reuses them while a jump down the scroll bar
+  builds only one screen. It runs after each chunk, on scrolling, on a range
+  change (filtering, resizing) and when the table is shown; while the scroll
+  bar is held it waits for the release, since each screen of buttons costs
+  about 100 ms under a large style sheet. The filter only touches rows whose
+  hidden state changes. Measured offscreen on the November 2026 saved copy
+  (3,222 contacts) with a 400-rule application style sheet: the old fill put
+  in the 739-row Mastodon list in 2,928 ms with a longest freeze of 785 ms;
+  the new one puts in the 1,480-row Investors list in 397 ms with a longest of
+  156 ms (8,058 widgets on the page before, 665 after).
+- **Sheet list and pictures**: `renderSheetList` builds a signature of what
+  the side list shows (tabs, names, counts, sharing, colours) and skips the
+  rebuild when it is unchanged. `applyAvatars` no longer rebuilds that list:
+  its access badges draw initials, not pictures, so the 150 ms picture batches
+  (2,251 of them while pictures load) only re-polished its widgets. Reading a
+  saved picture off disk and saving a fetched one run on the global thread
+  pool (`fetchAvatar`, then `fetchAvatarRemote` when the copy is missing or
+  older than a week).
+- **Phones** (iOS `CrmViewModel`, Android `CrmModel`) ask the summary for the
+  first 250 contacts, show them, then read the rest 1000 at a time
+  (`crmContactsPage`) in the background, with "Loading contacts, N of M" in
+  the CRM header. A newer load or another organization drops an older load's
+  pages; a failed page stops loading, says "Some contacts did not load" and
+  clears the revision; the in-memory copy is kept only once every page is in.
+  On Android an edit saved while pages arrive keeps the pages that came in
+  after it was built. Genie, the toolbox and the navigator counts still read
+  every contact in one summary. `docs/native/ANDROID.md` has the details.
+- Added in 1.46.0.
+
 
 `POST /api/crm/<org>/contacts` is safe to send again. Every client picks a
 `requestId` (32 hex characters) when its add form opens and sends it with the
@@ -102,6 +188,56 @@ into an update) instead of a `500`. A shared sheet's add still answers
   websites are ignored), **Paying members**, **Stage behind evidence**.
 - Bulk **Assign / Tag / Untag shown contacts** applies to the filtered rows in
   chunks of 500.
+- **Open in spreadsheet** (a list's menu on the web and the desktop, or the
+  web's **More > Open list in spreadsheet**, 1.48.0; the desktop opens it in
+  the browser) edits the list in a workbook linked to it
+  ([Spreadsheets](../../../docs/marketplace/spreadsheets.md#linked-crm-lists)).
+  `GET /api/crm/<org>/contacts/sync?list=<id>` returns the list (a list id,
+  `pipeline:<flow>` or `no-pipeline`), its contacts, the editable columns and
+  the members. `POST /contacts/sync` with `{"list", "updates": [{"id", "set",
+  "expect"}], "creates": [{"ref", "requestId", "set"}]}` (at most 500 rows)
+  answers one result per row: `updated`, `unchanged`, `created`, `conflict`
+  (a field no longer matches `expect`; the row is not written and the current
+  contact comes back), `missing` or `error` with a reason (`unknown_stage`
+  with the stages, `contact_email_exists`, `invalid_email`, `invalid_field`,
+  `list_cannot_add`). New contacts join the list (and its pipeline); a stage
+  must be one of the contact's pipeline stages. It never deletes a contact.
+
+### List cleanup
+
+**List cleanup** (web: under More, `?section=cleanup`; desktop: `⋯` > List
+cleanup, a window) lists the people who show on more than one list, so each
+can be kept on one. A person is the
+records that share a `personKeys` key (see
+[One person, several records](#one-person-several-records)), and their lists
+are the saved lists any of those records shows on (`crmContactInView`, the
+desktop's `contactInSheet`).
+Someone counts when they have several records on two or more lists, or one
+record on two or more plain lists. One record on a plain list and on its own
+pipeline's list does not count: every contact is in a pipeline, so that is
+the normal shape of an imported list.
+
+- Columns are Name, Email, Lists, Records, Last contacted and Last edit; a
+  header click sorts, again reverses. Lists sorts by the list names, so people
+  on the same lists sit together. A search narrows by name or email, the list
+  picker narrows to one list's people, and at most 500 rows are drawn.
+- Clicking a list on a row keeps the person on that list only, after a
+  confirm. The record already on that list (the newest edit when several are)
+  is kept and every other record is merged into it through
+  `POST /contacts/merge`, so their fields, tags, notes, email history and deck
+  links move over. Then one `POST /contacts/bulk` edit sets its lists
+  (`setViews`): a pipeline list also sets the pipeline (the stage carries over
+  when the pipeline has it, else the first); a plain list keeps the pipeline
+  list the record was put on, because the contact stays in its pipeline.
+- With a list picked, **Keep N on <list>** does the same for every person
+  shown (at most the 500 drawn), one after the other, with one confirm.
+- Moves wait until every contact has loaded (paging), so a person's records
+  are all known. A failure stops the run, reports how many finished and reads
+  the organization again.
+- The desktop window redraws whenever the contacts change. A list button's
+  click is queued, because the redraw that follows a move deletes the button.
+- It differs from **Possible duplicates**, which also matches names and
+  GitHub profiles and merges one pair at a time from the table.
 
 ## Importing
 
@@ -149,7 +285,11 @@ into an update) instead of a `500`. A shared sheet's add still answers
   directory (`GET /api/accounts/users`), newest first, as the list **ForkMesh
   users**; **Refresh** re-imports and never removes. The same read supplies
   profile pictures for contacts whose address belongs to a ForkMesh user.
-- **Mastodon followers** (desktop).
+- **Mastodon followers** (desktop): **Import Mastodon followers…** reads an
+  account's public followers into the list **Followers of @user@host**
+  (`Name,Mastodon,Notes`). Once the organization's Mastodon account is saved
+  (Settings → Mastodon toots), its followers list keeps itself up to date:
+  see [Followers list](#followers-list).
 
 ## Sharing
 
@@ -185,7 +325,7 @@ Pictures come from the ForkMesh user, Mastodon, Bluesky, GitHub, then
 Gravatar (`gravatar.com/avatar/<sha256 of the email>?d=404`). Posts and
 pictures are read on demand from public, unauthenticated endpoints (those
 services see the reading device's IP address and the account asked about; see
-`www/docs/external-dependency-map.md`), kept in memory for the session;
+`docs/external-dependency-map.md`), kept in memory for the session;
 desktop pictures are cached on disk for a week, including negative results.
 Nothing is stored server-side.
 
@@ -223,14 +363,19 @@ people connected to its lists. Notes are separate from the free-text
 
 ## Reach out and follow up
 
-The top of the CRM shows two cards (desktop and web) or two sections (phones):
+The web shows two cards at the top of the CRM, the phones two sections. The
+desktop puts them in a column right of the table, as two tabs, **Reach out**
+and **Follow up**, each with how many are due (2026-11-02: the table was
+pushed below the fold by the cards, and the queue under Reach out repeated
+what the table can show). With no column sort chosen the table is in the open
+tab's order, the card's contact first; picking a tab drops a column sort.
 
 - **Reach out**: the best never-contacted, reachable lead outside a won or
   ended stage, ordered by their newest public Mastodon post (newest first;
   contacts without a handle or a post follow), then next step, deal value, a
   `rank`/`*_rank` column (lowest first), a `score`/`*_score` column (highest
   first), having an email, and age on the CRM. The card shows that post's
-  date, excerpt and link, and lists the next five in line with theirs.
+  date, excerpt and link; the web card also lists the next five in line.
 - **Follow up**: an unanswered reply first (newest first, any stage), then
   contacts last contacted 14 or more days ago with nothing back (longest
   silence first, open stages only); a next step goes first in each group.
@@ -245,6 +390,32 @@ open list; the web ranks the whole organization. Code:
 `CrmNextContact.pick` (iOS and Android). Tests:
 `tests/test_qt_plugin_contracts.py`, `tests/test_web_layout.py`,
 `tests/contact_detail_checks.js`, `CrmParityTests.swift`, `CrmParityTest.kt`.
+
+### One person, several records
+
+An import can give one person several records with different names: the
+net4people list has a record per repository, so one maintainer or organization
+(Tor, v2fly, Signal) shows up under several repository names. Emails are unique
+per organization, so the import keeps a second record's address in an
+`other_emails` column instead. Records that share an email address (the email
+field or any custom column whose name contains "mail") or an X account are one
+person, also through a third record (A shares an email with B, B an X account
+with C). Nothing is merged or deleted. Every record keeps its own notes and
+fields, and the grouping is worked out again on every load.
+
+- The worker sends each contact's `personKeys` (`email:<address>`,
+  `x:<handle>`, lower case; `_person_keys` in `worker/crm.py`), and each
+  client joins records that share a key.
+- **Reach out** and **Follow up** offer each person once, through their best
+  record. A contact, a reply, a won or ended stage, or a **Skip** on any of
+  their records counts for all of them, and **Why them** names the other
+  records' shared keys. Desktop, web, iOS and Android all do this.
+- **Never contacted** and **Quiet 30+ days** go by the person, and the detail
+  card lists the records under **Same person**. The web table groups whole
+  boxes (see [Boxes](#boxes)), and a person's records always share one box.
+
+This differs from **Possible duplicates**, which also matches GitHub profiles
+and names, is meant for merging, and folds a record away for good.
 
 ### Newest Mastodon post on Reach out
 
@@ -290,6 +461,69 @@ the prompt in the URL (or on the clipboard past 14,000 characters). Nothing is
 sent from the CRM and nothing is stored except a saved brief. Tests:
 `tests/test_ai_writer.py`.
 
+## Boxes
+
+A box is a named record for one company or project. Everyone the CRM knows
+there is in it, and everything tracked on those people adds up in it. Every
+contact is in exactly one box. The server works boxes out and keeps them, so
+every client reads the same ones. The web shows them; the desktop and phone
+apps do not show boxes yet.
+
+**Sorting contacts into boxes.** `GET /api/crm/<org>/boxes` first places
+every contact not yet in a box (`_assign_boxes` in `worker/crm.py`), so a new,
+imported, linked or looked-up contact lands in a box the next time any client
+loads boxes. The same company is detected by `_company_keys`:
+
+- the **work email domain**, from the email field and any address in a custom
+  column (`mail.sager.example` counts as `sager.example`; a country's second
+  level such as `.co.uk` or `.edu.cn` keeps three labels). Free mail
+  (`BOX_COMPANY_FREE_MAIL`: Gmail, Outlook, Proton and the like) and noreply
+  addresses never count;
+- the **website's domain**, unless it is a platform or profile host
+  (`BOX_PLATFORM_DOMAINS`: GitHub, GitLab, social networks, link shorteners,
+  blog and page hosts) or a profile path (`/@name`, `/~name`);
+- the **GitHub account or organization**;
+- the **company** name, ignoring "Freelance", "Independent" and the like;
+- the same person's email and X keys ([One person, several
+  records](#one-person-several-records)).
+
+Contacts that share any key form one box, also through a third contact. A new
+contact joins the existing box that matches its strongest key (email, then X,
+GitHub, domain, company). Otherwise a new box is named after the most common
+company among its people, then the most common domain, then the person. The
+box keeps every key its people brought, so the next person from that domain
+joins it. The CRM never moves a contact that is already in a box.
+
+**Tracking.** A box's card adds up, newest first:
+
+- every email to or from its people, with opens, clicks and reading time;
+- toots, deck views and notes;
+- inbox mail whose other party is one of its people or writes from the
+  company's domain. Mail from someone new at a known company shows as "same
+  company", and the inbox shows the box on that message.
+
+Nothing is copied: the box reads the people's own records, so tracking that
+arrives later shows up straight away.
+
+**Editing.**
+- Rename a box or keep box notes (`PATCH /boxes/<id>` with `name`, `notes`).
+  A box named by hand keeps its name.
+- **Move…** puts contacts into another box, or into a new one named on the
+  spot (`POST /boxes/move` with `contacts` and `box` or `name`;
+  `POST /boxes` with `contacts` and `name` starts a box). A moved contact is
+  pinned. A box left empty is removed, and the box it left recomputes its keys.
+- **Merge into another box** moves every person and appends the notes
+  (`POST /boxes/merge` with `from` and `into`).
+- Boxes are sealed like contacts, exported on uninstall and purged with the
+  organization (`crm_boxes`, `crm_box_members`).
+
+**Web.** **Group by box** (on by default, off under **Possible duplicates**)
+shows one row per box. Its name chip opens the box card, and **+N** shows the
+other people under the first row. The contact card names its box with
+**Move…**, and the row menu has **Open box** and **Move to box…**. Code:
+`crmGroups`, `crmGroupChip`, `renderCrmBox`, `crmMailBox`. Tests:
+`tests/test_boxes.py`, `tests/contact_detail_checks.js`.
+
 ## Email
 
 **One-off sends** (`POST /api/crm/<org>/emails/send`) that do not go out
@@ -302,7 +536,7 @@ host's shared mail account, so any account that made an organization and
 installed the CRM could otherwise send arbitrary HTML under a display name of
 its choice. On the shared sender the host then sends from its own address as
 `<organization> via ForkMesh` with the CRM's sender address as `Reply-To`
-(docs/MAIL_LOG.md), so the saved and chosen `fromName` show only in the CRM;
+(docs/operations/mail-log.md), so the saved and chosen `fromName` show only in the CRM;
 every shared send carries `organization` and `account` so the host's per-org
 and per-account daily caps apply.
 
@@ -466,8 +700,8 @@ the send time (forward only) and moves the contact to the `contacted` stage
 when its pipeline has one and the contact sits before it (`sourced`,
 `prospect`, or a stage the pipeline does not know). Contacts at or past
 `contacted` (`meeting`, `passed`, `customer`, ...) keep their stage; a
-pipeline without a `contacted` stage (Customers, Applicants, Grants) only gets
-the date. A recipient who is not a contact is stored unlinked, as before, and
+pipeline without a `contacted` stage (Applicants, Grants, or a flow you made
+without one) only gets the date. A recipient who is not a contact is stored unlinked, as before, and
 no contact is created.
 
 The sync is idempotent: a message already linked to a contact is not
@@ -509,6 +743,19 @@ table rather than a settings key because the Zoho sync rewrites settings from
 the known keys only, and would drop the marker. Uninstalling purges the
 marker with the rest. Tests: `tests/test_contact_made_marks_contacted.py`.
 
+**Customers has a `contacted` stage** (1.54.0). Customers used to run `lead`,
+`qualified`, `trial`, ... with no `contacted` stage, so a lead you had tooted
+at or emailed got its **Last contacted** date but stayed at `lead`, and the
+**contacted** stage filter and strip never showed it. Mastodon outreach lands
+in Customers, so that was most of it. Customers is now `lead`, `contacted`,
+`qualified`, `trial`, `customer`, `renewal`, `inactive`. An organization whose
+saved Customers flow still has the old stages exactly gets `contacted` put
+after `lead` once, the first time the CRM page loads
+(`_backfill_customers_contacted_stage`), and every Customers contact with a
+**Last contacted** date still at `lead` moves to it. A Customers flow edited
+by hand is left alone. The pass is marked `customers-contacted-stage` in
+`crm_backfills`, so removing the stage again afterwards sticks.
+
 ### Sending and tracking
 
 - One-off sends go through the host's Mailtrap capability; Mailtrap keys are
@@ -516,6 +763,24 @@ marker with the rest. Tests: `tests/test_contact_made_marks_contacted.py`.
   bounce, open and click events update `crm_email_sends`
   (`mailtrap_webhook_event`), and a status never moves backwards. Mail ends
   with a small tracked footer image.
+- The extension saves a contact to a list rather than a pipeline (1.50.0):
+  `POST /contacts/lookup` and `POST /emails/link` answer with `lists` (the
+  sheets the account can read: `id`, `name`, `flow`), and a link carrying
+  `list` adds the contact to that sheet (`views`, logged as a list change);
+  a sheet bound to a pipeline also sets the contact's `flow`, keeping a stage
+  that pipeline has. Any `flow` and `stage` on the same request are ignored.
+  A list the account cannot read answers `404 list_not_found`.
+- **Open tracking for extension sends** (1.51.0): `POST /emails/pixel` returns
+  a signed open-image address (`token` = `<id>.<blind sig>`, `url` under
+  `/api/crm/-/t/o/`), storing nothing. A link carrying that `trackToken` uses
+  its id as the email's id (once; a forged or used token is ignored) and marks
+  the email `tracked`, so the existing open route records it and pings the
+  sender on the first open. With `keepWithoutContact` and a valid token, a send
+  whose recipient has no record is kept with no contact (the ping names the
+  address). The link also stores a blinded network of the sender
+  (`senderNet`: the /32 or /64 of the linking request); opens from it are the
+  sender viewing their own copy and are not counted. Teammates on the same
+  network as the sender are missed too; that trade is deliberate.
 - Emails linked by the browser extension (`POST /api/crm/<org>/emails/link`),
   recorded by hand (`POST /emails`) or sent (`POST /emails/send`) update the
   contact's last-contacted date. A newly tracked email files a
@@ -560,6 +825,28 @@ marker with the rest. Tests: `tests/test_contact_made_marks_contacted.py`.
     the CRM" otherwise; owners and admins get "Mastodon post linked in the
     CRM". Switch it off with **Add people I mention on Mastodon** in the
     extension's popup.
+- <a id="followers-list"></a>**Followers list** (1.52.0): every toots check
+  that runs (not one skipped inside the ten minutes) first reads the saved
+  account's followers, newest first (`/api/v1/accounts/<id>/followers`, 80 a
+  page, following the `Link` header through `outbound_text`, at most 25 pages)
+  and puts each one not yet on the list **Followers of @user@host** on it: a
+  follower the CRM already knows by handle (`_contact_handles`) only joins the
+  list, so nothing it holds is overwritten; anyone else becomes a contact with
+  **Name**, **Mastodon** and a **Bio** column (source `mastodon`). The list is
+  the one saved as `followersList` in the Mastodon settings, else a list with
+  that name (so a desktop or CSV import of the same account is reused), else a
+  new one. Reading stops at the first page with nobody new, so a usual check
+  costs one request. The token is sent so an account that hides its followers
+  still sees its own; a token without `read:accounts` is answered 403, and the
+  read is retried without it, which works while the list is public. An empty
+  read from an account with followers is `mastodon_followers_hidden` in the
+  response's `followers` (with `followersError` in the settings); a follower
+  error never fails the toots check. New people ping the team ("N new Mastodon
+  followers added to the CRM"), add a `contacts.imported` entry to the list's
+  history and audit `crm.followers.sync`. Unfollowing removes no one. The sync
+  runs before the toots are matched, so a toot to a brand-new follower is
+  linked in the same check. Changing the saved account forgets `followersList`.
+  Code: `_sync_followers`, `_mastodon_page`, `_followers_view`.
 - **Unsent drafts**: a note paragraph starting `DRAFT, not sent.` (optional
   `Subject:` line). **Drafts (N)** lists them; sending or confirming a
   Mastodon reply rewrites the marker to `DRAFT, sent <date> by <name>.`.
@@ -583,6 +870,33 @@ on the outreach team (`POST /api/crm/<org>/outreach/team`, audited).
 emails; it was 50 until 1.38.0, when the iPhone's auto-send was paced at 100 a
 day) and recent sends; `POST /outreach/send` sends one email. Every attempt is written to
 `crm_outreach_log` with recipient and subject sealed.
+
+## Write email on the desktop
+
+**Write email** on the desktop's Reach out or Follow up card opens an email
+panel in that column instead of the mail app, so the send is tracked and the
+contact marked contacted without leaving ForkMesh:
+
+1. `POST /outreach/auto {…, promptOnly: true}` returns the prompt below, the
+   recipient and sender, the referral link, and `offers`: the sender's
+   Booking page (`/meet?<slug>`, from `booking_pages`) and up to five of the
+   organization's open surveys (`/survey?t=<token>`, from `survey_forms`).
+   Neither package installed means no offers. Nothing is written or sent.
+2. The desktop's selected agent (the model picked for agents) writes the
+   draft from that prompt; without one the host model writes it
+   (`preview: true`).
+3. Subject and body are editable; **+ Book a meeting with me** and the survey
+   buttons add a link. **Send with tracking** posts the edited draft to the
+   same route, so it goes out with open and click pings and stamps
+   `lastContactedAt` like **Send AI email**. **Rewrite** asks again.
+
+The prompt now also carries **About me, the sender** (the account sending)
+and, for the `forkmesh` organization, **Our mission**
+(`AUTO_EMAIL_FORKMESH_MISSION`, the product promise). Offered pages are in
+the prompt, so a draft that uses one passes the invented-link check. The
+pages log their own visits ([Booking](../../../docs/marketplace/booking.md),
+[Surveys](../../../docs/marketplace/surveys.md)). Tests:
+`tests/test_auto_email.py`, `tests/test_qt_plugin_contracts.py`.
 
 ## Automated outreach email
 
@@ -977,9 +1291,10 @@ raising, so the caller can keep the lead.
   list and pipeline (icon, name, share count, contact count, `⋯` menu;
   right-click, double-click to rename and drag to reorder as before), then
   **Shared with me**, then **More**: Inbox (Zoho boxes and email activity),
-  Outreach, Team leaderboard, **My Zoho Mail**, People with pictures, Import
-  CSV list and CRM settings. The open page fills the right; `?section=` is one
-  of `contacts`, `inbox`, `outreach`, `team`, `zoho`, and opening a list
+  Outreach, Team leaderboard, [List cleanup](#list-cleanup), **My Zoho Mail**,
+  People with pictures, Import CSV list and CRM settings. The open page fills
+  the right; `?section=` is one of `contacts`, `inbox`, `outreach`, `team`,
+  `cleanup`, `zoho`, and opening a list
   switches back to its contacts. Arrow keys move along the More pages. The
   column stacks above the page on phones. Controls use the compact sizes, the
   header's **Add contact** is the page's one `cta` button, and **Hide
@@ -992,9 +1307,96 @@ raising, so the caller can keep the lead.
   no step to show or while My Zoho Mail is open. Compose says which mailbox it
   sends from. Inbox groups that hold mail from your own mailbox carry **Only
   you**.
-- **Desktop** (`CrmFeature.cpp`): a three-column page (lists, table, detail
-  panel), spreadsheet-style editing, a People grid of contacts with pictures,
-  imports, and a rail count of never-contacted contacts. Data is read when the
+  **Networks** (1.53.0) follows **Shared with me** with one row per social
+  network that has anyone on it (Mastodon, Bluesky, X (Twitter), LinkedIn,
+  GitHub) and its count. A row opens everyone whose profile field for that
+  network is filled in, from every list and pipeline, as a client-side tab
+  (`?list=network:<field>`) that search and the Flow, Stage, Owner and
+  Follow-up filters narrow. Desktop, iOS and Android show the same networks in
+  the same order; `tests/test_networks.py` keeps the four lists equal.
+  <a id="follow-back"></a>**Follow and Follow back** (desktop and web): on
+  the Mastodon network tab every contact with a **Mastodon** handle that the
+  organization's saved Mastodon account (Settings → Mastodon toots) does not
+  follow yet gets a button first in its Actions strip: **Follow back** when the
+  contact follows the account, **Follow** otherwise. Contacts the account
+  already follows show a muted, unclickable **Following** in its place
+  ([below](#following-state)); the account itself gets nothing. Opening the tab calls
+  `GET /mastodon/follow-back` at most once per 15 minutes per organization
+  (again at once when the saved account changes); the worker reads the
+  account's followers and following lists with the saved token (up to 25 pages
+  of 80 each, retrying without the token when it lacks `read:accounts`, as the
+  [followers list](#followers-list) does) and returns `handles` (followers it
+  does not follow) and `following`. A hidden followers list is no longer an
+  error: the answer carries `warning: "mastodon_followers_hidden"` and the
+  following list, so Follow still works. The button calls
+  `POST /mastodon/follow {"handle"}`, which looks the handle up on the
+  account's instance and follows it there; a locked account answers
+  "requested". The token needs `write:follows` for that, else the error is
+  `mastodon_follow_not_allowed`. Any member who can write may follow; each
+  follow is audited as `crm.mastodon.follow` and pings no one. A follow
+  request the account sent earlier and is still waiting on is not in its
+  following list, so that row gets the button again after a reload.
+
+  <a id="follow-in-mastodon-column"></a>**Follow in the Mastodon column**
+  (2026-11-03): the button sits beside the handle in the **Mastodon** column
+  of every list, pipeline, network tab and table view that shows that column
+  (the web cards too), not only on the Mastodon tab, and the follow lists are
+  loaded whenever the column is shown. Only the Mastodon tab with that column
+  hidden keeps the button in the Actions strip. The login warning stays on the
+  Mastodon tab; elsewhere a disabled button's tooltip says to log in. On the
+  desktop the column opens 280 px wide so a handle and **Follow back** fit, and
+  the button's width is kept clear of the handle text (`kRowButtonRole` holds
+  that room). Code: `mastodonFollowButton`, `mastodonColumnShown` (desktop);
+  `crmContactControl`, `crmMastodonFollowShown` (web).
+
+  <a id="following-state"></a>**Following** (2026-11-04): where the button
+  would be, a contact the account already follows (its following list, or a
+  follow just sent from the CRM) shows **Following**, a disabled ghost button
+  on the desktop and a muted badge on the web, whose tooltip names the account
+  that follows. A follow that is still only "requested" shows it too until the
+  next reload. Code: `mastodonFollowButton` (desktop); `crmFollowingBadge`
+  (web).
+
+  <a id="mastodon-login-warning"></a>Before Follow can work the organization
+  must be logged in to Mastodon, that is have an account and access token
+  saved. Without one the buttons still show, disabled, and a warning at the
+  top of the Mastodon tab says to log in, with **Log in to Mastodon** opening
+  CRM settings (members who cannot change settings are told to ask an owner
+  or admin). The same warning names a failed check or follow (token rejected,
+  no `write:follows`, followers hidden, Mastodon unreachable) with **Open CRM
+  settings** or **Try again**. The web list also shows the button on the
+  narrow-screen cards. The phones do not have it yet. Code: `_follow_back`,
+  `_follow_handle` (worker); `loadMastodonFollowBack`, `followMastodonBack`,
+  `updateMastodonBar` (desktop); `loadCrmFollowBack`, `crmFollowMastodonBack`,
+  `renderCrmMastodonBanner` (web).
+
+  <a id="mastodon-plugin-sign-in"></a>**The Mastodon plugin's sign-in**: an
+  organization with no Mastodon token saved follows from the account the
+  member signed in to in the [Mastodon](../mastodon/) package instead, so
+  being signed in there is enough. The CRM never stores or sends that token
+  to the worker: the desktop and the web read the followers and following
+  lists (`verify_credentials`, then up to 25 pages of 80 each by the `Link`
+  header) and follow (`/api/v2/search?resolve=true`, then
+  `/api/v1/accounts/<id>/follow`) straight on that account's own instance, so
+  any instance works and the follow is not audited as `crm.mastodon.follow`.
+  A saved organization token still wins. On the desktop the host hands the
+  CRM the Mastodon package's active account through `mastodonSignIn()` only
+  when the CRM declares `social.mastodon.signin` and the Mastodon package is
+  installed on this desktop; on the web the CRM reads the Mastodon page's
+  sign-in from the tab's `sessionStorage` (`forkmesh.mastodon.session.v1`), so
+  it works in the tab where you signed in. A rejected sign-in tells the member
+  to sign in to the Mastodon plugin again. Code: `mastodonFollower`,
+  `loadPluginFollowBack`, `followFromPlugin` (desktop);
+  `crmFollowAccount`, `crmMastodonPluginFollowBack`, `crmMastodonPluginFollow`
+  (web).
+- **Desktop** (`CrmFeature.cpp`): columns for the lists, the table, Reach out
+  / Follow up and the detail panel, spreadsheet-style editing, a People grid
+  of contacts with pictures, imports, and a rail count of never-contacted
+  contacts. Each list is one line: icon, name, `<not contacted>/<total>` and
+  who can open it. The header holds only the title, the organization, Import,
+  Mail, `⋯` (People, Pipelines, History, List cleanup, Extension), Settings,
+  Refresh and Add contact; **Networks** follows the lists, with a globe icon
+  per network, as client-side tabs with no list menu, rename or sharing; a status message other than an error fades after six seconds. Data is read when the
   CRM opens and on **Refresh**; nothing re-reads itself. Sorting and list
   membership are computed off the GUI thread.
 - **iPhone layout**: a section bar under the title holds **Home** (greeting,
@@ -1014,11 +1416,14 @@ raising, so the caller can keep the lead.
   The contact page is a short header, four quick actions and Overview /
   Activity / Notes tabs; the add form keeps name, email, company, title,
   phone and the pipeline in view and folds the rest under **More details**.
+  The Contacts chips end with a **Networks** heading and one chip per network
+  that has anyone on it (iOS `CrmNetwork`, Android `CrmNetwork`), which opens
+  everyone on it from every list and pipeline, with no list actions.
 - **iOS and Android**: under Business in the You hub; read `GET /api/crm` and
   `GET /api/crm/<org>?since=<revision>&tz=<minutes>` and offer the same
   editing, sharing, email, outreach, deck, drafts and Zoho Self Client
-  connection. GitHub, Mastodon and ForkMesh-user imports and Recent updates
-  are desktop/web only.
+  connection. GitHub, Mastodon and ForkMesh-user imports, Recent updates and
+  List cleanup are desktop/web only.
 - **Browser extension** (`marketplace/packages/browser-extension`): links Gmail,
   Zoho Mail and Mastodon conversations to contacts. This package pins the
   oldest compatible extension build (`CRM_EXTENSION_MINIMUM` in

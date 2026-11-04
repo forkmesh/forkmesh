@@ -185,6 +185,14 @@ bool messageAllowed(const QString &senderMode, const QString &targetMode)
     return permissionRank(targetMode, 3) <= permissionRank(senderMode, 0);
 }
 
+QString cappedAgentMode(const QString &wanted, const QString &callerMode)
+{
+    const int caller = permissionRank(callerMode, -1);
+    if (caller < 0)
+        return QStringLiteral("Plan");
+    return permissionRank(wanted, 3) <= caller ? wanted.trimmed() : callerMode.trimmed();
+}
+
 QString messageLead(int senderId, const QString &senderTitle)
 {
     const QString title = senderTitle.simplified();

@@ -124,8 +124,12 @@ def test_desktop_cache_files_are_owner_only_and_hold_no_secrets():
     # carries the Zoho secrets (test_crm checks the summary itself).
     # A picture comes off disk for a week before its service is asked again.
     avatar = _feature_body("fetchAvatar")
-    assert avatar.index("avatarCachePath(source)") < avatar.index("m_network->get")
+    assert "avatarCachePath(source)" in avatar
+    assert "m_network" not in avatar
     assert "kAvatarCacheMs" in avatar
+    assert "QThreadPool::globalInstance()->start(" in avatar
+    assert "guard->fetchAvatarRemote(source)" in avatar
+    assert "m_network->get" in _feature_body("fetchAvatarRemote")
     assert "avatarCachePath(source)" in _feature_body("fetchAvatarImage")
 
 
@@ -249,8 +253,9 @@ def test_desktop_stage_cells_and_mastodon_row_refresh():
     # it, only the Reach out card queues reads: drawing a row never reaches an
     # instance.
     assert "m_mastodonRefresh" not in FEATURE
-    assert "item->setData(kRowButtonRole, true)" in fill
-    assert "[this, key] { refreshMastodonNow(key); }" in fill
+    assert "item->setData(kRowButtonRole, kRowButtonWidth)" in fill
+    attach = FEATURE.split("void CrmFeature::attachRowWidgets(int row)", 1)[1].split("\n}\n", 1)[0]
+    assert "[this, key] { refreshMastodonNow(key); }" in attach
     now = FEATURE.split("void CrmFeature::refreshMastodonNow(const QString &key)", 1)[1].split("\n}\n", 1)[0]
     assert "latest->fetchedAt = 0" in now and "refreshMastodonUpdates()" in now
     assert "m_mastodonQueue.append(key)" in now
@@ -311,9 +316,11 @@ def test_desktop_contact_pictures_start_with_the_forkmesh_user_and_end_with_grav
     fetch = _feature_body("fetchAvatar")
     assert fetch.index('QLatin1String("forkmesh")') < fetch.index("avatarCachePath(source)")
     assert "m_network" not in fetch.split('QLatin1String("forkmesh")', 1)[1].split("return;", 1)[0]
-    assert "gravatarPicture(account, kAvatarKeep)" in fetch
+    assert "gravatarPicture(account, kAvatarKeep)" in _feature_body("fetchAvatarRemote")
     assert "saved.size() == 0" in fetch
-    assert "forkmesh::networkReplyStatusIsExpected(reply)" in _feature_body("fetchAvatarImage")
+    image = _feature_body("fetchAvatarImage")
+    assert "forkmesh::networkReplyStatusIsExpected(reply)" in image
+    assert image.index("QThreadPool::globalInstance()->start(") < image.index("image.save(&file")
     gravatar = FEATURE.split("QUrl gravatarPicture(", 1)[1].split("\n}\n", 1)[0]
     assert "QCryptographicHash::Sha256" in gravatar
     assert "https://gravatar.com/avatar/%1?s=%2&d=404" in gravatar
@@ -417,10 +424,10 @@ def test_desktop_and_web_read_the_same_accounts_for_a_cards_recent_updates():
 
 
 def test_desktop_contact_rows_copy_an_outreach_prompt_for_their_sheet():
-    fill = FEATURE.split("void CrmFeature::fillContactRows()", 1)[1].split("\n}\n", 1)[0]
-    assert 'QStringLiteral("Copy prompt")' in fill
-    assert "copyOutreachPrompt(contactById(contactId))" in fill
-    assert 'setObjectName(QStringLiteral("crmRowActions"))' in fill
+    attach = FEATURE.split("void CrmFeature::attachRowWidgets(int row)", 1)[1].split("\n}\n", 1)[0]
+    assert 'QStringLiteral("Copy prompt")' in attach
+    assert "copyOutreachPrompt(contactById(contactId))" in attach
+    assert 'setObjectName(QStringLiteral("crmRowActions"))' in attach
     assert "QWidget#crmRowActions QPushButton" in FEATURE
     prompt = FEATURE.split("QString CrmFeature::outreachPrompt(", 1)[1].split("\n}\n", 1)[0]
     assert "Tell me about ForkMesh" in prompt
@@ -613,6 +620,19 @@ def test_desktop_table_views_are_default_all_and_custom_ones_shared_in_settings(
     draft = FEATURE.split("void CrmFeature::saveTableViewDraft(", 1)[1].split("\nvoid CrmFeature::", 1)[0]
     assert "QInputDialog" not in draft and 'QStringLiteral("View %1")' in draft
     assert "addTableView(name, fields," in draft
+
+
+def test_desktop_lists_open_in_the_organization_default_view():
+    assert "bool m_tableViewPicked = false;" in FEATURE_HEADER
+    assert "if (!m_tableViewPicked)\n        m_tableViewId = defaultTableViewId();" in FEATURE
+    fallback = FEATURE.split("QString CrmFeature::defaultTableViewId(", 1)[1].split("\n}\n", 1)[0]
+    assert 'text(m_settings, "defaultTableView")' in fallback and "kDefaultTableView" in fallback
+    menu = FEATURE.split("void CrmFeature::showTableViewMenu(", 1)[1].split("\n}\n", 1)[0]
+    assert 'QStringLiteral("Make default view")' in menu and "makeTableViewDefault()" in menu
+    make = FEATURE.split("void CrmFeature::makeTableViewDefault(", 1)[1].split("\nvoid CrmFeature::", 1)[0]
+    assert 'QJsonObject{{QStringLiteral("defaultTableView"), id}}' in make
+    picked = FEATURE.split("void CrmFeature::selectTableView(", 1)[1].split("\n}\n", 1)[0]
+    assert "m_tableViewPicked = true;" in picked
     assert '[this] { saveTableViewDraft(); }' in FEATURE
     select = FEATURE.split("void CrmFeature::selectTableView(", 1)[1].split("\nvoid CrmFeature::", 1)[0]
     assert "m_tableViewDraft.clear();" in select
@@ -761,9 +781,12 @@ def test_desktop_lists_open_as_tabs_with_a_share_count_and_imports_name_them():
     assert "m_sheetList->setItemWidget(item, row)" in side
     assert "badge->setText(QString::number(names.size()))" in side
     assert "sheetShareNames(sheet)" in side
-    # The one table moves into the open list's tab and filters to that list.
+    # The one table stays in place beside the tabs and filters to the open
+    # list: moving it between tab pages re-polished every row's cell widgets.
     sync = FEATURE.split("void CrmFeature::syncSheetTab()", 1)[1].split("\nvoid CrmFeature::", 1)[0]
-    assert "page->layout()->addWidget(m_contactsBody)" in sync
+    assert "m_contactsBody->setVisible(!id.isEmpty())" in sync
+    assert "addWidget(m_contactsBody)" not in sync
+    assert "centerLayout->addWidget(m_contactsBody, 1)" in FEATURE
     assert "m_sheet->setCurrentIndex(sheetIndex)" in sync
     # The import step asks for the tab's name and every part carries it; the
     # worker only uses it when the import opens a new tab.
@@ -845,7 +868,7 @@ def test_web_contact_rows_read_like_a_table():
     # name cell carries the avatar and the record's mail chips underneath, and
     # the row actions only show on hover.
     assert '<td class="px-3 py-2 align-top">' in render
-    assert "crmAvatar(contact)" in render and "crmNameMeta(contact, columns)" in render
+    assert "crmAvatar(contact)" in render and "crmNameMeta(contact, columns, personChip(contact))" in render
     assert '<tr data-crm-contact-row="${escapeHtml(contact.id)}" class="crm-row">' in render
     assert "crm-row-actions" in render
     # Notes still edit in a one-line field when a caller asks for the compact
@@ -1080,17 +1103,19 @@ def test_top_search_box_reaches_every_installed_package():
 
 def test_desktop_page_is_a_list_sidebar_a_table_and_a_contact_panel():
     setup = FEATURE.split("CrmFeature::CrmFeature(", 1)[1].split("\n}\n", 1)[0]
-    # The tab strip is gone: lists run down the left, the table sits in the
-    # middle, and the contact opens in a third column.
     assert "tabs->tabBar()->hide();" in setup
-    assert setup.index("body->addWidget(side);") < setup.index("body->addWidget(tabs);") < \
-        setup.index("body->addWidget(detail);")
+    assert setup.index("body->addWidget(side);") < setup.index("body->addWidget(center);") < \
+        setup.index("body->addWidget(m_nextCard);") < setup.index("body->addWidget(detail);")
     assert "showSheetTabMenu(id, m_sheetList->viewport()->mapToGlobal(position))" in setup
-    # Each list shows the faces on it and its pipeline's stages as a bar.
     side = FEATURE.split("void CrmFeature::renderSheetList()", 1)[1].split("\nvoid CrmFeature::", 1)[0]
-    assert "kListAvatars" in side and "contactPicture(contact, kListAvatarSize)" in side
-    assert "const QStringList stages = flowStages(flow);" in side
-    assert "new ListStageBar(segments)" in side
+    assert "auto *top = new QHBoxLayout(card);" in side
+    assert 'QStringLiteral("%1/%2").arg(locale.toString(uncontacted)' in side
+    for gone in ("kListAvatars", "ListStageBar", "flowStages(flow)", "new QVBoxLayout(card)"):
+        assert gone not in side, gone
+    header = FEATURE.split("void CrmFeature::arrangeNextHeader(", 1)[1].split("\nvoid CrmFeature::", 1)[0]
+    assert "crmHeaderTabs" not in header and "titleColumn" not in header
+    assert "mirror(moreMenu, moreButtons);" in header
+    assert "m_summary->hide();" in setup
     # The toolbar's People button opens a grid of only the contacts with a
     # picture, sortable by most recent, each card naming its lists and pipeline.
     people = FEATURE.split("void CrmFeature::renderPeople()", 1)[1].split("\nvoid CrmFeature::", 1)[0]
@@ -1195,7 +1220,7 @@ def test_desktop_list_cards_mark_the_open_list_merge_by_submenu_and_show_access(
     assert 'toolButton(QStringLiteral("workflow"), QStringLiteral("Pipelines")' in header
     assert "connect(m_pipelinesButton, &QToolButton::clicked" in FEATURE
     assert "m_pipelinesButton->setEnabled(m_canManageSettings);" in FEATURE
-    assert "m_peopleButton, m_pipelinesButton})" in FEATURE
+    assert "m_peopleButton, m_pipelinesButton, m_cleanupButton})" in FEATURE
     assert "QToolButton *m_pipelinesButton = nullptr;" in FEATURE_HEADER
 
 
@@ -1272,25 +1297,35 @@ def test_desktop_list_heads_with_a_lead_to_reach_and_one_to_follow_up():
             f"{_entry_constant('EMAIL_SUGGESTION_FOLLOW_UP_DAYS', CRM_WORKER)};") in FEATURE
     rank = FEATURE.split("NextContact CrmFeature::nextContact(NextMode mode) const", 1)[1].split("\n}\n", 1)[0]
     assert "heardAt > wroteAt && heardAt >= last" in rank
-    assert "kWonStages.contains(stage) || kEndedStages.contains(stage)" in rank
+    assert "kWonStages.contains(memberStage) || kEndedStages.contains(memberStage)" in rank
+    assert "personGroups(m_contacts)" in rank and "duePeople.insert(personIds.first());" in rank
+    assert "if (seen.contains(entry.person))" in rank
     assert "if (waiting || closed || last > 0)" in rank
     assert "std::make_tuple(tier, step.isEmpty() ? 1 : 0, order, id)" in rank
     assert "step.isEmpty() ? 1 : 0, -marks.value," in rank
     assert "posted > 0 ? 0 : 1, -posted," in rank
-    assert "best.upcoming << reachRanked.at(at).id" in rank
-    assert "m_nextSkipped.contains(id)" in rank
+    assert "take(reachRanked);" in rank and "take(followRanked);" in rank
+    assert "best.ranked << entry.id;" in rank and "upcoming" not in rank
+    assert "m_nextSkipped.contains(one)" in rank
     marks = FEATURE.split("LeadMarks leadMarks(const QJsonObject &contact)", 1)[1].split("\n}\n", 1)[0]
     assert 'endsWith(QLatin1String("_rank"))' in marks and 'endsWith(QLatin1String("_score"))' in marks
     pair = FEATURE.split("void CrmFeature::renderNextContact()", 1)[1].split("\nvoid CrmFeature::", 1)[0]
-    assert "nextContactCard(NextMode::ReachOut)" in pair and "nextContactCard(NextMode::FollowUp)" in pair
-    assert "queueReachMastodon(nextContact(NextMode::ReachOut).ranked)" in pair
-    card = FEATURE.split("QWidget *CrmFeature::nextContactCard(NextMode mode)", 1)[1].split("\nvoid CrmFeature::", 1)[0]
-    assert "<b>Why them:</b>" in card
-    assert "nextPostLabel(contact, false)" in card and "nextPostLabel(person, true)" in card
-    assert "openMailCompose(" in card and "markContacted(" in card and "showContactDetail(" in card
+    assert "nextContact(NextMode::ReachOut)" in pair and "nextContact(NextMode::FollowUp)" in pair
+    assert "holder->addWidget(nextContactCard(m_nextMode, shown));" in pair
+    assert "m_nextRanked = shown.ranked;" in pair and "queueReachMastodon(reach.ranked);" in pair
+    card = FEATURE.split("QWidget *CrmFeature::nextContactCard(NextMode mode, const NextContact &next)",
+                         1)[1].split("\nvoid CrmFeature::", 1)[0]
+    assert "<b>Why them:</b>" in card and "Next in line" not in card
+    assert "nextPostLabel(contact)" in card
+    assert "showEmailPanel(contactId" in card and "markContacted(" in card
+    assert "showContactDetail(" in card
     assert "contactColumns()" in card and "contactListNames(contactId)" in card
     render = FEATURE.split("void CrmFeature::renderContacts()", 1)[1].split("\n}\n", 1)[0]
     assert "renderNextContact();" in render
+    assert render.index("renderNextContact();") < render.index("std::stable_sort(m_fillRows.begin()")
+    assert "if (m_sortId.isEmpty() && !m_nextRanked.isEmpty())" in render
+    mode = FEATURE.split("void CrmFeature::selectNextMode(", 1)[1].split("\n}\n", 1)[0]
+    assert "m_sortId.clear();" in mode and "header->setSortIndicator(-1" in mode
     assert 'QStringLiteral("crmNextContact")' in FEATURE
 
 
@@ -1352,3 +1387,139 @@ def test_the_desktop_card_shows_how_far_and_how_long_an_email_was_read():
     assert 'text(email, "readingReported") == QLatin1String("no")' in line
     assert "lines << (toots ? linkedEmailLine(email) : linkedEmailReport(email));" in FEATURE
     assert "history << QStringLiteral(\"- \") + linkedEmailLine(email);" in FEATURE
+
+
+def _feature_function(name):
+    return FEATURE.split(f"void CrmFeature::{name}(", 1)[1].split("\n}\n", 1)[0]
+
+
+def test_desktop_reads_a_first_page_of_contacts_then_the_rest_in_the_background():
+    load = _feature_function("loadOrganization")
+    assert 'summaryQuery.addQueryItem(QStringLiteral("contacts"), QString::number(kContactFirstPage));' in load
+    assert "const quint64 generation = ++m_contactsGeneration;" in load
+    assert "loadRemainingContacts(organization, next, generation);" in load
+    assert load.index("if (next.isEmpty()) {") < load.index("cacheSummary(payload);")
+    rest = _feature_function("loadRemainingContacts")
+    assert "if (generation != m_contactsGeneration || organization != m_shownOrganization)" in rest
+    assert 'query.addQueryItem(QStringLiteral("limit"), QString::number(kContactPageFetch));' in rest
+    assert "m_revision.clear();" in rest.split("if (!ok) {", 1)[1].split("return;", 1)[0]
+    assert "if (!known.contains(" in rest
+    assert rest.index("if (next.isEmpty()) {") < rest.index("cacheSummary(summary);")
+    assert "constexpr int kContactFirstPage = 250;" in FEATURE
+    assert "constexpr int kContactPageFetch = 1000;" in FEATURE
+    assert 'summaryObject.value(QStringLiteral("customers")).toInt(customers)' in FEATURE
+
+
+def test_desktop_email_panel_drafts_with_the_selected_model_and_sends_tracked():
+    write = FEATURE.split("void CrmFeature::writeEmailDraft()", 1)[1].split("\nvoid CrmFeature::", 1)[0]
+    assert '{QStringLiteral("promptOnly"), true}' in write
+    assert "m_askAgent(m_emailPrompt" in write and "parseEmailDraft(reply" in write
+    assert '{QStringLiteral("preview"), true}' in write
+    assert 'payload.value(QStringLiteral("offers")).toArray()' in write
+    send = FEATURE.split("void CrmFeature::sendEmailPanel()", 1)[1].split("\nvoid CrmFeature::", 1)[0]
+    assert 'organizationPath(QStringLiteral("/outreach/auto"))' in send
+    assert '{QStringLiteral("subject"), subject}' in send and '{QStringLiteral("text"), body}' in send
+    assert "preview" not in send and "loadOrganization();" in send
+    worker = CRM_WORKER.split("async def _auto_email(", 1)[1].split("\nasync def ", 1)[0]
+    assert 'if data.get("promptOnly"):' in worker
+    assert worker.index('if data.get("promptOnly"):') < worker.index("_auto_email_write(")
+
+
+def test_desktop_contact_rows_build_their_buttons_only_in_view():
+    fill = FEATURE.split("void CrmFeature::fillContactRows()", 1)[1].split("\n}\n", 1)[0]
+    assert "new QPushButton" not in fill
+    assert "new QToolButton" not in fill
+    assert "setCellWidget" not in fill
+    assert "attachVisibleRowWidgets();" in fill
+    visible = FEATURE.split("void CrmFeature::attachVisibleRowWidgets()", 1)[1].split("\n}\n", 1)[0]
+    assert "m_contactsTable->rowAt(0)" in visible
+    assert "removeCellWidget(row, column)" in visible
+    assert "isRowHidden(row)" in visible
+    setup = FEATURE.split("m_contactsTable = new ContactsTable(0, 0);", 1)[1]
+    assert "&QScrollBar::valueChanged" in setup.split("QHeaderView *contactHeader", 1)[0]
+    assert "&QScrollBar::rangeChanged" in setup.split("QHeaderView *contactHeader", 1)[0]
+    assert "&QScrollBar::sliderReleased" in setup.split("QHeaderView *contactHeader", 1)[0]
+    assert "isSliderDown()" in visible
+    assert FEATURE.count("m_widgetRows.clear();") >= 2
+    filtered = FEATURE.split("void CrmFeature::filterContacts()", 1)[1].split("\n}\n", 1)[0]
+    assert "isRowHidden(row) != hide" in filtered
+    assert "scheduleRowWidgets();" in filtered
+
+
+def test_desktop_sheet_list_is_rebuilt_only_when_it_changed():
+    side = FEATURE.split("void CrmFeature::renderSheetList()", 1)[1].split("\nvoid CrmFeature::", 1)[0]
+    assert side.index("joined == m_sheetListSignature") < side.index("m_sheetList->clear()")
+    apply = FEATURE.split("void CrmFeature::applyAvatars()", 1)[1].split("\n}\n", 1)[0]
+    assert "renderSheetList()" not in apply
+
+
+def test_mastodon_network_tab_offers_follow_back_for_followers_not_followed():
+    button = _feature_body("mastodonFollowButton")
+    assert "m_mastodonFollowBack.contains(key)" in button
+    assert "m_mastodonFollowed.contains(key)" in button
+    following = button.split("m_mastodonFollowed.contains(key)", 1)[1].split("return following;", 1)[0]
+    assert 'QStringLiteral("Following")' in following and "setEnabled(false)" in following
+    assert 'QStringLiteral("Follow")' in button and 'QStringLiteral("Follow back")' in button
+    assert "connected && !m_mastodonFollowing.contains(key)" in button
+    assert "[this, key] { followMastodonBack(key); }" in button
+    attach = FEATURE.split("void CrmFeature::attachRowWidgets(int row)", 1)[1].split("\n}\n", 1)[0]
+    assert 'text(activeSheet(), "network") == QLatin1String("mastodon")' in attach
+    assert "!mastodonColumnShown()" in attach
+    assert "{followBack, email, prompt, edit, remove}" in attach
+    load = _feature_body("loadMastodonFollowBack")
+    assert '"/mastodon/follow-back"' in load and 'QByteArrayLiteral("GET")' in load
+    assert "kMastodonFreshMs" in load and "rebuildFollowBackRows(QString())" in load
+    follow = _feature_body("followMastodonBack")
+    assert '"/mastodon/follow"' in follow and 'QByteArrayLiteral("POST")' in follow
+    finish = _feature_body("finishMastodonFollow")
+    assert "m_mastodonFollowBack.remove(key)" in finish
+    assert "m_mastodonFollowed.insert(key)" in finish
+    assert 'keys("following")' in load and 'text(payload, "warning")' in load
+    fill = _feature_body("fillContactRows")
+    assert fill.index("updateMastodonBar();") < fill.index("loadMastodonFollowBack();")
+    bar = _feature_body("updateMastodonBar")
+    assert "Mastodon: not logged in" in bar and "Log in to Mastodon" in bar
+    assert 'text(activeSheet(), "network") == QLatin1String("mastodon")' in bar
+    assert '"follow-back": ("GET",), "follow": ("POST",)' in CRM_WORKER
+    assert "follow back its followers" in MANIFEST
+
+
+def test_every_list_with_the_mastodon_column_offers_follow_in_that_column():
+    attach = FEATURE.split("void CrmFeature::attachRowWidgets(int row)", 1)[1].split("\n}\n", 1)[0]
+    cell = attach.split('spec.key == QLatin1String("mastodon")', 1)[1].split("ContactColumnSpec::MastodonLatest", 1)[0]
+    assert "mastodonFollowButton(source.mastodonKey, holder)" in cell
+    assert "item->setData(kRowButtonRole, room > 0 ? QVariant(room) : QVariant())" in cell
+    assert "m_contactsTable->removeCellWidget(row, column)" in cell
+    assert "m_contactsTable->setCellWidget(row, column, holder)" in cell
+    shown = _feature_body("mastodonColumnShown")
+    assert 'columnIndex(ContactColumnSpec::Field, QStringLiteral("mastodon"))' in shown
+    assert "!m_contactsTable->isColumnHidden(column)" in shown
+    load = _feature_body("loadMastodonFollowBack")
+    assert '!= QLatin1String("mastodon") && !mastodonColumnShown()' in load
+
+
+def test_mastodon_follow_uses_the_mastodon_plugin_sign_in_without_an_org_token():
+    market = (REPO / "desktop" / "src" / "MainWindowMarket.cpp").read_text(encoding="utf-8")
+    grant = market.split('permissionIds.contains(QStringLiteral("social.mastodon.signin"))', 1)[1]
+    grant = grant.split("        };\n", 1)[0]
+    assert "host.mastodonSignIn = " in grant
+    assert "isInstalledHere(mastodon)" in grant
+    assert 'packageSetting(mastodon, QStringLiteral("accounts"))' in grant
+    assert 'packageSetting(mastodon, QStringLiteral("active"))' in grant
+    assert '"social.mastodon.signin"' in MANIFEST
+    assert "m_mastodonSignIn(host.mastodonSignIn)" in FEATURE
+    follower = _feature_body("mastodonFollower")
+    assert follower.index('"connected"') < follower.index("m_mastodonSignIn()")
+    assert "follower.plugin = " in follower
+    load = _feature_body("loadMastodonFollowBack")
+    assert "follower.account.isEmpty()" in load
+    assert load.index("loadPluginFollowBack(org, follower)") < load.index('"/mastodon/follow-back"')
+    follow = _feature_body("followMastodonBack")
+    assert follow.index("followFromPlugin(key, follower)") < follow.index('"/mastodon/follow"')
+    plugin = _feature_body("loadPluginFollowBack")
+    assert "/api/v1/accounts/verify_credentials" in plugin
+    assert 'page("followers")' in plugin and "following = page(\"following\")" in plugin
+    assert "m_mastodonFollowBack = followers - followed" in plugin
+    assert "/api/v2/search" in _feature_body("followFromPlugin")
+    assert '"Authorization"' in _feature_body("mastodonSignedCall")
+    assert "pluginMastodonErrorText" in _feature_body("updateMastodonBar")

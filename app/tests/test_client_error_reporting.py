@@ -336,3 +336,71 @@ def test_unhandled_rejections_report_what_was_rejected():
         "Unhandled promise rejection: Response status 503",
         "session expired",
     ]
+
+
+_STALE_MODULE_HARNESS = r"""
+const vm = require("node:vm");
+const source = require("node:fs").readFileSync(process.argv[1], "utf8");
+const listeners = {};
+const posted = [];
+const stored = new Map();
+let reloads = 0;
+let now = 1_000_000;
+const location = new URL("https://app.forkmesh.com/chat");
+location.reload = () => { reloads += 1; };
+const window = {
+  addEventListener(type, handler) { (listeners[type] ||= []).push(handler); },
+  dispatchEvent() {},
+};
+class FakeDate extends Date { static now() { return now; } }
+const context = vm.createContext({
+  window,
+  location,
+  navigator: {},
+  document: { addEventListener() {}, head: { appendChild() {} }, createElement: () => ({}) },
+  localStorage: { getItem: () => null, setItem() {} },
+  sessionStorage: {
+    getItem: (key) => (stored.has(key) ? stored.get(key) : null),
+    setItem: (key, value) => stored.set(key, String(value)),
+  },
+  fetch: (url, init) => { posted.push(JSON.parse(init.body)); return Promise.resolve({}); },
+  Event, EventTarget, Response, URL,
+  CustomEvent: class extends Event {},
+  Map, Set, Date: FakeDate, JSON, Promise, Error, TypeError, SyntaxError, String, Number, Math, Object,
+  setTimeout,
+});
+vm.runInContext(source, context);
+const fire = (message, filename) => {
+  for (const handler of listeners.error || []) {
+    handler({ target: window, error: new SyntaxError(message), message: "Uncaught SyntaxError: " + message, filename, lineno: 2, colno: 10 });
+  }
+};
+const steps = [];
+const missing = "The requested module '../chat-call-face-custom.js' does not provide an export named 'faceImageFor'";
+fire(missing, "https://app.forkmesh.com/fmm/fmm-local.js");
+steps.push([reloads, posted.length]);
+now += 1000;
+fire(missing, "https://app.forkmesh.com/fmm/fmm-local.js");
+steps.push([reloads, posted.length]);
+now += 10 * 60_000;
+fire("Importing binding name 'faceImageFor' is not found.", "https://app.forkmesh.com/fmm/fmm-local.js");
+steps.push([reloads, posted.length]);
+now += 10 * 60_000;
+fire(missing, "https://cdn.example.net/lib.js");
+steps.push([reloads, posted.length]);
+fire("Unexpected token '<'", "https://app.forkmesh.com/chat.js");
+steps.push([reloads, posted.length]);
+process.stdout.write(JSON.stringify(steps));
+"""
+
+
+def test_a_stale_module_graph_reloads_once_before_it_is_reported():
+    import json
+    import subprocess
+
+    result = subprocess.run(
+        ["node", "-e", _STALE_MODULE_HARNESS,
+         str(ROOT.parent / "www" / "public" / "analytics.js")],
+        check=True, capture_output=True, text=True)
+    assert result.stderr == ""
+    assert json.loads(result.stdout) == [[1, 0], [1, 1], [2, 1], [2, 2], [2, 3]]

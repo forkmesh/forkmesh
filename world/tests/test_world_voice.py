@@ -239,3 +239,19 @@ def test_voice_signals_reach_only_people_in_the_same_voice_room():
 def test_rig_frames_must_lead_with_their_type_to_take_the_fast_path():
     assert re.search(r'"type":"%s"', DURABLE)
     assert "message[:40]" in DURABLE
+
+
+def test_a_public_bubble_id_alone_does_not_join_its_signalling_room():
+    secret = "ab" * 16
+    tag = hashlib.sha256(("forkmesh-world-bubble-v1\n" + secret).encode()).hexdigest()[:16]
+    room = "bubble:" + tag
+    state = _registered("peer_member")
+    _, outsider = world.sanitize_message({"type": "presence", "voice": room}, state, 2000)
+    assert outsider["voice"] == ""
+    _, wrong = world.sanitize_message(
+        {"type": "presence", "voice": room, "voiceSecret": "cd" * 16}, state, 3000)
+    assert wrong["voice"] == ""
+    _, inside = world.sanitize_message(
+        {"type": "presence", "voice": room, "voiceSecret": secret}, state, 4000)
+    assert inside["voice"] == room
+    assert "voiceSecret" not in world.public_presence(inside) and "voiceSecret" not in inside

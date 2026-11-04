@@ -12,7 +12,7 @@ Boundaries this module must keep:
 - Usage limits reported here are the plan-independent operational caps their
   owning routes already enforce.  No numeric *plan allowance* may appear here
   until it is published in business-model.json with metering tests in the
-  same change (www/docs/business-model.md, "Free plan boundary").
+  same change (docs/business-model.md, "Free plan boundary").
 """
 
 from __future__ import annotations

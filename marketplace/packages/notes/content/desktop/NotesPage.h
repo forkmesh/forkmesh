@@ -1,11 +1,15 @@
 #pragma once
 
 #include "NativePackageExtension.h"
+#include "NoteComments.h"
+#include "NoteTools.h"
 
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QSet>
 #include <QUrl>
+
+#include <memory>
 
 class MarkdownEditor;
 class QCheckBox;
@@ -14,9 +18,17 @@ class QLabel;
 class QLineEdit;
 class QListWidget;
 class QPushButton;
+class QSplitter;
+class QStackedWidget;
+class QToolButton;
 class QTimer;
 
 namespace forkmesh::notes {
+
+class NoteCommentsPanel;
+class NotePageView;
+class NotePresenceFaces;
+struct NotePreviewState;
 
 class NotesPage : public forkmesh::market::NativePackageWidget
 {
@@ -25,6 +37,7 @@ public:
         std::function<void(bool, const QJsonObject &, const QString &)>;
 
     NotesPage(const forkmesh::market::NativePackageHost &host, QWidget *parent);
+    ~NotesPage() override;
 
     void refresh() override;
     QList<forkmesh::market::NativePackageSearchHit> searchHits(const QString &query,
@@ -32,11 +45,17 @@ public:
     void activateSearchHit(const QString &id) override;
     bool acceptsHostCommand(const QString &command) const override;
     bool hostCommand(const QString &command, const QJsonObject &args) override;
+    forkmesh::market::NativePackagePromptTarget hostPromptTarget() const override;
+    bool submitHostPrompt(const QString &text, const QStringList &attachments) override;
 
     void openNoteFromSearch(const QString &id, const QString &storage);
     bool takeQuickAddNote(const QString &text, const QStringList &attachments);
     bool openNoteLink(const QString &href);
     void openNoteFromSystemLink(const QString &target);
+
+protected:
+    void showEvent(QShowEvent *event) override;
+    void hideEvent(QHideEvent *event) override;
 
 private:
     void buildNotesSection();
@@ -54,13 +73,17 @@ private:
     void renderNoteLinkedItems();
     void applyNoteShares(const QString &cloudId, const QJsonArray &shares);
     void applyNoteLinks(const QString &cloudId, const QJsonArray &links);
-    void storeCloudNote(const QJsonObject &cloud);
+    void storeCloudNote(const QJsonObject &cloud,
+                        const QString &editor = QString());
+    void recordNoteView(const QString &cloudId);
     QString selectedNoteRole() const;
     QString selectedNoteAccessLink() const;
     QStringList noteRelayHosts() const;
     void copyNoteLink();
     void copyNotePublicLink();
     void exportNote();
+    void exportPdf();
+    void setupNotePreview();
     bool noteAutosaveApplies() const;
     void scheduleNoteAutosave();
     void autosaveNote();
@@ -79,13 +102,58 @@ private:
     QString selectedNotePublicUrl() const;
     void showNoteVersions();
     void requestNotes(const QByteArray &method, const QString &path,
-                      const QJsonObject &body, NoteReplyHandler handler);
+                      const QJsonObject &body, NoteReplyHandler handler,
+                      QObject *context = nullptr);
+    QString collabNoteId() const;
+    void syncNoteCollab();
+    void leaveNotePresence();
+    void pollNotePresence();
+    void schedulePresencePoll(int delay);
+    void noteTyped();
+    QString notePresenceStateNow() const;
+    void renderNotePresence(const QList<NotePeer> &peers);
+    void hideNotePresence();
+    void updateCommentControls();
+    void setCommentsPanelOpen(bool open);
+    void toggleSidePanel(bool chat);
+    void setNoteFollow(const QString &name);
+    void followNotePeer(const NotePeer &peer);
+    void noteCaretMoved();
+    void startNoteComment();
+    CommentQuote noteSelectionQuote(bool *previewMiss = nullptr) const;
+    void showCommentPassage(const CommentThread *thread);
+    void clearCommentHighlight();
+    void showNoteContextMenu(QWidget *view, const QPoint &pos);
+    void openPendingComment();
+    void showNoteRowMenu(const QPoint &pos);
+    void runRowAction(const QString &action, const QString &id,
+                      const QString &storage);
+    void runPendingRowAction();
+    bool pageShown() const;
+    void showEditorPane();
+    void openPage(const QString &pageId, const QString &noteId = QString());
+    void refreshPages();
+    void renderPagesList();
+    void pageLoaded(const QJsonObject &page);
+    void createPage();
+    void customizeCurrentPage();
+    void shareCurrentPage();
+    void pickSelectedNoteEmoji();
+    void updateNoteEmojiButton();
     QUrl catalogApiUrl() const;
     void flashMessage(const QString &text, bool error = false,
                       const QString &clickHref = QString(),
                       const QString &kind = QString());
     void openReferenceLink(const QString &href);
     void searchIndexChanged();
+    bool noteAiEditAvailable() const;
+    bool startNoteAiEdit(const QString &instruction,
+                         forkmesh::notes::NoteTextRange range);
+    void applyNoteAiEdit(const QString &reply, const QString &error);
+    forkmesh::notes::NoteTextRange aiSelectionRange() const;
+    void aiSelectionChanged();
+    void stopNoteAiEdit();
+    void promptTargetChanged();
 
     forkmesh::market::NativePackageHost m_host;
     std::function<void()> m_searchIndexChanged;
@@ -117,6 +185,54 @@ private:
     QJsonObject m_noteConflict;
     bool m_noteSaveInFlight = false;
     bool m_noteSaveQueued = false;
+    QSplitter *m_noteSplitter = nullptr;
+    NoteCommentsPanel *m_commentsPanel = nullptr;
+    QPushButton *m_commentsButton = nullptr;
+    QPushButton *m_commentButton = nullptr;
+    QPushButton *m_chatButton = nullptr;
+    QPushButton *m_followStop = nullptr;
+    QList<NotePeer> m_peers;
+    QString m_followName;
+    int m_followLine = 0;
+    int m_followColumn = 0;
+    int m_presenceSentLine = 0;
+    QJsonValue m_chatKey;
+    bool m_preferLive = false;
+    bool m_openingNoteView = false;
+    QWidget *m_presenceBox = nullptr;
+    NotePresenceFaces *m_presenceFaces = nullptr;
+    QLabel *m_presenceLine = nullptr;
+    QTimer *m_presenceTimer = nullptr;
+    QString m_presenceClientId;
+    QString m_presenceNoteId;
+    QString m_presenceSentState;
+    QJsonValue m_commentsKey;
+    qint64 m_lastTypedMs = 0;
+    int m_presenceSequence = 0;
+    bool m_presenceInFlight = false;
+    bool m_presenceQueued = false;
+    bool m_presencePaused = false;
+    QString m_pendingCommentNote;
+    QString m_pendingCommentId;
+    QString m_pendingRowAction;
+    QString m_pendingRowNote;
+    QWidget *m_pagesGroup = nullptr;
+    QListWidget *m_pagesList = nullptr;
+    QStackedWidget *m_rightStack = nullptr;
+    QWidget *m_editorHost = nullptr;
+    NotePageView *m_pageView = nullptr;
+    QToolButton *m_noteEmojiButton = nullptr;
+    QList<QWidget *> m_noteActionButtons;
+    QJsonArray m_pages;
+    QString m_customizeWhenLoaded;
+    int m_pagesSequence = 0;
+    std::unique_ptr<NotePreviewState> m_notePreview;
+    QString m_aiEditNoteId;
+    QString m_aiEditBase;
+    QString m_aiEditBaseTitle;
+    forkmesh::notes::NoteTextRange m_aiEditRange;
+    bool m_aiPromptSelection = false;
+    int m_aiEditSequence = 0;
 };
 
 }

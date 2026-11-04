@@ -1,7 +1,7 @@
 # Protected default branch and the Actions switch
 
-Code: `app/src/branch_protection.py`, wired into the write paths listed
-below. Tests: `app/tests/test_branch_protection.py`,
+Part of [the App docs](README.md). Code: `app/src/branch_protection.py`,
+wired into the write paths listed below. Tests: `app/tests/test_branch_protection.py`,
 `app/tests/host/test_instance_repo_e2e.py`,
 `app/tests/test_instance_actions.py`.
 
@@ -9,12 +9,11 @@ A repository can protect its default branch. The default branch then changes
 only by merging a pull request that an organization owner or admin approved,
 and that approver must not be the author. The rule exists for repositories
 whose default branch deploys somewhere, for example an instance that builds
-itself from its own repository ([../INSTANCES.md](../INSTANCES.md#building-the-instance-from-its-own-repository)).
-Before this, ForkMesh had no protected branches: pull rules
-([../server/pull-rules.md](../server/pull-rules.md)) check a pull request's
-content, the node operator policy blocks only deletes and force pushes, and an
-organization owner could push to `main`, edit files on it, merge branches into
-it from the Branches page, or waive the review gate.
+itself from its own repository ([instances](../operations/instances.md#building-the-instance-from-its-own-repository)).
+Without it, pull rules ([../server/pull-rules.md](../server/pull-rules.md))
+check only a pull request's content and the node operator policy blocks only
+deletes and force pushes, so an organization owner could push to `main`, edit
+it, merge into it from the Branches page, or waive the review gate.
 
 ## Settings
 
@@ -33,16 +32,14 @@ to `issues`, `pulls` and `discussions` (`REPO_FEATURE_DEFAULTS` in
   repository, or the owner for a personal one (`may_configure`), not just a
   repository admin, and is written to the sensitive audit log as
   `repository.protection_settings`. A settings-only save of a hosted
-  repository no longer needs the owner to have a desktop key
-  (`settings_only`): the `account_required` check exists because About text
-  is delivered to the owner's desktop, which hosted repositories do not have.
-  An organization's repository never needs one, for any About save
-  (description, logo, banner): an organization has no node key, so every
-  save answered `account_required` even for its owner. The repository admin
-  check decides who may edit (`app/tests/test_org_repo_admin.py`).
+  repository does not need the owner to have a desktop key (`settings_only`);
+  `account_required` exists only because About text is delivered to the
+  owner's desktop. An organization's repository never needs one for any About
+  save (an organization has no node key); the repository admin check decides
+  who may edit (`app/tests/test_org_repo_admin.py`).
 - **Operator:** `python -m forkmesh_host instance-repo ...
   --protect-default-branch | --no-protect-default-branch` and
-  `--actions on|off` ([../INSTANCES.md](../INSTANCES.md#importing-a-repository-on-the-server-instance_repopy)).
+  `--actions on|off` ([instances](../operations/instances.md#importing-a-repository-on-the-server-instance_repopy)).
   The switches are applied right after the repository row exists and before
   the fill, so the import's own push hooks already see them.
 

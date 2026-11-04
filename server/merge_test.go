@@ -620,6 +620,7 @@ func TestExecutorRegisterRecordsGenerationAndWakesDaemon(t *testing.T) {
 	}))
 	defer server.Close()
 	f.executor.DaemonBaseURL = server.URL
+	f.executor.DaemonWakeTimeout = 30 * time.Second
 	if gatewayServesCurrentGeneration(f.gatewayPath) {
 		t.Fatal("generation marker present before register")
 	}
@@ -854,5 +855,74 @@ func TestUpdateExecutorReportsItsPhases(t *testing.T) {
 	want := []string{"fetching", "verifying", "testing", "committing", "pushing", "publishing"}
 	if got := progressPhases(t, progress.String()); strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("phases %v, want %v", got, want)
+	}
+}
+
+func keyedReviewRecord(key, account, state string) string {
+	return strings.Join([]string{
+		"---", "type: review", "id: review-" + key + "-" + state, "author: " + key,
+		"authorName: " + account, "ts: 1700000001000", "state: " + state,
+		"sig: " + key + "-review-signature", "---", "", "Reviewed.", "",
+	}, "\n")
+}
+
+func TestReviewGateKeysReviewersByAccount(t *testing.T) {
+	cases := []struct {
+		name    string
+		reviews []string
+		merged  bool
+	}{
+		{"one account, objection then approval from other keys", []string{
+			keyedReviewRecord("bob-laptop", "bob", "changes_requested"),
+			keyedReviewRecord("bob-phone", "Bob", "changes_requested"),
+			keyedReviewRecord("bob-browser", "bob", "approved"),
+		}, true},
+		{"pull author approving with a second key", []string{
+			keyedReviewRecord("alice-phone", "Alice", "approved"),
+		}, false},
+		{"pull author's second key cannot object either", []string{
+			keyedReviewRecord("bob-laptop", "bob", "approved"),
+			keyedReviewRecord("alice-phone", "alice", "changes_requested"),
+		}, true},
+		{"two accounts, one objection still open", []string{
+			keyedReviewRecord("carol-laptop", "carol", "changes_requested"),
+			keyedReviewRecord("bob-laptop", "bob", "changes_requested"),
+			keyedReviewRecord("bob-phone", "bob", "approved"),
+		}, false},
+		{"a dismissed review clears the account's objection", []string{
+			keyedReviewRecord("carol-laptop", "carol", "changes_requested"),
+			keyedReviewRecord("carol-phone", "carol", "dismissed"),
+			keyedReviewRecord("bob-phone", "bob", "approved"),
+		}, true},
+		{"unnamed keys stay separate reviewers", []string{
+			keyedReviewRecord("anon-1", "", "changes_requested"),
+			keyedReviewRecord("anon-2", "", "approved"),
+		}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newMergeFixture(t)
+			run(t, f.source, "git", "checkout", "-q", "forkmesh/pulls")
+			pullDir := filepath.Join(f.source, ".forkmesh", "pulls", "7")
+			if err := os.Remove(filepath.Join(pullDir, "0002-review.md")); err != nil {
+				t.Fatal(err)
+			}
+			for i, review := range tc.reviews {
+				writeFile(t, filepath.Join(pullDir, fmt.Sprintf("%04d-review.md", i+2)), review)
+			}
+			run(t, f.source, "git", "add", "-A")
+			run(t, f.source, "git", "commit", "-q", "-m", "pull #7: reviews")
+			run(t, f.source, "git", "push", "-q", f.bare, "forkmesh/pulls:refs/heads/forkmesh/pulls")
+			f.pullsOid = run(t, f.source, "git", "rev-parse", "forkmesh/pulls")
+			run(t, f.source, "git", "checkout", "-q", "main")
+
+			result := f.request(t, "execute", "merge", map[string]any{"requestId": "merge_request_accounts"})
+			if tc.merged && result["status"] != "merged" {
+				t.Fatalf("expected a merge: %+v", result)
+			}
+			if !tc.merged && result["error"] != "review_required" {
+				t.Fatalf("expected review_required: %+v", result)
+			}
+		})
 	}
 }

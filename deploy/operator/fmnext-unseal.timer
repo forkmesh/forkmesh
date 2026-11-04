@@ -2,7 +2,7 @@
 #   install -m 0644 deploy/operator/fmnext-unseal.{service,timer} ~/.config/systemd/user/
 #   systemctl --user daemon-reload && systemctl --user enable --now fmnext-unseal.timer
 # While this desktop is off, a node that restarts stays sealed (503) until
-# the timer runs again: see docs/VAULT.md "Availability".
+# the timer runs again: see docs/operations/vault.md "Availability".
 [Unit]
 Description=Unseal sealed ForkMesh Next core nodes every minute
 

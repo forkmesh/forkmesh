@@ -172,6 +172,53 @@ async def deliver_reminders(runtime):
     return {"ok": True, "delivered": delivered}
 
 
+ARCHIVE_UPLOAD_PERMISSION = "repository.archive.upload"
+
+
+def _archive_plugins():
+    return [plugin for plugin in sorted(REGISTRY)
+            if ARCHIVE_UPLOAD_PERMISSION in permissions(plugin)]
+
+
+async def _archive_hook(runtime_for, name, *args):
+    for plugin in _archive_plugins():
+        hook = getattr(_module(plugin), name, None)
+        if hook is None:
+            continue
+        try:
+            result = await hook(runtime_for(plugin), *args)
+        except Exception as error:
+            if "no such table" not in str(error).lower():
+                raise
+            continue
+        yield result
+
+
+async def archive_upload_keys(runtime_for):
+    keys = set()
+    async for result in _archive_hook(runtime_for, "archive_upload_keys"):
+        keys.update(str(key) for key in result or ())
+    return keys
+
+
+async def archive_upload_config(runtime_for, owner, name, aliases, keys):
+    async for result in _archive_hook(
+            runtime_for, "archive_upload_config", owner, name,
+            tuple(aliases or ()), keys):
+        if isinstance(result, dict):
+            return result
+    return None
+
+
+async def record_archive_upload(runtime_for, owner, name, aliases, report):
+    recorded = False
+    async for result in _archive_hook(
+            runtime_for, "record_archive_upload", owner, name,
+            tuple(aliases or ()), report):
+        recorded = recorded or bool(result)
+    return recorded
+
+
 async def deliver_lead(runtime, org_name, lead):
     for plugin in sorted(REGISTRY):
         module = _data_module(plugin)

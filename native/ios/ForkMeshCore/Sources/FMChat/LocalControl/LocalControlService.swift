@@ -24,6 +24,7 @@ public enum LocalControlStatus: String, Sendable {
     case connecting
     /// The desktop is showing its approval prompt with `pairingCode`.
     case awaitingApproval
+    case confirmingCode
     case connected
     case failed
 }
@@ -405,7 +406,6 @@ public final class LocalControlService {
     // connects again.
     @ObservationIgnored private var autoConnectHeld = false
     @ObservationIgnored private var dialQueued = false
-    @ObservationIgnored private var accountDesktopsTried: Set<String> = []
     @ObservationIgnored private var accountDesktopKeys: Set<String> = []
     @ObservationIgnored private var retryTask: Task<Void, Never>?
     @ObservationIgnored private var failures = 0
@@ -503,6 +503,7 @@ public final class LocalControlService {
     public func setAccountDesktops(_ keys: Set<String>) {
         if keys == accountDesktopKeys { return }
         accountDesktopKeys = keys
+        if status == .confirmingCode && keys.contains(desktopKey) { confirmDesktop(desktopKey) }
         onMeshChanged()
     }
 
@@ -549,10 +550,8 @@ public final class LocalControlService {
         if retryTask != nil { return }
         guard
             let candidate = LocalControlService.automaticTarget(
-                mesh.controlHosts(), paired: Set(paired.map(\.key)), accountDesktops: accountDesktopKeys,
-                account: userName(), tried: accountDesktopsTried)
+                mesh.controlHosts(), paired: Set(paired.map(\.key)), accountDesktops: accountDesktopKeys)
         else { return }
-        if !isKnown(candidate.nodeId) { accountDesktopsTried.insert(candidate.nodeId) }
         dialQueued = true
         Task {
             self.dialQueued = false
@@ -561,17 +560,9 @@ public final class LocalControlService {
     }
 
     public nonisolated static func automaticTarget(
-        _ hosts: [MeshControlHost], paired: Set<String>, accountDesktops: Set<String> = [], account: String,
-        tried: Set<String>
+        _ hosts: [MeshControlHost], paired: Set<String>, accountDesktops: Set<String> = []
     ) -> MeshControlHost? {
-        if let known = hosts.first(where: { paired.contains($0.nodeId) }) { return known }
-        if let owned = hosts.first(where: { accountDesktops.contains($0.nodeId) }) { return owned }
-        let account = account.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if account.isEmpty { return nil }
-        return hosts.first {
-            !tried.contains($0.nodeId)
-                && $0.ownerUser.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == account
-        }
+        hosts.first(where: { paired.contains($0.nodeId) }) ?? hosts.first(where: { accountDesktops.contains($0.nodeId) })
     }
 
     private func open(_ target: MeshControlHost, _ expected: String?) async throws -> LocalControlConnection {
@@ -608,6 +599,7 @@ public final class LocalControlService {
         }
         connection = opened
         failures = 0
+        if !opened.serverKey.isEmpty { desktopKey = opened.serverKey }
         if !opened.serverName.isEmpty { desktopName = opened.serverName }
         if !opened.serverUser.isEmpty { desktopUser = opened.serverUser }
         let events = opened.events
@@ -692,6 +684,8 @@ public final class LocalControlService {
     }
 
     private func onEvent(_ message: JSONObject) {
+        let event = message["event"]?.stringValue ?? ""
+        if event != "session" && event != "pairing-denied" && !connected { return }
         defer {
             let name = message["event"]?.stringValue ?? ""
             let payload = message["data"]?.objectValue ?? JSONObject()
@@ -705,12 +699,12 @@ public final class LocalControlService {
             let user = dartString(data["user"])
             if !user.isEmpty { desktopUser = user }
             if data["paired"] == .bool(true) {
-                pairingCode = ""
-                rememberPaired()
-                if let host { rememberAddress(desktopKey, host.address.address) }
-                setStatus(.connected)
-                announceCapabilities()
-                Task { await self.refreshAgents() }
+                if isKnown(desktopKey) {
+                    acceptDesktop()
+                } else {
+                    pairingCode = connection?.pairingCode ?? ""
+                    setStatus(.confirmingCode)
+                }
             } else {
                 let code = data["code"].flatMap { $0.isNull ? nil : $0.text } ?? connection?.pairingCode ?? ""
                 pairingCode = code
@@ -737,6 +731,20 @@ public final class LocalControlService {
         default:
             break
         }
+    }
+
+    public func confirmDesktop(_ key: String) {
+        guard status == .confirmingCode, key == desktopKey, connection != nil else { return }
+        acceptDesktop()
+    }
+
+    private func acceptDesktop() {
+        pairingCode = ""
+        rememberPaired()
+        if let host { rememberAddress(desktopKey, host.address.address) }
+        setStatus(.connected)
+        announceCapabilities()
+        Task { await self.refreshAgents() }
     }
 
     private func rememberPaired() {
@@ -781,7 +789,6 @@ public final class LocalControlService {
         agents = nil
         pairingCode = ""
         autoConnectHeld = false
-        accountDesktopsTried = []
         accountDesktopKeys = []
         failures = 0
         host = nil
@@ -1153,6 +1160,7 @@ extension LocalControlService: ShellLocalDesktopBridge {
         switch status {
         case .connected: return .connected(desktopName)
         case .awaitingApproval: return .awaitingApproval(desktopName)
+        case .confirmingCode: return .confirmingCode(desktopName)
         case .connecting: return .connecting(desktopName)
         case .idle, .failed: return hosts.isEmpty ? .hidden : .inReach
         }

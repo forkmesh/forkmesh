@@ -50,6 +50,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -74,13 +77,6 @@ import com.forkmesh.nativeapp.ui.theme.Fm
 import com.forkmesh.nativeapp.ui.theme.FmHaptics
 import com.forkmesh.nativeapp.ui.theme.FmIcon
 import kotlinx.coroutines.delay
-
-private val tourPurple = Color(0xFF8250DF)
-
-@Composable
-private fun TourSpinner() {
-    FmCircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-}
 
 private class TourHomeIcon(val id: String, val title: String, val icon: String, val count: Int, val running: Boolean)
 
@@ -117,112 +113,6 @@ internal fun TourHomeScene(phase: Int, act: (Int) -> Unit) {
     }
 }
 
-@Composable
-internal fun TourAgentsScene(phase: Int, act: (Int) -> Unit) {
-    val c = Fm.colors
-    val step = phase % 3
-    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        TourTopBar(stars = if (step == 0) 1 else 2)
-        TourTitle("Agents", if (step == 0) "1 needs you" else null)
-        TourAppear(step == 0) {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                TourSectionLabel("Needs you")
-                TourRow("back_hand", "Agent 754 · Fix login test", "Wants to run npm test", tint = c.warning, unread = true) {
-                    TourPill("Allow", lit = true, modifier = Modifier.tourTap("Allow") { act(1) })
-                }
-            }
-        }
-        TourSectionLabel("Running")
-        TourAppear(step >= 1) {
-            TourRow("auto_awesome", "Agent 754 · Fix login test", if (step == 1) "Running npm test · 0:12" else "Writing the fix · 1:04") { TourSpinner() }
-        }
-        TourRow("auto_awesome", "Agent 751 · Dark mode", "Editing 4 files · 6:30") { TourSpinner() }
-        TourSectionLabel("Finished")
-        TourRow("check_circle", "Agent 748 · Update docs", "+42 −7 · ready to merge", tint = c.success) { TourChevron() }
-    }
-}
-
-@Composable
-internal fun TourNewAgentScene(phase: Int, act: (Int) -> Unit) {
-    val c = Fm.colors
-    val step = phase % 4
-    val blur by animateDpAsState(if (step == 1) 1.5.dp else 0.dp, label = "tour-new-blur")
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
-        Column(Modifier.fillMaxSize().blur(blur), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            TourTopBar(stars = if (step >= 2) 3 else 2, buttonLit = step == 0, onButton = { act(1) })
-            TourTitle("forkmesh/app")
-            TourRow("error_outline", "#91 Login fails offline", "Opened 2 hours ago", tint = c.success)
-            TourRow("call_merge", "#128 Fix flaky login test", "2 checks running")
-        }
-        AnimatedVisibility(step == 1, enter = if (Fm.reducedMotion) fadeIn(tween(0)) else slideInVertically { it } + fadeIn(), exit = if (Fm.reducedMotion) fadeOut(tween(0)) else slideOutVertically { it } + fadeOut()) {
-            val shadow = Color.Black.copy(alpha = 0.15f)
-            val shape = RoundedCornerShape(22.dp)
-            Column(
-                Modifier.padding(10.dp).fillMaxWidth().shadow(12.dp, shape, ambientColor = shadow, spotColor = shadow).clip(shape).background(c.bgElevated).padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    TourPill("forkmesh/app", filled = false)
-                    TourPill("Edit", filled = false)
-                    TourPill("Opus", filled = false)
-                }
-                Text("Fix the flaky login test and open a pull request", color = c.textPrimary, fontSize = 15.sp)
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FmIcon("attach_file", size = 18.dp, tint = c.textSecondary)
-                    FmIcon("mic", size = 18.dp, tint = c.textSecondary)
-                    Spacer(Modifier.weight(1f))
-                    Box(
-                        Modifier.tourTarget(true, round = true).size(32.dp).background(c.accent, CircleShape).tourTap("Send") { act(2) },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        FmIcon("arrow_upward", size = 18.dp, tint = Color.White)
-                    }
-                }
-            }
-        }
-        AnimatedVisibility(step == 2, enter = tourPop(), exit = tourPopOut(), modifier = Modifier.padding(bottom = 20.dp)) {
-            Row(
-                Modifier.clip(CircleShape).background(c.bgRaised).border(0.5.dp, c.border, CircleShape).padding(horizontal = 14.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                FmIcon("auto_awesome", size = 15.dp, tint = c.accent)
-                Text("Agent started", color = c.accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-            }
-        }
-    }
-}
-
-private val inboxItems = listOf(
-    Triple("back_hand", "Agent 754 needs approval", "Wants to run npm test"),
-    Triple("call_merge", "Review requested: #128", "Fix flaky login test"),
-    Triple("alternate_email", "You were mentioned in #mesh", "\"can you take a look?\""),
-    Triple("error_outline", "Assigned: #91", "Login fails offline"),
-)
-private val inboxFilters = listOf("All", "Pings", "Reviews", "Assigned", "Mentions", "Approvals")
-
-@Composable
-internal fun TourInboxScene(phase: Int, act: (Int) -> Unit) {
-    val c = Fm.colors
-    val step = phase % 6
-    val shown = minOf(inboxItems.size, step + 1)
-    val read = if (step >= 5) 1 else 0
-    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        TourTopBar()
-        TourTitle("Inbox", "${maxOf(0, shown - read)} unread")
-        Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            inboxFilters.forEachIndexed { at, filter -> TourPill(filter, filled = at == 0) }
-        }
-        inboxItems.forEachIndexed { at, item ->
-            TourAppear(at < shown) {
-                val fresh = at >= read
-                TourRow(item.first, item.second, item.third, unread = fresh, modifier = Modifier.tourTap(item.second) { act(5) }) {
-                    TourDot(if (fresh) c.accent else Color.Transparent)
-                }
-            }
-        }
-    }
-}
 
 @Composable
 internal fun TourHubScene(phase: Int, act: (Int) -> Unit) {
@@ -289,166 +179,6 @@ private fun HubButton(title: String, icon: String, modifier: Modifier) {
         FmIcon(icon, size = 14.dp, tint = c.textPrimary)
         Spacer(Modifier.width(4.dp))
         Text(title, color = c.textPrimary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-    }
-}
-
-private val voiceWords = listOf("Add", "a", "dark", "mode", "to", "settings")
-
-@Composable
-internal fun TourVoiceScene(phase: Int, act: (Int) -> Unit) {
-    val c = Fm.colors
-    val haptics = FmHaptics.current
-    val reduced = Fm.reducedMotion
-    var holding by remember { mutableStateOf(false) }
-    var heard by remember { mutableIntStateOf(0) }
-    val step = phase % 5
-    val listening = holding || step == 1 || step == 2
-    val sent = !holding && step == 3
-    val said = if (holding) heard else when (step) {
-        1 -> 3
-        2, 3 -> voiceWords.size
-        else -> 0
-    }
-    val latestAct by rememberUpdatedState(act)
-    LaunchedEffect(holding) {
-        if (!holding) return@LaunchedEffect
-        while (heard < voiceWords.size) {
-            delay(380)
-            heard += 1
-        }
-    }
-    val dim = listening || sent
-    val blur by animateDpAsState(if (dim) 6.dp else 0.dp, label = "tour-voice-blur")
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(Modifier.fillMaxSize().blur(blur)) { TourTopBar(stars = if (sent) 3 else 2) }
-        AnimatedVisibility(dim, enter = fadeIn(), exit = fadeOut()) {
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.25f)))
-        }
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            val orb by animateDpAsState(if (listening) 96.dp else 56.dp, label = "tour-voice-orb")
-            Box(
-                Modifier.size(150.dp)
-                    .pointerInput(Unit) {
-                        detectTapGestures(onPress = {
-                            haptics.palette()
-                            heard = 0
-                            latestAct(1)
-                            holding = true
-                            tryAwaitRelease()
-                            if (holding) {
-                                holding = false
-                                latestAct(3)
-                                haptics.success()
-                            }
-                        })
-                    }
-                    .semantics {
-                        role = Role.Button
-                        contentDescription = "New agent, hold to talk"
-                        onClick { latestAct(2); true }
-                    },
-                contentAlignment = Alignment.Center,
-            ) {
-                if (listening && !reduced) {
-                    val transition = rememberInfiniteTransition(label = "tour-voice-rings")
-                    for (ring in 0 until 3) {
-                        val grow by transition.animateFloat(
-                            0f, 1f,
-                            infiniteRepeatable(tween(1400, delayMillis = ring * 450), RepeatMode.Restart),
-                            label = "tour-voice-ring-$ring",
-                        )
-                        Box(
-                            Modifier.size(orb).graphicsLayer {
-                                val k = 1f + 0.7f * grow
-                                scaleX = k
-                                scaleY = k
-                                alpha = 0.8f * (1f - grow)
-                            }.border(2.dp, c.accent.copy(alpha = 0.5f), CircleShape),
-                        )
-                    }
-                }
-                TourSparkleButton(stars = if (sent) 9 else 4, size = orb, lit = step == 0 && !holding)
-            }
-            Text(
-                voiceWords.take(said).joinToString(" "),
-                color = if (dim) Color.White else c.textPrimary,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier.height(24.dp),
-            )
-            when {
-                sent -> Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    FmIcon("auto_awesome", size = 15.dp, tint = Color.White)
-                    Text("Agent started", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                }
-                listening -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TourPill("Cancel", filled = false, tint = Color.White)
-                    TourPill("Type", filled = false, tint = Color.White)
-                    TourPill("Commands", filled = false, tint = Color.White)
-                }
-                else -> Text("Touch and hold", color = c.textSecondary, fontSize = 13.sp)
-            }
-        }
-    }
-}
-
-@Composable
-internal fun TourCodeScene(phase: Int, act: (Int) -> Unit) {
-    val c = Fm.colors
-    val step = phase % 3
-    val merged = step == 2
-    val fill by animateColorAsState(if (merged) tourPurple else c.success, label = "tour-merge")
-    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        TourTopBar()
-        Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                TourPill(if (merged) "Merged" else "Open", tint = if (merged) tourPurple else c.success)
-                Text("#128", color = c.textSecondary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-            }
-            Text("Fix flaky login test", color = c.textPrimary, fontSize = 19.sp, fontWeight = FontWeight.Bold)
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    FmIcon("check_circle", size = 14.dp, tint = c.success)
-                    Text("12 checks passed", color = c.success, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                }
-                AnimatedVisibility(step >= 1, enter = tourPop(), exit = tourPopOut()) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        FmIcon("verified", size = 14.dp, tint = c.accent)
-                        Text("Approved", color = c.accent, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                    }
-                }
-            }
-        }
-        Column(Modifier.padding(horizontal = 12.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(c.bgRaised)) {
-            Text("LoginTest.kt", color = c.textSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
-            DiffLine(" ", "fun testSignIn() = runTest {", null)
-            DiffLine("-", "    delay(1_000)", c.danger)
-            DiffLine("+", "    session.awaitReady()", c.success)
-            DiffLine(" ", "    assertTrue(session.signedIn)", null)
-        }
-        Spacer(Modifier.weight(1f))
-        Row(
-            Modifier.padding(start = 16.dp, end = 16.dp, bottom = 14.dp).fillMaxWidth().tourTarget(!merged).heightIn(min = 40.dp)
-                .background(fill, CircleShape).tourTap(if (merged) "Merged" else "Merge pull request") { act(if (merged) 0 else 2) },
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            FmIcon(if (merged) "check" else "merge", size = 17.dp, tint = Color.White)
-            Spacer(Modifier.width(6.dp))
-            Text(if (merged) "Merged" else "Merge pull request", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-        }
-    }
-}
-
-@Composable
-private fun DiffLine(mark: String, code: String, tint: Color?) {
-    val c = Fm.colors
-    Row(
-        Modifier.fillMaxWidth().background((tint ?: Color.Transparent).copy(alpha = if (tint == null) 0f else 0.14f)).padding(horizontal = 10.dp, vertical = 3.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Text(mark, color = tint ?: c.textTertiary, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-        Text(code, color = c.textPrimary, fontSize = 11.sp, fontFamily = FontFamily.Monospace, maxLines = 1)
     }
 }
 
@@ -817,43 +547,6 @@ internal fun TourWorkspaceScene(phase: Int, act: (Int) -> Unit) {
     }
 }
 
-private val marketPackages = listOf(Triple("Notes", "description", "Markdown notes"), Triple("Water", "water_drop", "Count your glasses"), Triple("Vault", "shield", "Passwords and secrets"))
-
-@Composable
-internal fun TourMarketScene(phase: Int, act: (Int) -> Unit) {
-    val c = Fm.colors
-    val installed = phase % (marketPackages.size + 1)
-    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        TourTopBar()
-        Box(
-            Modifier.padding(horizontal = 12.dp).fillMaxWidth().height(70.dp).clip(RoundedCornerShape(14.dp)).background(c.bgRaised.copy(alpha = 0.5f)).padding(horizontal = 12.dp),
-            contentAlignment = Alignment.CenterStart,
-        ) {
-            if (installed == 0) Text("Home", color = c.textTertiary, fontSize = 12.sp, modifier = Modifier.align(Alignment.Center))
-            Row {
-                marketPackages.forEachIndexed { at, (title, icon, _) ->
-                    AnimatedVisibility(at < installed, enter = tourPop(), exit = tourPopOut()) {
-                        Box(Modifier.width(64.dp)) { ShellHomeTile(icon, title, 0, selected = false, running = false, desktopOffline = false) {} }
-                    }
-                }
-            }
-        }
-        TourTitle("Market")
-        marketPackages.forEachIndexed { at, (title, icon, detail) ->
-            val got = at < installed
-            TourRow(icon, title, detail) {
-                TourPill(
-                    if (got) "Installed" else "Get",
-                    filled = !got,
-                    tint = if (got) c.success else null,
-                    lit = at == installed,
-                    modifier = Modifier.tourTap(if (got) "Installed" else "Get $title") { act(if (got) at else at + 1) },
-                )
-            }
-        }
-    }
-}
-
 @Composable
 internal fun TourPersonalScene(phase: Int, act: (Int) -> Unit) {
     val c = Fm.colors
@@ -888,13 +581,10 @@ internal fun TourSystemScene(phase: Int, act: (Int) -> Unit) {
     val c = Fm.colors
     val approved = phase % 3 == 2
     val shown = phase % 3 != 0
-    Box(
-        Modifier.fillMaxSize().background(
-            Brush.linearGradient(listOf(c.accent.copy(alpha = 0.85f), Color(0xFF4B3FB5).copy(alpha = 0.9f), Color.Black.copy(alpha = 0.85f))),
-        ),
-    ) {
+    Box(Modifier.fillMaxSize()) {
+        TourLockWallpaper()
         Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("9:41", color = Color.White.copy(alpha = 0.92f), fontSize = 52.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 14.dp))
+            Text("9:41", color = Color.White.copy(alpha = 0.95f), fontSize = 56.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 56.dp))
             Row(
                 Modifier.padding(horizontal = 30.dp).fillMaxWidth().background(Color.Black.copy(alpha = 0.55f), CircleShape).padding(horizontal = 14.dp, vertical = 9.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -937,6 +627,33 @@ internal fun TourSystemScene(phase: Int, act: (Int) -> Unit) {
             }
         }
     }
+}
+
+@Composable
+private fun TourLockWallpaper() {
+    val ground = Color(0xFF0B1220)
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(ground)
+            .drawBehind {
+                drawRect(
+                    Brush.radialGradient(
+                        listOf(Color(0xFF2F5FA8).copy(alpha = 0.9f), ground.copy(alpha = 0f)),
+                        center = Offset(size.width * 0.5f, size.height * 0.05f),
+                        radius = 360.dp.toPx(),
+                    ),
+                )
+                drawRect(
+                    Brush.radialGradient(
+                        listOf(Color(0xFF16324F).copy(alpha = 0.8f), ground.copy(alpha = 0f)),
+                        center = Offset(size.width * 0.85f, size.height),
+                        radius = 300.dp.toPx(),
+                    ),
+                )
+            }
+            .clearAndSetSemantics {},
+    )
 }
 
 private val looksSamples = listOf(Triple("Agents", "auto_awesome", 3), Triple("Inbox", "inbox", 12), Triple("Repos", "library_books", 0), Triple("Notes", "description", 0))

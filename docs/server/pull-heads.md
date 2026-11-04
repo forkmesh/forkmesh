@@ -2,23 +2,17 @@
 
 A pull request opened from the web, from another node or from the MCP tool
 arrives as a signed patch: `changes.patch` and a `git format-patch` series in
-`commits.mbox`. Until 2026-10-19 that patch was also how the pull was checked
-and merged: the merge executor ran `git am --3way` onto the *current* tip of
-the base branch, and the desktop decided its "conflicts" badge with
-`git apply --check --3way` while its Merge button merged `refs/pr/<n>/head`.
-That broke in ways that kept community pull requests from landing:
+`commits.mbox` (submission and intake: [intake-and-attestation.md](intake-and-attestation.md);
+home: [Go daemon](README.md)). The patch is only the transport. Every node
+turns it into commits once, the same way, and from then on a patch-backed pull
+is checked and merged like a branch: a three-way merge of its head commit into
+the base tip ([merge-executor.md](merge-executor.md)).
 
-- a series whose early commits touch lines the base has since changed failed,
-  even when the finished change merges cleanly;
-- renames and moved directories on the base made every hunk miss;
-- the badge and the merge read different sources, so fixing a conflict meant
-  fixing it twice;
-- a patch-backed pull merged as a rebase with a new committer, not as a merge,
-  and recorded no `mergeBase`/`mergeHead`.
-
-The patch is now only the transport. Every node turns it into commits once, in
-the same way, and from then on a patch-backed pull is checked and merged like a
-branch: a three-way merge of its head commit into the base tip.
+Replaying the patch with `git am --3way` onto the current base tip at merge
+time (the old design) failed on series whose early commits touch lines the base
+has since changed, and on renames; it let the desktop's conflict badge and its
+merge read different sources; and it merged as a rebase with no
+`mergeBase`/`mergeHead`.
 
 ## The head commit
 
@@ -47,7 +41,7 @@ the head the same way:
 
 ## Where it is recorded
 
-- **Intake** (`commitPullIntake` in `server/intake.go`, both the relay drain and
+- **Intake** (`commitPullIntake` in `server/intake.go`, both the App inbox drain and
   direct intake) builds the head before committing the new record and adds two
   fields to `pull.md`: `headBaseOid` (the commit it replayed onto) and `headOid`
   (the result). It points `refs/pr/<n>/head` at the head. A patch that applies
@@ -61,7 +55,7 @@ the head the same way:
   exact commit. At most four replays per repository per cycle; a mismatch is
   remembered for the life of the process and not retried.
 - **Desktop.** `readPull`/`writePull` carry both fields. A pull that arrives
-  through the relay inbox has them cleared (`applyRemotePull`): only a node's
+  through the App inbox has them cleared (`applyRemotePull`): only a node's
   own ledger may name a head. A pull whose content the owner changes (removing
   a file, finishing a conflict fix) has `headOid` cleared and, after a fix,
   `headBaseOid` set to the commit the fix was rebased on.

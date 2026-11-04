@@ -18,6 +18,14 @@ file(GLOB_RECURSE FORKMESH_MARKETPLACE_CONFIGURE_INPUTS CONFIGURE_DEPENDS
     "${FORKMESH_MARKETPLACE_ROOT}/packages/*/manifest.json"
     "${FORKMESH_MARKETPLACE_ROOT}/packages/*/content/*"
     "${FORKMESH_MARKETPLACE_ROOT}/packages/*/preview/*")
+file(GLOB FORKMESH_MARKETPLACE_GENERATOR_INPUTS CONFIGURE_DEPENDS
+    "${FORKMESH_MARKETPLACE_ROOT}/*.json"
+    "${FORKMESH_MARKETPLACE_ROOT}/tools/generate_desktop_packages.py"
+    "${FORKMESH_MARKETPLACE_ROOT}/tools/marketplace_lib.py"
+    "${FORKMESH_MARKETPLACE_ROOT}/packages/*/manifest.json"
+    "${FORKMESH_MARKETPLACE_ROOT}/packages/*/content/desktop/build.json")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    ${FORKMESH_MARKETPLACE_GENERATOR_INPUTS})
 execute_process(
     COMMAND "${Python3_EXECUTABLE}"
             "${FORKMESH_MARKETPLACE_ROOT}/tools/generate_desktop_packages.py"
@@ -859,6 +867,7 @@ set(FORKMESH_APP_SOURCES
     src/HomeLayout.h
     src/HomeLayout.cpp
     src/MainWindowHome.cpp
+    src/MainWindowComposerPlus.cpp
     src/BinarySize.h
     src/BinarySize.cpp
     src/BinarySizeMap.h
@@ -1085,6 +1094,7 @@ set(FORKMESH_APP_SOURCES
     src/AgentWorktree.h
     src/WorktreeInclude.h
     src/PromptDrop.h
+    src/ComposerConnectors.h
     src/WorkspaceOpenIn.h
     src/WorkspaceShortcuts.h
     src/AgentWorkspaceNameGate.h
@@ -1102,6 +1112,8 @@ set(FORKMESH_APP_SOURCES
     src/HiddenUnicode.cpp
     src/HiddenUnicodeGuard.h
     src/HiddenUnicodeGuard.cpp
+    src/CopyFormatting.h
+    src/CopyFormatting.cpp
     src/AdBannerWidget.h
     src/AdBannerWidget.cpp
     src/SecretDiffBanner.h
@@ -1143,6 +1155,8 @@ set(FORKMESH_APP_SOURCES
     src/MessageRow.h
     src/MessageRow.cpp
     src/MarkdownEditor.cpp
+    src/MarkdownLiveHighlighter.h
+    src/MarkdownLiveHighlighter.cpp
     src/KebabHeaderView.h
     src/KebabHeaderView.cpp
     src/SettingsSectionsView.h
@@ -2311,6 +2325,7 @@ if(FORKMESH_BUILD_TESTS)
 
     qt_add_executable(forkmesh-workspace-parity-tests
         tests/test_workspace_parity.cpp
+        src/ComposerConnectors.h
         src/LayoutMode.h
         src/PromptDrop.h
         src/WorkspaceOpenIn.h
@@ -2709,6 +2724,46 @@ if(FORKMESH_BUILD_TESTS)
     target_link_libraries(forkmesh-note-tools-tests PRIVATE Qt6::Core)
     if(APPLE)
         set_target_properties(forkmesh-note-tools-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
+    qt_add_executable(forkmesh-note-comments-tests
+        tests/test_note_comments.cpp
+        src/NoteComments.h
+    )
+    target_include_directories(forkmesh-note-comments-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-note-comments-tests PRIVATE Qt6::Core)
+    if(APPLE)
+        set_target_properties(forkmesh-note-comments-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
+    qt_add_executable(forkmesh-note-document-tests
+        tests/test_note_document.cpp
+        src/NoteDocument.h
+        src/NoteDocumentRender.h
+        src/NoteTools.h
+        src/MarkdownRender.h
+    )
+    target_include_directories(forkmesh-note-document-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-note-document-tests PRIVATE Qt6::Gui Qt6::Svg)
+    if(APPLE)
+        set_target_properties(forkmesh-note-document-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
+    qt_add_executable(forkmesh-note-pages-tests
+        tests/test_note_pages.cpp
+        src/NotePages.h
+        src/NoteTools.h
+    )
+    target_include_directories(forkmesh-note-pages-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-note-pages-tests PRIVATE Qt6::Core)
+    if(APPLE)
+        set_target_properties(forkmesh-note-pages-tests PROPERTIES
             MACOSX_BUNDLE FALSE)
     endif()
 
@@ -3683,6 +3738,17 @@ forkmesh_link_opengl(forkmesh-window-tests)
         set_target_properties(forkmesh-hidden-unicode-tests PROPERTIES MACOSX_BUNDLE FALSE)
     endif()
 
+    qt_add_executable(forkmesh-copy-formatting-tests
+        tests/test_copy_formatting.cpp
+        src/CopyFormatting.h
+        src/CopyFormatting.cpp
+    )
+    target_link_libraries(forkmesh-copy-formatting-tests PRIVATE Qt6::Widgets)
+    target_include_directories(forkmesh-copy-formatting-tests PRIVATE src)
+    if(APPLE)
+        set_target_properties(forkmesh-copy-formatting-tests PROPERTIES MACOSX_BUNDLE FALSE)
+    endif()
+
     qt_add_executable(forkmesh-genie-vitals-tests
         tests/test_genie_vitals.cpp
         src/GenieVitals.h
@@ -3848,6 +3914,22 @@ forkmesh_link_opengl(forkmesh-window-tests)
             MACOSX_BUNDLE FALSE)
     endif()
 
+    qt_add_executable(forkmesh-markdown-live-tests
+        tests/test_markdown_live.cpp
+        src/MarkdownLiveHighlighter.h
+        src/MarkdownLiveHighlighter.cpp
+        src/Theme.h
+        src/DesignTokens.h
+        src/DesignTokens.cpp
+        ${FORKMESH_THEME_QRC}
+    )
+    target_link_libraries(forkmesh-markdown-live-tests PRIVATE Qt6::Widgets)
+    target_include_directories(forkmesh-markdown-live-tests PRIVATE src)
+    if(APPLE)
+        set_target_properties(forkmesh-markdown-live-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
     # A crash is written to the log by the dying process, so the next launch
     # is the only thing that can turn it into repair work. Core only: the
     # "crash, not a stop request" rule stays covered where the window suite is
@@ -3872,6 +3954,8 @@ forkmesh_link_opengl(forkmesh-window-tests)
         tests/test_claude_session_scan.cpp
         src/ClaudeSessionScan.h
         src/ClaudeSessionScan.cpp
+        src/SafeDelete.h
+        src/AppPaths.h
         src/ClaudeSessionImport.h
         src/ClaudeSessionImport.cpp
     )
@@ -4020,6 +4104,17 @@ forkmesh_link_opengl(forkmesh-window-tests)
     )
     target_link_libraries(forkmesh-background-mode-tests PRIVATE Qt6::Gui Qt6::Network)
     target_include_directories(forkmesh-background-mode-tests PRIVATE src)
+
+    qt_add_executable(forkmesh-background-activity-exit-tests
+        tests/test_background_activity_exit.cpp
+        src/BackgroundActivity.h
+        src/ActionTelemetry.h
+        src/ActionTelemetry.cpp
+        src/LogSource.h
+        src/LogSource.cpp
+    )
+    target_link_libraries(forkmesh-background-activity-exit-tests PRIVATE Qt6::Core)
+    target_include_directories(forkmesh-background-activity-exit-tests PRIVATE src)
 
     qt_add_executable(forkmesh-safe-delete-tests
         tests/test_safe_delete.cpp
@@ -4353,9 +4448,11 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-agent-parity-tests
         forkmesh-process-reaper-tests
         forkmesh-background-mode-tests
+        forkmesh-background-activity-exit-tests
         forkmesh-stall-watchdog-tests
         forkmesh-qt-runtime-diagnostics-tests
         forkmesh-prompt-spellcheck-tests
+        forkmesh-markdown-live-tests
         PROPERTIES EXCLUDE_FROM_ALL TRUE)
 
     # Register all suites with CTest so they run independently of the app:
@@ -4442,6 +4539,8 @@ forkmesh_link_opengl(forkmesh-perf-tests)
              COMMAND forkmesh-ad-banner-model-tests)
     add_test(NAME forkmesh-hidden-unicode-tests
              COMMAND forkmesh-hidden-unicode-tests)
+    add_test(NAME forkmesh-copy-formatting-tests
+             COMMAND forkmesh-copy-formatting-tests)
     add_test(NAME forkmesh-genie-vitals-tests
              COMMAND forkmesh-genie-vitals-tests)
     add_test(NAME forkmesh-genie-landmarks-tests
@@ -4466,6 +4565,10 @@ forkmesh_link_opengl(forkmesh-perf-tests)
     add_test(NAME forkmesh-deploy-log-tests COMMAND forkmesh-deploy-log-tests)
     add_test(NAME forkmesh-prompt-spellcheck-tests
              COMMAND forkmesh-prompt-spellcheck-tests)
+    add_test(NAME forkmesh-markdown-live-tests
+             COMMAND forkmesh-markdown-live-tests)
+    set_tests_properties(forkmesh-markdown-live-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_test(NAME forkmesh-crash-scan-tests COMMAND forkmesh-crash-scan-tests)
     add_test(NAME forkmesh-diagnostics-report-tests COMMAND forkmesh-diagnostics-report-tests)
     add_test(NAME forkmesh-claude-session-scan-tests
@@ -4503,6 +4606,8 @@ forkmesh_link_opengl(forkmesh-perf-tests)
              COMMAND forkmesh-process-reaper-tests)
     add_test(NAME forkmesh-background-mode-tests
              COMMAND forkmesh-background-mode-tests)
+    add_test(NAME forkmesh-background-activity-exit-tests
+             COMMAND forkmesh-background-activity-exit-tests)
     add_test(NAME forkmesh-agent-access-tests
              COMMAND forkmesh-agent-access-tests)
     add_test(NAME forkmesh-agent-boundary-tests
@@ -4746,10 +4851,20 @@ forkmesh_link_opengl(forkmesh-perf-tests)
              COMMAND forkmesh-note-request-proof-tests)
     add_test(NAME forkmesh-note-tools-tests
              COMMAND forkmesh-note-tools-tests)
+    add_test(NAME forkmesh-note-comments-tests
+             COMMAND forkmesh-note-comments-tests)
+    add_test(NAME forkmesh-note-pages-tests
+             COMMAND forkmesh-note-pages-tests)
+    add_test(NAME forkmesh-note-document-tests
+             COMMAND forkmesh-note-document-tests)
+    set_tests_properties(forkmesh-note-document-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_test(NAME forkmesh-tip-tests COMMAND forkmesh-tip-tests)
     add_test(NAME forkmesh-window-tests COMMAND forkmesh-window-tests)
     add_test(NAME forkmesh-startup-splash-tests
              COMMAND forkmesh-startup-splash-tests)
+    add_test(NAME forkmesh-local-mesh-gate-window-tests
+             COMMAND forkmesh-window-tests --local-mesh-gate-only)
     add_test(NAME forkmesh-teammates-window-tests
              COMMAND forkmesh-window-tests --teammates-only)
     add_test(NAME forkmesh-task-agent-avatar-window-tests
@@ -4814,9 +4929,11 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-window-fade-tests
         forkmesh-message-box-clicks-tests
         forkmesh-hidden-unicode-tests
+        forkmesh-copy-formatting-tests
         forkmesh-tests forkmesh-window-tests
         forkmesh-qt-runtime-diagnostics-tests
         forkmesh-prompt-spellcheck-tests
+        forkmesh-markdown-live-tests
         forkmesh-startup-splash-tests
         forkmesh-teammates-window-tests
         forkmesh-mirror-fleet-window-tests forkmesh-diff-stream-window-tests
@@ -4950,6 +5067,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-issue-mention-tests
         forkmesh-ledger-tests
         forkmesh-prompt-spellcheck-tests
+        forkmesh-markdown-live-tests
         ${FORKMESH_MARKETPLACE_TEST_TARGETS}
         forkmesh-crash-scan-tests forkmesh-system-pressure-tests
         forkmesh-diagnostics-report-tests
@@ -4966,6 +5084,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-agent-parity-tests
         forkmesh-process-reaper-tests
         forkmesh-background-mode-tests
+        forkmesh-background-activity-exit-tests
         forkmesh-stall-watchdog-tests
         forkmesh-qt-runtime-diagnostics-tests
         forkmesh-e2e-stub-agent)

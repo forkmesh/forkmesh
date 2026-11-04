@@ -1,17 +1,23 @@
 # Desktop: the Tasks page
 
-Part of [the desktop docs](README.md). Code: the page is the Tasks package's
-own module, `marketplace/packages/tasks/content/desktop/TasksPage.{h,cpp}`
-(`TasksPage`, `buildOrganizationTasksSection()`, `OrganizationTaskRowDelegate`,
-`taskDetailHtml()`, `taskFieldsHtml()`), built as `build/packages/tasks.so`; the
-catalog and the signed relay requests in
-`desktop/src/OrganizationTaskStore.{h,cpp}`; the window's side of the page
-(quick add, agent launch, move to issue, attach worktree, the window commands)
-in `desktop/src/MainWindowTaskBridge.cpp`; work items in
-`desktop/src/MainWindowTaskWorkItems.cpp` with testable rules in
-`desktop/src/TaskWorkItems.{h,cpp}`; agent links in
-`desktop/src/MainWindowAgentTaskLink.cpp`; Markdown in
-`desktop/src/TaskMarkdown.{h,cpp}`.
+The Tasks page lists the organization's tasks with a detail pane, keeps this
+desktop's branches and worktrees attached to their tasks, and cleans them up
+when a task is deleted. This page covers how the page is split between the
+Tasks package and the window, its layout in both designs, Markdown, work
+items, agents, comments and the key-signed writes.
+
+Part of [Desktop](README.md).
+
+## Code
+
+| Part | Files |
+| --- | --- |
+| The page (the Tasks package's own module, built as `build/packages/tasks.so`) | `marketplace/packages/tasks/content/desktop/TasksPage.{h,cpp}` (`TasksPage`, `buildOrganizationTasksSection()`, `OrganizationTaskRowDelegate`, `taskDetailHtml()`, `taskFieldsHtml()`) |
+| Catalog and signed relay requests | `desktop/src/OrganizationTaskStore.{h,cpp}` |
+| The window's side (quick add, agent launch, move to issue, attach worktree, window commands) | `desktop/src/MainWindowTaskBridge.cpp` |
+| Work items | `desktop/src/MainWindowTaskWorkItems.cpp`, testable rules in `desktop/src/TaskWorkItems.{h,cpp}` |
+| Agent links | `desktop/src/MainWindowAgentTaskLink.cpp` |
+| Markdown | `desktop/src/TaskMarkdown.{h,cpp}` |
 
 ## Page and window
 
@@ -48,6 +54,7 @@ The page reaches the window through `NativePackageHost`:
 | `windowQuery` | `task.agentSessions` | the local agent sessions linked to a task (id, provider, model, status, branch) for badges, spinners and the branch column |
 | `windowQuery` | `task.repositoryLogos` | the `logo.*` file at the root of each local checkout |
 | `windowCommand` | `prompt.append` | adds the task's text to the prompt box |
+| `windowCommand` | `note.openLink` | opens a note link from the task's details on the Notes page; false sends the link to the browser |
 | `windowCommand` | `agent.show` | opens an agent session |
 | `windowCommand` | `issue.show` | opens an issue in the repository view |
 | `windowCommand` | `task.cleanupWork` | cleans this desktop's work items of a deleted task |
@@ -134,6 +141,90 @@ avatar arrivals and theme changes reach every package page as
 - **From an issue.** The issue view's **Move to task** goes the other way
   ([issue-to-task](../app/issue-to-task.md)).
 
+## New interface
+
+In the [new interface](ui-redesign.md#pages) the page
+(`TasksPage::buildOrganizationTasksSection`, `41-tasks.qss`) is a board with a
+side panel, after the mockup; Classic keeps the list layout above. The Next
+layout is built once, inside the builder, so a live design switch shows it
+only after restart.
+
+- **Header** (`#tasksNextHeader`).
+  - "Tasks" over a muted summary (`#tasksNextSummary`): open, with agents
+    (open tasks assigned to the bot), in progress, closed, and "manager" when
+    the account can manage tasks. The old summary label is hidden.
+  - Filter tasks (`#tasksNextFilter`) writes the same search mirror the top
+    bar search feeds (`m_organizationTasksSearchMirror`), so it filters with
+    the existing matcher; a top-bar search or a section change still wins and
+    the field follows it.
+  - The assignee picker (`#tasksNextAssignee`, "Everyone ▾") lists the people
+    strip's buttons (Everyone, each member, Bot, Unassigned) with their open
+    counts and clicks the chosen button, so the strip's own toggle logic
+    decides. The strip itself is hidden in Next.
+  - Board / List toggle (`#tasksNextViewSwitch`), Refresh (still showing its
+    age), Delete closed, and New task as the one inverse button.
+- **Chip row** (`#tasksNextChips`): the Open, Closed and All status tabs and
+  Mine are painted as rounded chips with their counts (accent when checked);
+  on the right the list density button (list mode only) and the sort menu
+  ("Newest ▾").
+- **Buttons.** Existing `VerticalIconButton`s keep their object names, menus,
+  connections and enable/visible rules. `TasksNextButtonStyler`, an event
+  filter, paints them in Next as ghost icon buttons, ghost text buttons,
+  chips or the inverse primary, and shows the button's caption as a tooltip
+  when it has none. Start shows a stop glyph while its caption is Stop.
+- **Board** (`#tasksNextBoardScroll`). Five rounded `bgSubtle` lanes
+  (`#tasksBoardColumn`): Ready, Queued, In progress, In QA (QA requested and
+  not reviewed) and Done, each with a status icon, title and count; Ready has
+  a "+" that clicks New task (managers only). Lanes follow the Open / Closed
+  / All filter: Open hides Done, Closed shows only Done. Each lane is a
+  `TasksBoardList` (`QListWidget`) whose `TasksBoardCardDelegate` paints
+  12 px cards: short task id (mono) and repository or department, the
+  priority number (`P12`), the title on up to three lines, then the
+  assignee's face (agent face, person face, or a dashed empty avatar), a
+  checklist count read from the details' task boxes (or progress percent),
+  the work-item branch, attachment count, QA state and age. The card tooltip
+  is the list's hover card. The board shows every task the filters match;
+  clicking a card selects its row in the (hidden) table, loading further
+  pages of rows if needed, so every detail action keeps working from the
+  table selection. Double-click edits, as in the list.
+- **Drag to change status.** Dropping a card on another lane selects the task
+  and clicks the button that already performs that move: Start (to In
+  progress), Stop (back to Ready), Mark undone (Done to Ready), Complete (to
+  Done, with its completion-note prompt) or Send to QA (with its steps
+  prompt). A move none of them offers, or one the account may not make, only
+  says so in the footer status. The drop runs after the drag has finished.
+  The footer (`#tasksNextFooter`) carries the drag hint (board mode) and the
+  task status line.
+- **List.** The List toggle shows the existing table with its Full /
+  Compact / Zen rows, paging label and spinners unchanged.
+- **Detail panel** (`#tasksNextDetailPanel`, splitter right side).
+  - Header: the short task id (mono, full id in the tooltip), a "…" menu
+    (`#tasksNextDetailMore`) with Edit and Move to trash, which mirror and
+    click the Edit and Delete buttons (both hidden from the row), and ×,
+    which hides the panel until a card or row is clicked.
+  - Icon row (`#tasksNextDetailActions`): every other action button.
+  - Body (`#tasksNextDetailScroll`): the title (`#tasksNextDetailTitle`,
+    18 px), the property editors (Status, Priority, Progress, Assignee,
+    Department, Team, Repository, Follows task) restyled in place, then the
+    detail browser grown to its document height: details, How to test and
+    Completion note when present, attachments, the fields Classic shows in
+    the side browser under DETAILS (Destination, Created by, Agent session
+    link, QA, Updated, Last reminder, Work items, Task ID), and ACTIVITY rows
+    with an avatar, "@who did what" and a right-aligned age. The side fields
+    browser is hidden in Next because its rows and links now render, through
+    the same link handler, in the detail browser.
+  - Comment bar: the quick comment field and its Comment button in a rounded
+    surface box; Ctrl+Enter still posts.
+- **Left out on purpose.** Backlog and "In review" (pull request) columns,
+  "2 due today", due dates, comment counts on cards, linked PR numbers, the
+  priority bars' urgent/high/medium/low buckets, People/Bots/Blocked chips,
+  blocked state, Copy link and Duplicate, subtask checklists in the panel,
+  the PR card, "Hand this task to an agent" in the comment field, the list
+  view grouped by status, and the signed-out lock card: the catalog carries
+  no due date, comment count, PR link, blocked flag or task URL, and there is
+  no duplicate action, so each would be invented. The board/list choice is
+  kept in memory, not in settings.
+
 ## The no-timer rule
 
 Nothing on the page runs on a timer (`test_nothing_in_the_tasks_page_runs_on_a_timer`),
@@ -164,7 +255,7 @@ Test: `forkmesh-task-markdown-tests`.
 ## Work items and delete cleanup
 
 Every branch and worktree the desktop makes for a task is attached to the
-task's `workItems` (API: [task-progress.md](../app/task-progress.md)) and
+task's `workItems` (API: [tasks](../app/tasks.md#progress-and-work-items)) and
 cleaned up when the task is deleted.
 
 ### Attaching
@@ -235,7 +326,7 @@ Sends every closed task, reviewed ones first, retrying backoffs. Tasks the
 relay refuses (`task_delete_blocked`, e.g. awaiting QA) are set aside; an
 organization owner is then offered a forced move to the trash. The result is
 shown as a notice and the list re-renders. Trash semantics:
-[../app/task-trash.md](../app/task-trash.md).
+[tasks](../app/tasks.md#trash).
 
 ## Agents and tasks
 

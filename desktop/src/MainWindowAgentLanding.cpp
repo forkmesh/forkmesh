@@ -1216,7 +1216,8 @@ void MainWindow::cleanupStreamWorktree(int sessionId)
     if (QThread *prev = m_worktreeTeardown.value(sessionId))
         prev->disconnect(this); // an older teardown for this id is being superseded
     m_worktreeTeardown[sessionId] = worker;
-    connect(worker, &QThread::finished, this, [this, sessionId, worker] {
+    connect(worker, &QThread::finished, this, [this, sessionId, worker, wtPath] {
+        removeOrphanedClaudeTranscripts(wtPath);
         if (m_worktreeTeardown.value(sessionId) == worker)
             m_worktreeTeardown.remove(sessionId);
     });

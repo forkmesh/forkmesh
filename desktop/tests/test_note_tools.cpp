@@ -1,6 +1,8 @@
 #include "NoteTools.h"
 
 #include <QCoreApplication>
+#include <QDateTime>
+#include <QJsonArray>
 
 #include <cstdio>
 
@@ -79,9 +81,21 @@ void testWebLinks()
                   .host == QStringLiteral("elsewhere.example"),
           "the parsed host is reported for the caller to check");
     check(noteIdFromLink(QStringLiteral("https://app.forkmesh.com/notes/") + kId,
+                         hosts) == kId,
+          "the published page link opens the note in the app");
+    check(noteIdFromLink(QStringLiteral("https://app.forkmesh.com/notes/") + kId +
+                             QStringLiteral("/"),
+                         hosts) == kId,
+          "a published page link with a trailing slash opens the note");
+    check(noteIdFromLink(QStringLiteral("https://elsewhere.example/notes/") + kId,
                          hosts)
               .isEmpty(),
-          "the public page is not a dashboard link");
+          "a published page on another host is not opened in the app");
+    check(noteIdFromLink(QStringLiteral("https://app.forkmesh.com/notes/") + kId +
+                             QStringLiteral("/extra"),
+                         hosts)
+              .isEmpty(),
+          "a longer path under /notes/ is not a note");
     check(noteIdFromLink(
               QStringLiteral("https://app.forkmesh.com/dashboard/notes"), hosts)
               .isEmpty(),
@@ -98,6 +112,32 @@ void testWebLinks()
               hosts)
               .isEmpty(),
           "a link with credentials is refused");
+}
+
+void testCommentLinks()
+{
+    const QString cid = QStringLiteral("fedcba9876543210fedcba9876543210");
+    const QStringList hosts{QStringLiteral("app.forkmesh.com")};
+    const NoteLink link = trustedNoteLink(
+        QStringLiteral("https://app.forkmesh.com/dashboard/notes?note=") + kId +
+            "&comment=" + cid.toUpper(),
+        hosts);
+    check(link.id == kId && link.comment == cid,
+          "a mention link carries the comment to open");
+    check(trustedNoteLink(QStringLiteral("https://app.forkmesh.com/dashboard/"
+                                         "notes?note=") +
+                              kId + "&comment=nope",
+                          hosts)
+                  .comment.isEmpty(),
+          "a malformed comment id is ignored but the note still opens");
+    check(trustedNoteLink(QStringLiteral("https://elsewhere.example/dashboard/"
+                                         "notes?note=") +
+                              kId + "&comment=" + cid,
+                          hosts)
+              .id.isEmpty(),
+          "a comment link to another host is not trusted");
+    check(parseNoteLink(QStringLiteral("forkmesh://note/") + kId).comment.isEmpty(),
+          "an app link has no comment");
 }
 
 void testBuiltLinks()
@@ -300,17 +340,224 @@ void testConflict()
 
 }
 
+qint64 localMs(int year, int month, int day, int hour, int minute)
+{
+    return QDateTime(QDate(year, month, day), QTime(hour, minute))
+        .toMSecsSinceEpoch();
+}
+
+void testListRow()
+{
+    const QDateTime now(QDate(2026, 10, 31), QTime(18, 0));
+    check(noteEditStamp(localMs(2026, 10, 31, 15, 14), now) ==
+              QStringLiteral("Today 3:14 PM"),
+          "an edit today reads Today and the time");
+    check(noteEditStamp(localMs(2026, 10, 30, 9, 2), now) ==
+              QStringLiteral("Yesterday 9:02 AM"),
+          "an edit yesterday reads Yesterday and the time");
+    check(noteEditStamp(localMs(2026, 10, 29, 15, 14), now) ==
+              QStringLiteral("Oct 29, 3:14 PM"),
+          "an older edit this year shows the date and time");
+    check(noteEditStamp(localMs(2025, 10, 29, 15, 14), now) ==
+              QStringLiteral("Oct 29, 2025"),
+          "an edit in an earlier year shows the date with the year");
+    check(noteEditStamp(localMs(2026, 1, 1, 0, 5), now) ==
+              QStringLiteral("Jan 1, 12:05 AM"),
+          "midnight reads 12 AM");
+    check(noteEditStamp(0, now).isEmpty(), "no edit time gives no stamp");
+    check(noteLastEditLabel(localMs(2026, 10, 31, 15, 14), QStringLiteral("ana"),
+                            QStringLiteral("me"), now) ==
+              QStringLiteral("Today 3:14 PM · by ana"),
+          "someone else's edit is named");
+    check(noteLastEditLabel(localMs(2026, 10, 31, 15, 14), QStringLiteral("Me"),
+                            QStringLiteral("me"), now) ==
+              QStringLiteral("Today 3:14 PM"),
+          "your own edit is not named");
+    check(noteLastEditTooltip(localMs(2026, 10, 29, 15, 14), QStringLiteral("ana"),
+                              QStringLiteral("me")) ==
+              QStringLiteral("Last edited Thursday, October 29, 2026, 3:14 PM by ana"),
+          "the tooltip has the full date and time");
+
+    check(noteStorageBadge(QStringLiteral("local")) == QStringLiteral("Local") &&
+              noteStorageBadge(QStringLiteral("cloud")) == QStringLiteral("Cloud") &&
+              noteStorageBadge(QStringLiteral("both")) ==
+                  QStringLiteral("Local + cloud"),
+          "storage badges");
+    const QJsonArray shares{
+        QJsonObject{{QStringLiteral("type"), QStringLiteral("user")},
+                    {QStringLiteral("name"), QStringLiteral("ana")}},
+        QJsonObject{{QStringLiteral("type"), QStringLiteral("organization")},
+                    {QStringLiteral("name"), QStringLiteral("acme")}},
+        QJsonObject{{QStringLiteral("name"), QString()}}};
+    check(noteVisibilityBadge(QJsonObject{{QStringLiteral("visibility"),
+                                           QStringLiteral("public")}},
+                              true) == QStringLiteral("Public"),
+          "a published note is Public");
+    check(noteVisibilityBadge(QJsonObject{{QStringLiteral("shares"), shares}}, true) ==
+              QStringLiteral("Shared"),
+          "a note shared with someone is Shared");
+    check(noteVisibilityBadge(QJsonObject{}, true) == QStringLiteral("Private") &&
+              noteVisibilityBadge(QJsonObject{{QStringLiteral("shares"), shares}},
+                                  false) == QStringLiteral("Private"),
+          "an unshared or not-yet-synced note is Private");
+    const QList<NoteSharePerson> people = noteSharePeople(shares);
+    check(people.size() == 2 && !people.at(0).organization &&
+              people.at(1).organization,
+          "share avatars know organizations, nameless shares are skipped");
+    check(noteShareOverflow(3).isEmpty() && noteShareOverflow(5) == QStringLiteral("+2"),
+          "three avatars, then +N");
+
+    const QJsonObject unread{{QStringLiteral("unread"), true}};
+    check(noteUnread(unread, QStringLiteral("cloud")) &&
+              noteUnread(unread, QStringLiteral("both")),
+          "cloud and Local + cloud notes follow the cloud's unread flag");
+    check(!noteUnread(unread, QStringLiteral("local")),
+          "local-only notes are never unread");
+    check(noteUnread(QJsonObject{{QStringLiteral("unreadComments"), 2}},
+                     QStringLiteral("cloud")),
+          "new comments make a note unread");
+    const QJsonObject read = noteMarkedRead(
+        QJsonObject{{QStringLiteral("unread"), true},
+                    {QStringLiteral("unreadComments"), 3}},
+        42);
+    check(!noteUnread(read, QStringLiteral("cloud")) &&
+              read.value(QStringLiteral("myLastViewedAt")).toDouble() == 42,
+          "opening a note clears unread locally at once");
+    const QJsonObject kept = noteKeepFreshness(
+        QJsonObject{{QStringLiteral("id"), kId}},
+        QJsonObject{{QStringLiteral("openComments"), 4},
+                    {QStringLiteral("lastEditedBy"), QStringLiteral("ana")}},
+        QStringLiteral("me"));
+    check(kept.value(QStringLiteral("openComments")).toInt() == 4 &&
+              kept.value(QStringLiteral("lastEditedBy")).toString() ==
+                  QStringLiteral("me"),
+          "a save keeps the comment count and makes you the last editor");
+    const QJsonArray access{
+        QJsonObject{{QStringLiteral("type"), QStringLiteral("user")},
+                    {QStringLiteral("name"), QStringLiteral("ana")},
+                    {QStringLiteral("role"), QStringLiteral("editor")}},
+        QJsonObject{{QStringLiteral("type"), QStringLiteral("organization")},
+                    {QStringLiteral("name"), QStringLiteral("acme")},
+                    {QStringLiteral("role"), QStringLiteral("viewer")}}};
+    check(noteAccessHeader(QStringLiteral("owner"), access, QStringLiteral("Shared"),
+                           QStringLiteral("Cloud"), localMs(2026, 10, 29, 15, 14),
+                           QStringLiteral("ana"), QStringLiteral("me")) ==
+              QStringList({QStringLiteral("You own this note"),
+                           QStringLiteral("Shared with ana (can edit), acme "
+                                          "(organization, can view)"),
+                           QStringLiteral("Shared · Cloud"),
+                           QStringLiteral("Last edited Thursday, October 29, "
+                                          "2026, 3:14 PM by ana")}),
+          "the row menu header names your access, the people, the badges and "
+          "the last edit");
+    check(noteRoleLine(QStringLiteral("editor")) == QStringLiteral("You can edit") &&
+              noteRoleLine(QStringLiteral("viewer")) == QStringLiteral("View only"),
+          "editors and viewers are told what they can do");
+    check(noteAccessHeader(QStringLiteral("owner"), {}, QStringLiteral("Private"),
+                           QStringLiteral("Local"), 0, {}, {}) ==
+              QStringList({QStringLiteral("You own this note"),
+                           QStringLiteral("Not shared"),
+                           QStringLiteral("Private · Local")}),
+          "a note nobody else has, with no edit time, has three lines");
+    check(noteCommentCountLabel(1) == QStringLiteral("1 open comment") &&
+              noteCommentCountLabel(3) == QStringLiteral("3 open comments"),
+          "comment count wording");
+}
+
+void testAiEdit()
+{
+    const QString prompt = noteAiEditPrompt(QStringLiteral("  Trip \n plan "),
+                                            QStringLiteral("- tent\n- stove"),
+                                            QStringLiteral(" make it a checklist "));
+    check(prompt.contains(QStringLiteral("Instruction:\nmake it a checklist\n")) &&
+              prompt.contains(QStringLiteral("NOTE TITLE: Trip plan\n")) &&
+              prompt.contains(QStringLiteral(
+                  "-----BEGIN NOTE-----\n- tent\n- stove\n-----END NOTE-----")),
+          "the prompt carries the instruction, the title and the whole body");
+
+    NoteAiEdit edit = parseNoteAiEdit(QStringLiteral(
+        "```json\n{\"title\": \" Trip  plan \", \"markdown\": \"- [ ] tent\\n- [ ] stove\"}\n```"));
+    check(edit.ok() && edit.title == QStringLiteral("Trip plan") &&
+              edit.markdown == QStringLiteral("- [ ] tent\n- [ ] stove"),
+          "a fenced JSON answer is read, the title simplified");
+    edit = parseNoteAiEdit(QStringLiteral("Here you go: {\"markdown\": \"\"} done"));
+    check(edit.ok() && edit.title.isEmpty() && edit.markdown.isEmpty(),
+          "text around the object is ignored, an emptied body is allowed");
+    check(!parseNoteAiEdit(QStringLiteral("I changed the note for you.")).ok(),
+          "an answer without JSON is refused");
+    check(!parseNoteAiEdit(QStringLiteral("{\"title\": \"x\"}")).ok(),
+          "an answer without markdown is refused");
+    check(!parseNoteAiEdit(QStringLiteral("{\"markdown\": 3}")).ok(),
+          "a markdown that is not text is refused");
+    check(!parseNoteAiEdit(QStringLiteral("{\"markdown\": \"a\"")).ok(),
+          "a cut-off answer is refused");
+    check(parseNoteAiEdit(QStringLiteral("{\"title\": \"") + QString(300, QLatin1Char('t')) +
+                          QStringLiteral("\", \"markdown\": \"a\"}"))
+                  .title.size() == 200,
+          "a long title is cut to 200 characters");
+}
+
+void testAiSelection()
+{
+    const QList<NoteAiSelectionAction> &actions = noteAiSelectionActions();
+    check(actions.size() == 9 && actions.first().id == QStringLiteral("clean-up") &&
+              actions.at(1).label == QStringLiteral("Check grammar"),
+          "the quick actions start with Clean up and Check grammar");
+
+    const QString markdown = QStringLiteral("Intro.\n\n  this are rong \n\nEnd.");
+    const NoteTextRange range = noteTrimmedRange(markdown, 25, 6);
+    check(markdown.mid(range.start, range.end - range.start) ==
+              QStringLiteral("this are rong"),
+          "a selection drops surrounding whitespace, whichever way it was made");
+    check(noteTrimmedRange(markdown, 7, 10).isEmpty(),
+          "a selection of only whitespace is empty");
+    check(noteTrimmedRange(markdown, -4, 999).start == 0 &&
+              noteTrimmedRange(markdown, -4, 999).end == int(markdown.size()),
+          "out-of-range ends are clamped");
+
+    const QString prompt = noteAiSelectionPrompt(
+        QStringLiteral("Draft"), markdown, range, QStringLiteral(" fix %1 grammar "));
+    check(prompt.contains(QStringLiteral("Instruction:\nfix %1 grammar\n")) &&
+              prompt.contains(QStringLiteral(
+                  "-----BEGIN SELECTION-----\nthis are rong\n-----END SELECTION-----")) &&
+              prompt.contains(QStringLiteral("-----BEGIN TEXT BEFORE-----\nIntro.\n\n  \n")) &&
+              prompt.contains(QStringLiteral("-----BEGIN TEXT AFTER-----\n \n\nEnd.\n")),
+          "the prompt carries the instruction, the selection and its context");
+    const QString longNote = QString(2000, QLatin1Char('a')) + QStringLiteral("XY") +
+                             QString(2000, QLatin1Char('b'));
+    const QString cut = noteAiSelectionPrompt(QString(), longNote, {2000, 2002},
+                                              QStringLiteral("x"));
+    check(cut.count(QLatin1Char('a')) <= kNoteAiSelectionContext + 20 &&
+              cut.count(QLatin1Char('b')) <= kNoteAiSelectionContext + 20,
+          "context around the selection is limited");
+
+    NoteAiSelectionEdit edit = parseNoteAiSelection(
+        QStringLiteral("```json\n{\"text\": \" This is right. \"}\n```"));
+    check(edit.ok() && edit.text == QStringLiteral("This is right."),
+          "a fenced JSON answer is read and trimmed");
+    check(!parseNoteAiSelection(QStringLiteral("This is right.")).ok(),
+          "an answer without JSON is refused");
+    check(!parseNoteAiSelection(QStringLiteral("{\"text\": \"  \"}")).ok(),
+          "an empty rewrite is refused");
+    check(!parseNoteAiSelection(QStringLiteral("{\"markdown\": \"a\"}")).ok(),
+          "an answer without text is refused");
+}
+
 int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
+    testAiEdit();
+    testAiSelection();
     testAppLinks();
     testWebLinks();
+    testCommentLinks();
     testBuiltLinks();
     testConversationRefs();
     testExport();
     testShareHelpers();
     testFilters();
     testConflict();
+    testListRow();
     if (failures == 0)
         std::puts("note tools: all checks passed");
     return failures == 0 ? 0 : 1;

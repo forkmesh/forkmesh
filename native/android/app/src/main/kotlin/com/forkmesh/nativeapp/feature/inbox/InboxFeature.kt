@@ -1,11 +1,13 @@
 package com.forkmesh.nativeapp.feature.inbox
 
+import android.app.KeyguardManager
 import android.app.Notification
 import android.app.PendingIntent
 import android.app.RemoteInput
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.graphics.drawable.Icon
 import com.forkmesh.nativeapp.App
 import com.forkmesh.nativeapp.MainActivity
@@ -69,6 +71,7 @@ object InboxFeature {
     const val EXTRA_NOTIFICATION_TAG = "fmTag"
     const val EXTRA_NOTIFICATION_ID = "fmId"
     const val REMOTE_INPUT_KEY = "fmText"
+    const val UNLOCK_FIRST = "Unlock your phone, then try that notification action again."
 
     private val unreadState = MutableStateFlow(-1)
     private val pendingApprovalsState = MutableStateFlow(0)
@@ -218,6 +221,7 @@ object InboxFeature {
             number = ping.meta.int("number"),
             channel = ping.meta.str("channel"),
             runId = ping.meta.str("runId"),
+            head = ping.meta.str("head"),
         )
     }
 
@@ -229,12 +233,14 @@ object InboxFeature {
             val pending = if (action.opensApp) {
                 PendingIntent.getActivity(context, code, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
             } else {
-                PendingIntent.getBroadcast(context, code, intent, PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+                val mutability = if (action.isTextInput) PendingIntent.FLAG_MUTABLE else PendingIntent.FLAG_IMMUTABLE
+                PendingIntent.getBroadcast(context, code, intent, mutability or PendingIntent.FLAG_UPDATE_CURRENT)
             }
             val built = Notification.Action.Builder(Icon.createWithResource(context, R.drawable.ic_stat_ping), action.title, pending)
             if (action.isTextInput) {
                 built.addRemoteInput(RemoteInput.Builder(REMOTE_INPUT_KEY).setLabel(action.title).build())
             }
+            if (action.requiresAuthentication && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) built.setAuthenticationRequired(true)
             builder.addAction(built.build())
         }
         if (payload.category.isTimeSensitive) builder.setCategory(Notification.CATEGORY_REMINDER)
@@ -289,6 +295,10 @@ object InboxFeature {
             is NotificationCommand.Approve -> NavigationFeature.open(Route.Approval("${command.sessionId}/${command.approvalId}"))
             is NotificationCommand.Merge -> NavigationFeature.open(Route.Agent(command.sessionId))
             is NotificationCommand.ApprovePull -> NavigationFeature.open(Route.Pull(command.repo, command.number, com.forkmesh.nativeapp.navigation.PullTab.Conversation))
+            is NotificationCommand.ApproveChecks -> {
+                com.forkmesh.nativeapp.feature.code.review.PendingChecksApproval.request(command)
+                NavigationFeature.open(Route.Pull(command.repo, command.number, com.forkmesh.nativeapp.navigation.PullTab.Checks))
+            }
             else -> runInBackground(command)
         }
     }
@@ -351,6 +361,11 @@ class NotificationActionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != InboxFeature.ACTION_NOTIFICATION) return
         if (!IntentTokens.carries(context, intent)) return
+        val locked = context.getSystemService(KeyguardManager::class.java)?.isDeviceLocked == true
+        if (locked && NotificationActionId.of(intent.getStringExtra(InboxFeature.EXTRA_ACTION))?.requiresAuthentication == true) {
+            InboxFeature.reportActionProblem(InboxFeature.UNLOCK_FIRST)
+            return
+        }
         val payload = InboxFeature.payloadFromIntent(intent)
         val text = RemoteInput.getResultsFromIntent(intent)?.getCharSequence(InboxFeature.REMOTE_INPUT_KEY)?.toString()
         val command = NotificationActionRouter.command(intent.getStringExtra(InboxFeature.EXTRA_ACTION), payload, text)

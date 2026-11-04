@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -82,24 +83,27 @@ object PermissionsIntro {
 fun PermissionsIntroPage(onContinue: () -> Unit, onSkip: () -> Unit) {
     val enter = FmOnboarding.ENTER_MS
     Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-        Column(
-            Modifier.weight(1f).widthIn(max = 520.dp).fillMaxWidth().verticalScroll(rememberScrollState())
-                .padding(horizontal = 28.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            PermissionsHeroCard(
-                Modifier.padding(top = FmSpace.x3).fmReveal(enter, rise = 26.dp, scale = 0.96f),
-            )
-            FmRevealTitle(PermissionPacing.titleLines, Modifier.padding(top = FmSpace.x5), delayMs = enter + 120)
-            FmRevealLine(
-                PermissionPacing.FOOTNOTE,
-                Modifier.padding(top = FmSpace.x3),
-                style = Fm.text.bodySmall,
-                color = FmOnboarding.secondaryText,
-                textAlign = TextAlign.Center,
-                delayMs = enter + 420,
-                durationMs = 600,
-            )
+        BoxWithConstraints(Modifier.weight(1f).widthIn(max = 520.dp).fillMaxWidth()) {
+            val compact = maxHeight < heroFullHeight
+            Column(
+                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 28.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                PermissionsHeroCard(
+                    compact,
+                    Modifier.padding(top = FmSpace.x3).fmReveal(enter, rise = 26.dp, scale = 0.96f),
+                )
+                FmRevealTitle(PermissionPacing.titleLines, Modifier.padding(top = FmSpace.x5), delayMs = enter + 120)
+                FmRevealLine(
+                    PermissionPacing.FOOTNOTE,
+                    Modifier.padding(top = FmSpace.x3),
+                    style = Fm.text.bodySmall,
+                    color = FmOnboarding.secondaryText,
+                    textAlign = TextAlign.Center,
+                    delayMs = enter + 420,
+                    durationMs = 600,
+                )
+            }
         }
         Column(
             Modifier.widthIn(max = 520.dp).fillMaxWidth().padding(horizontal = 28.dp).padding(top = FmSpace.x3),
@@ -120,17 +124,19 @@ fun PermissionsIntroPage(onContinue: () -> Unit, onSkip: () -> Unit) {
     }
 }
 
+private val heroFullHeight = 600.dp
+
 private val heroBand = Brush.linearGradient(
     listOf(Color(0xFF5B6CFF), Color(0xFF8E8BFF), Color(0xFFC39BF2), Color(0xFF7FE3D8)),
 )
 
 @Composable
-private fun PermissionsHeroCard(modifier: Modifier = Modifier) {
+private fun PermissionsHeroCard(compact: Boolean, modifier: Modifier = Modifier) {
     val enter = FmOnboarding.ENTER_MS
     val still = Fm.reducedMotion
     var asked by remember { mutableIntStateOf(if (still) 0 else PermissionPacing.reasons.size) }
-    LaunchedEffect(still) {
-        if (still) return@LaunchedEffect
+    LaunchedEffect(still, compact) {
+        if (still || compact) return@LaunchedEffect
         delay((enter + 500).toLong())
         while (asked > 0) {
             asked -= 1
@@ -152,13 +158,15 @@ private fun PermissionsHeroCard(modifier: Modifier = Modifier) {
             .border(1.dp, FmOnboarding.hairline, shape)
             .padding(5.dp),
     ) {
-        HeroTop()
+        if (!compact) HeroTop()
         Column(
             Modifier.fillMaxWidth().background(heroBand, RoundedCornerShape(22.dp)).padding(5.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            HeroStrip()
-            HeroCounter(asked)
+            if (!compact) {
+                HeroStrip()
+                HeroCounter(asked)
+            }
             HeroList()
         }
     }

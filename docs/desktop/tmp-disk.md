@@ -1,16 +1,16 @@
 # Desktop: the TMP fast disk and slow USB links
 
-Part of [the desktop docs](README.md).
+How the desktop moves agent scratch, ccache and Action sandboxes onto an internal disk labelled `TMP`, keeps it clean and shows it on the Debug panel, and how it warns about a fast drive on a slow USB link.
+
+Part of [Desktop](README.md).
 
 ## Why
 
 A box that runs ForkMesh from an external USB SSD sends every agent build,
-ccache write and Action sandbox through that cable. On 2026-10-24 that was what
-froze a workstation: the system disk was a 10 Gbps SanDisk plugged into the
-board's internal USB 2.0 hub, linked at 480 Mbps, and its link reset under the
-write load of parallel C++ builds until the whole box stopped. A spare internal
-disk gives those throwaway writes somewhere fast to go, and a drive on the
-wrong port should be pointed out rather than found in a kernel log.
+ccache write and Action sandbox through that cable; a fast drive on a USB 2.0
+link can reset under parallel C++ builds and freeze the whole box. A spare
+internal disk gives those throwaway writes somewhere fast to go, and a drive
+on the wrong port should be pointed out rather than found in a kernel log.
 
 ## The TMP disk
 
@@ -94,7 +94,7 @@ At startup and then hourly, `cleanUnused()` removes:
 
 The Action sandbox sweep (`ActionRunner::reclaimSandboxes`) already runs on
 whatever `sandboxDir()` returns. The node deploy agent looks for Deploy nodes runs
-in both sandbox folders ([auto-deploy](../deploy/auto-deploy.md#where-the-agent-finds-runs)). Every delete goes through
+in both sandbox folders ([auto-deploy](../operations/auto-deploy.md#where-the-agent-finds-runs)). Every delete goes through
 `safedelete::removeTree` with the folder's own parent.
 
 #### A live run's sandbox is locked, not just claimed
@@ -102,16 +102,12 @@ in both sandbox folders ([auto-deploy](../deploy/auto-deploy.md#where-the-agent-
 Every ForkMesh process that opens a main window turns the TMP disk on and, when
 it loads the Actions history, sweeps `actions/sandbox` for trees older than
 five minutes. That includes the tray, a desktop an agent starts and each
-`forkmesh-window-tests` run. All of them share the one folder. A run used to be
-protected only by a claim in the memory of the process running it, so any other
-process saw a live run's tree as abandoned and deleted it mid-build.
-Desktop client CI tests runs #8324, #8330, #8340 and #8344 (2026-10-25) died
-this way part-way through compiling `forkmesh-window-tests`. Their logs show
-`Cannot create temporary file in /tmp/: No such file or directory`: gcc falls
-back to `/tmp` once `$TMPDIR` under `/workspace` is gone, and finds that
-deleted too. One run also lost `/workspace/desktop/cmake/forkmesh-compile-gate.sh`.
+`forkmesh-window-tests` run, all sharing the one folder, so an in-memory claim
+is not enough: another process would delete a live run's tree mid-build (the
+symptom is gcc's `Cannot create temporary file in /tmp/: No such file or
+directory`).
 
-A run now takes a `flock` on its `forkmesh-run-<id>-<ms>` folder as soon as
+A run takes a `flock` on its `forkmesh-run-<id>-<ms>` folder as soon as
 it creates it (`lockSandboxTree` in `ActionRunner.cpp`) and holds it until
 `cleanupWorktree()` or the runner's destructor. `reclaimSandboxes` and
 `removeUnclaimedSandbox` (the Cleanup page) skip a tree whose lock another open
@@ -119,20 +115,14 @@ descriptor holds. The lock belongs to the descriptor, so a node that crashes
 or is killed releases it, and its tree is reclaimed as before.
 
 The lock only protects a run when both sides have it, and the runner and the
-sweeper are often different builds. Runs #8358, #8362 and #8366 died the same
-way after the lock landed. The node's tray and headless desktop had been built
-at 17:06, before the lock, so their runs took none. Two `forkmesh-window-tests
---package-only` processes from another agent's worktree had been running since
-17:28, built from a branch without the lock check. A test binary from any
-older branch still sweeps the shared folder, however carefully the current
-code locks. So `fastDiskEnabled()` is always false in a `FORKMESH_WINDOW_TESTS`
-build. A window test never turns the real TMP disk on: its Actions sandboxes,
+sweeper are often different builds (a test binary from an older branch still
+sweeps the shared folder). So `fastDiskEnabled()` is always false in a
+`FORKMESH_WINDOW_TESTS` build. A window test never turns the real TMP disk on: its Actions sandboxes,
 caches and scratch stay under the test's own data folder, and its startup sweep
 and hourly scratch clean never reach the shared disk. It also never offers the
 `pkexec` boot-mount prompt. The main window test checks that
-`fastdisk::activeRoot()` stays empty.
-Builds from before this change keep sweeping until they are gone. After
-updating, restart the node's desktop so its runs take the lock.
+`fastdisk::activeRoot()` stays empty. After updating, restart the node's
+desktop so its runs take the lock.
 
 ### Erasing it
 
@@ -202,7 +192,7 @@ The notice then picks one case:
 | Free fast port known to be USB-C, or with a trusted place | Names it ("the free 10 Gbps USB-C port on the back, lower right") |
 | Free fast ports, socket unknown | Counts them; if they all sit on a different controller from the drive's (an add-on chip such as the ASMedia ASM3142 on many Intel boards), says that controller usually drives the rear USB-C port and the red or teal USB-A port beside it |
 | Every fast port taken | Names what is using them |
-| No port information | The old generic advice |
+| No port information | Generic advice to use a faster port |
 
 The drive's own port speed ("Its port only does 5 Gbps") is shown so the user
 can see the port, not the drive, is the limit.

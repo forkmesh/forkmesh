@@ -65,7 +65,7 @@ struct ChatChannelSidebar: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 if onSearch != nil || onCompose != nil || onClose != nil {
-                    jumpBar.padding(.bottom, FmSpace.x3)
+                    jumpBar.genieKeepsClear().padding(.bottom, FmSpace.x3)
                 }
                 recentSection(directRows, people: people, online: memberGroups.filter(\.online).count).padding(.bottom, FmSpace.x4)
                 if !hub.workspace.starred.isEmpty {
@@ -92,8 +92,12 @@ struct ChatChannelSidebar: View {
                 }
                 directMessages(directRows)
                 if !memberGroups.isEmpty {
-                    sectionTitle("People", count: memberGroups.count)
-                        .padding(.top, FmSpace.x4)
+                    sectionTitle("People", count: memberGroups.count) {
+                        if hub.recentConversations(limit: ChatChannelSidebar.recentLimit, directRows: directRows).isEmpty {
+                            onlineButton(memberGroups.filter(\.online).count)
+                        }
+                    }
+                    .padding(.top, FmSpace.x4)
                     card {
                         ForEach(memberGroups) { (group: MemberGroup) in
                             ChatMemberRow(
@@ -277,7 +281,6 @@ struct ChatChannelSidebar: View {
             .padding(FmSpace.x1)
             .background(
                 FmRoundedShape(radius: FmRadius.lg).fill(cardFill)
-                    .shadow(color: Color.black.opacity(fm.dark ? 0 : 0.05), radius: 5, y: 2)
             )
             .overlay(FmRoundedShape(radius: FmRadius.lg).stroke(fm.border.opacity(fm.wallpaper ? 0.35 : 0.6), lineWidth: 0.5))
     }
@@ -287,16 +290,14 @@ struct ChatChannelSidebar: View {
     }
 
     private func sectionTitle<Trailing: View>(_ title: String, count: Int, @ViewBuilder trailing: () -> Trailing) -> some View {
-        HStack(spacing: FmSpace.x2) {
-            Text(title.uppercased())
-                .fmText(.labelMedium, color: fm.textSecondary, tracking: 0.6)
+        HStack(alignment: .firstTextBaseline, spacing: FmSpace.x1 + 2) {
+            Text(title)
+                .fmText(.labelLarge, color: fm.textSecondary)
                 .lineLimit(1)
+                .accessibilityAddTraits(.isHeader)
             if count > 0 {
                 Text("\(count)")
-                    .fmText(.labelSmall, color: fm.textTertiary, tabular: true)
-                    .padding(.horizontal, 7)
-                    .frame(minHeight: 18)
-                    .background(Capsule().fill(fm.textPrimary.opacity(0.08)))
+                    .fmText(.bodyLarge, color: fm.textTertiary, height: FmType.leadingTight, tabular: true)
             }
             Spacer(minLength: 0)
             trailing()
@@ -309,8 +310,8 @@ struct ChatChannelSidebar: View {
         _ directRows: [ChatDirectRow], people: [String: ChatDirectRow], online: Int
     ) -> some View {
         let recent: [String] = hub.recentConversations(limit: ChatChannelSidebar.recentLimit, directRows: directRows)
-        sectionTitle("Recent", count: 0) { onlineButton(online) }
         if !recent.isEmpty {
+            sectionTitle("Recent", count: 0) { onlineButton(online) }
             card {
                 ForEach(recent, id: \.self) { (conversation: String) in
                     if ChatHub.isPersonConversation(conversation) || conversation == meshConversation {
@@ -407,6 +408,10 @@ struct ChatChannelSidebar: View {
                         conversationTile(row.conversation, direct: row)
                     }
                 }
+            } else {
+                Text("No messages yet. Tap + to start one.")
+                    .fmText(.bodyMedium, color: fm.textTertiary)
+                    .padding(.horizontal, FmSpace.x2)
             }
         }
     }
@@ -428,6 +433,7 @@ struct ChatChannelSidebar: View {
             count: hub.workspace.isMuted(conversation) ? 0 : (row?.unread ?? 0), online: row?.online,
             preview: preview?.text ?? hub.listFallback(conversation), time: preview.map { hub.listTimeLabel($0) } ?? "",
             quiet: preview == nil, avatar: person ? (row?.name ?? String(title.drop(while: { $0 == "@" }))) : nil)
+            .textSelection(.disabled)
             .contextMenu {
                 conversationMenu(conversation)
                 if person || conversation == meshConversation {
@@ -493,6 +499,7 @@ struct ChatChannelSidebar: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .textSelection(.disabled)
         .contextMenu {
             if !row.automatic {
                 Button(action: {
@@ -519,6 +526,7 @@ struct ChatChannelSidebar: View {
             draft: hub.workspace.hasDraft(channel) && hub.currentConversation != channel,
             preview: preview?.text ?? hub.listFallback(channel), time: preview.map { hub.listTimeLabel($0) } ?? "",
             quiet: preview == nil)
+            .textSelection(.disabled)
             .contextMenu {
                 conversationMenu(channel)
                 Button(action: { moving = channel }) { Label("Move to group", systemImage: "folder") }
@@ -762,28 +770,20 @@ struct ChatMemberRow: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: FmSpace.x3) {
-            Button(action: onProfile) {
-                ZStack(alignment: .bottomTrailing) {
-                    MessagesPersonAvatar(name: group.name, size: ChatChannelTile.leadingSize)
-                    PresenceDot(online: group.online, away: away, size: 10)
-                        .overlay { Circle().strokeBorder(fm.bgRaised, lineWidth: 1.5) }
-                        .offset(x: 2, y: 2)
-                }
-                .frame(width: ChatChannelTile.leadingSize, height: ChatChannelTile.leadingSize)
-                .frame(minWidth: 44, minHeight: 44)
-                .contentShape(Rectangle())
+            if visitor {
+                avatar
+            } else {
+                Button(action: onProfile) { avatar }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(group.name)'s profile")
             }
-            .buttonStyle(.plain)
-            .disabled(visitor)
-            .accessibilityLabel("\(group.name)'s profile")
-            Button(action: { onTap?() }) {
-                details
-                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                    .contentShape(Rectangle())
+            if let onTap = onTap {
+                Button(action: onTap) { detailsBlock }
+                    .buttonStyle(.plain)
+                    .accessibilityHint(group.isSelf ? "" : "Opens your direct messages with \(group.name)")
+            } else {
+                detailsBlock
             }
-            .buttonStyle(.plain)
-            .disabled(onTap == nil)
-            .accessibilityHint(group.isSelf ? "" : "Opens your direct messages with \(group.name)")
         }
         .padding(.horizontal, FmSpace.x2)
         .padding(.vertical, FmSpace.x2)
@@ -791,6 +791,7 @@ struct ChatMemberRow: View {
         .background(selected ? fm.accentSubtle : Color.clear)
         .clipShape(FmRoundedShape(radius: FmRadius.md))
         .contentShape(Rectangle())
+        .textSelection(.disabled)
         .contextMenu {
             if !group.isSelf && !visitor {
                 Button(action: onProfile) { Label("View profile", systemImage: "person.crop.circle") }
@@ -801,11 +802,29 @@ struct ChatMemberRow: View {
         }
     }
 
+    private var avatar: some View {
+        ZStack(alignment: .bottomTrailing) {
+            MessagesPersonAvatar(name: group.name, size: ChatChannelTile.leadingSize)
+            PresenceDot(online: group.online, away: away, size: 10)
+                .overlay { Circle().strokeBorder(fm.bgRaised, lineWidth: 1.5) }
+                .offset(x: 2, y: 2)
+        }
+        .frame(width: ChatChannelTile.leadingSize, height: ChatChannelTile.leadingSize)
+        .frame(minWidth: 44, minHeight: 44)
+        .contentShape(Rectangle())
+    }
+
+    private var detailsBlock: some View {
+        details
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .contentShape(Rectangle())
+    }
+
     private var details: some View {
         VStack(alignment: .leading, spacing: 1) {
             HStack(spacing: 4) {
                 Text(group.isSelf ? "\(group.name) (you)" : group.name)
-                    .fmText(.bodyLarge, color: selected ? fm.textPrimary : fm.textSecondary,
+                    .fmText(.bodyLarge, color: fm.textPrimary,
                             weight: selected ? FmType.emphasis : FmType.regular)
                     .lineLimit(1)
                 UserStatusEmoji(status: group.userStatus, size: FmType.body)

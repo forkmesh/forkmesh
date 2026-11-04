@@ -1,5 +1,6 @@
 #include "SessionSidePanels.h"
 
+#include "ChatLinkText.h"
 #include "DesignTokens.h"
 #include "DesktopUi.h"
 
@@ -22,7 +23,7 @@
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QPainter>
-#include <QProgressBar>
+#include <QPainterPath>
 #include <QPushButton>
 #include <QScrollBar>
 #include <QSettings>
@@ -41,8 +42,9 @@ constexpr char kHiddenSetting[] = "sessions/panelHidden";
 constexpr char kCollapsedSetting[] = "sessions/panelCollapsed";
 constexpr char kMime[] = "application/x-forkmesh-session-panel";
 constexpr int kVisibleRows = 8;
-constexpr int kEnvironmentRows = 5;
-constexpr int kContextRows = 6;
+constexpr int kEnvironmentRows = 6;
+constexpr int kContextRows = 5;
+constexpr int kSessionRows = 7;
 constexpr int kChangesRows = 4;
 
 class ElidedLabel : public QLabel
@@ -105,27 +107,72 @@ protected:
     }
 };
 
-enum class Swatch { Used, Free, Input, Output, Turns, Cost };
+enum class Swatch { Messages, ToolUse, Memory, System, Free, Session };
 
 QColor swatchColor(Swatch swatch)
 {
     const bool dark = currentThemeIsDark();
     switch (swatch) {
-    case Swatch::Used:
+    case Swatch::Messages:
         return Theme::color(Theme::Role::Accent);
-    case Swatch::Free:
-        return Theme::color(Theme::Role::BorderStrong);
-    case Swatch::Input:
+    case Swatch::ToolUse:
         return QColor(dark ? QStringLiteral("#f0883e") : QStringLiteral("#d1661f"));
-    case Swatch::Output:
+    case Swatch::Memory:
         return QColor(dark ? QStringLiteral("#3fb9a7") : QStringLiteral("#1a8f7f"));
-    case Swatch::Turns:
-        return QColor(dark ? QStringLiteral("#a371f7") : QStringLiteral("#8250df"));
-    case Swatch::Cost:
-        return QColor(dark ? QStringLiteral("#d29922") : QStringLiteral("#b07d0a"));
+    case Swatch::System:
+        return QColor(dark ? QStringLiteral("#db61a2") : QStringLiteral("#bf3989"));
+    case Swatch::Free:
+        return Theme::color(Theme::Role::SurfaceActive);
+    case Swatch::Session:
+        return Theme::color(Theme::Role::BorderStrong);
     }
     return QColor();
 }
+
+class ContextBar : public QWidget
+{
+public:
+    using QWidget::QWidget;
+
+    void setSegments(const QList<QPair<qint64, QColor>> &segments, qint64 total)
+    {
+        m_segments = segments;
+        m_total = total;
+        update();
+    }
+
+    QSize sizeHint() const override { return QSize(120, 4); }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        const QRectF track = QRectF(rect());
+        const qreal radius = track.height() / 2.0;
+        QPainterPath clip;
+        clip.addRoundedRect(track, radius, radius);
+        painter.setClipPath(clip);
+        painter.fillRect(track, Theme::color(Theme::Role::SurfaceActive));
+        if (m_total <= 0)
+            return;
+        qreal x = track.left();
+        for (const auto &segment : m_segments) {
+            if (segment.first <= 0)
+                continue;
+            const qreal width = track.width() * qreal(segment.first) / qreal(m_total);
+            if (width <= 0.0)
+                continue;
+            painter.fillRect(QRectF(x, track.top(), qMax<qreal>(1.0, width - 2.0), track.height()),
+                             segment.second);
+            x += width;
+        }
+    }
+
+private:
+    QList<QPair<qint64, QColor>> m_segments;
+    qint64 m_total = 0;
+};
 
 QString shareText(qint64 part, qint64 whole)
 {
@@ -170,7 +217,7 @@ QString cardTitle(const QString &key)
         {QStringLiteral("subsessions"), QStringLiteral("Sub-sessions")},
         {QStringLiteral("outputs"), QStringLiteral("Outputs")},
         {QStringLiteral("sources"), QStringLiteral("Sources")},
-        {QStringLiteral("background"), QStringLiteral("Background")},
+        {QStringLiteral("background"), QStringLiteral("Background tasks")},
         {QStringLiteral("changes"), QStringLiteral("Changes")},
         {QStringLiteral("context"), QStringLiteral("Context")},
         {QStringLiteral("environment"), QStringLiteral("Environment")},
@@ -234,8 +281,8 @@ SessionSidePanels::SessionSidePanels(QWidget *parent) : QScrollArea(parent)
     m_inner->setAcceptDrops(true);
     m_inner->installEventFilter(this);
     m_layout = new QVBoxLayout(m_inner);
-    m_layout->setContentsMargins(10, 10, 10, 10);
-    m_layout->setSpacing(8);
+    m_layout->setContentsMargins(16, 0, 16, 12);
+    m_layout->setSpacing(0);
 
     for (const QString &key : sessioninsights::defaultCardOrder())
         makeCard(key, cardTitle(key), cardHint(key));
@@ -247,15 +294,15 @@ SessionSidePanels::SessionSidePanels(QWidget *parent) : QScrollArea(parent)
     m_remoteRow->setObjectName(QStringLiteral("sessionsDetailRow"));
     m_remoteRow->setFixedHeight(30);
     auto *remoteLayout = new QHBoxLayout(m_remoteRow);
-    remoteLayout->setContentsMargins(8, 0, 8, 0);
+    remoteLayout->setContentsMargins(0, 0, 0, 0);
     remoteLayout->setSpacing(10);
     auto *remoteIcon = new QLabel(m_remoteRow);
-    setPanelIcon(remoteIcon, QStringLiteral("device-mobile"), 14);
-    auto *remoteText = new QLabel(QStringLiteral("Remote control"), m_remoteRow);
+    setPanelIcon(remoteIcon, QStringLiteral("device-mobile"), 16);
+    auto *remoteText = new QLabel(QStringLiteral("Phone remote control"), m_remoteRow);
     remoteText->setObjectName(QStringLiteral("sessionsDetailText"));
     m_remoteSwitch = new RemoteSwitch(m_remoteRow);
     m_remoteSwitch->setObjectName(QStringLiteral("sessionsRemoteSwitch"));
-    m_remoteSwitch->setAccessibleName(QStringLiteral("Remote control"));
+    m_remoteSwitch->setAccessibleName(QStringLiteral("Phone remote control"));
     m_remoteSwitch->setToolTip(QStringLiteral("Let your paired phone follow and steer this "
                                               "desktop's sessions"));
     remoteLayout->addWidget(remoteIcon);
@@ -266,7 +313,7 @@ SessionSidePanels::SessionSidePanels(QWidget *parent) : QScrollArea(parent)
     m_remoteStatus->setObjectName(QStringLiteral("sessionsRemoteStatus"));
     m_remoteStatus->setTextFormat(Qt::RichText);
     m_remoteStatus->setWordWrap(true);
-    m_remoteStatus->setContentsMargins(32, 0, 8, 4);
+    m_remoteStatus->setContentsMargins(26, 0, 0, 4);
     m_remoteStatus->setTextInteractionFlags(Qt::LinksAccessibleByMouse |
                                             Qt::LinksAccessibleByKeyboard);
     env.body->layout()->addWidget(m_remoteStatus);
@@ -283,8 +330,8 @@ SessionSidePanels::SessionSidePanels(QWidget *parent) : QScrollArea(parent)
     m_contextBarRow = new QWidget(context.body);
     m_contextBarRow->setObjectName(QStringLiteral("sessionsDetailRow"));
     auto *barLayout = new QVBoxLayout(m_contextBarRow);
-    barLayout->setContentsMargins(8, 0, 8, 8);
-    barLayout->setSpacing(6);
+    barLayout->setContentsMargins(0, 2, 0, 8);
+    barLayout->setSpacing(8);
     auto *summary = new QHBoxLayout;
     summary->setContentsMargins(0, 0, 0, 0);
     m_contextUsed = new QLabel(m_contextBarRow);
@@ -295,20 +342,74 @@ SessionSidePanels::SessionSidePanels(QWidget *parent) : QScrollArea(parent)
     summary->addStretch(1);
     summary->addWidget(m_contextWindow);
     barLayout->addLayout(summary);
-    m_contextBar = new QProgressBar(m_contextBarRow);
+    m_contextBar = new ContextBar(m_contextBarRow);
     m_contextBar->setObjectName(QStringLiteral("sessionsContextBar"));
-    m_contextBar->setTextVisible(false);
-    m_contextBar->setRange(0, 1000);
-    m_contextBar->setFixedHeight(6);
+    m_contextBar->setFixedHeight(4);
     barLayout->addWidget(m_contextBar);
     context.body->layout()->addWidget(m_contextBarRow);
     for (int row = 0; row < kContextRows; ++row)
         addRow(context);
+    m_contextGap = new QWidget(context.body);
+    m_contextGap->setObjectName(QStringLiteral("sessionsDetailRow"));
+    m_contextGap->setFixedHeight(10);
+    context.body->layout()->addWidget(m_contextGap);
+    for (int row = 0; row < kSessionRows; ++row)
+        addRow(context);
+    m_memoryToggle = new QPushButton(context.body);
+    m_memoryToggle->setObjectName(QStringLiteral("sessionsMemoryToggle"));
+    m_memoryToggle->setCursor(Qt::PointingHandCursor);
+    m_memoryToggle->setFixedHeight(24);
+    m_memoryToggle->setAccessibleName(QStringLiteral("Memory files"));
+    m_memoryToggle->setToolTip(QStringLiteral("CLAUDE.md, AGENTS.md and auto memory files the "
+                                              "agent loads at the start of the session"));
+    auto *memoryLayout = new QHBoxLayout(m_memoryToggle);
+    memoryLayout->setContentsMargins(0, 0, 0, 0);
+    memoryLayout->setSpacing(10);
+    m_memoryChevron = new QLabel(m_memoryToggle);
+    m_memoryChevron->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+    setPanelIcon(m_memoryChevron, QStringLiteral("chevron-right"), 10);
+    auto *memoryText = new QLabel(QStringLiteral("Memory files"), m_memoryToggle);
+    memoryText->setObjectName(QStringLiteral("sessionsDetailText"));
+    memoryText->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+    m_memoryCount = new QLabel(m_memoryToggle);
+    m_memoryCount->setObjectName(QStringLiteral("sessionsDetailCount"));
+    m_memoryCount->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+    memoryLayout->addWidget(m_memoryChevron);
+    memoryLayout->addWidget(memoryText, 1);
+    memoryLayout->addWidget(m_memoryCount);
+    context.body->layout()->addWidget(m_memoryToggle);
+    m_memoryList = new QWidget(context.body);
+    m_memoryList->setObjectName(QStringLiteral("sessionsDetailBody"));
+    auto *memoryListLayout = new QVBoxLayout(m_memoryList);
+    memoryListLayout->setContentsMargins(20, 0, 0, 0);
+    memoryListLayout->setSpacing(0);
+    m_memoryList->hide();
+    context.body->layout()->addWidget(m_memoryList);
+    QObject::connect(m_memoryToggle, &QPushButton::clicked, this, [this] {
+        m_memoryOpen = !m_memoryOpen;
+        refreshMemory();
+    });
 
     Card &changes = m_cards[QStringLiteral("changes")];
     changes.meta->setTextFormat(Qt::RichText);
     for (int row = 0; row < kChangesRows; ++row)
         addRow(changes);
+    changes.rows.first().trailing->setTextFormat(Qt::RichText);
+    m_commitButton = new QPushButton(QStringLiteral("Commit changes"), changes.rows.at(1).row);
+    m_commitButton->setObjectName(QStringLiteral("sessionsCommitButton"));
+    m_commitButton->setCursor(Qt::PointingHandCursor);
+    m_commitButton->setToolTip(QStringLiteral("Commit every uncommitted file in this session's "
+                                              "worktree to its branch"));
+    m_commitButton->hide();
+    changes.rows.at(1).row->layout()->addWidget(m_commitButton);
+    QObject::connect(m_commitButton, &QPushButton::clicked, this, [this] {
+        if (m_commit)
+            m_commit();
+    });
+
+    m_elapsedTimer = new QTimer(this);
+    m_elapsedTimer->setSingleShot(true);
+    QObject::connect(m_elapsedTimer, &QTimer::timeout, this, [this] { refreshBackground(); });
 
     m_layout->addStretch(1);
     setWidget(m_inner);
@@ -327,7 +428,7 @@ SessionSidePanels::Card &SessionSidePanels::makeCard(const QString &key, const Q
     card.frame->setProperty("sessionsPanel", key);
     card.frame->setAttribute(Qt::WA_StyledBackground, true);
     auto *layout = new QVBoxLayout(card.frame);
-    layout->setContentsMargins(0, 0, 0, 6);
+    layout->setContentsMargins(0, 0, 0, 12);
     layout->setSpacing(0);
     card.head = new QPushButton(card.frame);
     card.head->setObjectName(QStringLiteral("sessionsDetailHeader"));
@@ -341,7 +442,7 @@ SessionSidePanels::Card &SessionSidePanels::makeCard(const QString &key, const Q
     card.head->setContextMenuPolicy(Qt::DefaultContextMenu);
     card.head->installEventFilter(this);
     auto *headLayout = new QHBoxLayout(card.head);
-    headLayout->setContentsMargins(14, 0, 14, 0);
+    headLayout->setContentsMargins(0, 0, 0, 0);
     headLayout->setSpacing(6);
     auto *titleLabel = new QLabel(title, card.head);
     titleLabel->setObjectName(QStringLiteral("sessionsDetailTitle"));
@@ -359,12 +460,12 @@ SessionSidePanels::Card &SessionSidePanels::makeCard(const QString &key, const Q
     card.body = new QWidget(card.frame);
     card.body->setObjectName(QStringLiteral("sessionsDetailBody"));
     auto *bodyLayout = new QVBoxLayout(card.body);
-    bodyLayout->setContentsMargins(6, 0, 6, 0);
+    bodyLayout->setContentsMargins(0, 0, 0, 0);
     bodyLayout->setSpacing(0);
     card.hint = new QLabel(hint, card.body);
     card.hint->setObjectName(QStringLiteral("sessionsDetailHint"));
     card.hint->setWordWrap(true);
-    card.hint->setContentsMargins(8, 2, 8, 6);
+    card.hint->setContentsMargins(0, 0, 0, 2);
     bodyLayout->addWidget(card.hint);
     layout->addWidget(card.head);
     layout->addWidget(card.body);
@@ -379,13 +480,24 @@ SessionSidePanels::Card &SessionSidePanels::makeCard(const QString &key, const Q
 
 SessionSidePanels::Row &SessionSidePanels::addRow(Card &card)
 {
+    const Row row = makeRow(card.body, card.key == QLatin1String("subsessions"),
+                            card.key == QLatin1String("context") ? 24 : 32);
+    auto *body = qobject_cast<QVBoxLayout *>(card.body->layout());
+    const int at = card.more ? body->indexOf(card.more) : body->count();
+    body->insertWidget(at, row.row);
+    card.rows.append(row);
+    return card.rows.last();
+}
+
+SessionSidePanels::Row SessionSidePanels::makeRow(QWidget *parent, bool stop, int height)
+{
     Row row;
-    row.row = new QWidget(card.body);
+    row.row = new QWidget(parent);
     row.row->setObjectName(QStringLiteral("sessionsDetailRow"));
-    row.row->setFixedHeight(30);
+    row.row->setFixedHeight(height);
     row.row->installEventFilter(this);
     auto *layout = new QHBoxLayout(row.row);
-    layout->setContentsMargins(8, 0, 8, 0);
+    layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(10);
     row.swatch = new QLabel(row.row);
     row.swatch->setObjectName(QStringLiteral("sessionsDetailSwatch"));
@@ -415,7 +527,7 @@ SessionSidePanels::Row &SessionSidePanels::addRow(Card &card)
     row.share->setAttribute(Qt::WA_TransparentForMouseEvents, true);
     row.share->hide();
     layout->addWidget(row.share);
-    if (card.key == QLatin1String("subsessions")) {
+    if (stop) {
         row.stop = new QToolButton(row.row);
         row.stop->setObjectName(QStringLiteral("sessionsSubSessionStop"));
         row.stop->setText(QStringLiteral("Stop"));
@@ -430,11 +542,7 @@ SessionSidePanels::Row &SessionSidePanels::addRow(Card &card)
                 m_stopSubSession(task);
         });
     }
-    auto *body = qobject_cast<QVBoxLayout *>(card.body->layout());
-    const int at = card.more ? body->indexOf(card.more) : body->count();
-    body->insertWidget(at, row.row);
-    card.rows.append(row);
-    return card.rows.last();
+    return row;
 }
 
 void SessionSidePanels::setRow(const Row &row, const Item &item)
@@ -445,7 +553,7 @@ void SessionSidePanels::setRow(const Row &row, const Item &item)
     if (row.swatch) {
         row.swatch->setVisible(item.swatch.isValid());
         if (item.swatch.isValid()) {
-            const QString style = QStringLiteral("background-color:%1;border-radius:3px;")
+            const QString style = QStringLiteral("background-color:%1;border-radius:2px;")
                                       .arg(item.swatch.name());
             if (row.swatch->styleSheet() != style)
                 row.swatch->setStyleSheet(style);
@@ -459,7 +567,7 @@ void SessionSidePanels::setRow(const Row &row, const Item &item)
         row.icon->hide();
     } else {
         if (row.icon->property("forkmeshOcticon").toString() != item.icon)
-            setPanelIcon(row.icon, item.icon, 14);
+            setPanelIcon(row.icon, item.icon, 16);
         row.icon->show();
     }
     if (row.text->text() != item.text)
@@ -471,7 +579,7 @@ void SessionSidePanels::setRow(const Row &row, const Item &item)
     row.row->setCursor(item.open.isEmpty() ? Qt::ArrowCursor : Qt::PointingHandCursor);
 }
 
-void SessionSidePanels::fillFixed(Card &card, const QList<Item> &items, const QString &meta)
+bool SessionSidePanels::fillFixed(Card &card, const QList<Item> &items, const QString &meta)
 {
     bool any = false;
     for (int index = 0; index < card.rows.size(); ++index) {
@@ -483,6 +591,16 @@ void SessionSidePanels::fillFixed(Card &card, const QList<Item> &items, const QS
         card.meta->setText(meta);
     if (card.hint)
         card.hint->setVisible(!any);
+    setCardEmpty(card, !any);
+    return any;
+}
+
+void SessionSidePanels::setCardEmpty(Card &card, bool empty)
+{
+    if (card.empty == empty)
+        return;
+    card.empty = empty;
+    applyVisibility();
 }
 
 void SessionSidePanels::fillList(Card &card, const QList<Item> &items, const QString &meta)
@@ -496,6 +614,7 @@ void SessionSidePanels::fillList(Card &card, const QList<Item> &items, const QSt
         card.meta->setText(meta);
     if (card.hint)
         card.hint->setVisible(items.isEmpty());
+    setCardEmpty(card, items.isEmpty());
     const bool needMore = items.size() > kVisibleRows;
     if (needMore && !card.more) {
         card.more = new QPushButton(card.body);
@@ -551,7 +670,7 @@ void SessionSidePanels::refreshActivity()
         QList<Item> items;
         for (const si::Entry &entry : m_collector.outputs()) {
             Item item;
-            item.icon = entry.icon;
+            item.icon = QStringLiteral("code");
             item.text = entry.label;
             item.trailing = entry.created ? QStringLiteral("new")
                                           : lineStats(entry.added, entry.removed);
@@ -579,26 +698,7 @@ void SessionSidePanels::refreshActivity()
         }
         fillList(card, items, items.isEmpty() ? QString() : QString::number(items.size()));
     }
-    {
-        Card &card = m_cards[QStringLiteral("background")];
-        QList<Item> items;
-        for (const si::Background &task : m_collector.background()) {
-            Item item;
-            item.icon = task.kind == QLatin1String("agent") ? QStringLiteral("smart-toy")
-                                                            : QStringLiteral("terminal");
-            item.text = task.label;
-            item.trailing = statusLabel(task.status);
-            item.tip = QStringLiteral("%1 · %2")
-                           .arg(task.kind == QLatin1String("agent") ? QStringLiteral("Subagent")
-                                                                    : QStringLiteral("Background shell"),
-                                statusLabel(task.status));
-            items << item;
-        }
-        const int running = m_collector.runningBackground();
-        fillList(card, items,
-                 running > 0 ? QStringLiteral("%1 running").arg(running)
-                             : items.isEmpty() ? QString() : QString::number(items.size()));
-    }
+    refreshBackground();
     {
         Card &card = m_cards[QStringLiteral("tools")];
         QList<Item> items;
@@ -618,100 +718,243 @@ void SessionSidePanels::refreshActivity()
     }
 }
 
+void SessionSidePanels::refreshBackground()
+{
+    namespace si = sessioninsights;
+    Card &card = m_cards[QStringLiteral("background")];
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    qint64 nextTick = -1;
+    QList<Item> items;
+    QStringList finished;
+    for (const si::Background &task : m_collector.background()) {
+        if (task.status == QLatin1String("completed") || task.status == QLatin1String("stopped")) {
+            finished << task.label;
+            continue;
+        }
+        const bool timed = task.running() && task.startedMs > 0 && task.startedMs <= now;
+        if (timed) {
+            const qint64 age = now - task.startedMs;
+            const qint64 wait = age < 60000 ? 1000 - age % 1000 : 60000 - age % 60000;
+            nextTick = nextTick < 0 ? wait : qMin(nextTick, wait);
+        }
+        Item item;
+        item.icon = task.kind == QLatin1String("agent") ? QStringLiteral("smart-toy")
+                                                        : QStringLiteral("terminal");
+        item.text = task.label;
+        item.trailing = timed ? si::elapsedText(now - task.startedMs) : statusLabel(task.status);
+        item.tip = QStringLiteral("%1 · %2")
+                       .arg(task.kind == QLatin1String("agent") ? QStringLiteral("Subagent")
+                                                                : QStringLiteral("Background shell"),
+                            timed ? QStringLiteral("running since %1")
+                                        .arg(QDateTime::fromMSecsSinceEpoch(task.startedMs)
+                                                 .toString(QStringLiteral("HH:mm")))
+                                  : statusLabel(task.status));
+        items << item;
+    }
+    if (!finished.isEmpty())
+        items << Item{QStringLiteral("check-circle"),
+                      QStringLiteral("%1 finished").arg(finished.size()), QString(),
+                      finished.mid(0, 20).join(QLatin1Char('\n')), QString()};
+    const int running = m_collector.runningBackground();
+    fillList(card, items,
+             running > 0 ? QStringLiteral("%1 running").arg(running)
+             : items.isEmpty()
+                 ? QString()
+                 : QString::number(int(m_collector.background().size())));
+    if (!m_elapsedTimer)
+        return;
+    if (nextTick < 0 || !isVisible())
+        m_elapsedTimer->stop();
+    else
+        m_elapsedTimer->start(int(nextTick) + 20);
+}
+
 void SessionSidePanels::refreshDetails()
 {
     const Details &d = m_details;
     {
         Card &env = m_cards[QStringLiteral("environment")];
+        Item claudeRemote;
+        if (!d.claudeRemote.isEmpty()) {
+            const bool set = d.claudeRemote != QLatin1String("default");
+            claudeRemote.icon = QStringLiteral("broadcast");
+            claudeRemote.text = QStringLiteral("Claude Remote Control");
+            claudeRemote.trailing = d.claudeRemote == QLatin1String("on")    ? QStringLiteral("On")
+                                    : d.claudeRemote == QLatin1String("off") ? QStringLiteral("Off")
+                                                                             : QStringLiteral("Default");
+            claudeRemote.tip =
+                set ? QStringLiteral("Claude Code's \"Enable Remote Control for all sessions\" "
+                                     "is %1 (remoteControlAtStartup in %2). Change it with "
+                                     "/config in Claude Code.")
+                          .arg(claudeRemote.trailing.toLower(), homePath(d.claudeRemoteSource))
+                    : QStringLiteral("Claude Code's \"Enable Remote Control for all sessions\" "
+                                     "is not set, so Claude Code uses its own default. Change "
+                                     "it with /config in Claude Code, or start it for one "
+                                     "session with /remote-control.");
+        }
+        const QString shownPath = homePath(d.path);
+        const QString folder = QFileInfo(shownPath).fileName().isEmpty()
+                                   ? shownPath
+                                   : QFileInfo(shownPath).fileName();
+        const QString parentName = QFileInfo(QFileInfo(shownPath).path()).fileName();
+        const QString folderParent = folder == shownPath || parentName.isEmpty()
+                                         ? QString()
+                                         : QStringLiteral("· %1").arg(parentName);
         fillFixed(env,
                   {{d.machineIcon, d.machine, d.machineNote, QString(), QString()},
-                   {QStringLiteral("file-directory"), homePath(d.path), QString(), d.pathFull,
+                   {QStringLiteral("file-directory"), folder, folderParent, d.pathFull,
                     QFileInfo(d.pathFull).isDir() ? d.pathFull : QString()},
                    {QStringLiteral("git-branch"), d.branch, d.branchNote, d.branch, QString()},
                    {QStringLiteral("smart-toy"), d.agent, QString(), QString(), QString()},
                    {QStringLiteral("shield-check"),
                     d.mode.isEmpty() ? QString() : QStringLiteral("%1 mode").arg(d.mode),
-                    QString(), QString(), QString()}},
+                    QString(), QString(), QString()},
+                   claudeRemote},
                   QString());
+        setCardEmpty(env, false);
     }
     {
+        namespace si = sessioninsights;
         Card &context = m_cards[QStringLiteral("context")];
-        const bool hasWindow = d.contextWindow > 0;
+        const si::ContextUse &use = m_collector.context();
+        refreshMemory();
+        qint64 memory = 0;
+        for (const si::MemoryFile &file : std::as_const(m_memoryFiles))
+            memory += file.tokens;
+        const qint64 measured = use.latest > 0 ? use.latest : d.contextUsed;
+        const qint64 window = si::contextWindowFor(measured, d.contextWindow, use.model);
+        const bool hasWindow = window > 0;
+        const si::ContextSplit split = si::splitContext(use, measured, window, memory);
         if (m_contextBarRow)
             m_contextBarRow->setVisible(hasWindow);
-        const qint64 used = qBound<qint64>(0, d.contextUsed, qMax<qint64>(0, d.contextWindow));
-        const qint64 room = qMax<qint64>(0, d.contextWindow - used);
-        const int percent = hasWindow ? qRound(used * 100.0 / d.contextWindow) : 0;
+        const int percent = hasWindow ? qRound(split.used * 100.0 / window) : 0;
         const QString level = percent >= 95   ? QStringLiteral("full")
                               : percent >= 80 ? QStringLiteral("high")
                                               : QString();
-        if (m_contextBar && hasWindow) {
-            m_contextBar->setValue(int(used * 1000 / d.contextWindow));
-            if (m_contextBar->property("sessionsLevel").toString() != level) {
-                m_contextBar->setProperty("sessionsLevel", level);
-                m_contextBar->style()->unpolish(m_contextBar);
-                m_contextBar->style()->polish(m_contextBar);
+        if (auto *bar = static_cast<ContextBar *>(m_contextBar.data()); bar && hasWindow)
+            bar->setSegments({{split.messages, swatchColor(Swatch::Messages)},
+                              {split.toolUse, swatchColor(Swatch::ToolUse)},
+                              {split.memory, swatchColor(Swatch::Memory)},
+                              {split.system, swatchColor(Swatch::System)}},
+                             window);
+        if (m_contextUsed) {
+            m_contextUsed->setText(hasWindow ? QStringLiteral("%1% used").arg(percent) : QString());
+            if (m_contextUsed->property("sessionsLevel").toString() != level) {
+                m_contextUsed->setProperty("sessionsLevel", level);
+                m_contextUsed->style()->unpolish(m_contextUsed);
+                m_contextUsed->style()->polish(m_contextUsed);
             }
         }
-        if (m_contextUsed)
-            m_contextUsed->setText(hasWindow ? QStringLiteral("%1% used").arg(percent) : QString());
         if (m_contextWindow)
             m_contextWindow->setText(hasWindow ? QStringLiteral("%1 / %2")
-                                                     .arg(compactCount(used),
-                                                          compactCount(d.contextWindow))
+                                                     .arg(compactCount(split.used),
+                                                          compactCount(window))
                                                : QString());
-        const QColor usedColor = level == QLatin1String("full")   ? Theme::color(Theme::Role::Danger)
-                                 : level == QLatin1String("high") ? Theme::color(Theme::Role::Warning)
-                                                                  : swatchColor(Swatch::Used);
+        const auto part = [&](const QString &label, qint64 value, const QString &tip,
+                              Swatch swatch) {
+            return Item{QString(), hasWindow && (value > 0 || swatch == Swatch::Free)
+                                       ? label
+                                       : QString(),
+                        compactCount(value), tip, QString(), swatchColor(swatch),
+                        shareText(value, window)};
+        };
         const qint64 tokens = qMax(d.totalTokens, d.promptTokens + d.completionTokens);
-        const bool split = d.promptTokens > 0 || d.completionTokens > 0;
+        const bool splitTokens = d.promptTokens > 0 || d.completionTokens > 0;
+        const QColor session = swatchColor(Swatch::Session);
         QList<Item> items;
-        items << Item{QString(), hasWindow ? QStringLiteral("Used") : QString(), compactCount(used),
-                      QStringLiteral("Tokens in the context window now"), QString(), usedColor,
-                      shareText(used, d.contextWindow)};
-        items << Item{QString(), hasWindow ? QStringLiteral("Free space") : QString(),
-                      compactCount(room),
+        items << part(QStringLiteral("Messages"), split.messages,
+                      QStringLiteral("Your prompts and the agent's replies since the last "
+                                     "compaction (estimated from their length)"),
+                      Swatch::Messages);
+        items << part(QStringLiteral("Tool calls"), split.toolUse,
+                      QStringLiteral("Tool calls and their results since the last compaction "
+                                     "(estimated from their length)"),
+                      Swatch::ToolUse);
+        items << part(QStringLiteral("Memory files"), split.memory,
+                      QStringLiteral("CLAUDE.md, AGENTS.md and auto memory (estimated from "
+                                     "their size)"),
+                      Swatch::Memory);
+        items << part(QStringLiteral("System prompt & tools"), split.system,
+                      QStringLiteral("The system prompt, tool definitions, skills and MCP "
+                                     "servers: what the first turn read before your prompt"),
+                      Swatch::System);
+        items << part(QStringLiteral("Free space"), split.free,
                       QStringLiteral("Room left in the context window before it fills"),
-                      QString(), swatchColor(Swatch::Free), shareText(room, d.contextWindow)};
-        if (split) {
+                      Swatch::Free);
+        if (splitTokens) {
             items << Item{QString(), d.promptTokens > 0 ? QStringLiteral("Input tokens") : QString(),
                           compactCount(d.promptTokens),
                           QStringLiteral("Tokens the agent read, over the whole session"),
-                          QString(), swatchColor(Swatch::Input), shareText(d.promptTokens, tokens)};
+                          QString(), session, shareText(d.promptTokens, tokens)};
             items << Item{QString(),
                           d.completionTokens > 0 ? QStringLiteral("Output tokens") : QString(),
                           compactCount(d.completionTokens),
                           QStringLiteral("Tokens the agent wrote, over the whole session"),
-                          QString(), swatchColor(Swatch::Output),
-                          shareText(d.completionTokens, tokens)};
+                          QString(), session, shareText(d.completionTokens, tokens)};
         } else {
             items << Item{QString(), d.totalTokens > 0 ? QStringLiteral("Tokens used") : QString(),
                           compactCount(d.totalTokens),
                           QStringLiteral("Tokens used over the whole session"), QString(),
-                          swatchColor(Swatch::Input), QString()};
+                          session, QString()};
             items << Item();
         }
         items << Item{QString(), d.turns > 0 ? QStringLiteral("Turns") : QString(),
-                      QString::number(d.turns), QString(), QString(), swatchColor(Swatch::Turns),
-                      QString()};
+                      QString::number(d.turns), QString(), QString(), session, QString()};
         items << Item{QString(), d.costUsd > 0.0 ? QStringLiteral("Cost") : QString(),
                       QStringLiteral("$%1").arg(d.costUsd, 0, 'f', 2), QString(), QString(),
-                      swatchColor(Swatch::Cost), QString()};
+                      session, QString()};
+        QString loaded;
+        if (use.tools >= 0)
+            loaded = use.tools == 1 ? QStringLiteral("1 tool") : QStringLiteral("%1 tools").arg(use.tools);
+        if (use.mcpServers > 0)
+            loaded += QStringLiteral(" · %1 MCP").arg(use.mcpServers);
+        items << Item{QString(), loaded.isEmpty() ? QString() : QStringLiteral("Tools loaded"),
+                      loaded, QStringLiteral("Tools and MCP servers the session started with"),
+                      QString(), session, QString()};
+        QString extras;
+        if (use.skills > 0)
+            extras = use.skills == 1 ? QStringLiteral("1 skill")
+                                     : QStringLiteral("%1 skills").arg(use.skills);
+        if (use.agents > 0)
+            extras += (extras.isEmpty() ? QString() : QStringLiteral(" · ")) +
+                      (use.agents == 1 ? QStringLiteral("1 agent")
+                                       : QStringLiteral("%1 agents").arg(use.agents));
+        items << Item{QString(), extras.isEmpty() ? QString() : QStringLiteral("Skills & agents"),
+                      extras, QStringLiteral("Skills and subagent types the session can use"),
+                      QString(), session, QString()};
+        items << Item{QString(), use.compactions > 0 ? QStringLiteral("Compacted") : QString(),
+                      use.compactions == 1 ? QStringLiteral("once")
+                                           : QStringLiteral("%1 times").arg(use.compactions),
+                      QStringLiteral("Times the conversation was summarised to free space"),
+                      QString(), session, QString()};
         fillFixed(context, items, hasWindow ? QStringLiteral("%1%").arg(percent) : QString());
+        bool sessionRows = false;
+        for (int index = kContextRows; index < items.size(); ++index)
+            sessionRows |= !items.at(index).text.isEmpty();
+        if (m_contextGap)
+            m_contextGap->setVisible(hasWindow && sessionRows);
+        const bool contextEmpty = !hasWindow && !sessionRows && m_memoryFiles.isEmpty();
         if (context.hint)
-            context.hint->setVisible(!hasWindow && tokens <= 0 && d.turns <= 0 &&
-                                     d.costUsd <= 0.0);
+            context.hint->setVisible(contextEmpty);
+        setCardEmpty(context, contextEmpty);
     }
     {
         Card &changes = m_cards[QStringLiteral("changes")];
         const bool hasStat = d.files >= 0;
+        const QString stats = hasStat && d.added >= 0 && d.removed >= 0
+                                  ? QStringLiteral("<span style=\"color:%1\">+%2</span>&nbsp;"
+                                                   "<span style=\"color:%3\">−%4</span>")
+                                        .arg(Theme::hex(Theme::Role::Success))
+                                        .arg(d.added)
+                                        .arg(Theme::hex(Theme::Role::Danger))
+                                        .arg(d.removed)
+                                  : QString();
         fillFixed(changes,
-                  {{QStringLiteral("file-diff"),
-                    !hasStat        ? QString()
-                    : d.files == 0  ? QStringLiteral("No files changed")
-                    : d.files == 1  ? QStringLiteral("1 file changed")
-                                    : QStringLiteral("%1 files changed").arg(d.files),
-                    QString(), QString(), QString()},
+                  {{QStringLiteral("diff"),
+                    !hasStat || d.files == 0 ? QString()
+                    : d.files == 1           ? QStringLiteral("1 file changed")
+                                             : QStringLiteral("%1 files changed").arg(d.files),
+                    stats, QString(), QString()},
                    {QStringLiteral("pencil"),
                     d.dirty > 0 ? QStringLiteral("%1 uncommitted").arg(d.dirty) : QString(),
                     QString(), QString(), QString()},
@@ -722,16 +965,25 @@ void SessionSidePanels::refreshDetails()
                    {QStringLiteral("alert"),
                     d.conflicted ? QStringLiteral("Conflicts with the base branch") : QString(),
                     QString(), QString(), QString()}},
-                  hasStat && d.added >= 0 && d.removed >= 0
-                      ? QStringLiteral("<span style=\"color:%1\">+%2</span>&nbsp;"
-                                       "<span style=\"color:%3\">−%4</span>")
-                            .arg(Theme::hex(Theme::Role::Success))
-                            .arg(d.added)
-                            .arg(Theme::hex(Theme::Role::Danger))
-                            .arg(d.removed)
-                      : QString());
+                  stats);
     }
+    refreshCommit();
     refreshRemote();
+}
+
+void SessionSidePanels::refreshCommit()
+{
+    if (!m_commitButton)
+        return;
+    const bool show = m_commit != nullptr && m_details.canCommit && m_details.dirty > 0;
+    if (m_commitButton->isVisibleTo(m_commitButton->parentWidget()) != show)
+        m_commitButton->setVisible(show);
+}
+
+void SessionSidePanels::setCommitAction(std::function<void()> commit)
+{
+    m_commit = std::move(commit);
+    refreshCommit();
 }
 
 void SessionSidePanels::refreshRemote()
@@ -784,6 +1036,43 @@ void SessionSidePanels::refreshRemote()
         m_remoteStatus->setText(html);
 }
 
+void SessionSidePanels::refreshMemory()
+{
+    if (!m_memoryToggle || !m_memoryList)
+        return;
+    const QString cwd = m_details.session ? m_details.pathFull : QString();
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (cwd != m_memoryCwd || now - m_memoryScannedMs > 30000) {
+        m_memoryCwd = cwd;
+        m_memoryScannedMs = now;
+        m_memoryFiles = sessioninsights::memoryFiles(cwd, QDir::homePath());
+    }
+    m_memoryToggle->setVisible(!m_memoryFiles.isEmpty());
+    if (m_memoryCount)
+        m_memoryCount->setText(QString::number(m_memoryFiles.size()));
+    const bool open = m_memoryOpen && !m_memoryFiles.isEmpty();
+    if (m_memoryChevron &&
+        m_memoryChevron->property("forkmeshOcticon").toString() !=
+            (open ? QLatin1String("chevron-down") : QLatin1String("chevron-right")))
+        setPanelIcon(m_memoryChevron,
+                     open ? QStringLiteral("chevron-down") : QStringLiteral("chevron-right"), 10);
+    m_memoryList->setVisible(open);
+    if (!open)
+        return;
+    while (m_memoryRows.size() < m_memoryFiles.size()) {
+        m_memoryRows << makeRow(m_memoryList, false, 24);
+        m_memoryList->layout()->addWidget(m_memoryRows.last().row);
+    }
+    for (int index = 0; index < m_memoryRows.size(); ++index) {
+        const sessioninsights::MemoryFile file =
+            index < m_memoryFiles.size() ? m_memoryFiles.at(index) : sessioninsights::MemoryFile();
+        setRow(m_memoryRows.at(index),
+               {file.path.isEmpty() ? QString() : QStringLiteral("file"), file.label,
+                file.path.isEmpty() ? QString() : QStringLiteral("~%1").arg(compactCount(file.tokens)),
+                homePath(file.path), file.path});
+    }
+}
+
 void SessionSidePanels::setDetails(const Details &details)
 {
     m_details = details;
@@ -813,7 +1102,7 @@ void SessionSidePanels::setSubSessions(const QList<SubSession> &subSessions, boo
             continue;
         row.row->setProperty("sessionsTask", sub.id);
         if (QLayout *layout = row.row->layout())
-            layout->setContentsMargins(8 + qBound(0, sub.depth, 4) * 14, 0, 8, 0);
+            layout->setContentsMargins(qBound(0, sub.depth, 4) * 14, 0, 0, 0);
         if (row.stop)
             row.stop->setVisible(canStop && !sub.id.isEmpty());
     }
@@ -823,6 +1112,7 @@ void SessionSidePanels::setSubSessions(const QList<SubSession> &subSessions, boo
         card.meta->setText(meta);
     if (card.hint)
         card.hint->setVisible(subSessions.isEmpty());
+    setCardEmpty(card, subSessions.isEmpty());
 }
 
 void SessionSidePanels::clearActivity()
@@ -832,6 +1122,7 @@ void SessionSidePanels::clearActivity()
     m_cursor = 0;
     m_sliceQueued = false;
     m_collector.clear();
+    m_contextRevision = 0;
     for (Card &card : m_cards)
         card.expanded = false;
     refreshActivity();
@@ -847,6 +1138,19 @@ void SessionSidePanels::replaceActivity(const QList<QJsonObject> &events)
 {
     clearActivity();
     m_queue = events;
+    scheduleSlice();
+}
+
+void SessionSidePanels::appendActivity(const QList<QJsonObject> &events, qsizetype from)
+{
+    if (from < 0 || from >= events.size())
+        return;
+    if (m_queue.isEmpty()) {
+        m_queue = events;
+        m_cursor = from;
+    } else {
+        m_queue.append(events.mid(from));
+    }
     scheduleSlice();
 }
 
@@ -881,6 +1185,10 @@ void SessionSidePanels::runSlice()
     }
     if (changed)
         refreshActivity();
+    if (m_collector.context().revision != m_contextRevision) {
+        m_contextRevision = m_collector.context().revision;
+        refreshDetails();
+    }
 }
 
 void SessionSidePanels::showEvent(QShowEvent *event)
@@ -888,6 +1196,7 @@ void SessionSidePanels::showEvent(QShowEvent *event)
     QScrollArea::showEvent(event);
     reloadLayout();
     scheduleSlice();
+    refreshBackground();
 }
 
 void SessionSidePanels::reloadLayout()
@@ -913,7 +1222,10 @@ void SessionSidePanels::reloadLayout()
 void SessionSidePanels::saveLayout() const
 {
     QSettings settings;
-    settings.setValue(QLatin1String(kOrderSetting), m_order);
+    if (sessioninsights::customCardOrder(m_order))
+        settings.setValue(QLatin1String(kOrderSetting), m_order);
+    else
+        settings.remove(QLatin1String(kOrderSetting));
     settings.setValue(QLatin1String(kHiddenSetting), QStringList(m_hidden.cbegin(), m_hidden.cend()));
     settings.setValue(QLatin1String(kCollapsedSetting),
                       QStringList(m_collapsed.cbegin(), m_collapsed.cend()));
@@ -932,7 +1244,47 @@ void SessionSidePanels::applyOrder()
         if (!card.frame)
             continue;
         m_layout->insertWidget(at++, card.frame);
-        card.frame->setVisible(!m_hidden.contains(key));
+    }
+    applyVisibility();
+}
+
+bool SessionSidePanels::cardShown(const QString &key) const
+{
+    const auto it = m_cards.constFind(key);
+    return it != m_cards.constEnd() && !it->empty && !m_hidden.contains(key);
+}
+
+int SessionSidePanels::neighbourIndex(const QString &key, int step) const
+{
+    for (qsizetype index = m_order.indexOf(key) + step; index >= 0 && index < m_order.size();
+         index += step)
+        if (cardShown(m_order.at(index)))
+            return int(index);
+    return -1;
+}
+
+void SessionSidePanels::applyVisibility()
+{
+    QString last;
+    for (const QString &key : std::as_const(m_order)) {
+        const Card &card = m_cards[key];
+        if (!card.frame)
+            continue;
+        const bool shown = cardShown(key);
+        if (card.frame->isVisibleTo(m_inner) != shown)
+            card.frame->setVisible(shown);
+        if (shown)
+            last = key;
+    }
+    for (const Card &card : std::as_const(m_cards)) {
+        if (!card.frame)
+            continue;
+        const bool isLast = card.key == last;
+        if (card.frame->property("sessionsLast").toBool() == isLast)
+            continue;
+        card.frame->setProperty("sessionsLast", isLast);
+        card.frame->style()->unpolish(card.frame);
+        card.frame->style()->polish(card.frame);
     }
 }
 
@@ -941,11 +1293,13 @@ void SessionSidePanels::applyCollapsed(Card &card)
     const bool open = !m_collapsed.contains(card.key);
     if (card.body)
         card.body->setVisible(open);
-    if (card.meta && card.key == QLatin1String("context"))
+    if (card.meta &&
+        (card.key == QLatin1String("context") || card.key == QLatin1String("changes")))
         card.meta->setVisible(!open);
-    if (card.chevron)
-        setPanelIcon(card.chevron,
-                        open ? QStringLiteral("chevron-down") : QStringLiteral("chevron-right"), 12);
+    if (card.chevron) {
+        setPanelIcon(card.chevron, QStringLiteral("chevron-right"), 12);
+        card.chevron->setVisible(!open);
+    }
 }
 
 QStringList SessionSidePanels::visibleCards() const
@@ -1012,11 +1366,12 @@ void SessionSidePanels::resetCards()
 void SessionSidePanels::cardMenu(const QString &key, const QPoint &globalPos)
 {
     QMenu menu(this);
-    const qsizetype index = m_order.indexOf(key);
+    const int above = neighbourIndex(key, -1);
+    const int below = neighbourIndex(key, 1);
     QAction *up = menu.addAction(QStringLiteral("Move up"));
-    up->setEnabled(index > 0);
+    up->setEnabled(above >= 0);
     QAction *down = menu.addAction(QStringLiteral("Move down"));
-    down->setEnabled(index >= 0 && index < m_order.size() - 1);
+    down->setEnabled(below >= 0);
     QAction *fold = menu.addAction(m_collapsed.contains(key) ? QStringLiteral("Unfold")
                                                              : QStringLiteral("Fold"));
     QAction *hide = menu.addAction(QStringLiteral("Hide %1").arg(cardTitle(key)));
@@ -1034,9 +1389,9 @@ void SessionSidePanels::cardMenu(const QString &key, const QPoint &globalPos)
     if (!chosen)
         return;
     if (chosen == up)
-        moveCard(key, int(index) - 1);
+        moveCard(key, above);
     else if (chosen == down)
-        moveCard(key, int(index) + 1);
+        moveCard(key, below);
     else if (chosen == fold)
         setCardCollapsed(key, !m_collapsed.contains(key));
     else if (chosen == hide)
@@ -1102,6 +1457,18 @@ void SessionSidePanels::startDrag(const QString &key)
     m_dragKey.clear();
     m_pressKey.clear();
     saveLayout();
+}
+
+QUrl SessionSidePanels::openTargetUrl(const QString &target)
+{
+    if (target.contains(QLatin1String("://")))
+        return ChatLinkText::externalLinkUrl(target);
+    if (!QDir::isAbsolutePath(target))
+        return {};
+    const QFileInfo info(target);
+    if (!info.exists())
+        return {};
+    return QUrl::fromLocalFile(info.isDir() ? info.absoluteFilePath() : info.absolutePath());
 }
 
 bool SessionSidePanels::eventFilter(QObject *watched, QEvent *event)
@@ -1190,10 +1557,8 @@ bool SessionSidePanels::eventFilter(QObject *watched, QEvent *event)
         const QString target = watched->property("sessionsOpen").toString();
         if (widget && mouse->button() == Qt::LeftButton && !target.isEmpty() &&
             widget->rect().contains(mouse->position().toPoint())) {
-            const QUrl url = target.contains(QLatin1String("://"))
-                                 ? QUrl(target)
-                                 : QUrl::fromLocalFile(target);
-            if (url.isLocalFile() && !QFileInfo::exists(url.toLocalFile()))
+            const QUrl url = openTargetUrl(target);
+            if (url.isEmpty())
                 return false;
             QDesktopServices::openUrl(url);
             return true;

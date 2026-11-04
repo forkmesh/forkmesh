@@ -890,7 +890,7 @@ def test_production_manifest_sets_canonical_patreon_callback_url():
     wrangler = (ROOT / "wrangler.toml").read_text(encoding="utf-8")
     env_example = (ROOT / ".env.production.example").read_text(encoding="utf-8")
     runbook = (
-        ROOT.parent / "www" / "docs" / "operations" / "patreon.md"
+        ROOT.parent / "docs" / "operations" / "patreon.md"
     ).read_text(encoding="utf-8")
 
     assert (

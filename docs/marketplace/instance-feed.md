@@ -4,26 +4,25 @@
 people on one ForkMesh instance (the local timeline, in Mastodon terms). Each
 account installs it for itself; everyone on the instance with it installed
 reads the same feed. It does not federate: the network-wide ActivityPub view
-is the separate `feed` package
-([../marketplace-usage-feed-mastodon.md](../marketplace-usage-feed-mastodon.md)).
+is the separate `feed` package ([Network Feed](#network-feed)).
+Part of [Marketplace](README.md).
 
-Every surface (Market, web page, desktop rail, iOS and Android) calls it just
-Feed, at the user's request on 2026-10-19; it was Instance Feed. The package
-id, the `/api/instance-feed` routes, `/dashboard/instance-feed`, the tables
-and the request proof keep the old name so existing installs and data carry
-over. The ActivityPub `feed` package was renamed Network Feed in the same
-change so the Market and the rail never show two packages called Feed.
+Every surface (Market, web page, desktop rail, iOS and Android) calls it Feed;
+the ActivityPub `feed` package is shown as Network
+Feed, so no two packages are called Feed. The package id, the
+`/api/instance-feed` routes, `/dashboard/instance-feed`, the tables and the
+request proof keep the old name so existing installs and data carry over.
 
 ## Code map
 
 | Path | Responsibility |
 | --- | --- |
-| `content/worker/instance_feed.py` | Worker API at `/api/instance-feed`, schema, account data hooks. |
+| `content/worker/instance_feed.py` | Server module (run by the App) for `/api/instance-feed`, schema, account data hooks. |
 | `content/web/view.html`, `content/web/page.js` | Dashboard page `/dashboard/instance-feed` (page id `instance-feed`). |
 | `content/www/post.html`, `post.js`, `post.css` | Public post page `forkmesh.com/feed?post=<id>` (`www.page` contribution `public-post`). |
 | `content/desktop/InstanceFeedFeature.{h,cpp}` | Native desktop page (`builtin:instance-feed`, `comment` rail icon). |
 | `content/desktop/tests/test_instance_feed_feature.cpp` | Qt test for the desktop page, run against a stub host. |
-| `tests/test_instance_feed.py` | Worker suite, including install and uninstall through `plugin_data`. |
+| `tests/test_instance_feed.py` | Server module suite, including install and uninstall through `plugin_data`. |
 
 ## API
 
@@ -59,11 +58,9 @@ hook that asked the registry back would recurse.
 
 An account with no install row is `unchosen`, because this package has no
 legacy install hook. The desktop keeps an existing local install and pushes
-it to the account on its next successful account refresh. This also recovers
-an install made while the desktop had Instance Feed but the instance still
-ran an older catalog: that server returns `plugin_not_found` until its App
-deployment includes the package. Updating the desktop alone cannot supply
-the server API. An explicit account uninstall is never marked `unchosen`,
+it to the account on its next successful account refresh, which also
+recovers an install made against a server whose catalog lacked the package
+(it answers `plugin_not_found` until its App deploy includes it). An explicit account uninstall is never marked `unchosen`,
 so another desktop cannot restore an intentionally removed feed.
 
 Uninstalling (and account deletion) runs `purge_account_data`, which removes
@@ -82,12 +79,11 @@ may post 30 times in ten minutes (`429 posting_too_fast`).
 ## Public links
 
 Every post can be read without signing in at `forkmesh.com/feed?post=<id>`
-(the instance's own origin on a self-hosted install), added at the user's
-request on 2026-10-23 so a post can be shared outside the dashboard. Posts
-were already readable by anyone who signed up and installed the package, so
-the link does not reveal anything new; the install note and the
-`instance.feed.write` permission now say posts are readable by anyone with the
-link. The page is `noindex`, so search engines do not list posts.
+(the instance's own origin on a self-hosted install), so a post can be shared
+outside the dashboard. Posts were already readable by anyone who signed up
+and installed the package, so the link reveals nothing new; the install note
+and the `instance.feed.write` permission say posts are readable by anyone
+with the link. The page is `noindex`.
 
 On the dashboard each post has a globe link ("View on the website", new tab)
 and a Copy link button, both using that URL. The page gets the site origin
@@ -119,7 +115,7 @@ is `accent` and an active favourite is `attention`.
 ## Desktop
 
 `InstanceFeedFeature` is a native Qt page, not a link to the dashboard. It
-calls the Worker through `NativePackageHost::request` with the request proof
+calls the server module through `NativePackageHost::request` with the request proof
 `forkmesh-instance-feed-request-v1`, so the host signs every call with the
 desktop's session. It has the same views as the web page (timeline, thread,
 profile), the same compose box (Ctrl+Enter posts) and the same actions, and
@@ -135,7 +131,7 @@ paths, so it cannot install the package itself. Installing from the desktop
 Market already pushes the install to the account
 (`MainWindow::pushAccountPackageChange`), so an account without the package
 only sees a note pointing to the Market. `openRailTile("post-<id>")` and
-`openRailTile("author-<name>")` open a thread or a profile. The Worker's
+`openRailTile("author-<name>")` open a thread or a profile. The server's
 notification links are dashboard paths (`/dashboard/instance-feed?post=<id>`),
 which the desktop's notification router does not map to native pages yet, so
 clicking one raises the window without opening the post.
@@ -149,7 +145,7 @@ is the native Compose page, registered for `Route.Kind.InstanceFeed` by
 `InstanceFeed`. Its icon is `comment`, as on the desktop rail
 (`dynamic_feed` is not in the bundled Material Icons subset).
 
-It talks to the Worker through `market/InstanceFeed.kt` in `:core` (the
+It talks to the server module through `market/InstanceFeed.kt` in `:core` (the
 account's `PackagesClient` from `MarketFeature.client()`), always off the main
 thread. The timeline, a profile (`@name`) and a thread (`Post`) are separate
 screens on the navigator stack, so the system back button walks back through
@@ -198,3 +194,7 @@ older posts"; pull down or the refresh button reloads. A route with a post id
 opens that thread with "Back to the feed". An account without the package sees
 the install note and "Open in the Market", which opens the package's Market
 page.
+
+## Network Feed
+
+Network Feed (package id `feed`) projects public ForkMesh profile updates alongside the existing signature-verified ActivityPub mention stream from World. It excludes private profiles and repositories and never turns a social mention into work automatically. On the desktop it has a native registration that opens its authenticated dashboard route; on iOS and Android it discovers the same dashboard contribution as a web surface and opens that route from the installed package.

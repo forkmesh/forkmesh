@@ -56,6 +56,8 @@ UPDATE_STATE="/var/lib/forkmesh-instance-update"
 UPDATE_REQUEST_DIR="$VAR/update"
 UPDATE_UNIT="/etc/systemd/system/forkmesh-instance-update.service"
 UPDATE_PATH_UNIT="/etc/systemd/system/forkmesh-instance-update.path"
+FOLLOW_UNIT="/etc/systemd/system/forkmesh-instance-follow.service"
+FOLLOW_TIMER="/etc/systemd/system/forkmesh-instance-follow.timer"
 PACKAGES=(ca-certificates curl git openssl python3 python3-venv python3-pip nodejs npm caddy sqlite3 iproute2 age librsvg2-bin)
 ACTIONS_PACKAGES=(git curl jq python3-venv nodejs npm build-essential unzip nftables)
 RUNNER_INSTALLER="www/public/install-runner.sh"
@@ -112,7 +114,7 @@ https://forkmesh.com/start connects to the server and runs it for you.
   bash install-instance.sh --update
 
 Options:
-  --config FILE    JSON settings (see docs/INSTANCES.md)
+  --config FILE    JSON settings (see docs/operations/instances.md)
   --config-stdin   read the settings as one base64 line on standard input
   --update         pull the latest ForkMesh source, rebuild and restart
 EOF
@@ -354,6 +356,19 @@ web_firewall = c.get("webFirewall") or ""
 if web_firewall not in ("", "open", "cloudflare"):
     sys.exit("Setting webFirewall must be open or cloudflare.")
 values["webFirewall"] = "" if web_firewall == "open" else web_firewall
+follow_url = c.get("followUrl") or ""
+if not isinstance(follow_url, str) or (follow_url and not re.fullmatch(
+        r"https://[A-Za-z0-9.-]+(:[0-9]{1,5})?/[A-Za-z0-9._/-]+", follow_url)):
+    sys.exit("Setting followUrl must be the https address of a repository.")
+follow_ref = c.get("followRef") or ""
+if not isinstance(follow_ref, str) or (follow_ref and (
+        follow_ref.startswith("-") or not re.fullmatch(r"[A-Za-z0-9._/-]{1,100}", follow_ref))):
+    sys.exit("Setting followRef must be a branch name.")
+follow_owner = c.get("followOwner") or ""
+if not isinstance(follow_owner, str) or (follow_owner and not re.fullmatch(
+        r"[A-Za-z0-9][A-Za-z0-9-]{0,38}", follow_owner)):
+    sys.exit("Setting followOwner must be an account name.")
+values["followUrl"], values["followRef"], values["followOwner"] = follow_url, follow_ref, follow_owner
 onion = c.get("onionService", False)
 if not isinstance(onion, bool):
     sys.exit("Setting onionService must be true or false.")
@@ -1342,12 +1357,11 @@ import json, sys
 keys = ["projectName", "domain", "domainProvided", "publicAddress", "adminUsername", "adminEmail",
         "ownerType", "ownerName", "mailProvider", "mailFrom", "mailgunDomain", "mailgunRegion",
         "sourceUrl", "sourceRef", "plugins", "actions", "poweredBy", "platformUrl",
-        "webFirewall", "whiteLabel", "privacyMode"]
+        "followUrl", "followRef", "followOwner", "webFirewall", "whiteLabel", "privacyMode"]
 values = dict(zip(keys, sys.argv[1:]))
-if not values["platformUrl"]:
-    del values["platformUrl"]
-if not values["webFirewall"]:
-    del values["webFirewall"]
+for optional in ("platformUrl", "webFirewall", "followUrl", "followRef", "followOwner"):
+    if not values[optional]:
+        del values[optional]
 values["poweredBy"] = values["poweredBy"] == "1"
 values["whiteLabel"] = values["whiteLabel"] == "1"
 values["domainProvided"] = values["domainProvided"] == "1"
@@ -1359,7 +1373,8 @@ print(json.dumps(values, indent=2, sort_keys=True))
 ' "$CFG_projectName" "$CFG_domain" "$CFG_domainProvided" "$CFG_publicAddress" "$CFG_adminUsername" \
     "$CFG_adminEmail" "$CFG_ownerType" "$CFG_ownerName" "$CFG_mailProvider" "$CFG_mailFrom" \
     "$CFG_mailgunDomain" "$CFG_mailgunRegion" "$CFG_sourceUrl" "$CFG_sourceRef" "$CFG_plugins" \
-    "$CFG_actions" "$CFG_poweredBy" "${CFG_platformUrl:-}" "${CFG_webFirewall:-}" \
+    "$CFG_actions" "$CFG_poweredBy" "${CFG_platformUrl:-}" \
+    "${CFG_followUrl:-}" "${CFG_followRef:-}" "${CFG_followOwner:-}" "${CFG_webFirewall:-}" \
     "${CFG_whiteLabel:-0}" "${CFG_privacyMode:-0}" "$INSTANCE_INSTALLER_VERSION" > "$INSTANCE_JSON.new"
   chmod 0640 "$INSTANCE_JSON.new"
   mv "$INSTANCE_JSON.new" "$INSTANCE_JSON"
@@ -1447,6 +1462,10 @@ write_updater() {
   install -d -m 0755 "$UPDATE_LIB"
   install -m 0700 "$SRC/tools/instance-update.sh" "$UPDATE_LIB/instance-update.sh.new"
   mv -f "$UPDATE_LIB/instance-update.sh.new" "$UPDATE_LIB/instance-update.sh"
+  if [ -f "$SRC/tools/instance_follow.py" ]; then
+    install -m 0700 "$SRC/tools/instance_follow.py" "$UPDATE_LIB/instance_follow.py.new"
+    mv -f "$UPDATE_LIB/instance_follow.py.new" "$UPDATE_LIB/instance_follow.py"
+  fi
   install -d -m 2750 -o root -g "$APP_USER" "$UPDATE_STATE"
   install -d -m 0750 -o "$APP_USER" -g "$APP_USER" "$UPDATE_REQUEST_DIR"
   cat > "$UPDATE_UNIT" <<EOF
@@ -1469,9 +1488,30 @@ Unit=forkmesh-instance-update.service
 [Install]
 WantedBy=paths.target
 EOF
+  cat > "$FOLLOW_UNIT" <<EOF
+[Unit]
+Description=Ask for a ForkMesh follow when an admin turned it on
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash $UPDATE_LIB/instance-update.sh --tick
+EOF
+  cat > "$FOLLOW_TIMER" <<EOF
+[Unit]
+Description=Hourly check whether this instance should merge the latest ForkMesh
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
   systemctl daemon-reload
   systemctl enable forkmesh-instance-update.path >/dev/null 2>&1 || true
   systemctl start forkmesh-instance-update.path >/dev/null 2>&1 || true
+  systemctl enable --now forkmesh-instance-follow.timer >/dev/null 2>&1 || true
 }
 
 start_app() {
@@ -1948,7 +1988,7 @@ daemon_rebuild_notice() {
   local state
   state="$(python3 -c 'import json, sys; print((json.load(open(sys.argv[1])).get("daemon") or {}).get("state") or "")' "$BUILD_INFO" 2>/dev/null || true)"
   if [ "$state" = "stale" ]; then
-    warn "server/ changed since the git node program was built; it keeps running the old build. Rebuild it from $(git -C "$SRC" rev-parse --short HEAD) and run the update with FORKMESH_INSTANCE_DAEMON (docs/INSTANCES.md)."
+    warn "server/ changed since the git node program was built; it keeps running the old build. Rebuild it from $(git -C "$SRC" rev-parse --short HEAD) and run the update with FORKMESH_INSTANCE_DAEMON (docs/operations/instances.md)."
   fi
 }
 
@@ -2297,7 +2337,7 @@ if [ -e "$MARKER" ]; then
   systemctl restart forkmesh-instance.service
   exit 0
 fi
-systemctl disable --now forkmesh-instance.service forkmesh-mirror-node.service forkmesh-instance-update.path >/dev/null 2>&1 || true
+systemctl disable --now forkmesh-instance.service forkmesh-mirror-node.service forkmesh-instance-update.path forkmesh-instance-follow.timer >/dev/null 2>&1 || true
 RUNNER_OWNER=""
 if [ -s "$CLEANUP_DIR/created-runner" ]; then
   RUNNER_OWNER="$(head -n 1 "$CLEANUP_DIR/created-runner")"
@@ -2333,6 +2373,8 @@ rm -f /usr/local/bin/forkmesh-mirror-node /usr/local/bin/forkmesh-actions \
   /etc/systemd/system/forkmesh-mirror-node.service \
   /etc/systemd/system/forkmesh-instance-update.service \
   /etc/systemd/system/forkmesh-instance-update.path \
+  /etc/systemd/system/forkmesh-instance-follow.service \
+  /etc/systemd/system/forkmesh-instance-follow.timer \
   /etc/systemd/system/forkmesh-instance-first-login-cleanup.service \
   /etc/systemd/system/forkmesh-instance-first-login-cleanup.timer
 systemctl disable --now forkmesh-web-firewall.timer >/dev/null 2>&1 || true

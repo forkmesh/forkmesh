@@ -1,5 +1,6 @@
 # The Genie: on-device voice assistant (native iOS)
 
+Part of the [phone apps docs](README.md).
 The Genie is an on-device assistant drawn as an animated spider that lives over
 the whole app. It listens through on-device speech recognition, works out what
 to do with a tool loop on an on-device model, asks when a request is unclear,
@@ -8,6 +9,8 @@ teaches the Genie the missing tool. The spider is also a pet whose health
 follows the user's code velocity and marketing. The desktop
 ([../desktop/genie.md](../desktop/genie.md)) and the web
 ([../www/genie-spider.md](../www/genie-spider.md)) draw the same spider.
+This page is also the change record the Genie's hand-off prompt asks agents
+to update.
 
 Most logic is in `native/ios/ForkMeshCore/Sources/FMAssistant/` (pure Swift,
 tested on Linux); views and platform glue are in
@@ -43,6 +46,8 @@ tested on Linux); views and platform glue are in
 | Suggestion mode, auto-send and pocket mode | `Features/Genie/ShellSuggestions.swift`, `Features/Genie/ShellAutoSend.swift`, `Features/Genie/ShellAutoSendReview.swift`, `FMAssistant/GenieAutoSend.swift`, `Shell/ShellPocket.swift`, `Shell/ShellMailStatus.swift` | `GenieOutreachTests`, `GenieAutoSendTests` |
 | Aquarium fish on the phone | `FMAssistant/Aquarium{Fish,Tank}.swift`, `Features/Aquarium/AquariumLayer.swift` | `AquariumTests` |
 | Spider Room, the spider in the room in AR ([../marketplace/spider-room.md](../marketplace/spider-room.md)) | `FMAssistant/RoomSpider{,Space,Acts}.swift`; `Features/SpiderRoom/SpiderRoom{Screen,Director,Body}.swift` | `RoomSpiderTests` |
+| Cloud Dragon: poses, springs, habits, rig, tail mesh, naps | `FMAssistant/CloudDragon{,Acts,Atlas,Body,Rig,Mind}.swift` | `CloudDragonTests` |
+| Cloud Dragon painter, art, director | `Features/Genie/CloudDragon{Art,Painter,Effects,Avatar,Director,Lab}.swift`, `Resources/CloudDragon/` | parse only |
 | Overlay, gestures, menu, hub | `Features/Genie/GenieSpiderLayer.swift`, `GenieCrawler.swift`, `GenieHub.swift`, `GenieBubbles.swift` | parse only |
 | Motion, avatar, window, speech, Apple engine, shell bridge | `Features/Genie/GenieMotion.swift`, `GenieAvatar.swift`, `GenieSheet.swift`, `GenieSpeechVoice.swift`, `AppleGenieEngine.swift`, `GenieShellBridge.swift` | parse only |
 
@@ -74,6 +79,78 @@ giggles on a bump. When a fresh `badge` ping celebrates, the spider says
 is absolute gravity, negated so the spider stays upright against the room;
 forward-back tilt is measured against a slowly settling rest pitch. Three hard
 jolts within 0.9 s are a shake; one softer jolt is a bump.
+
+## The Cloud Dragon
+
+A second mascot, chosen instead of the spider (`genie/mascot`, `spider` by
+default; Settings > General > Mascot or "Switch to Cloud Dragon" in the
+long-press menu; the change is live). It is the web Cloud Dragon
+(`www/public/assets/cloud-dragon/`, `docs/www/cloud-dragon.md` once that
+lands) ported to iPhone: the same
+atlas (`Resources/CloudDragon/cloud-dragon-atlas.webp` and `.json`, byte for
+byte, named so they do not clash in the flat app bundle), the same skeleton,
+springs, 20 activities, 9 habits and 7 reactions. Only drawing and plays change:
+crawling, falling, climbing, tucking, tumbling, walking on glass, keep-clear,
+hide, the menu, bubbles, voice, hints, vitals and the outreach face all run on
+the same `GenieCrawler` and `GenieHub`. If the atlas cannot load the spider is
+shown.
+
+- **One puppet.** `FMAssistant/CloudDragon*.swift` is pure Swift with no
+  SwiftUI. `DragonBody.frame(scene, atlas)` advances 38 spring values
+  (`DragonKey`, same stiffness classes and constants as the web), the staged
+  turn, the 28-segment tail chain, the limbs (stretchy one-bone IK) and returns
+  a `DragonFrame`: an ordered list of layer transforms, tail parts, props and
+  the head. The painter only draws that list, so the draw order, the tail
+  tuck (first 42% behind the body, the rest in front), planted feet moving back
+  at exactly body speed and the staged turn are unit tested.
+- **Painting.** `CloudDragonPainter` draws with `Canvas` and `GraphicsContext`:
+  each atlas layer and prop is cropped once into its own image
+  (`CloudDragonArt`), the tail is 56 textured triangles per frame (clip to the
+  triangle, apply the texture matrix, draw the column of the strip), and the
+  rest of the web's code-drawn effects (flame, confetti, steam, notes, dust,
+  smoke) are drawn in code. The canvas is three times the mascot's box so
+  effects leave it, is drawn asynchronously and takes no touches; only the
+  mascot's circle does. There is no drop shadow glow around it.
+- **Size.** 96 pt, against the spider's 92, with the same Dynamic Type and
+  pinch scaling (0.6 to 2.2).
+- **Gait.** The layer's stride phase is distance travelled divided by 11 pt
+  per half step (the spider's); the dragon rescales it to 0.171 of its own
+  size per half step, so a planted foot moves back at body speed and a
+  lifted foot swings forward. Walls and the ceiling rotate the whole avatar as
+  they do for the spider; the pointer-like inputs (hand cursor, screen focus)
+  are rotated into the dragon's own frame so its eyes point the right way.
+- **Rate.** 60 fps (display rate) while walking, flying, held, acting, reacting
+  or talking; 30 fps when idle; paused when the app is inactive. With Reduce
+  Motion it snaps to poses, draws nothing on its own and takes no plays or naps.
+- **Plays.** `GenieScreenPlayer.dragonAttempt` replaces the spider's screen
+  plays: a shuffled bag of the 20 activities (`DragonActivity.drawn`) filtered
+  by the kinds the screen scanner found (`DragonKind`), perches beside a
+  fitting element as the spider does, faces it and plays, or plays where it
+  stands when it cannot travel ("Stay put"). `CloudDragonDirector` holds the
+  play, the nap and debug cues, and keeps the layer's frame rate.
+- **Naps.** After 45 s with nothing going on (no touch, bubble, menu, hand,
+  reaction or play) it sleeps on a cloud; a touch, or anything else, wakes it
+  with a stretch (`DragonNap`). The crawler does not wander while it sleeps.
+- **Not on iPhone:** no silk (the dragon never dangles from a thread by
+  itself), no spider legs.
+- **Tricks and hand play** keep their timing and effects. `DragonTrick`
+  maps each leg, eye and mouth move onto paws, feet, lids, gaze and mouth
+  (`DragonTrick.overlay`), and the spider's stage transform (spin, hop, grow,
+  fade, hue) and emoji particles are applied to the dragon. The 30 genie
+  effects (`GenieMagic`) draw as usual.
+- **Aquarium fish** and the screen player see the dragon as the spider: they
+  read `GenieCrawler`'s position and `GenieScreenPlayer.acting`, so fish still
+  keep clear of it, ask it to wave or look, and wait while it plays.
+- **Differences from the web:** the web's 30 page interactions are not ported
+  (the web has not finished them); there is no pointer, so "pointer near"
+  becomes a touch, hand cursor or open menu; the web's idle wander and play
+  cadence is the iPhone's (5 to 13 s wander, one play every 16 to 34 s); the
+  wave every 21 s is not used; low health droops the lids; speaking moves the
+  mouth, listening perks the ears and thinking looks up.
+- **Debug.** In Debug builds `-FMDragonLab YES` signs in as a guest and reads
+  commands from `Documents/dragon-lab.txt` (`activity coffee`, `habit sneeze`,
+  `reaction cheer`, `sleep`, `wake`, `stroll x y`, `fling vx vy`, `mascot spider`
+  and others, see `CloudDragonLab`). None of it is in Release.
 
 ## Gravity, crawling and tucking away
 
@@ -159,13 +236,10 @@ picked up.
   (`GenieLandmarks.spacing(afterScanTaking:)`, 10 s to 60 s). The aquarium
   asks every 2 s (`GenieLandmarks.poll`) and gets the cached scan between
   rescans.
-- Why (2026-10-15, build 1.4.1+235): an iPhone 15 Pro Max on the Agents tab
-  logged a 100 to 140 ms main-thread hitch every 2 to 3 s with nothing in
-  flight. The 1.5 s keep-clear tick walked every UIView for bars on each tick
-  and rescanned the accessibility tree whenever 2 s had passed. Only the
-  accessibility walk was timed, so the 2% backoff never saw the bar walk, the
-  tidy-up, or the accessibility nodes SwiftUI builds when the walk asks for
-  them.
+- Why: walking every UIView for bars on each keep-clear tick and rescanning
+  the accessibility tree every 2 s caused 100 to 140 ms main-thread hitches
+  every few seconds. The whole scan (including the accessibility nodes SwiftUI
+  builds on demand) is timed, so the backoff sees its real cost.
 - **Plays** (`GenieScreenPlayer.run`): every 16 to 34 s while idle, one play
   from a shuffled bag (`GenieScreenPlay`): still plays performed from a perch
   clear of buttons (look, read, wave, point, sniff, silk thread and others),
@@ -280,18 +354,14 @@ contacted, with a tap to draft an email or a Mastodon post.
   Liquid Glass capsule) with a small email or Mastodon mark. Tap it and the
   message is written and opened in Zoho Mail (or the share sheet); the
   portrait shows the progress itself and no Spider card appears
-  (`GenieOutreachCoach.write(_:)`, 2026-10-18). The marketing-channel megaphone that used to sit
-  beside it was removed (2026-10-18): it was a second, unrelated control in a
-  slot meant for one glance. VoiceOver actions: auto-send on/off, Not now,
-  Open the CRM.
+  (`GenieOutreachCoach.write(_:)`). The slot holds only this one control.
+  VoiceOver actions: auto-send on/off, Not now, Open the CRM.
 - **Auto-send** (`ShellAutoSend`, `shell/auto_send`): touch and hold the
   portrait to turn it on or off. Turning it on sends the first email right
-  away (`tick(force: true)` skips the pace wait, 2026-10-18), and anything that
-  stops that first email (today's 100 already sent, no ForkMesh session, nobody
-  left to email, five contacts skipped in a row, or any CRM refusal) is shown
-  at once instead of waiting for the next turn. While on, the
-  portrait has an accent ring, it
-  shows the next email recipient in a CRM with Zoho Mail connected
+  away (`tick(force: true)` skips the pace wait), and anything that stops it
+  (today's 100 already sent, no ForkMesh session, nobody left to email, five
+  contacts skipped in a row, or any CRM refusal) is shown at once. While on,
+  the portrait has an accent ring, shows the next email recipient in a CRM with Zoho Mail connected
   (`outreachBest(only: .email, zohoOnly: true)`), and the app sends one email
   every 864 s, 100 a day (`GenieAutoSendPace`), through the CRM's
   `POST /outreach/auto`, the same route as **Send AI email** on the web and
@@ -307,9 +377,9 @@ contacted, with a tap to draft an email or a Mastodon post.
   the contact's fields and notes, their recent activity with us and the
   conversation so far (`marketplace/packages/crm/README.md`). Production cores
   have no host model, so on a phone without an API key or on-device model the
-  paired desktop's Claude Code or Codex writes it (2026-10-19); before that,
-  auto-send paused with "no writer on this phone gave a usable draft". With no
-  writer at all the pause now says what to set up (`GenieAutoSend.noWriter`).
+  paired desktop's Claude Code or Codex writes it
+  ([DESKTOP_AGENTS.md](DESKTOP_AGENTS.md), `agents.write`). With no writer at
+  all the pause says what to set up (`GenieAutoSend.noWriter`).
   Sending only happens while the app is open (iOS has no background slot for
   it and the CRM package has no cron); the pace is kept across launches, so
   reopening never bursts.
@@ -318,7 +388,7 @@ contacted, with a tap to draft an email or a Mastodon post.
   While auto-send is on, a ring around it drains from the last send to the
   next one (`GenieAutoSendPace.countdown`, 864 s, or until midnight once 100
   are sent), redrawn each second; it is hidden while an email is in progress.
-- **Progress on the mail mark** (`ShellMailStatus`, 2026-10-18): while an email
+- **Progress on the mail mark** (`ShellMailStatus`): while an email
   is being prepared, an arc spins around the bottom-right mark and the mark
   shows the stage: magnifying glass while picking the contact, pencil while
   the email is written, paper plane while the phone's own draft is posted,
@@ -326,20 +396,17 @@ contacted, with a tap to draft an email or a Mastodon post.
   and sends in one request, so a server-written email goes from pencil
   straight to the check. While auto-send is paused, the mark is a pause sign
   on the warning colour.
-- **Feedback without the Spider** (2026-10-18): auto-send and the tap-to-write
-  path no longer speak through `GenieHub.show(line:)`, which showed nothing
-  while the Spider was hidden. Every message (on, off, waiting and why, opened
-  in Zoho Mail, the deck link failed) is a `ShellMailStatus.say` line under the
-  top bar (`shell-mail-notice`), shown at once whether or not the Spider is on
-  screen, announced to VoiceOver, and dismissed by its close button or after
-  8 s plus reading time. Each line is also saved immediately in device-local
-  Pings, including auto-send pauses and failures. General notices at the top
-  of the shell use the same saved history. Dismissing or replacing the banner
-  does not remove its ping, and the history survives reopening the app.
-  These visible notices bypass the background-error hourly limit, redact
-  secrets, and retain the newest 50 local pings; identical notices update
-  their existing entry. Informational notices use the info colour, failures
-  the error colour. Opening Zoho from the top bar creates only one ping.
+- **Feedback without the Spider**: auto-send and tap-to-write never speak
+  through `GenieHub.show(line:)`, which shows nothing while the Spider is
+  hidden. Every message (on, off, waiting and why, opened in Zoho Mail, the
+  deck link failed) is a `ShellMailStatus.say` line under the top bar
+  (`shell-mail-notice`), announced to VoiceOver and dismissed by its close
+  button or after 8 s plus reading time. Each line is also saved at once in
+  device-local Pings, as are the shell's general notices: dismissing the
+  banner keeps the ping, the history survives relaunch, notices bypass the
+  background-error hourly limit, secrets are redacted, the newest 50 are kept,
+  and identical notices update one entry. Info notices use the info colour,
+  failures the error colour. Opening Zoho from the top bar creates one ping.
 - **Review popup** (`ShellAutoSendReview`): every sent email opens a sheet with
   recipient, sender, Zoho, the writer, subject and body. Pick 1-5 stars and,
   optionally, write a line on what to change; **Save** posts
@@ -598,7 +665,7 @@ pulsing gem, speaking moves the mouth.
 ## Android
 
 The Android app ports the spider and the outreach half of the Genie; details
-are in [ANDROID.md](ANDROID.md#28-the-genie-spider-and-outreach-sync-ledger-s047-s058).
+are in [ANDROID.md](ANDROID.md#32-the-genie-spider-and-outreach-sync-ledger-s047-s058).
 Logic is in `native/android/core/src/main/kotlin/com/forkmesh/nativeapp/genie/`
 (`GenieOutreach`, `GenieAutoSend`, `GenieCrm`, `GenieGravity`, `GenieTalk`),
 views in `native/android/app/.../feature/genie/`.

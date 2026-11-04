@@ -42,7 +42,7 @@ QT_SETTINGS = (
     ROOT.parent / "desktop" / "src" / "MainWindowSettings.cpp"
 ).read_text(encoding="utf-8")
 DOC = (
-    ROOT.parent / "www" / "docs" / "security" / "world-local-speech-bridge.md"
+    ROOT.parent / "docs" / "security" / "world-local-speech-bridge.md"
 ).read_text(encoding="utf-8")
 
 

@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -75,6 +76,7 @@ import com.forkmesh.nativeapp.chat.OfficeFrames
 import com.forkmesh.nativeapp.chat.ReactionCatalog
 import com.forkmesh.nativeapp.chat.ReactionChip
 import com.forkmesh.nativeapp.chat.messageTime
+import com.forkmesh.nativeapp.ui.kit.FmHoldArea
 import com.forkmesh.nativeapp.ui.kit.LocalFmBackdrop
 import com.forkmesh.nativeapp.ui.kit.LocalFmSolidGlass
 import com.forkmesh.nativeapp.ui.kit.fmGlass
@@ -321,14 +323,16 @@ internal fun ChatBubbleRow(
                     .weight(1f, fill = false)
                     .padding(top = if (row.reactions.isEmpty()) 0.dp else 14.dp),
             ) {
-                Box(
-                    Modifier.combinedClickable(
-                        onClick = {},
-                        onDoubleClick = actions.onDoubleTap,
-                        onLongClick = actions.onLongPress,
-                    ),
-                ) {
-                    BubbleContent(bubble, colors, life, place, photo, viewOnce)
+                FmHoldArea(actions.onLongPress != null) {
+                    Box(
+                        Modifier.combinedClickable(
+                            onClick = {},
+                            onDoubleClick = actions.onDoubleTap,
+                            onLongClick = actions.onLongPress,
+                        ),
+                    ) {
+                        BubbleContent(bubble, colors, life, place, photo, viewOnce)
+                    }
                 }
                 if (row.stickers.isNotEmpty()) {
                     ChatStickers(
@@ -592,9 +596,11 @@ private fun BubblePhoto(
         }
     }
     if (full) {
-        Dialog(onDismissRequest = { full = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-            Box(Modifier.fillMaxSize().background(Color.Black).clickable { full = false }, contentAlignment = Alignment.Center) {
-                Image(photo, contentDescription = attachment.fileName, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
+        DisableSelection {
+            Dialog(onDismissRequest = { full = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+                Box(Modifier.fillMaxSize().background(Color.Black).clickable { full = false }, contentAlignment = Alignment.Center) {
+                    Image(photo, contentDescription = attachment.fileName, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
+                }
             }
         }
     }

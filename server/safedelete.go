@@ -15,6 +15,7 @@ const (
 	deleteTree deleteAllow = iota
 	deleteOwnWorktree
 	deleteOwnClone
+	deleteJobOwned
 )
 
 var safeDeleteProjectRoots = []string{"src", "data", "config", "ssh", "state", "logs",
@@ -186,7 +187,14 @@ func safeDeleteRefusal(parent, target string, allow deleteAllow) string {
 	if !safeDeleteInside(path, base) {
 		return fmt.Sprintf("%s is not inside the expected parent %s", path, base)
 	}
-	parts := strings.Split(path, string(filepath.Separator))
+	checked := path
+	if allow == deleteJobOwned {
+		if filepath.Dir(path) != base {
+			return fmt.Sprintf("%s is not directly inside %s", path, base)
+		}
+		checked = base
+	}
+	parts := strings.Split(checked, string(filepath.Separator))
 	for index, part := range parts {
 		if part != ".git" {
 			continue
@@ -200,7 +208,7 @@ func safeDeleteRefusal(parent, target string, allow deleteAllow) string {
 		}
 	}
 	if info, err := os.Lstat(filepath.Join(path, ".git")); err == nil {
-		if info.IsDir() && allow != deleteOwnClone {
+		if info.IsDir() && allow != deleteOwnClone && allow != deleteJobOwned {
 			return fmt.Sprintf("%s is a git checkout (it has a .git folder)", path)
 		}
 		if !info.IsDir() && allow == deleteTree {
@@ -256,6 +264,10 @@ func removeOwnWorktreeUnder(parent, target string) error {
 
 func removeOwnCloneUnder(parent, target string) error {
 	return removeTreeAllowing(parent, target, deleteOwnClone)
+}
+
+func removeJobOwnedUnder(parent, target string) error {
+	return removeTreeAllowing(parent, target, deleteJobOwned)
 }
 
 func removeTreeAllowing(parent, target string, allow deleteAllow) error {

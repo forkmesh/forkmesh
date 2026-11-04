@@ -197,6 +197,51 @@ final class PerformanceReportTests: XCTestCase {
     }
 
     @MainActor
+    func testStallsSayHowMuchRanOutsideNamedSectionsAndWhereTheMainThreadWas() async {
+        let (telemetry, clock) = fixture()
+        let monitor = telemetry.monitor!
+        monitor.recordSlowEvent(
+            kind: .eventLoop, name: "ui-isolate blocked", duration: .milliseconds(352),
+            details: [
+                "sections": "shell.start 24ms", "unnamedMs": 328,
+                "mainStack": "AttributeGraph < SwiftUI < ForkMesh +0x1221c58 | SwiftUI < ForkMesh +0x1221c58",
+            ])
+        monitor.recordSlowEvent(
+            kind: .eventLoop, name: "ui-isolate blocked", duration: .milliseconds(260),
+            details: ["unnamedMs": 260, "mainStack": "libsystem_kernel.dylib < Security < ForkMesh +0x40"])
+        let text = PerformanceReport.text(telemetry: telemetry, now: clock.now, timeZone: utc)
+        XCTAssertTrue(text.contains(
+            "## Main-actor work during stalls\n2x     total 588ms max 328ms (no named section)\n"
+                + "1x     total 24ms max 24ms  shell.start\n"), text)
+        XCTAssertTrue(text.contains(
+            "## Main thread during stalls (leaf images < app frames)\n3 samples in 2 stalls\n"
+                + "1x     AttributeGraph < SwiftUI < ForkMesh +0x1221c58\n"
+                + "1x     SwiftUI < ForkMesh +0x1221c58\n"
+                + "1x     libsystem_kernel.dylib < Security < ForkMesh +0x40\n"), text)
+    }
+
+    @MainActor
+    func testTrimmingKeepsEveryMainThreadSampleRowUntilTheLastPass() async {
+        let (telemetry, clock) = fixture()
+        let monitor = telemetry.monitor!
+        for i in 0..<5 {
+            monitor.recordSlowEvent(
+                kind: .eventLoop, name: "ui-isolate blocked \(i)", duration: .milliseconds(300 + i),
+                details: [
+                    "unnamedMs": 280, "sections": .string("step.\(i) 12ms, other.\(i) 8ms"),
+                    "finishedDuring": .string("api.GET /api/thing/\(i)"),
+                    "mainStack": .string("AttributeGraph < SwiftUICore < ForkMesh +0x\(i)0"),
+                ])
+            monitor.recordSlowEvent(kind: .operation, name: "api.GET /api/thing/\(i)", duration: .milliseconds(900 + i))
+        }
+        for i in 0..<40 { telemetry.log.add(.error, "GET app.forkmesh.com/api/path\(i)x HTTP 500 in 100ms") }
+        let text = PerformanceReport.text(telemetry: telemetry, now: clock.now, timeZone: utc, limit: 2400)
+        XCTAssertTrue(text.contains("trimmed to fit"), text)
+        XCTAssertTrue(text.contains("## Main thread during stalls (leaf images < app frames)\n5 samples in 5 stalls\n"), text)
+        for i in 0..<5 { XCTAssertTrue(text.contains("1x     AttributeGraph < SwiftUICore < ForkMesh +0x\(i)0"), text) }
+    }
+
+    @MainActor
     func testStallsKeepTheirOwnSectionWhenOperationsCrowdTheReport() async {
         let (telemetry, clock) = fixture()
         let monitor = telemetry.monitor!

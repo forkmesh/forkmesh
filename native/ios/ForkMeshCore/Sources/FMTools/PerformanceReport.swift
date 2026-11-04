@@ -38,7 +38,8 @@ public enum PerformanceReport {
             Part("Stalls by screen", eventGroups(events.filter(\.isStall), lastSeen: timeZone, key: stallScreen), rank: 8),
             Part("Stalls by time since shown", eventGroups(events.filter(\.isStall), lastSeen: timeZone, key: stallMoment), rank: 8),
             Part("Slow operations by name", eventGroups(events.filter { !$0.isStall }), rank: 8),
-            Part("Main-actor work during stalls", stallSections(events), rank: 8),
+            Part("Main-actor work during stalls", stallSections(events), rank: 9),
+            Part("Main thread during stalls (leaf images < app frames)", mainStacks(events), rank: 9, keep: 1 + topRows),
             Part("In flight or finished during stalls", stallCulprits(events), rank: 7),
             Part("HTTP endpoints, last \(minutes) min", endpoints(telemetry.log, now), rank: 6),
             Part("MetricKit", metricKitLines(metricKit), rank: 8),
@@ -60,13 +61,15 @@ public enum PerformanceReport {
         var lines: [String]
         let rank: Int
         let keepsNewest: Bool
+        let keep: Int
         var trimmed = 0
 
-        init(_ title: String, _ body: String, rank: Int, keepsNewest: Bool = false) {
+        init(_ title: String, _ body: String, rank: Int, keepsNewest: Bool = false, keep: Int = 0) {
             self.title = title
             self.lines = body.isEmpty ? [] : body.components(separatedBy: "\n")
             self.rank = rank
             self.keepsNewest = keepsNewest
+            self.keep = keep
         }
 
         mutating func dropOne() {
@@ -95,7 +98,8 @@ public enum PerformanceReport {
         let order = parts.indices.filter { parts[$0].rank != headerRank }.sorted { parts[$0].rank < parts[$1].rank }
         for floor in [3, 1, 0] {
             for index in order {
-                while text.unicodeScalars.count > limit && parts[index].lines.count > floor {
+                let least = floor == 0 ? 0 : max(floor, parts[index].keep)
+                while text.unicodeScalars.count > limit && parts[index].lines.count > least {
                     parts[index].dropOne()
                     text = render(parts)
                 }
@@ -255,6 +259,13 @@ public enum PerformanceReport {
     static func stallSections(_ events: [PerformanceEvent]) -> String {
         var groups: [String: EventGroup] = [:]
         for event in events where event.isStall {
+            if let unnamed = event.details["unnamedMs"]?.intValue {
+                var group = groups[unnamedKey] ?? EventGroup(key: unnamedKey)
+                group.count += 1
+                group.totalMs += unnamed
+                group.maxMs = max(group.maxMs, unnamed)
+                groups[unnamedKey] = group
+            }
             guard let value = event.details["sections"] else { continue }
             for item in PerformanceLogText.dartText(value).components(separatedBy: ", ") {
                 guard let space = item.lastIndex(of: " "), item.hasSuffix("ms"),
@@ -274,6 +285,23 @@ public enum PerformanceReport {
         }
         if sorted.count > topRows { lines.append("... \(sorted.count - topRows) more") }
         return lines.joined(separator: "\n")
+    }
+
+    static let unnamedKey = "(no named section)"
+
+    static func mainStacks(_ events: [PerformanceEvent]) -> String {
+        var counts: [String: Int] = [:]
+        var stalls = 0
+        for event in events where event.isStall {
+            guard let value = event.details["mainStack"] else { continue }
+            stalls += 1
+            for sample in PerformanceLogText.dartText(value).components(separatedBy: " | ") where !sample.isEmpty {
+                counts[sample, default: 0] += 1
+            }
+        }
+        if counts.isEmpty { return "" }
+        let samples = counts.values.reduce(0, +)
+        return "\(samples) samples in \(stalls) stalls\n" + ranked(counts, limit: topRows, width: 160)
     }
 
     struct Endpoint {
@@ -332,9 +360,9 @@ public enum PerformanceReport {
         log.entries().prefix(logLines).reversed().map { clip($0.text(timeZone: timeZone), lineChars) }.joined(separator: "\n")
     }
 
-    static func ranked(_ counts: [String: Int], limit: Int) -> String {
+    static func ranked(_ counts: [String: Int], limit: Int, width: Int = keyChars) -> String {
         let sorted = counts.sorted { ($0.value, $1.key) > ($1.value, $0.key) }
-        var lines = sorted.prefix(limit).map { "\(pad("\($0.value)x", 6)) \(clip($0.key, keyChars))" }
+        var lines = sorted.prefix(limit).map { "\(pad("\($0.value)x", 6)) \(clip($0.key, width))" }
         if sorted.count > limit { lines.append("... \(sorted.count - limit) more") }
         return lines.joined(separator: "\n")
     }

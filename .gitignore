@@ -51,7 +51,7 @@ world/dist/
 *d1-export*.sql
 
 # Release artifact bytes live in a per-node content-addressed blob store and are
-# NEVER committed (issue #304; see www/docs/design/release-binary-publishing.md).
+# NEVER committed (issue #304; see docs/design/release-binary-publishing.md).
 # Only the small signed release metadata under .forkmesh/releases/ is tracked.
 .forkmesh/release-blobs/
 # Release publisher private keys are local trust roots, never repository data.

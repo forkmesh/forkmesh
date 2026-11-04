@@ -363,7 +363,7 @@ def test_report_surfaces_are_documented_and_wired():
         assert "data-repository-migration-retry" in source
     assert "downloadRepositoryMigrationReport" in wiring
     assert "retryRepositoryMigration" in wiring
-    docs = (ROOT.parent / "www" / "docs" / "repository-imports.md").read_text()
+    docs = (ROOT.parent / "docs" / "repository-imports.md").read_text()
     for phrase in ("/report", "/retry", "deferFailure",
                    "tools/verify_migration_report.py", "unclassified"):
         assert phrase in docs

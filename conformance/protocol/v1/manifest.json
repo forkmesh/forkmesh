@@ -2,35 +2,35 @@
   "suite": "forkmesh-protocol",
   "version": "1.0.0-rc.1",
   "status": "candidate",
-  "changeProcess": "www/docs/protocol/README.md#change-process",
+  "changeProcess": "docs/protocol/README.md#change-process",
   "documents": [
     {
-      "path": "www/docs/protocol/README.md",
-      "sha256": "ba5eb19376fd18b1d28b2800fb7d66d61e569b65fdfe9e24d289e882222b073e"
+      "path": "docs/protocol/README.md",
+      "sha256": "df7aa707555c835fead0810c72c3f1ab07792f4d710dd67f16ca6952b2b0fe1a"
     },
     {
-      "path": "www/docs/protocol/encoding-and-identifiers.md",
+      "path": "docs/protocol/encoding-and-identifiers.md",
       "sha256": "ee143a205c170eb5e24ffe8a8f657b9c9a4b2e47645ec3c6d6a0ddc0d837fce1"
     },
     {
-      "path": "www/docs/protocol/signatures-and-authentication.md",
-      "sha256": "35252267b0290b3a8808d027a17f670ca79813b2ab387bcfacb3a42e5927c1e0"
+      "path": "docs/protocol/signatures-and-authentication.md",
+      "sha256": "aaeb209dc1444c03a78b8d263f50f10610925ee0ca91f72c448f885704af0705"
     },
     {
-      "path": "www/docs/protocol/relay-sync-and-migration.md",
+      "path": "docs/protocol/relay-sync-and-migration.md",
       "sha256": "b61f74997b72162b919d602215a394e62409214a474545da3aee8d5fd5ac3c79"
     },
     {
-      "path": "www/docs/protocol/version-negotiation.md",
+      "path": "docs/protocol/version-negotiation.md",
       "sha256": "0f3549944660a3aad9b6c408455a3217ca49c8c5cf3b4f66f2b140d7111304fe"
     },
     {
-      "path": "www/docs/protocol/threat-model.md",
-      "sha256": "4e316ca0b1f2de5ffc10a65d03970e9d0659301fc6794a7488aabad220b95102"
+      "path": "docs/protocol/threat-model.md",
+      "sha256": "e5b3007384980ee5f0adaf27dc230a74f6caa72fbdb148ad4292ca19c7f6f44c"
     },
     {
-      "path": "www/docs/design/conflict-safe-collaboration.md",
-      "sha256": "4ccdf38c48ce59e530712afddd53d83f05f56472c829435060c6fc3b38ff33a3"
+      "path": "docs/design/conflict-safe-collaboration.md",
+      "sha256": "c5e0d8ea0b1970b4ae3732ed9f2ed50dda24dee0d3ff13d55e7dc058ee81a975"
     }
   ],
   "schemas": [
@@ -67,7 +67,7 @@
   ],
   "threatRegister": {
     "path": "conformance/protocol/v1/threats.json",
-    "document": "www/docs/protocol/threat-model.md",
+    "document": "docs/protocol/threat-model.md",
     "sha256": "81473a40a98e417f7725c3225e0825f5682022f8cdcb483f2554aa9df081771a"
   },
   "implementations": [

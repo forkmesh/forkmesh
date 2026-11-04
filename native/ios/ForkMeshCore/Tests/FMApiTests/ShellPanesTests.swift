@@ -22,6 +22,24 @@ final class ShellPanesTests: XCTestCase {
         XCTAssertEqual(landscape.list, 350)
     }
 
+    func testOnlyTheDuoModelGetsTheSideColumn() {
+        XCTAssertTrue(ShellPanes.isDuo(model: "iPhone19,4"))
+        XCTAssertFalse(ShellPanes.isDuo(model: "iPhone18,1"))
+    }
+
+    func testTheSideColumnFollowsThePose() {
+        XCTAssertTrue(ShellPanes.sideColumn(width: 466, height: 678))
+        XCTAssertTrue(ShellPanes.sideColumn(width: 951, height: 669))
+        XCTAssertTrue(ShellPanes.sideColumn(width: 473, height: 669))
+        XCTAssertFalse(ShellPanes.sideColumn(width: 669, height: 951))
+    }
+
+    func testTheSideColumnReplacesTheRail() {
+        let metrics: ShellPaneMetrics = ShellPanes.metrics(width: 951, height: 669, pad: false, sideColumn: true)
+        XCTAssertTrue(metrics.wide)
+        XCTAssertFalse(metrics.rail)
+    }
+
     func testALandscapePhoneIsNotWide() {
         XCTAssertEqual(ShellPanes.metrics(width: 956, height: 440, pad: false), .phone)
         XCTAssertFalse(ShellPanes.roomy(width: 956, height: 440))

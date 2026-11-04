@@ -70,6 +70,7 @@ PATCHES = {
 @pytest.mark.skipif(shutil.which("node") is None, reason="Node.js is unavailable")
 def test_health_scores_match_the_dashboard():
     script = "\n".join([
+        "function platformName() { return 'ForkMesh'; }",
         _slice(CONTENT, "  function parseDiffFiles(rawText) {", "  function parsePatchStats("),
         _slice(CONTENT, "  const DIFF_LINE_FLAGS = {", "  // The review surface on the page"),
         "const patches = %s;" % json.dumps(PATCHES),

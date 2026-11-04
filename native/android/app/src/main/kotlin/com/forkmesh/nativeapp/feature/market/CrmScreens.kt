@@ -64,6 +64,7 @@ import com.forkmesh.nativeapp.market.CrmTab
 import com.forkmesh.nativeapp.market.CrmTabItem
 import com.forkmesh.nativeapp.market.CrmText
 import com.forkmesh.nativeapp.market.contactTabs
+import com.forkmesh.nativeapp.market.networkTabs
 import com.forkmesh.nativeapp.market.listViews
 import com.forkmesh.nativeapp.market.next
 import com.forkmesh.nativeapp.market.owners
@@ -76,6 +77,7 @@ import com.forkmesh.nativeapp.ui.kit.FmDropdownMenu
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenuItem
 import com.forkmesh.nativeapp.ui.kit.FmEmptyState
 import com.forkmesh.nativeapp.ui.kit.FmExtendedFloatingActionButton
+import com.forkmesh.nativeapp.ui.kit.FmHoldArea
 import com.forkmesh.nativeapp.ui.kit.FmIconButton
 import com.forkmesh.nativeapp.ui.kit.FmPullToRefreshBox
 import com.forkmesh.nativeapp.ui.kit.FmTextField
@@ -298,6 +300,16 @@ private fun CrmInstallPanel(model: CrmModel, installing: Boolean, onInstall: () 
 private fun CrmHeader(model: CrmModel, data: CrmOrganizationData, selecting: Boolean) {
     Column(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         if (!selecting) CrmSectionBar(model, data)
+        val contactsStatus = model.contactsStatus
+        if (contactsStatus.isNotEmpty()) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("crm-contacts-loading"),
+                horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically,
+            ) {
+                FmCircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 1.5.dp)
+                Text(contactsStatus, style = Fm.text.labelSmall, color = Fm.colors.textSecondary)
+            }
+        }
         if (model.section != CrmArea.MORE) {
             FmTextField(model.query, { query ->
                 model.query = query
@@ -306,7 +318,7 @@ private fun CrmHeader(model: CrmModel, data: CrmOrganizationData, selecting: Boo
             }, Modifier.padding(horizontal = 16.dp), hint = if (model.section == CrmArea.ACTIVITY) "Search activity" else "Search contacts")
         }
         when (model.section) {
-            CrmArea.CONTACTS -> CrmTabChips(model, data.contactTabs)
+            CrmArea.CONTACTS -> CrmTabChips(model, data.contactTabs, data.networkTabs)
             CrmArea.ACTIVITY -> CrmTabChips(model, data.workspaceTabs)
             else -> Unit
         }
@@ -435,13 +447,15 @@ private fun CrmContactList(
                 }
                 items(group, key = { it.id }) { contact ->
                     Box {
-                        Box(
-                            Modifier.fillMaxWidth().background(Fm.colors.bgRaised).combinedClickableCompat(
-                                onTap = { if (selecting) onToggle(contact.id) else navigator.push(ContactScreen(CrmContactRef(model.organization, contact.id))) },
-                                onLongPress = { if (selecting) onToggle(contact.id) else menuFor = contact.id },
-                            ),
-                        ) {
-                            CrmContactRowContent(contact, flow ?: data.flow(contact.flow), showStage = stat == null || stat.stage == "other", columns = columns, selected = if (selecting) contact.id in selection else null)
+                        FmHoldArea {
+                            Box(
+                                Modifier.fillMaxWidth().background(Fm.colors.bgRaised).combinedClickableCompat(
+                                    onTap = { if (selecting) onToggle(contact.id) else navigator.push(ContactScreen(CrmContactRef(model.organization, contact.id))) },
+                                    onLongPress = { if (selecting) onToggle(contact.id) else menuFor = contact.id },
+                                ),
+                            ) {
+                                CrmContactRowContent(contact, flow ?: data.flow(contact.flow), showStage = stat == null || stat.stage == "other", columns = columns, selected = if (selecting) contact.id in selection else null)
+                            }
                         }
                         CrmContactMenu(model, data, runner, navigator, contact, expanded = menuFor == contact.id, onDismiss = { menuFor = null }, onDelete = { onDelete(listOf(it.id)) })
                     }
@@ -595,28 +609,30 @@ internal fun CrmBoard(model: CrmModel, data: CrmOrganizationData, flow: CrmFlow,
                 if (cards.isEmpty()) Text("Nobody here yet", Modifier.fillMaxWidth().padding(vertical = 20.dp), textAlign = TextAlign.Center, style = Fm.text.bodySmall, color = Fm.colors.textTertiary)
                 cards.forEach { contact ->
                     Box {
-                        Column(
-                            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Fm.colors.bgRaised)
-                                .combinedClickableCompat({ navigator.push(ContactScreen(CrmContactRef(model.organization, contact.id))) }, { menuFor = contact.id })
-                                .padding(10.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                CrmAvatar(contact.name.ifEmpty { contact.email }, 28)
-                                Spacer(Modifier.width(8.dp))
-                                Column(Modifier.weight(1f)) {
-                                    Text(contact.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis, style = Fm.text.bodyMedium.copy(fontWeight = FontWeight.SemiBold), color = Fm.colors.textPrimary)
-                                    if (contact.subtitle.isNotEmpty()) Text(contact.subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis, style = Fm.text.labelSmall, color = Fm.colors.textSecondary)
+                        FmHoldArea {
+                            Column(
+                                Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Fm.colors.bgRaised)
+                                    .combinedClickableCompat({ navigator.push(ContactScreen(CrmContactRef(model.organization, contact.id))) }, { menuFor = contact.id })
+                                    .padding(10.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    CrmAvatar(contact.name.ifEmpty { contact.email }, 28)
+                                    Spacer(Modifier.width(8.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text(contact.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis, style = Fm.text.bodyMedium.copy(fontWeight = FontWeight.SemiBold), color = Fm.colors.textPrimary)
+                                        if (contact.subtitle.isNotEmpty()) Text(contact.subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis, style = Fm.text.labelSmall, color = Fm.colors.textSecondary)
+                                    }
+                                    if (contact.value > 0) Text(CrmText.money(contact.value), style = Fm.text.labelSmall.copy(fontWeight = FontWeight.Bold), color = CrmColors.green)
                                 }
-                                if (contact.value > 0) Text(CrmText.money(contact.value), style = Fm.text.labelSmall.copy(fontWeight = FontWeight.Bold), color = CrmColors.green)
-                            }
-                            if (contact.nextStep.isNotEmpty()) Text("↳ " + contact.nextStep, maxLines = 2, style = Fm.text.labelSmall, color = Fm.colors.textPrimary)
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                flow.next(contact.stage)?.let { next ->
-                                    CrmChip("→ ${CrmStageLabel.title(next)}", CrmColors.stage(next, flow), onTap = { runner.run({ move(contact, next) }) })
+                                if (contact.nextStep.isNotEmpty()) Text("↳ " + contact.nextStep, maxLines = 2, style = Fm.text.labelSmall, color = Fm.colors.textPrimary)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    flow.next(contact.stage)?.let { next ->
+                                        CrmChip("→ ${CrmStageLabel.title(next)}", CrmColors.stage(next, flow), onTap = { runner.run({ move(contact, next) }) })
+                                    }
+                                    Spacer(Modifier.weight(1f))
+                                    if (contact.lastContactedAt > 0) Text(relativeTime(contact.lastContactedAt), style = Fm.text.labelSmall, color = Fm.colors.textTertiary)
                                 }
-                                Spacer(Modifier.weight(1f))
-                                if (contact.lastContactedAt > 0) Text(relativeTime(contact.lastContactedAt), style = Fm.text.labelSmall, color = Fm.colors.textTertiary)
                             }
                         }
                         CrmContactMenu(model, data, runner, navigator, contact, expanded = menuFor == contact.id, onDismiss = { menuFor = null }, onDelete = { pendingDelete = it })

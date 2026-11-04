@@ -1,0 +1,99 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "surveys",
+  "name": "Surveys",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Productivity",
+  "version": "1.1.0",
+  "summary": "Build surveys with choice, text and rating questions, share a private link anyone can answer, and read the results and responses on the web, desktop and phones.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "Surveys page listing open and draft surveys with response counts, and a survey's results with option bars and an average rating"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": { "amount": 0, "currency": "USD" },
+  "entrypoints": {
+    "desktop": "builtin:surveys",
+    "worker": "content/worker/surveys.py",
+    "dashboard-view": "content/web/view.html",
+    "dashboard-script": "content/web/page.js",
+    "www-page": "content/www/survey.html",
+    "www-script": "content/www/survey.js",
+    "www-style": "content/www/survey.css",
+    "settings": "builtin:package"
+  },
+  "contributions": [
+    {
+      "socket": "dashboard.page",
+      "entrypoint": "dashboard-view",
+      "config": {
+        "route": "/dashboard/surveys",
+        "title": "Surveys",
+        "description": "Organization surveys with a shareable answer link, live results and CSV export.",
+        "script": "dashboard-script",
+        "navigation": { "label": "Surveys", "icon": "clipboard-list", "order": 44 }
+      }
+    },
+    {
+      "id": "public-survey",
+      "socket": "www.page",
+      "entrypoint": "www-page",
+      "config": {
+        "route": "/survey",
+        "title": "Survey",
+        "assets": ["www-script", "www-style"]
+      }
+    }
+  ],
+  "permissions": [
+    {
+      "id": "organization.surveys.read",
+      "label": "Read your organizations' encrypted surveys, their results and every response",
+      "risk": "sensitive"
+    },
+    {
+      "id": "organization.surveys.write",
+      "label": "Create, edit, open, close and delete shared organization surveys and their responses",
+      "risk": "sensitive"
+    },
+    {
+      "id": "survey.public.link",
+      "label": "Let anyone with a survey's private link answer it while it is open, and count their visits for you",
+      "risk": "sensitive"
+    },
+    {
+      "id": "notifications.plugin.send",
+      "label": "Ping a survey's creator when someone opens or starts it and when new responses arrive",
+      "risk": "low"
+    },
+    {
+      "id": "chrome.rail.button",
+      "label": "Add a Surveys page to the desktop rail to build, run and read surveys",
+      "risk": "low"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": true,
+    "signature": "verified-bundle"
+  },
+  "install": { "bundled": true, "default": false },
+  "lifecycle": { "migrations": [] },
+  "dataLifecycle": { "scope": "organization" },
+  "worker": { "module": "surveys", "api": "/api/surveys" }
+}

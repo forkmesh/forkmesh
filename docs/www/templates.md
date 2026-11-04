@@ -1,8 +1,9 @@
 # Website page templates
 
-Part of [the website docs](README.md). Website pages are rendered from
-templates with inheritance and shared partials, so a change to the shared
-head or chrome is one edit.
+Website pages are rendered from templates with inheritance and shared
+partials, so a change to the shared head or chrome is one edit. This page
+covers the layout, the template syntax, logos and favicons, share images and
+the pre-push check. Part of [the website docs](README.md).
 
 ## Layout
 
@@ -47,7 +48,7 @@ A small subset of Jinja:
 
 `changelog.html` holds no releases: `www/public/changelog.js` fetches
 `/changelog.json` and prints them in the browser
-([../changelog.md](../changelog.md)); edit `changelog/changelog.json`, not
+([changelog](../engineering/changelog.md)); edit `changelog/changelog.json`, not
 the page, to change a release.
 
 A line holding only one tag is dropped entirely. Names in `extends` and
@@ -76,6 +77,23 @@ The blog layout adds `post_chrome`, `post_head` (after the blog assets) and
 2. Run `python3 app/tools/site_templates.py`.
 3. Commit both the template and the rendered page.
 
+## Logos and favicons
+
+`logo.svg` at the repository root is the one source: `python3
+tools/render_logo.py` (pycairo, Pillow) rewrites every other logo file, then
+`python3 app/tools/embed_og_logo.py` re-bakes the og-card copy. Pages use
+`/assets/logo.svg` and list `/favicon/favicon.svg` after `favicon.ico`
+(`app/tests/test_favicon_metadata.py`); rasters stay where SVG is not accepted.
+
+That test holds every page under `app/public` and `www/public` to the same
+head: all four favicons, the manifest, `application-name`,
+`apple-mobile-web-app-title`, `theme-color` `#090909`, `color-scheme`
+`light dark` and a description. Only the www landing page and the investor
+deck (`app/public/pitch-deck/deck.html`, [investor deck](investor-deck.md)) may use `color-scheme: dark`; the
+deck advertises `light dark`. The deck's CSP (`PAGE_CSP` in
+`app/src/pitch_deck_runtime.py`) allows `manifest-src 'self'` so its manifest
+link loads.
+
 ## Share images
 
 Pages without an image of their own use `/assets/social-card.jpg`
@@ -97,7 +115,10 @@ fails with "www/public is out of date with www/templates".
 A pre-push hook stops this: `tools/www_push_check.py` archives each commit
 pushed to `main` and runs `site_templates.py --check` and
 `build_market_catalog.py --check` on it; a stale page refuses the push with
-"Nothing was pushed". Pushes to other branches are not checked.
+"Nothing was pushed". Pushes to other branches are not checked. The archive
+holds only the paths the generators read (`ARCHIVED`), so a module a generator
+starts importing goes on that list too; `docs_markdown.py` was missing and the
+check refused every push to `main`.
 
 ```sh
 python3 tools/www_push_check.py install       # writes .git/hooks/pre-push

@@ -130,6 +130,8 @@ run_worker_first = [
   "!/dashboard/achievements/",
   "!/dashboard/runners",
   "!/dashboard/runners/",
+  "!/dashboard/pings",
+  "!/dashboard/pings/",
   "!/dashboard/docs",
   "!/dashboard/docs/",
   "!/dashboard/plugins",
@@ -153,6 +155,11 @@ run_worker_first = [
   "/notes/*",
   "/*/*",
   "!/assets/*",
+  # Chat and call modules (chat.js imports ./fmm/fmm-local.js) and the
+  # instance theme files are plain assets; "/*/*" would route them to the
+  # repository pages and answer 404.
+  "!/fmm/*",
+  "!/instance-themes/*",
   "!/office/*",
   # Generated plugin registry and browser modules are immutable static build
   # artifacts. Let Cloudflare Assets serve them directly; otherwise /*/* sends
@@ -170,6 +177,7 @@ run_worker_first = [
   "!/referral/",
   "!/reset-password/",
   "!/start/",
+  "!/start-discourse-mirror/",
 ]
 
 [[routes]]
@@ -182,7 +190,7 @@ crons = ["* * * * *"]
 [vars]
 # Core nodes whose agent-job queues pool runners (fmnext-r1) drain.
 RUNNER_POOL_TARGET_NODES = "fmnext-n1,fmnext-n2,fmnext-n3"
-# Core nodes that host ForkMesh-hosted repositories (docs/HOSTED_REPOS.md):
+# Core nodes that host ForkMesh-hosted repositories (docs/operations/core-hosted-repositories.md):
 # every one holds a replica; pushes go to the last pusher, else the
 # rendezvous-first live core. Empty turns core hosting off.
 HOSTED_GIT_CORE_NODES = "fmnext-n1,fmnext-n2,fmnext-n3"
@@ -219,7 +227,7 @@ COMMUNITY_REWARD_NETWORK = "devnet"
 COMMUNITY_REWARD_RPC_URL = "https://api.devnet.solana.com"
 WORKER_ROLE = "app"
 SINGLE_WORKER_SITE = "false"
-# Acquisition attribution (docs/attribution.md). The allowlists are
+# Acquisition attribution (docs/app/attribution.md). The allowlists are
 # configuration, not code: an off-list utm value is stored as "other" and the
 # sanitised original is kept in the landing_view event metadata for review.
 ATTRIBUTION_ALLOWED_SOURCES = "reddit,mastodon,x,hn,direct,search,docs,blog,discord,email"
@@ -228,7 +236,7 @@ ATTRIBUTION_ALLOWED_CAMPAIGNS = "forever_launch,search_to_clone_478,category_com
 # Cloudflare Turnstile widget "forkmesh-next-signup" (managed mode; domains
 # app.forkmesh.com and forkmesh.com). The site key is public; its
 # secret TURNSTILE_SECRET_KEY arrives through the vault (deploy/fleet.toml
-# optional_secrets). See app/src/turnstile.py and docs/OPERATIONS.md.
+# optional_secrets). See app/src/turnstile.py and docs/operations/runbook.md.
 TURNSTILE_SITE_KEY = "0x4AAAAAAFB4BWGb6Sgx78UR"
 OFFICE_STUN_URLS = "stun:stun.cloudflare.com:3478"
 

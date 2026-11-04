@@ -1,7 +1,35 @@
 # Agent access rules
 
-What every desktop agent may reach and run, and where each rule is enforced.
-The run lifecycle is in [README.md](README.md).
+What every desktop agent may reach and run, and where each rule is enforced:
+the sandbox layers, the global and project rules, destructive commands,
+external calls, per-provider enforcement and teammate permissions. What the
+sandbox does not defend against is in the
+[threat model](../protocol/threat-model.md).
+
+Part of [Agents](README.md).
+
+## Layers
+
+Agents run in Git worktrees of the open repository
+([run lifecycle](README.md#local-runs-desktop)), inside layered controls:
+
+| Layer | Code | What it does |
+| --- | --- | --- |
+| Folder lock (Linux, default on) | `AgentGuardrails.*`, Landlock | Restricts the agent to its worktree, the project's top-level folders except `data/`, `config/`, `cache/`, `state/`, `logs/` and `ssh/`, and a few shared tool and scratch paths |
+| External-call gate | `AgentNetworkGate.*` | Classifies Bash, WebFetch and WebSearch calls (and scripts that import network modules). For Claude Code a PreToolUse hook in `--settings` asks the desktop over a local socket; an unreachable socket denies. Legacy script providers ask the same gate. It works per tool call; it is not a network sandbox |
+| Destructive-command gate | `classifyCommandRisk` | Recursive deletes, force pushes, history rewrites and disk wipes wait for the user's approval by default, because one mistaken command can erase unrecoverable data ([below](#destructive-commands)) |
+| Tool allowlist (optional) | `AgentToolPolicy.*` | Tools outside the listed families are not offered, so a tool a newer agent CLI adds stays off ([below](#tool-allowlist)) |
+| Access policy | `ProjectAgentAccess.*`, `AgentRunRules.*` | Project and global rules merged into one run, ask or deny decision ([below](#global-rules-and-project-rules)) |
+| KVM workspace (optional) | `VirtualMachineRuntime.*` | The agent runs in a QEMU/KVM guest, which is then the boundary ([user guide](../qt-client.md#kvm-isolated-coding-workspace)) |
+| Memory and CPU containment | `AgentResources.*` | Each agent in its own systemd scope inside a capped slice ([memory.md](memory.md)); `AgentJail.h` is a resource fence, not a security sandbox |
+
+- **Access failures** (a refused folder or host) prompt the user instead of
+  failing silently (`AgentAccessFailure.*`).
+- **Recursive deletes in the desktop itself** go through
+  `forkmesh::safedelete::removeTree`, which refuses `HOME`, checkouts, other
+  worktrees and protected project folders
+  ([destructive actions](../engineering/destructive-actions.md)).
+- **Not covered:** MCP tools and the `openai` legacy provider.
 
 ## Global rules and project rules
 
@@ -117,8 +145,19 @@ patterns where recursive deletes run without asking:
 
 ### External calls
 
-`AgentNetworkGate.*` classifies Bash, WebFetch and WebSearch calls
-([README.md](README.md#desktop-agent-sandboxing)).
+`AgentNetworkGate.*` classifies Bash, Monitor, WebFetch and WebSearch calls
+([layers](#layers)).
+
+- **Monitor runs a shell command too.** Its `command` gets the same external
+  call and destructive command checks as a Bash command (`isShellTool`).
+  Claude Code before 2.1.314 never ran hooks that match only `Bash` on Monitor
+  commands, so a Monitor `curl` or `rm -rf` skipped the gate. From 2.1.314 a
+  `Bash` matcher also catches Monitor commands, and the hook sees them as
+  `tool_name: "Bash"`. The matcher names `Monitor` as well, which covers older
+  versions too. Checked on 2026-10-31 against 2.1.309 and 2.1.316: with
+  `Monitor` in the matcher both versions call the hook once with
+  `tool_name: "Monitor"`, never a second time as `Bash`, and a deny stops the
+  call. Tests: `testServer`, `testHookSettings`.
 
 - **Blocked destinations** are refused for every project, even one that
   allows all external calls.
@@ -133,7 +172,7 @@ patterns where recursive deletes run without asking:
 
 | Runtime | Folder lock | External calls and destructive commands | Tool policy |
 | --- | --- | --- | --- |
-| Claude Code (stream-json) | Landlock | PreToolUse hook on Bash, WebFetch, WebSearch whenever any rule needs it; Claude Code's own approvals (Ask, Edit and Plan modes) arrive over `--permission-prompt-tool stdio` as transcript cards | `--disallowedTools`, `--tools` with the allowlist |
+| Claude Code (stream-json) | Landlock | PreToolUse hook on Bash, Monitor, WebFetch, WebSearch whenever any rule needs it; Claude Code's own approvals (Ask, Edit and Plan modes) arrive over `--permission-prompt-tool stdio` as transcript cards | `--disallowedTools`, `--tools` with the allowlist |
 | Claude Code in the built-in terminal | Landlock | Same hook through `--settings` | `--disallowedTools=`, `--tools=` (the `=` form) |
 | Codex app-server | Landlock on Linux; elsewhere Codex's `workspace-write` sandbox over the same folders | Approval policy `never`; access failures are steered into the turn | `-c` overrides |
 | Legacy script providers (`claude` API, `local-llama`, `cloudflare-ai`) | Landlock | The scripts ask the gate socket before each shell or git tool call, failing closed | `FORKMESH_AGENT_DISABLED_TOOL_FAMILIES`, `FORKMESH_AGENT_ALLOWED_TOOL_FAMILIES` |
@@ -199,4 +238,4 @@ path grants nothing.
   ([../server/agent-jobs.md](../server/agent-jobs.md)).
 - [Organization bot scopes](../app/organization-bot-scopes.md).
 - MCP window tools need the intake token
-  ([../tools/mcp-agent-windows.md](../tools/mcp-agent-windows.md)).
+  ([../tools/mcp-desktop-tools.md](../tools/mcp-desktop-tools.md)).

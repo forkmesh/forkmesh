@@ -138,6 +138,7 @@ public enum RouteCatalog {
         case .search: return "Search"
         case .notes: return "Notes"
         case .note: return "Note"
+        case .notePage: return "Page"
         case .tasks: return "Tasks"
         case .task: return "Task"
         case .calendar: return "Calendar"
@@ -160,6 +161,8 @@ public enum RouteCatalog {
         case .analytics: return "Analytics"
         case .competitors: return "Competitors"
         case .invoices: return "Invoices"
+        case .surveys: return "Surveys"
+        case .booking: return "Booking"
         case .ads: return "Ad review"
         case .ledger: return "Ledger"
         case .vault: return "Vault"
@@ -176,6 +179,7 @@ public enum RouteCatalog {
         case .glassesAlert: return "Glasses Alert"
         case .phoneSecurity: return "Phone Security"
         case .eyeControl: return "Eye Control"
+        case .silentSpeech: return "Silent Speech"
         case .ember: return "Ember"
         case .strata: return "Strata"
         case .synapse: return "Synapse"
@@ -189,6 +193,7 @@ public enum RouteCatalog {
         case .usage: return "Usage"
         case .rssReader: return "RSS Reader"
         case .instanceFeed: return "Feed"
+        case .mastodon: return "Mastodon"
         case .secureDrive: return "Secure Drive"
         case .spiderRoom: return "Spider Room"
         case .workflows: return "Workflows"
@@ -239,6 +244,7 @@ public enum RouteCatalog {
         case .docs: return "book"
         case .search: return "magnifyingglass"
         case .notes, .note: return "note.text"
+        case .notePage: return "doc.richtext"
         case .tasks, .task: return "checkmark.circle"
         case .calendar, .event: return "calendar"
         case .timers: return "timer"
@@ -252,6 +258,8 @@ public enum RouteCatalog {
         case .analytics: return "chart.xyaxis.line"
         case .competitors: return "binoculars"
         case .invoices: return "receipt"
+        case .surveys: return "list.clipboard"
+        case .booking: return "calendar.badge.clock"
         case .ads: return "rectangle.and.text.magnifyingglass"
         case .ledger: return "creditcard"
         case .vault: return "key"
@@ -267,6 +275,7 @@ public enum RouteCatalog {
         case .glassesAlert: return "eyeglasses"
         case .phoneSecurity: return "checkmark.shield"
         case .eyeControl: return "eye"
+        case .silentSpeech: return "airpodspro"
         case .ember: return "flame"
         case .strata: return "square.3.layers.3d"
         case .synapse: return "brain"
@@ -280,6 +289,7 @@ public enum RouteCatalog {
         case .usage: return "gauge.with.dots.needle.33percent"
         case .rssReader: return "dot.radiowaves.up.forward"
         case .instanceFeed: return "bubble.left.and.bubble.right"
+        case .mastodon: return "at"
         case .secureDrive: return "lock.shield"
         case .spiderRoom: return "arkit"
         case .workflows: return "point.3.connected.trianglepath.dotted"
@@ -375,6 +385,7 @@ public enum HubCatalog {
         .destination(.notes, guestAction: "use notes"),
         .destination(.tasks(filter: nil), guestAction: "use tasks"),
         .destination(.calendar(date: nil, mode: .month)),
+        .destination(.booking(id: nil), guestAction: "set up a booking page", needsRegistration: true),
         .destination(.timers),
         .destination(.fileExplorer),
         .destination(.nexus),
@@ -398,6 +409,7 @@ public enum HubCatalog {
         .destination(.analytics(section: nil), needsRegistration: true),
         .destination(.competitors, needsRegistration: true),
         .destination(.invoices(organization: nil, invoice: nil), needsRegistration: true),
+        .destination(.surveys(organization: nil, survey: nil), needsRegistration: true),
         .destination(.ads, needsRegistration: true),
         .destination(.ledger(section: nil), needsRegistration: true),
     ]
@@ -416,12 +428,14 @@ public enum HubCatalog {
         .destination(.glassesAlert),
         .destination(.phoneSecurity),
         .destination(.eyeControl),
+        .destination(.silentSpeech),
         .destination(.openWrtRouter),
         .destination(.faceChanger),
         .destination(.videoMixDjStudio),
         .destination(.poker(table: nil)),
         .destination(.rssReader),
         .destination(.instanceFeed(post: nil)),
+        .destination(.mastodon),
         .destination(.secureDrive),
         .destination(.spiderRoom),
         .destination(.localAI),

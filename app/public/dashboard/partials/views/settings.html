@@ -896,6 +896,7 @@
                     <form data-ai-review-settings-form class="mt-5 grid min-w-0 max-w-3xl gap-4 rounded-md border border-border bg-card px-4 py-4 sm:grid-cols-2">
                       <label class="flex min-w-0 items-center gap-2 text-sm text-foreground sm:col-span-2"><input data-ai-review-enabled type="checkbox" class="shrink-0"> Review pull requests automatically</label>
                       <label class="flex min-w-0 items-start gap-2 text-sm text-foreground sm:col-span-2"><input data-ai-review-default-on type="checkbox" class="mt-1 shrink-0"><span class="min-w-0 [overflow-wrap:anywhere]">On for every public repository unless its <code class="font-mono text-xs">.forkmesh/pulls.json</code> says <code class="font-mono text-xs">"aiReview": false</code>. Otherwise repositories opt in with <code class="font-mono text-xs">"aiReview": true</code>.</span></label>
+                      <label class="flex min-w-0 items-start gap-2 text-sm text-foreground sm:col-span-2"><input data-ai-review-notes type="checkbox" class="mt-1 shrink-0"><span class="min-w-0 [overflow-wrap:anywhere]">Writing help in Notes: people can select text in a note and ask the same model to clean it up, check grammar or rewrite it. Only the selection, a little text around it and their instruction are sent, when they ask; 100 requests per person per day.</span></label>
                       <label class="grid gap-1 text-xs font-semibold text-foreground">Cloudflare account ID
                         <input data-ai-review-account autocomplete="off" spellcheck="false" maxlength="32" placeholder="32 hexadecimal characters" class="h-9 rounded-md border border-border bg-background px-3 font-mono text-sm font-normal text-foreground">
                       </label>
@@ -1118,6 +1119,13 @@
                             </div>
                           </div>
                           <button data-genie-visible type="button" role="switch" aria-checked="true" aria-label="Show the Genie spider" class="ping-switch mt-1"></button>
+                        </div>
+                        <div class="flex items-center justify-between gap-4 border-t border-border p-4">
+                          <div class="min-w-0">
+                            <label for="genie-mascot" class="text-sm font-medium text-foreground">Mascot</label>
+                            <p class="mt-1 text-sm leading-6 text-muted-foreground">Who walks along the bottom of your pages.</p>
+                          </div>
+                          <select id="genie-mascot" data-genie-mascot class="h-9 shrink-0 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground focus:outline-none focus:ring-1 focus:ring-primary"><option value="spider">Genie spider</option><option value="dragon">Cloud Dragon</option></select>
                         </div>
                       </div>
                       <div data-home-redirect-setting data-instance-plugin="website" class="overflow-hidden rounded-md border border-border bg-card">

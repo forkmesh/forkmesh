@@ -11,8 +11,8 @@ One extension, one sign-in:
   Reddit, any configured channel) for the `marketing` package, only when you
   ask.
 - **Repositories.** On a GitHub, GitLab, Codeberg or Gitea repository, the
-  popup shows its size and other details and mirrors it to your ForkMesh
-  account in one click.
+  popup shows its size and other details, opens a size map and a code map of
+  it, and mirrors it to your ForkMesh account in one click.
 
 The CRM half works in Gmail (`mail.google.com`), Zoho Mail (`mail.zoho.com`,
 `.eu`, `.in`, `.com.au`, `.jp`, `mail.zohocloud.ca`) and any Mastodon instance
@@ -72,15 +72,26 @@ Safety properties:
 ## CRM
 
 Open an email. A compact **CRM header** above the message names the other
-party and offers **Look up**; nothing is requested from ForkMesh until you press
-it. **Look up** shows the record (name, pipeline, stage, owner, last email,
-linked emails, company, title, deal value, next step, tags). The **FM** button
+party with their address and a **+N more** for the other people on it. With
+**Look up and link emails I open** on in the popup (the default, 2.32.0) the
+header looks the address up at once behind a spinner, and when a contact has
+that exact address the email is linked to them (**Linked · this one · auto**);
+a record found only by name, profile or phone is shown with a **Found by** chip
+and never linked by itself. A lookup or link that fails or gets no answer in
+20 seconds says why and offers **Retry**. With the setting off nothing is
+requested from ForkMesh until you press **Look up**. The record shows name,
+lists, pipeline, stage, owner, last email, linked emails, company, title, deal
+value, next step and tags. The **FM** button
 (or the toolbar popup) opens the panel, prefilled from the message (contact,
 name, company, website, signature details, date and subject, all editable):
 
-- **Add to pipeline** picks a flow and stage, creates the contact if needed
-  and links the email.
-- **Link only** records the message without changing the pipeline.
+- **Add to list** (2.30.0; was **Add to pipeline**) picks one of the CRM's
+  lists, creates the contact if needed, puts them on the list and links the
+  email. A list bound to a pipeline also moves the contact into that pipeline,
+  keeping their stage when they are already in it. The header's **List** chip
+  names the lists the contact is on, by the CRM's membership rule
+  ([CRM README](../../../crm/README.md#data-model)).
+- **Link only** records the message without changing any list.
 - **Link to an existing contact…** files the message under another record
   (searching by name, address or company); the address joins that record so
   the next message is found automatically.
@@ -101,14 +112,32 @@ the open message's row in the list (found by the message id from the URL,
 else the selected row). The list row gives the sender of received mail and
 the recipient of sent mail.
 
+**A new email in Zoho Mail** (2.30.0): while a compose tab is open, the header
+reads the compose form instead of the message left open behind it, which
+before showed that message's sender. The contact is the first **To**
+recipient (people outside your domain first, then Cc, then Bcc), read from the
+recipient chips (`data-email` and similar attributes, or a `title` holding the
+address) and from a To field's typed text once it loses focus. A chip belongs
+to the field whose row starts with its label ("To", "Cc") or that holds only
+that field's input. Addressing an email is asking for its contact, so the To
+address is looked up at once, with no **Look up** press. When the CRM finds
+the record, the header shows **On send · Links here**: sending links the email
+to that very record (its id rides with the send, so a later recipient with a
+record cannot take it), and a link made from the panel before sending is
+updated rather than doubled, since the compose and the send share one message
+id. With **Track emails I send** off the chip says **Not linked**. The compose
+is found by a visible subject field and the nearest container holding it and
+a **Send** button, so it does not depend on Zoho's class names.
+
 **Mastodon**: add each instance in the popup (**Mastodon instances**), or
 press **Record this toot in the CRM** on an instance not added yet; Chrome asks
 for that host once. Conversations are linked by `@name@instance`.
 
 **Your Mastodon posts** (on by default, **Add people I mention on Mastodon**):
-open one of your own posts on its permalink, like
-`https://mastodon.social/@forkmesh/113489…`, and after the page settles
-(1.5 s) everyone the post mentions is linked to the CRM, one record each
+a post you send from an added instance is logged the moment Mastodon accepts
+it, and one you open on its permalink, like
+`https://mastodon.social/@forkmesh/113489…`, is logged after the page settles
+(1.5 s): everyone the post mentions is linked to the CRM, one record each
 (hashtags and your own accounts are skipped, at most ten people). Someone the
 CRM does not know becomes a contact named from the page, or `@name@instance`.
 The CRM pings you for each person ("🎉 New CRM contact from Mastodon"). The
@@ -118,9 +147,36 @@ minutes). A post is logged once: the extension remembers the last 500, and the
 popup shows who was logged last. Timelines, profiles and other people's posts
 send nothing.
 
+To see a post as it is sent, `mastodon-sent.js` runs in the page itself
+(Chrome's `MAIN` world, registered per added instance next to the reader). It
+watches only the answer to Mastodon's own `POST /api/v1/statuses`, passes the
+post's id, address, time, content warning, text and mentioned accounts to
+`mastodon.js` with `window.postMessage`, and never reads the page's access
+token. Mastodon 5's redesigned post page (`article[data-variant="page"]`, the
+one with "Message by …" over a private mention) and the older
+`.detailed-status` page are both read; the CRM header there stops key presses
+so typing in it does not fire Mastodon's shortcuts (`f`, `b`, `r`).
+
 **Mail you send** (on by default, **Track emails I send**): sends from Gmail or
-Zoho Mail are linked to the first recipient that already has a record (people
-outside your domain first) and move **Last contacted**. Gmail sends are linked
+Zoho Mail are linked to the first recipient that already has a record (To
+before Cc and Bcc, people outside your domain first) and move **Last
+contacted**.
+
+**Open tracking** (2.31.0, on by default under **Track emails I send**: **Tell
+me when they are opened**): for every compose it sees (a Zoho compose tab, a
+Gmail editor), the page asks the background for a pixel (`fm-track-pixel`),
+which returns nothing when either switch is off or no one is signed in, else
+the CRM's signed image address (`POST /emails/pixel`). The image is appended to
+the editor (Zoho's editor frame body, Gmail's `g_editable` body) on the mouse
+press on **Send**, so it is not loading while you write, and again on the click
+or Ctrl+Enter if it is missing. Its token rides with the send; the link adopts
+it as the email's id, so the CRM's existing open pixel records the open and
+pings the sender on the first one. A send to nobody with a record is still
+recorded, contactless, so the open can be reported. A link made from the panel
+during the compose carries the token too. Known limits: a Zoho Ctrl+Enter
+inside the editor frame gets no image (its key events never reach the page),
+the Gmail side is checked only against the selectors the send tracking already
+used, and Gmail and Apple Mail fetch images through their own proxies. Gmail sends are linked
 after the 10-second undo window or when the tab closes. No contact is created
 for a send to unknown recipients.
 
@@ -428,13 +484,63 @@ How it works, and why:
 `tests/background_repo_harness.js` drives `repo.js` under a fake browser; the
 pytest wrapper checks its ids and canonical URLs against the server module.
 
+### Size map and code map
+
+**Size map** and **Code map** on the card open `map.html` in a new tab for the
+repository's default branch:
+
+- **Size map**: a sunburst of folders and files sized by bytes. Click a
+  folder to zoom in, the centre, **Up** or a breadcrumb to zoom out, and a
+  file to open it on the provider. **Rings** picks how many levels show at
+  once. The side lists the focused folder's contents, its largest files and
+  its file types, each with its share.
+- **Code map**: ForkMesh's own full-screen code map (the one on a
+  repository's page on ForkMesh), with each file's source drawn in its cell
+  and a 3D view. **Close** returns to the size map.
+
+How it works:
+
+- `map-source.js` reads the branch's commit, then the whole tree at that
+  commit in one request (`api.github.com/repos/…/git/trees/<sha>?recursive=1`,
+  or Gitea's `/api/v1/repos/…/git/trees/<sha>` in pages of 1000), so every
+  later read is pinned to one commit. Source text comes from
+  `raw.githubusercontent.com/<owner>/<name>/<sha>/<path>` or Gitea's
+  `/api/v1/repos/…/raw/<path>?ref=<sha>`, without cookies, at most 512 KB per
+  file and six at a time; a file with a NUL byte in its first 8000 bytes is
+  drawn as a binary card.
+- The page needs no sign-in and touches no ForkMesh API or extension storage:
+  all three providers answer any origin, so no host permission is needed.
+  A map costs two GitHub API requests of the 60 an hour; raw reads do not
+  count.
+- GitLab has no map: its public tree API lists no file sizes. The buttons are
+  greyed out there, and hidden on private repositories.
+- `codemap.js` and `vendor/three-0.184.0/` are copies of
+  `app/public/assets/codemap/`: never edit them here; run
+  `python3 marketplace/packages/browser-extension/tools/sync_codemap.py`.
+
+`tests/repo_map_harness.js` drives `map-source.js` under a fake `fetch`.
+
+## Mirroring a Discourse forum
+
+On a page of a Discourse forum (its `<meta name="generator">` starts with
+"Discourse"), the popup shows the forum's name and **Mirror this forum**.
+`forum.js` reads only that meta tag and the site name, through `activeTab`
+and `scripting` when the popup opens, so no host permission is asked for and
+nothing is read from pages you do not open the popup on. The button opens
+`<your ForkMesh server>/start-discourse-mirror?forum=<forum address>`. On an
+instance where you are an admin, that page sets up the mirror; on any other
+server it explains how to start an instance of your own, with the forum
+address carried along. Both messages (`fm-forum-detect`, `fm-forum-mirror`)
+answer the popup only.
+
 ## What leaves the browser
 
 - **CRM**: only when you press a button, send a message, or open your own
-  Mastodon post on its permalink: provider message and thread ids, subject, addresses or handles, direction, date, permalink,
+  Mastodon post on its permalink or send one: provider message and thread ids, subject, addresses or handles, direction, date, permalink,
   the contact details shown in the panel, and the chosen flow and stage. The
   email body is read in the page only to prefill fields and is never sent. A
-  Mastodon post's content warning or opening line stands in for a subject. A
+  Mastodon post's content warning or opening line stands in for a subject, also
+  for a post logged as you send it. A
   tracked send carries its subject, sending mailbox, up to five recipients and
   the time, never its body.
 - **Marketing**: the counts, page title, description, image, handle, address
@@ -467,11 +573,14 @@ extension's storage with the host permission Chrome granted.
 | `popup-vault.js`   | The popup's Password Vault section.                           |
 | `repo.js`          | Repository pages: provider details, ForkMesh status, Mirror.  |
 | `popup-repo.js`    | The popup's repository card.                                  |
+| `forum.js`         | Discourse forum pages: detect the forum, open the mirror setup. |
+| `popup-forum.js`   | The popup's "Mirror this forum" card.                         |
 | `panel.js`         | The CRM panel and header, shared by every page and the popup. |
 | `content.js`       | Reads the open email in Gmail and Zoho Mail; tracks sends.    |
 | `zoho-sort.js`     | The sort header and inbox-zero tools above a Zoho Mail list. |
 | `zoho-tidy.js`     | Search, sender grouping and Zoho button matching for `zoho-sort.js`. |
 | `mastodon.js`      | Reads the open conversation on a Mastodon instance.           |
+| `mastodon-sent.js` | In the Mastodon page: hands each post you send to `mastodon.js`. |
 | `x.js`             | Reads the tracked X profile's counts for Marketing.           |
 | `x-developer.js`   | Guides Connect X through X's developer console and reads the keys. |
 | `reddit.js`        | Reads watched Reddit pages you open, and monitored threads' views, for the Reddit desk. |

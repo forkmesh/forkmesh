@@ -1,9 +1,10 @@
 # Where ForkMesh should advertise first
 
-Part of [the marketing docs](README.md). Written 2026-10-16. The Marketing
-package's **Where to advertise** panel (Ads manager) re-ranks these channels
-from live numbers as visits, conversions and logged ads come in; this page
-is the reasoning behind its starting order and the plan for the first tests.
+Part of [Marketing](README.md). The Marketing package's **Where to
+advertise** panel (Ads manager) re-ranks these channels from live numbers as
+visits, conversions and logged ads come in; this page (written 2026-10-16) is
+the reasoning behind its starting order and the plan for the first tests.
+Spending stays an operator decision ([guardrails](README.md#guardrails-and-why)).
 
 ## Who we are buying attention from
 

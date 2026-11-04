@@ -1,7 +1,10 @@
 # ForkMesh native iOS app
 
 The ForkMesh iOS app in **Swift + SwiftUI**, the iOS sibling of
-`native/android`. App Store app id `com.forkmesh.forkmesh`.
+[`native/android`](../android/README.md). App Store app id `com.forkmesh.forkmesh`.
+The developer home page for both native apps is
+[docs/native/README.md](../../docs/native/README.md); how the app talks to the
+relay and the mirrors is in [docs/architecture.md](../../docs/architecture.md).
 
 ## Layout
 
@@ -37,20 +40,12 @@ ForkMeshWatch/       the watchOS app
 ForkMeshWatchWidgets/ its complications and Smart Stack widget
 tools/               generate_project.rb, check_swift_syntax.sh, asc_bundle_ids.py
 ForkMesh.xcodeproj   generated; regenerate with tools/generate_project.rb
-docs/                one API note per core module
+docs/appstore/       App Store screenshot sources
 ```
 
-Module notes: [FMBase](docs/FMBase.md), [FMCrypto](docs/FMCrypto.md) and
-[its additions](docs/FMCryptoAdditions.md), [FMNet](docs/FMNet.md),
-[FMVault](docs/FMVault.md), [FMAccount](docs/FMAccount.md),
-[FMApi](docs/FMApi.md) ([models](docs/FMApiModels.md),
-[view models](docs/FMApiViewModels.md)), [FMChat](docs/FMChat.md),
-FMCode ([repos](docs/FMCodeRepos.md), [collaboration](docs/FMCodeCollab.md),
-[local Git](docs/FMCodeLocal.md)), [FMLocalAI](docs/FMLocalAI.md),
-[FMAgents](docs/FMAgents.md), [FMTools](docs/FMTools.md),
-[FMAssistant](docs/FMAssistant.md). The developer home page for both native
-apps is [`docs/native/README.md`](../../docs/native/README.md); the parity
-matrix is [`docs/native/PARITY.md`](../../docs/native/PARITY.md).
+Module notes: [docs/native/ios/](../../docs/native/ios/README.md), one page per
+core module. The parity matrix is
+[`docs/native/PARITY.md`](../../docs/native/PARITY.md).
 
 ## Build and test
 
@@ -101,15 +96,13 @@ hand, `working_directory: native/ios`, `mac_mini_m2`):
 | `ios-native-release` | Registers the bundle ids (`tools/asc_bundle_ids.py ensure`), picks the next App Store Connect build number, cloud-signs at export, uploads to TestFlight (`app_store_connect` variable group). With `FORKMESH_IOS_APP_STORE=1`, which a tagged release sets, it also submits the build for App Store review ([IOS_RELEASE.md](../../docs/native/IOS_RELEASE.md)). Stops before the archive if the app record does not exist. |
 | `ios-native-adhoc` | Ad hoc IPA for the devices registered in the developer account. |
 
-From 2026-09-24 to 2026-10-15 `ios-native-build` ran a merged diagnostic
-script ("Cancel probes") that compiled nothing and always exited 0, so the job
-was green whatever the app's state. `app/tests/test_codemagic_native_build.py`,
-in the critical worker suite, now fails if the job stops building the app or
-ends in an unconditional `exit 0`.
+`app/tests/test_codemagic_native_build.py` fails if `ios-native-build` stops
+building the app or ends in an unconditional `exit 0`, so the job cannot go
+green without compiling.
 
 The version is `Config/Version.xcconfig` (`MARKETING_VERSION`); release
 overrides `CURRENT_PROJECT_VERSION` with the version's next free build number
-(0 for a new version; `docs/native/IOS_RELEASE.md`). The same
+(0 for a new version; [docs/native/IOS_RELEASE.md](../../docs/native/IOS_RELEASE.md)). The same
 file carries `FORKMESH_ENV`, `FORKMESH_API_HOST` and `FORKMESH_WORLD_URL` into
 the Info.plist. On a Mac:
 
@@ -154,7 +147,7 @@ it could not load shows `–`.
 `ForkMeshWatch` (bundle id `com.forkmesh.forkmesh.watchkitapp`) lists the
 account's agents, shows each one live, plays its work as sound, taps the wrist
 for tool calls, errors and finished runs, and offers Stop, Continue, Run again
-and a dictated prompt. The design is `docs/native/PARITY.md`, section 4.
+and a dictated prompt. The design is [docs/native/PARITY.md](../../docs/native/PARITY.md), section 4.
 
 The watch is not a client of its own: the iPhone app's
 `Platform/WatchBridge.swift` reads sessions and transcripts, sends compact
@@ -273,19 +266,23 @@ The app is `com.forkmesh.forkmesh` (`APP_BUNDLE_ID` in
   run `tools/check_swift_syntax.sh`.
 - **Tests** are XCTest, in `Tests/<Module>Tests`, sharing vectors and cases
   with the Kotlin ones (`native/android/core/src/test`).
-- **Every message can be copied or handed to an agent.** Alerts, errors,
-  warnings, notices and status lines carry copy and send-to-agent icons
-  (`Kit/FmMessageTools.swift`; use `FmMessageTools(text)` or
-  `.fmMessageTools(text)`). `FmNoticeLine`, `FmEmptyState`, `FmDialog`,
-  `FmConnectionBanner` and `FmNeedsDesktopNote` include them; a system
-  `.alert` showing an error gets "Copy" and "Send to agent" buttons. Send to
-  agent opens the composer with `MessageHandoff.agentPrompt`
-  (`ForkMeshCore/Sources/FMApi/Navigation`). Chat and transcript bubbles keep
+- **Tapping a message opens it in the composer.** Alerts, errors, warnings,
+  notices and status lines have no copy or send icons (removed 2026-11-01 at
+  the user's request): `.fmMessageTools(text)` (`Kit/FmMessageTools.swift`)
+  makes the message itself a tap target that opens the composer with
+  `MessageHandoff.agentPrompt` (`ForkMeshCore/Sources/FMApi/Navigation`).
+  `FmNoticeLine`, `FmEmptyState`,
+  `FmDialog`, `FmConnectionBanner` and `FmNeedsDesktopNote` do this; text
+  stays selectable with a long press. A system `.alert` showing an error
+  gets "Copy" and "Send to agent" buttons. Chat and transcript bubbles keep
   their long-press menu (`Kit/FmMessageActions.swift`).
+- **Notices close themselves.** A dismissible `FmNoticeLine` closes after
+  6 seconds (10 for an error); `FmCountdownClose` draws a ring around the X
+  that empties over that time, and the timer restarts when the message
+  changes. Tapping the notice opens the composer and dismisses it. A notice
+  without `onDismiss` stays until its screen clears it.
 - **Only the home shell shows the composer.** `Route.compose` has no screen
   of its own: `RouteDestinationView(route: .compose(...))` in a sheet shows
   the "New agent is not in this version of the app yet" placeholder. Hand a
   prepared prompt to `FmMessageHandoff.compose(target)`, which closes any
-  open sheet and asks the shell's composer to open. The failed Actions run's
-  "Send to agent" used its own sheet and showed the placeholder until
-  2026-10-15.
+  open sheet and asks the shell's composer to open.

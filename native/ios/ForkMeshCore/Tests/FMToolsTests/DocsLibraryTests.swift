@@ -204,12 +204,12 @@ final class DocsLibraryTests: XCTestCase {
         XCTAssertEqual(docs.resolve(from: from, href: "//cdn.example.com/x.js"), .external(URL(string: "https://cdn.example.com/x.js")!))
         XCTAssertEqual(docs.resolve(from: from, href: "/pricing/"), .external(URL(string: "https://forkmesh.com/pricing/")!))
         XCTAssertEqual(
-            docs.resolve(from: from, href: "../../public/install.sh"), .external(URL(string: "https://forkmesh.com/install.sh")!))
+            docs.resolve(from: from, href: "../../www/public/install.sh"), .external(URL(string: "https://forkmesh.com/install.sh")!))
         XCTAssertEqual(
             docs.resolve(from: from, href: "runbook.md#step-2"),
-            .external(URL(string: "https://app.forkmesh.com/forkmesh/forkmesh/tree/main/www/docs/operations/runbook.md#step-2")!))
+            .external(URL(string: "https://app.forkmesh.com/forkmesh/forkmesh/tree/main/docs/operations/runbook.md#step-2")!))
         XCTAssertEqual(
-            docs.resolve(from: from, href: "../../../app/host/main.py"),
+            docs.resolve(from: from, href: "../../app/host/main.py"),
             .external(URL(string: "https://app.forkmesh.com/forkmesh/forkmesh/tree/main/app/host/main.py")!))
         XCTAssertEqual(
             docs.resolve(from: from, href: "../../../../../../a b.md"),

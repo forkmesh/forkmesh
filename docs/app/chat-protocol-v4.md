@@ -1,6 +1,6 @@
 # Chat protocol v4: a per-message ratchet for direct messages
 
-Status: adopted 2026-10-16. Builds on [chat-protocol-v3.md](chat-protocol-v3.md):
+Part of [the App docs](README.md). Status: adopted 2026-10-16. Builds on [chat-protocol-v3.md](chat-protocol-v3.md):
 keys, bundles, trust, safety numbers, mesh links, direct delivery and push
 are unchanged. v4 replaces only the sealed frame of **strict rooms** (server
 DMs, `direct:<id>`, and their `direct-sealed` mesh copies). Channels, Office

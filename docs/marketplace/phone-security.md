@@ -6,7 +6,8 @@ runs a local checkup on iPhone and Android, explains every result, says
 whether the thing it found is in use, and opens the right settings page when
 the phone allows it. It is off by default, synced with the account, shown on
 phones only, and opens from **You → Personal → Phone Security**, the Market's
-**Open** button, or `forkmesh://dashboard/phone-security`.
+**Open** button, or `forkmesh://dashboard/phone-security`. Part of
+[Marketplace](README.md).
 
 ## Why a separate package
 

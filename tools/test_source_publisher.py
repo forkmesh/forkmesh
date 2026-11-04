@@ -71,6 +71,14 @@ def box(tmp_path, monkeypatch):
     return paths
 
 
+REAL_CORES_AGREEMENT = sp.cores_agreement
+
+
+@pytest.fixture(autouse=True)
+def cores_agree(monkeypatch):
+    monkeypatch.setattr(sp, "cores_agreement", lambda source, oid: (True, ""))
+
+
 def systemctl_fake(states=None, calls=None):
     states = states if states is not None else {}
 
@@ -1241,11 +1249,13 @@ def test_core_read_urls_lists_every_core_from_the_fleet(box):
     assert sp.core_read_urls(box.source / "missing") == []
 
 
-def test_watch_takes_a_main_only_one_core_holds(box, tmp_path, monkeypatch):
+def test_watch_takes_a_main_two_cores_hold(box, tmp_path, monkeypatch):
     cores, pushed = _cores_with(box, tmp_path, "runner-merge")
     local = commit(box.source, "desktop-change")
+    monkeypatch.setattr(sp, "cores_agreement", REAL_CORES_AGREEMENT)
     monkeypatch.setattr(sp, "core_read_urls", lambda source: [
-        {"name": "core n1", "url": str(cores)}])
+        {"name": "core n1", "url": str(cores)},
+        {"name": "core n2", "url": str(cores)}])
     monkeypatch.setattr(sp, "read_gateways", lambda path, key: [])
     passes = []
     monkeypatch.setattr(sp, "publish", lambda paths, run=None, log=None: passes.append(1) or 0)
@@ -1528,6 +1538,7 @@ def test_publish_retries_a_failed_github_push_on_the_next_pass(box):
 
 
 def _three_cores(monkeypatch, mains):
+    monkeypatch.setattr(sp, "cores_agreement", REAL_CORES_AGREEMENT)
     urls = [{"name": "core %s" % name, "url": "https://%s.example/forkmesh/forkmesh.git" % name}
             for name in mains]
     monkeypatch.setattr(sp, "core_read_urls", lambda source: urls)
@@ -1547,13 +1558,29 @@ def test_absorb_takes_main_only_when_a_second_core_serves_it(box, tmp_path, monk
     assert outcome["absorbed"] and sh("rev-parse", "main", cwd=box.source) == pushed
 
 
-def test_absorb_accepts_the_only_reachable_core(box, tmp_path, monkeypatch):
+def test_absorb_holds_while_only_one_core_is_reachable(box, tmp_path, monkeypatch):
     cores, pushed = _cores_with(box, tmp_path, "lone-core")
+    before = sh("rev-parse", "main", cwd=box.source)
     _three_cores(monkeypatch, {"n3": pushed, "n4": "", "n5": ""})
+    refused = sp.absorb_cores(box.source, str(cores))
+    assert not refused["absorbed"] and refused["unconfirmed"]
+    assert "only 1 of 1 reachable cores" in refused["reason"]
+    assert sh("rev-parse", "main", cwd=box.source) == before
+    _three_cores(monkeypatch, {"n3": pushed, "n4": pushed, "n5": ""})
     assert sp.absorb_cores(box.source, str(cores))["absorbed"]
     _, other = _cores_with(box, tmp_path / "again", "nobody-answers")
     _three_cores(monkeypatch, {"n3": "", "n4": "", "n5": ""})
     assert not sp.cores_agreement(box.source, other)[0]
+
+
+def test_absorb_holds_when_the_fleet_lists_no_cores(box, tmp_path, monkeypatch):
+    cores, _pushed = _cores_with(box, tmp_path, "no-fleet")
+    before = sh("rev-parse", "main", cwd=box.source)
+    monkeypatch.setattr(sp, "cores_agreement", REAL_CORES_AGREEMENT)
+    monkeypatch.setattr(sp, "core_read_urls", lambda source: [])
+    refused = sp.absorb_cores(box.source, str(cores))
+    assert not refused["absorbed"] and refused["unconfirmed"]
+    assert sh("rev-parse", "main", cwd=box.source) == before
 
 
 def test_watch_waits_for_a_second_core_before_taking_main(box, tmp_path, monkeypatch):

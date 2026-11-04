@@ -85,8 +85,7 @@ struct PullCommitsView: View {
                         Label("No commit range", systemImage: "point.3.connected.trianglepath.dotted")
                     } description: {
                         Text("This pull request carries a patch, not a branch.")
-                    } actions: {
-                        FmMessageTools("This pull request carries a patch, not a branch.")
+                            .fmMessageTools("This pull request carries a patch, not a branch.")
                     }
                 } else {
                     BranchDiffScreen(repo: ReviewEnv.repository(repo), base: base, head: head, title: "PR #\(number)")
@@ -96,8 +95,7 @@ struct PullCommitsView: View {
                     Label("Could not load commits", systemImage: "exclamationmark.triangle")
                 } description: {
                     Text(error)
-                } actions: {
-                    FmMessageTools(error)
+                        .fmMessageTools(error)
                 }
             } else {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)

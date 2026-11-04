@@ -297,7 +297,7 @@ def test_published_registry_does_not_claim_the_closure_gate():
     published = json.loads((ROOT / "www/public/docs/certification/badges.json").read_text(encoding="utf-8"))
     assert published["closureGate"]["met"] is False
     assert not any(item["independent"] for item in published["badges"])
-    assert "Closure gate **not met**" in (ROOT / "www/docs/protocol/certification-registry.md").read_text(
+    assert "Closure gate **not met**" in (ROOT / "docs/protocol/certification-registry.md").read_text(
         encoding="utf-8"
     )
 
@@ -334,7 +334,7 @@ def test_editing_retained_evidence_or_the_results_index_fails_validation(tmp_pat
 
 
 def test_gate_is_wired_into_quality_profiles_and_ci():
-    config = json.loads((ROOT / "www/docs/engineering/quality-gates.json").read_text(encoding="utf-8"))
+    config = json.loads((ROOT / "docs/engineering/quality-gates.json").read_text(encoding="utf-8"))
     gate = next(item for item in config["gates"] if item["id"] == "protocol-certification")
     assert gate["command"] == ["{python}", "tools/protocol_certification.py", "gate"]
     assert "protocol-certification" in config["profiles"]["core"]

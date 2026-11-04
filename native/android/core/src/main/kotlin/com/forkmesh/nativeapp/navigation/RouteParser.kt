@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.navigation
 
+import com.forkmesh.nativeapp.market.PackagesText
 import com.forkmesh.nativeapp.poker.PokerApi
 import java.net.URI
 import java.net.URLDecoder
@@ -30,6 +31,7 @@ object RouteParser {
         "settings", "status", "ledger", "market", "search", "explore", "new", "privacy", "terms", "oauth",
     )
     private val safeSegment = Regex("^[A-Za-z0-9._-]+$")
+    private val publishedNoteId = Regex("^[0-9a-f]{32}$")
     private val commitHash = Regex("^[0-9a-f]{7,64}$")
     private val marketPackage = Regex("^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$")
     private const val MARKET_PACKAGE_MAX = 96
@@ -97,6 +99,9 @@ object RouteParser {
         }
         when (first.lowercase()) {
             "dashboard" -> return dashboard(segments.drop(1), query, me)
+            "notes" -> if (first == "notes" && segments.size == 2 && publishedNoteId.matches(segments[1])) {
+                return listOf(Route.Notes, Route.Note(segments[1]))
+            }
             "ledger.html" -> return if (segments.size == 1) listOf(Route.Ledger(null)) else null
             "market.html" -> return if (segments.size == 1) listOf(Route.Market(null)) else null
             "status.html" -> return if (segments.size == 1) listOf(Route.Status) else null
@@ -136,7 +141,7 @@ object RouteParser {
         is Route.TeammateEditor ->
             if (!route.id.isNullOrEmpty()) listOf(Route.Teammates, Route.Teammate(route.id), route)
             else listOf(Route.Teammates, route)
-        is Route.Note -> listOf(Route.Notes, route)
+        is Route.Note, is Route.NotePage -> listOf(Route.Notes, route)
         is Route.Task -> listOf(Route.Tasks(null), route)
         is Route.Host, is Route.Provision -> listOf(Route.Hosts, route)
         is Route.Node -> listOf(Route.Network(null), route)
@@ -239,7 +244,13 @@ object RouteParser {
             "chat" -> listOf(Route.Chat)
             "notes" -> {
                 val id = first ?: query["note"]?.trim()?.takeIf { it.isNotEmpty() }
-                if (id != null) listOf(Route.Notes, Route.Note(id)) else listOf(Route.Notes)
+                val comment = query["comment"]?.trim()?.takeIf { it.isNotEmpty() }
+                val page = query["page"]?.trim()?.takeIf { it.isNotEmpty() }
+                when {
+                    first == null && page != null -> listOf(Route.Notes, Route.NotePage(page, id))
+                    id != null -> listOf(Route.Notes, Route.Note(id, comment))
+                    else -> listOf(Route.Notes)
+                }
             }
             "tasks" -> if (first != null) listOf(Route.Tasks(null), Route.Task(first)) else listOf(Route.Tasks(query["filter"]))
             "calendar" -> listOf(Route.Calendar(query["date"], CalendarMode.of(query["mode"]) ?: CalendarMode.Month))
@@ -247,14 +258,17 @@ object RouteParser {
             "network" -> listOf(Route.Network(first))
             "ads" -> listOf(Route.Ads)
             "invoices" -> if (first == null) listOf(Route.Invoices(query["org"]?.trim()?.takeIf { it.isNotEmpty() }, query["invoice"]?.trim()?.takeIf { it.isNotEmpty() })) else null
+            "surveys" -> if (first == null) listOf(Route.Surveys(query["org"]?.trim()?.takeIf { it.isNotEmpty() }, query["survey"]?.trim()?.takeIf { it.isNotEmpty() })) else null
             "face-changer" -> listOf(Route.FaceChanger)
             "phone-security" -> listOf(Route.PhoneSecurity)
+            "silent-speech" -> listOf(Route.SilentSpeech)
             "speech" -> listOf(Route.Speech)
             "ember" -> if (first == null) listOf(Route.Ember(RepoRef.parse(query["repo"]))) else null
             "strata" -> if (first == null) listOf(Route.Strata(RepoRef.parse(query["repo"]))) else null
             "synapse" -> if (first == null) listOf(Route.Synapse(RepoRef.parse(query["repo"]))) else null
             "openwrt" -> listOf(Route.OpenWrtRouter)
             "app-store-status" -> listOf(Route.AppStoreStatus)
+            "booking" -> if (first == null) listOf(Route.Booking(query["booking"]?.trim()?.lowercase()?.takeIf(PackagesText::isHexId))) else null
             "runners" -> if (first == null) listOf(Route.Runners) else null
             "usage" -> if (first == null) listOf(Route.Usage) else null
             "rss", "rss-reader" -> listOf(Route.RssReader)
@@ -262,6 +276,7 @@ object RouteParser {
             "video-mix-dj-studio", "dj-studio" -> if (first == null) listOf(Route.VideoMixDjStudio) else null
             "poker" -> if (first == null) listOf(Route.Poker(query["table"]?.trim()?.lowercase()?.takeIf(PokerApi::isTableId))) else null
             "instance-feed" -> if (first == null) listOf(Route.InstanceFeed(query["post"]?.trim()?.takeIf { it.isNotEmpty() })) else null
+            "mastodon" -> if (first == null) listOf(Route.Mastodon) else null
             "secure-drive" -> listOf(Route.SecureDrive)
             "files" -> listOf(Route.Files)
             "nexus" -> if (first == null) listOf(Route.Nexus) else null
@@ -308,7 +323,8 @@ object RouteParser {
                 if (tail.size == 3 && tail.all { it.isNotBlank() }) listOf(Route.Coves(null), Route.Cove(rest))
                 else listOf(Route.Coves(null))
             "coves" -> listOf(Route.Coves(null))
-            "home" -> listOf(AppTab.barOrder.first().root)
+            "mastodon" -> if (tail.isEmpty()) listOf(Route.Mastodon) else null
+            "home" ->listOf(AppTab.barOrder.first().root)
             else -> dashboard(all, query, me) ?: routes(all, query, me) ?: named(head, tail.firstOrNull()) ?: listOf(AppTab.barOrder.first().root)
         }
     }
@@ -325,16 +341,19 @@ object RouteParser {
         "speech" -> listOf(Route.Speech)
         "glasses-alert" -> listOf(Route.GlassesAlert)
         "phone-security" -> listOf(Route.PhoneSecurity)
+        "silent-speech" -> listOf(Route.SilentSpeech)
         "ember" -> listOf(Route.Ember(null))
         "strata" -> listOf(Route.Strata(null))
         "synapse" -> listOf(Route.Synapse(null))
         "openwrt" -> listOf(Route.OpenWrtRouter)
         "face-changer" -> listOf(Route.FaceChanger)
         "app-store-status" -> listOf(Route.AppStoreStatus)
+        "booking" -> listOf(Route.Booking(first?.lowercase()?.takeIf(PackagesText::isHexId)))
         "runners" -> listOf(Route.Runners)
         "usage" -> listOf(Route.Usage)
         "rss", "rss-reader" -> listOf(Route.RssReader)
         "instance-feed" -> listOf(Route.InstanceFeed(first))
+        "mastodon" -> if (first == null) listOf(Route.Mastodon) else null
         "poker" -> listOf(Route.Poker(null))
         "secure-drive" -> listOf(Route.SecureDrive)
         "files" -> listOf(Route.Files)

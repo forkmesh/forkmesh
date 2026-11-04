@@ -1,11 +1,11 @@
 # The projects folder on iOS and Android
 
-The phone keeps its stores inside the app: Keychain or Keystore, preferences,
+Part of the phone apps ([README.md](README.md)). The phone keeps its stores inside the app: Keychain or Keystore, preferences,
 Documents, and Application Support or `filesDir`. The phone deletes all of it
 with the app, and a fresh install even erases a Keychain the old app left
 behind (`FreshInstallReset`).
 
-So the phone also keeps its projects in a projects folder, laid out like the
+So the phone also copies its projects to a projects folder, laid out like the
 desktop's `~/projects/<project>/data`
 ([projects-layout.md](../tools/projects-layout.md)):
 
@@ -61,10 +61,11 @@ At every launch the app shows *Keep your ForkMesh data safe* in two cases:
 - the folder can't be opened.
 
 Saving the identity key is optional: once a folder outside the app is chosen
-the alert stops, and the page offers *Identity key (optional)* for as long as
-the folder doesn't hold this project's key for its current public key
-(`DataFolder.identitySaved`). A user who keeps the key some other way, or who
-does not want it in a folder they share, is not asked for a passphrase.
+the alert stops, and the page offers *Identity key (optional)* while the folder
+lacks this project's key for its current public key
+(`DataFolder.identitySaved`), so a user who keeps the key elsewhere is never
+asked for a passphrase. How the key is encrypted:
+[encryption.md](../encryption.md).
 
 *Not now* hides it until the next launch. On iOS the alert sits on the root
 view; on Android it is drawn outside `AccountFeature.Gate`. Either way it shows
@@ -84,12 +85,23 @@ before sign-in, so a fresh install can restore first.
   - A file is copied when its size:mtime differs from the index.
   - `LocalModels`, `CodeInsight`, `.Trash` and `tmp` are skipped, and so is the
     legacy project's `projects/` folder, which holds the other projects.
+  - A folder holding `forkmesh-data.json` is a projects folder and is never
+    copied. The automatic folder sits inside a copied tree (iOS
+    `Documents/ForkMesh projects`, Android `filesDir/ForkMesh projects` without
+    external storage). Before November 2026 each copy put the folder inside
+    itself again, one level deeper, under
+    `forkmesh/data/core/<documents|support>/ForkMesh projects/`.
+    `DataFolder.withoutNestedFolders` drops those entries from the index, so
+    copying and restoring ignore them. The old copies stay in the folder, and
+    the user may remove them by hand.
   - A copy goes to a partial file that is then renamed over the old one.
     Nothing in the folder is ever deleted.
 - **Settings.** iOS writes `forkmesh.mobile-settings`. Android writes
   `forkmesh.android-settings`, raw values tagged with their type. Keys under
   `dataFolder/` and `install/` stay on the device. They live in `forkmesh/`
-  because most preference keys are app-wide (`ProjectKeyPolicy`).
+  because most preference keys are app-wide (`ProjectKeyPolicy`). The file is a
+  copy written from the preferences on every sync and read only by *Restore*:
+  editing it does not change the running app.
 - **Restore.** A folder that holds projects whose saved identity key differs
   from this install's offers *Restore* (one passphrase for all of them) or
   *Keep this install's data instead*.

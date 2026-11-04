@@ -30,6 +30,10 @@ async function preparePage(page) {
     path: path.join(PUBLIC, "dashboard", "links", "index.html"),
     contentType: "text/html; charset=utf-8",
   }));
+  await page.route(/\/dashboard\/pings(?:\?.*)?$/, (route) => route.fulfill({
+    path: path.join(PUBLIC, "dashboard", "pings", "index.html"),
+    contentType: "text/html; charset=utf-8",
+  }));
   await page.route("**/api/**", (route) => {
     const url = new URL(route.request().url());
     let body = { ok: true };
@@ -52,7 +56,7 @@ test("the page document leaves the dialogs out until one is opened", async ({ pa
   await page.goto("/dashboard/links");
   await expect(page.locator("#agentModalToggle")).toBeAttached();
   await page.waitForFunction(() => typeof window.lucide !== "undefined");
-  for (const selector of ["#agentModal", "#notificationModal", "[data-feedback-modal]",
+  for (const selector of ["#agentModal", "[data-feedback-modal]",
     "[data-profile-about-modal]", "[data-agent-login-modal]"]) {
     await expect(page.locator(selector)).toHaveCount(0);
   }
@@ -69,7 +73,7 @@ test("the page document leaves the dialogs out until one is opened", async ({ pa
   await expect(feedback).toHaveAttribute("aria-modal", "true");
   await expect(page.locator("[data-feedback-message]")).toBeFocused();
   // The shared dialogs came in together, closed; icons were drawn.
-  await expect(page.locator("#notificationModal")).toBeHidden();
+  await expect(page.locator("[data-profile-modal]")).toBeHidden();
   await expect(page.locator("[data-feedback-modal] svg.lucide").first()).toBeAttached();
   await page.keyboard.press("Escape");
   await expect(feedback).toBeHidden();
@@ -106,15 +110,15 @@ test("the agent popover is added under its toggle on first open", async ({ page 
   await expect(page.locator("#agentModal")).toHaveCount(1);
 });
 
-test("the pings dialog opens from the bell", async ({ page }) => {
+test("the bell is a link to the pings page", async ({ page }) => {
   await preparePage(page);
   await page.goto("/dashboard/links");
-  await expect(page.locator("#notificationToggle")).toBeVisible();
-  await page.locator("#notificationToggle").click();
-  await page.locator("[data-show-all-notifications]").click();
-  const modal = page.locator("#notificationModal");
-  await expect(modal).toBeVisible();
-  await expect(modal.locator("[data-notification-modal-list]")).toBeAttached();
-  await page.locator("[data-close-notification-modal]").click();
-  await expect(modal).toBeHidden();
+  const bell = page.locator("#notificationToggle");
+  await expect(bell).toBeVisible();
+  await expect(bell).toHaveAttribute("href", "/dashboard/pings");
+  await expect(page.locator("#notificationDropdown")).toHaveCount(0);
+  await bell.click();
+  await expect(page).toHaveURL(/\/dashboard\/pings$/);
+  await expect(page.locator("[data-pings-page]")).toBeVisible();
+  await expect(page.locator("#notificationToggle")).toHaveAttribute("aria-current", "page");
 });

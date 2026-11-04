@@ -10,6 +10,7 @@
     "network": initNetworkPage,
     "ads": initAdsPage,
     "runners": initRunnersPage,
+    "pings": initPingsPage,
     "agents": initAgentsPage,
     "docs": initDocsPage,
     "plugins": initPluginsPage,

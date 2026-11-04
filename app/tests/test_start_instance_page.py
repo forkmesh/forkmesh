@@ -85,12 +85,12 @@ def test_a_settings_file_fills_the_whole_form_and_starts_in_one_click():
     assert 'accept=".zip,application/zip,.json,application/json" data-start-config-file' in PAGE
     assert 'href="/start-config.example.zip" download="forkmesh-instance.zip"' in PAGE
     assert 'configLaunch.addEventListener("click", () => form.requestSubmit())' in SCRIPT
-    guide = (ROOT / "www" / "docs" / "start-config.md").read_text(encoding="utf-8")
+    guide = (ROOT / "docs" / "start-config.md").read_text(encoding="utf-8")
     for name in form_fields:
         assert "`%s`" % name in guide, name
     assert "https://app.forkmesh.com/start-config.example.json" in guide
     assert "https://app.forkmesh.com/start-config.example.zip" in guide
-    assert "(start-config.md)" in (ROOT / "www" / "docs" / "README.md").read_text(encoding="utf-8")
+    assert "(start-config.md)" in (ROOT / "docs" / "README.md").read_text(encoding="utf-8")
 
 
 def test_a_coding_agent_can_take_over_from_one_copied_prompt():
@@ -111,9 +111,9 @@ def test_a_coding_agent_can_take_over_from_one_copied_prompt():
     for kept_out in ("adminPath", "sshPassword", "sshPrivateKey", "sshPassphrase",
                      "adminPassword", "mailApiKey"):
         assert kept_out not in sample, kept_out
-    docs = (ROOT / "www" / "docs" / "coding-agents.md").read_text(encoding="utf-8")
+    docs = (ROOT / "docs" / "coding-agents.md").read_text(encoding="utf-8")
     assert "https://app.forkmesh.com/forkmesh-agent.md" in docs
-    assert "(coding-agents.md)" in (ROOT / "www" / "docs" / "README.md").read_text(encoding="utf-8")
+    assert "(coding-agents.md)" in (ROOT / "docs" / "README.md").read_text(encoding="utf-8")
 
 
 def test_the_form_takes_an_optional_logo():

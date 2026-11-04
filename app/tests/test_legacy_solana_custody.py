@@ -18,7 +18,7 @@ APP_RUNTIME = WORKER_ROOT / "src" / "app_runtime.py"
 SOLANA = WORKER_ROOT / "src" / "solana.py"
 SCHEMA = WORKER_ROOT / "src" / "schema.py"
 TOOL_PATH = ROOT / "tools" / "legacy_solana_custody.py"
-DOC = ROOT / "www" / "docs" / "operations" / "legacy-solana-custody-migration.md"
+DOC = ROOT / "docs" / "operations" / "legacy-solana-custody-migration.md"
 
 SPEC = importlib.util.spec_from_file_location("legacy_solana_custody", TOOL_PATH)
 custody = importlib.util.module_from_spec(SPEC)

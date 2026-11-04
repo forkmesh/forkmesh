@@ -4,7 +4,7 @@
 //
 // Deliberately not CryptoKit on any platform. CryptoKit's Curve25519.Signing signatures are
 // randomised; Kotlin's are the deterministic RFC 8032 ones, and signature vectors are
-// pinned across clients (see docs/FMCrypto.md). Verification stays here too, so the acceptance
+// pinned across clients (see docs/native/ios/FMCrypto.md). Verification stays here too, so the acceptance
 // rules (canonical S, canonical encodings, the strict subgroup check) are the same everywhere.
 
 public enum Ed25519 {

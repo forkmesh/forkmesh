@@ -16,7 +16,7 @@ Start every cycle by checking the current news.ycombinator.com guidelines and Sh
 - Agent coordination and differentiation from a crowded category: <https://news.ycombinator.com/item?id=47281538>
 - Local multi-agent completion gates and provider support: <https://news.ycombinator.com/item?id=47153941>
 
-Maintain a launch-readiness report under `www/docs/launch/y-combinator-news-readiness.md`. Distinguish measured fact, repository evidence, deployed observation, inference, and missing proof. Include:
+Maintain a launch-readiness report under `docs/launch/y-combinator-news-readiness.md`. Distinguish measured fact, repository evidence, deployed observation, inference, and missing proof. Include:
 
 1. A one-sentence, technically precise explanation of what ForkMesh is and the narrow reason a Y Combinator News reader should care. Test it against “why not GitHub/GitLab?”, “why not a raw Git remote?”, “why not Claude/Codex worktrees?”, and “why another agent orchestrator?”.
 2. A five-minute no-signup show path a reader can actually try. Verify every command and link from a clean environment. The path should prove ForkMesh's distinctive repository preservation or collaboration behavior, not merely open a landing page.

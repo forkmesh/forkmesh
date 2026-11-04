@@ -1,9 +1,9 @@
 # Automated AI review of pull requests
 
-An instance can have Cloudflare Workers AI read each pull request and post a
-first-pass review as one ForkBot comment. A maintainer still decides. The
-review never approves, never requests changes, never merges and never blocks
-a merge.
+Part of [the App docs](README.md). An instance can have Cloudflare Workers AI,
+under the instance's own Cloudflare account, read each pull request and post a
+first-pass review as one ForkBot comment. A maintainer still decides: the
+review never approves, requests changes, merges or blocks a merge.
 
 Code: `app/src/ai_review.py` (queue, provider call, comment),
 `app/src/review_prompt.py` (the shared review prompt),
@@ -19,6 +19,7 @@ Administrators: **Settings → AI review**.
 | --- | --- | --- |
 | Review pull requests automatically | off | Nothing is queued or sent while off. |
 | On for every public repository | off | Off: repositories opt in. On: repositories opt out. |
+| Writing help in Notes | on | Lets people rewrite a note selection with the same model and credentials, whether or not reviews are on ([notes assist](notes-assist.md)). |
 | Cloudflare account ID | none | 32 hex characters. |
 | API token | none | Sealed with `encrypt_row` in `instance_settings` (`ai_review`). The page shows only whether one is set. |
 | Model | `@cf/openai/gpt-oss-120b` | Models are limited to an approved list (`APPROVED_AI_REVIEW_MODELS`); anything else is refused. |
@@ -29,8 +30,7 @@ Administrators: **Settings → AI review**.
 | Use this server's AI binding | off | Only shown when the deployment has an `AI` binding; used when no token is set. |
 
 Create the token in the Cloudflare dashboard with only the **Workers AI**
-permission (Read and Edit) on the one account. The instance never needs any
-other Cloudflare permission for this.
+permission (Read and Edit) on that one account; nothing else is needed.
 
 Repositories decide in `.forkmesh/pulls.json` on the default branch:
 
@@ -57,12 +57,12 @@ prompt characters it is given:
 | `@cf/openai/gpt-oss-20b` | 128k tokens |
 | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | 24k tokens: the diff budget shrinks to fit |
 
-The list was checked against the Workers AI catalog
-(`GET /accounts/{id}/ai/models/search` and `/ai/models/schema`, read-only):
-every listed model accepts `messages` and `max_tokens` on `/ai/run`. A model
-missing from the list cannot be saved and is never sent to the provider, so
-the instance's budget cannot be aimed at other models. Changing the list is a
-code change with a test (`test_default_model_is_approved_and_others_are_refused`).
+Every listed model accepts `messages` and `max_tokens` on `/ai/run` (checked
+against the Workers AI catalog, `GET /accounts/{id}/ai/models/search` and
+`/ai/models/schema`). A model not on the list cannot be saved and is never
+sent, so the instance's budget cannot be aimed at other models. Changing the
+list is a code change with a test
+(`test_default_model_is_approved_and_others_are_refused`).
 
 ## When a review runs
 
@@ -74,15 +74,15 @@ code change with a test (`test_default_model_is_approved_and_others_are_refused`
 | A maintainer presses **Run AI review** | `POST /api/ai-review/pulls/<owner>/<repo>/<n>` |
 
 Enqueuing writes one `pull_ai_reviews` row per pull request (keyed by the
-repository's blind index and the number). The cron phase `ai-review` (every
-five minutes, at minutes divisible by five) takes at most three due rows and makes at most one
-provider call per run, so a run stays inside the phase's subrequest budget
-(`_cron_subrequest_charge` counts every fetch and D1 call). The provider call
+repository's blind index and the number). The cron phase `ai-review` (minutes
+divisible by five; [cron-and-durable-objects.md](cron-and-durable-objects.md))
+takes at most three due rows and makes at most one provider call per run, so
+a run stays inside the phase's subrequest budget (`_cron_subrequest_charge`
+counts every fetch and database call). The provider call
 has a 25 second timeout. A review is never run inside a request.
 
-It is not a workflow: a workflow for an untrusted pull request runs without
-secrets, and the token must never be reachable from code a contributor
-controls. The job only reads text and writes a comment.
+It is not a workflow: the token must never be reachable from code a
+contributor controls. The job only reads text and writes a comment.
 
 Pull requests opened directly on a node (agent sessions, imports) never pass
 through the relay and are not queued; **Run AI review** covers them.
@@ -215,4 +215,4 @@ processes it under the account's terms for Workers AI.
 - `ai_review_budget`: per-day counters keyed `instance`, `repo:<bi>`,
   `author:<bi>`, `click:<bi>`.
 
-See [REKEY.md](../REKEY.md) for how a key rotation treats them.
+See [rekey](../operations/rekey.md) for how a key rotation treats them.

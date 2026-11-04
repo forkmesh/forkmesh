@@ -1,6 +1,6 @@
 """Signed intrusion-detection records and the quarantine they imply.
 
-Shared, unchanged, by three programs (docs/IDS.md):
+Shared, unchanged, by three programs (docs/operations/intrusion-detection.md):
 
 * the root IDS on every node (``deploy/core/ids.py``; the renderer installs
   this file next to it as ``/opt/forkmesh-next/bin/ids_records.py``), which
@@ -316,7 +316,7 @@ def quarantined_nodes(state):
 def peer_unseal_blocked(state, node):
     """True when peers must not hand ``node`` the vault key: it is
     quarantined, or it was released but the operator has not re-unsealed it
-    from the desktop yet (docs/IDS.md "Release")."""
+    from the desktop yet (docs/operations/intrusion-detection.md "Release")."""
     current = (state or {}).get(node)
     if not current:
         return False

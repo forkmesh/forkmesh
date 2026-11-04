@@ -80,6 +80,8 @@
 #include <QProcessEnvironment>
 #include <QFileInfo>
 #include <QStandardPaths>
+#include <QTcpServer>
+#include <QTcpSocket>
 #include <QTemporaryDir>
 #include <QThread>
 #include <QTimer>
@@ -550,18 +552,18 @@ int main(int argc, char *argv[])
               "heading anchors ignore inline code ticks");
 
         const auto doc = MarkdownRender::resolveRepoLink(
-            "README.md", "www/docs/product-promise.md#2-add-an-independent-mirror");
-        check(doc && doc->path == "www/docs/product-promise.md" &&
+            "README.md", "docs/product-promise.md#2-add-an-independent-mirror");
+        check(doc && doc->path == "docs/product-promise.md" &&
                   doc->fragment == "2-add-an-independent-mirror" && !doc->directory,
               "a relative link from the root README names a repository file and anchor");
 
-        const auto up = MarkdownRender::resolveRepoLink("www/docs/intro.md", "../README.md");
-        const auto here = MarkdownRender::resolveRepoLink("www/docs/intro.md", "./guide%20one.md");
-        const auto folder = MarkdownRender::resolveRepoLink("www/docs/intro.md", "operations/");
-        check(up && up->path == "www/README.md", "../ climbs out of the file's directory");
-        check(here && here->path == "www/docs/guide one.md",
+        const auto up = MarkdownRender::resolveRepoLink("docs/intro.md", "../README.md");
+        const auto here = MarkdownRender::resolveRepoLink("docs/intro.md", "./guide%20one.md");
+        const auto folder = MarkdownRender::resolveRepoLink("docs/intro.md", "operations/");
+        check(up && up->path == "README.md", "../ climbs out of the file's directory");
+        check(here && here->path == "docs/guide one.md",
               "./ stays in the file's directory and percent-escapes decode");
-        check(folder && folder->path == "www/docs/operations" && folder->directory,
+        check(folder && folder->path == "docs/operations" && folder->directory,
               "a trailing slash marks a folder link");
 
         check(!MarkdownRender::resolveRepoLink("README.md", "https://forkmesh.com") &&
@@ -1588,6 +1590,22 @@ int main(int argc, char *argv[])
         check(!ForkMeshIdentity::verifySignature(identity.publicKey(),
                                                  tamperedSignature, canonical),
               "verifySignature rejects a tampered signature");
+        const QString alphabet = QStringLiteral(
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_");
+        const int last = alphabet.indexOf(sig.back());
+        const QString aliasedSignature =
+            sig.left(sig.size() - 1) + alphabet.at(last ^ 1);
+        check(QByteArray::fromBase64(aliasedSignature.toLatin1(),
+                                     QByteArray::Base64UrlEncoding) ==
+                  QByteArray::fromBase64(sig.toLatin1(),
+                                         QByteArray::Base64UrlEncoding),
+              "aliased signature decodes to the same bytes");
+        check(!ForkMeshIdentity::verifySignature(identity.publicKey(),
+                                                 aliasedSignature, canonical),
+              "verifySignature rejects a non-canonical signature encoding");
+        check(!ForkMeshIdentity::verifySignature(identity.publicKey(),
+                                                 sig + QStringLiteral("=="), canonical),
+              "verifySignature rejects a padded signature");
     }
 
     // The #welcome greeting must survive a restart (a fresh ForkMeshIdentity
@@ -3056,9 +3074,59 @@ int main(int argc, char *argv[])
                   "no Firewall blocked notice or error report");
         }
 
+        {
+            const QStringList allowBefore = manager.firewallRules();
+            const QStringList denyBefore = manager.firewallDenyRules();
+            int allowAllSignals = 0;
+            bool lastAllowAll = false;
+            const QMetaObject::Connection changed = QObject::connect(
+                &manager, &BackoffNetworkAccessManager::firewallAllowAllChanged,
+                [&](bool active) {
+                    ++allowAllSignals;
+                    lastAllowAll = active;
+                });
+            manager.allowAllFirewallFor(60 * 1000);
+            check(manager.firewallAllowingAll() &&
+                      manager.firewallAllowAllRemainingMs() > 0 &&
+                      allowAllSignals == 1 && lastAllowAll,
+                  "allow-all starts and announces itself");
+            manager.seenPaths.clear();
+            runRequest(QStringLiteral("http://allowall.test/static/allow-all"));
+            check(prompts == 2 && !manager.seenPaths.isEmpty(),
+                  "while allowing all, an unlisted host connects without a prompt");
+            check(manager.firewallRules() == allowBefore &&
+                      manager.firewallDenyRules() == denyBefore,
+                  "allowing all remembers no rule");
+            manager.seenPaths.clear();
+            runRequest(QStringLiteral("http://denied.test/static/allow-all-denied"));
+            check(prompts == 2 && manager.seenPaths.isEmpty(),
+                  "a remembered denial still blocks while allowing all");
+            manager.stopAllowingAllFirewall();
+            check(!manager.firewallAllowingAll() && allowAllSignals == 2 &&
+                      !lastAllowAll,
+                  "stopping allow-all announces the end");
+            manager.seenPaths.clear();
+            runRequest(QStringLiteral("http://allowall.test/static/allow-all-over"));
+            check(prompts == 3 && manager.seenPaths.isEmpty(),
+                  "after allow-all ends an unlisted host asks again");
+            manager.removeFirewallDenyRule(QStringLiteral("host:allowall.test"));
+            manager.allowAllFirewallFor(30);
+            QElapsedTimer expiry;
+            expiry.start();
+            while (lastAllowAll || allowAllSignals < 4) {
+                if (expiry.elapsed() > 3000)
+                    break;
+                QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+            }
+            check(!manager.firewallAllowingAll() && allowAllSignals == 4 &&
+                      !lastAllowAll,
+                  "allow-all ends on its own when the time runs out");
+            QObject::disconnect(changed);
+        }
+
         manager.addFirewallRule(QStringLiteral("*.test"));
         runRequest(QStringLiteral("http://denied.test/static/firewall-deny-wild"));
-        check(prompts == 2 && manager.seenPaths.isEmpty() &&
+        check(prompts == 3 && manager.seenPaths.isEmpty() &&
                   manager.firewallMatch(QUrl(QStringLiteral("http://denied.test/"))) ==
                       BackoffNetworkAccessManager::FirewallDenied,
               "a deny rule wins over an allow rule that also matches");
@@ -3077,7 +3145,7 @@ int main(int argc, char *argv[])
               "an external destination with no rule is unlisted and must be asked");
         manager.seenPaths.clear();
         runRequest(QStringLiteral("http://127.0.0.1:9/static/firewall-loopback"));
-        check(prompts == 2 && !manager.seenPaths.isEmpty(),
+        check(prompts == 3 && !manager.seenPaths.isEmpty(),
               "loopback stays on this machine and needs no firewall decision");
 
         // The Stats page charts requests per destination with the verdict the
@@ -3094,7 +3162,7 @@ int main(int argc, char *argv[])
                 return Destination{};
             };
             const Destination denied = find(QStringLiteral("denied.test"));
-            check(denied.calls == 3 && denied.blocked == 3 && denied.allowed == 0 &&
+            check(denied.calls == 4 && denied.blocked == 4 && denied.allowed == 0 &&
                       denied.match == BackoffNetworkAccessManager::FirewallAllowed,
                   "destination stats sum a host's requests and follow the current rules");
             const Destination blocked = find(QStringLiteral("blocked.test"));
@@ -3377,6 +3445,44 @@ int main(int argc, char *argv[])
                   profileFor("GET", "https://api.test/other") == 0 &&
                   profileFor("GET", "https://elsewhere.test/items/7") == -1,
               "a call matches its most specific profile, and a named method wins");
+        {
+            const auto matches = [](const char *rule, const char *url) {
+                return FW::firewallRuleMatches(QString::fromLatin1(rule),
+                                               QUrl(QString::fromLatin1(url)));
+            };
+            check(matches("*", "https://a.test/x") &&
+                      matches("host:a.test", "https://A.Test/x") &&
+                      !matches("host:a.test", "https://b.a.test/x") &&
+                      matches("hostport:a.test:443", "https://a.test/x") &&
+                      matches("hostport:a.test:80", "ws://a.test/x") &&
+                      !matches("hostport:a.test:8443", "https://a.test/x") &&
+                      matches("scheme:wss", "WSS://a.test/x") &&
+                      !matches("scheme:ws", "wss://a.test/x") &&
+                      matches("url:https://a.test/x?q=1", "https://A.test/x?q=1") &&
+                      !matches("url:https://a.test/x", "https://a.test/x?q=1") &&
+                      matches("url:https://a.test/", "https://a.test"),
+                  "host, port, scheme and exact-URL rules match as before");
+            check(matches("hostwild:a.test", "https://a.test/") &&
+                      matches("hostwild:a.test", "https://b.a.test/") &&
+                      !matches("hostwild:a.test", "https://ba.test/") &&
+                      matches("urlglob:*://*.a.test/x/*", "https://b.a.test/x") &&
+                      matches("urlglob:*://*.a.test/x/*", "http://a.test/x/y/z") &&
+                      !matches("urlglob:*://*.a.test/x/*", "https://ba.test/x/y") &&
+                      !matches("urlglob:https://a.test:8443/*", "https://a.test/") &&
+                      matches("urlglob:https://a.test:8443/*", "https://a.test:8443/") &&
+                      !matches("urlglob:fo*o.test/x", "https://foo.test/x"),
+                  "wildcard hosts stop at a label boundary and URL patterns keep their scheme and port");
+            check(matches("", "file:///tmp/x") && !matches("", "https://a.test/"),
+                  "an empty rule only matches a URL with no host, as before");
+            const QUrl url(QStringLiteral("https://api.test/items/7"));
+            int repeated = -2;
+            for (int i = 0; i < 3; ++i) {
+                const int index = FW::matchEndpointProfile(profiles, QStringLiteral("GET"), url);
+                check(repeated == -2 || index == repeated,
+                      "a cached URL pattern gives the same profile on every call");
+                repeated = index;
+            }
+        }
         FW::EndpointStats rateStats;
         rateStats.calls = 30;
         rateStats.firstCalledMs = 1000;
@@ -12585,6 +12691,158 @@ int main(int argc, char *argv[])
         check(known.size() == RailShortcuts::kMaxKnownPageButtons &&
                   !known.contains(QStringLiteral("a")),
               "the remembered page buttons drop the oldest past the cap");
+    }
+
+    {
+        using Manager = BackoffNetworkAccessManager;
+        const QUrl remoteHttps(QStringLiteral("https://relay.test/a"));
+        check(Manager::redirectRefusal(QNetworkRequest::NoLessSafeRedirectPolicy, remoteHttps,
+                                       QUrl(QStringLiteral("https://other.test/b")))
+                  .isEmpty(),
+              "a no-less-safe redirect to another https host passes the policy check");
+        check(!Manager::redirectRefusal(QNetworkRequest::NoLessSafeRedirectPolicy, remoteHttps,
+                                        QUrl(QStringLiteral("http://other.test/b")))
+                   .isEmpty(),
+              "a redirect from https down to http is refused");
+        check(!Manager::redirectRefusal(QNetworkRequest::SameOriginRedirectPolicy, remoteHttps,
+                                        QUrl(QStringLiteral("https://other.test/b")))
+                   .isEmpty(),
+              "a same-origin request refuses another host");
+        check(Manager::redirectRefusal(QNetworkRequest::SameOriginRedirectPolicy, remoteHttps,
+                                       QUrl(QStringLiteral("https://relay.test/b")))
+                  .isEmpty(),
+              "a same-origin request follows its own host");
+        check(!Manager::redirectRefusal(QNetworkRequest::NoLessSafeRedirectPolicy,
+                                        QUrl(QStringLiteral("http://relay.test/a")),
+                                        QUrl(QStringLiteral("http://127.0.0.1:9/x")))
+                   .isEmpty(),
+              "a remote host cannot redirect a request onto this machine");
+
+        const QUrl narrow(QStringLiteral("https://host.test/a"));
+        const QString exact = Manager::firewallRuleForExactUrl(narrow);
+        check(Manager::firewallAnswerCoversUrl(Manager::FirewallAllow, exact, narrow),
+              "the prompt's allow answers the URL its rule covers");
+        check(!Manager::firewallAnswerCoversUrl(Manager::FirewallAllow, exact,
+                                                QUrl(QStringLiteral("http://host.test:8080/up"))),
+              "the prompt's allow does not answer another port or path on that host");
+        check(Manager::firewallAnswerCoversUrl(Manager::FirewallDenyOnce, QString(),
+                                               QUrl(QStringLiteral("https://host.test/b"))),
+              "a denial is shared by requests waiting on that host");
+        check(!Manager::firewallAnswerCoversUrl(Manager::FirewallAllowOnce, QString(), narrow),
+              "allow all for 1 minute is not read as a per-host answer");
+
+        QTcpServer server;
+        QStringList served;
+        check(server.listen(QHostAddress::LocalHost), "the redirect fixture listens");
+        const quint16 port = server.serverPort();
+        const QString localhost = QStringLiteral("http://localhost:%1").arg(port);
+        const QString origin = QStringLiteral("http://127.0.0.1:%1").arg(port);
+        QObject::connect(&server, &QTcpServer::newConnection, &server, [&] {
+            while (QTcpSocket *socket = server.nextPendingConnection()) {
+                QObject::connect(socket, &QTcpSocket::readyRead, socket, [&, socket] {
+                    const QByteArray request = socket->readAll();
+                    const QString path =
+                        QString::fromLatin1(request.split(' ').value(1));
+                    served.append(path);
+                    QString location;
+                    if (path == QLatin1String("/same"))
+                        location = QStringLiteral("/final");
+                    else if (path == QLatin1String("/denied"))
+                        location = QStringLiteral("http://denied-redirect.test/secret");
+                    else if (path == QLatin1String("/unlisted"))
+                        location = QStringLiteral("http://unlisted-redirect.test/secret");
+                    else if (path == QLatin1String("/other-origin"))
+                        location = localhost + QStringLiteral("/final");
+                    const QByteArray response =
+                        location.isEmpty()
+                            ? QByteArray("HTTP/1.1 200 OK\r\nContent-Length: 4\r\n"
+                                         "Connection: close\r\n\r\ndone")
+                            : "HTTP/1.1 302 Found\r\nLocation: " + location.toLatin1() +
+                                  "\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+                    socket->write(response);
+                    socket->disconnectFromHost();
+                });
+                QObject::connect(socket, &QTcpSocket::disconnected, socket,
+                                 &QObject::deleteLater);
+            }
+        });
+        struct Outcome {
+            QNetworkReply::NetworkError error = QNetworkReply::NoError;
+            int status = 0;
+            QByteArray body;
+            QUrl finalUrl;
+            bool finished = false;
+        };
+        BackoffNetworkAccessManager manager;
+        manager.setFirewallEnabled(true);
+        manager.addFirewallDenyRule(QStringLiteral("denied-redirect.test"));
+        QList<QUrl> prompted;
+        manager.setFirewallPrompt([&](const QString &, const QUrl &url, QString *) {
+            prompted.append(url);
+            return Manager::FirewallDenyOnce;
+        });
+        const auto fetch = [&](const QString &url, int policy) {
+            QNetworkRequest request{QUrl(url)};
+            if (policy >= 0)
+                request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, policy);
+            QNetworkReply *reply = manager.get(request);
+            QElapsedTimer timer;
+            timer.start();
+            while (!reply->isFinished() && timer.elapsed() < 5000)
+                QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+            Outcome outcome;
+            outcome.finished = reply->isFinished();
+            outcome.error = reply->error();
+            outcome.status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+            outcome.body = reply->readAll();
+            outcome.finalUrl = reply->url();
+            reply->deleteLater();
+            return outcome;
+        };
+
+        const Outcome same = fetch(origin + QStringLiteral("/same"), -1);
+        check(same.finished && same.error == QNetworkReply::NoError && same.body == "done",
+              "the default policy still follows a redirect the firewall allows");
+        const Outcome sameOrigin =
+            fetch(origin + QStringLiteral("/same"), QNetworkRequest::SameOriginRedirectPolicy);
+        check(sameOrigin.finished && sameOrigin.error == QNetworkReply::NoError &&
+                  sameOrigin.body == "done",
+              "a same-origin request still follows its own host");
+        const Outcome noLessSafe =
+            fetch(origin + QStringLiteral("/other-origin"),
+                  QNetworkRequest::NoLessSafeRedirectPolicy);
+        check(noLessSafe.finished && noLessSafe.error == QNetworkReply::NoError &&
+                  noLessSafe.body == "done",
+              "a no-less-safe request follows an allowed redirect to another host");
+        served.clear();
+        const Outcome refused =
+            fetch(origin + QStringLiteral("/other-origin"),
+                  QNetworkRequest::SameOriginRedirectPolicy);
+        check(refused.finished && refused.error != QNetworkReply::NoError &&
+                  !served.contains(QStringLiteral("/final")),
+              "a same-origin request does not follow a redirect to another host");
+        served.clear();
+        const Outcome manual =
+            fetch(origin + QStringLiteral("/same"), QNetworkRequest::ManualRedirectPolicy);
+        check(manual.finished && manual.status == 302 &&
+                  served == QStringList{QStringLiteral("/same")},
+              "a manual redirect policy still hands the 302 to its caller");
+        prompted.clear();
+        const Outcome denied = fetch(origin + QStringLiteral("/denied"), -1);
+        check(denied.finished && denied.error != QNetworkReply::NoError && prompted.isEmpty() &&
+                  denied.body.isEmpty(),
+              "a redirect to a denied host stops without asking");
+        const Outcome unlisted = fetch(origin + QStringLiteral("/unlisted"), -1);
+        check(unlisted.finished && unlisted.error != QNetworkReply::NoError &&
+                  prompted.size() == 1 &&
+                  prompted.first().host() == QLatin1String("unlisted-redirect.test"),
+              "a redirect to an unlisted host goes to the firewall prompt");
+        manager.setOfflineMode(true);
+        prompted.clear();
+        const Outcome offline = fetch(origin + QStringLiteral("/unlisted"), -1);
+        check(offline.finished && offline.error != QNetworkReply::NoError && prompted.isEmpty(),
+              "offline mode also stops a redirect off this machine");
+        manager.setOfflineMode(false);
     }
 
     if (failures) {

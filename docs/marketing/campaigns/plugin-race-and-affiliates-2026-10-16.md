@@ -1,5 +1,7 @@
 # Campaign brief: "Plugin Race and affiliate launch"
 
+Part of [Campaign briefs](README.md).
+
 **Campaign tag:** `plugin_race`
 **Tracking hashtag:** `#ForkMeshPluginRace`
 **Landing pages:** [forkmesh.com/hackathon](https://forkmesh.com/hackathon) and

@@ -361,7 +361,7 @@ jobs:
           mac_build ""
           dest="$HOME/forkmesh-artifacts/mac-adhoc/$commit"
           mkdir -p "$dest"
-          mac "bash -O nullglob -c 'cd \"\$HOME/$run/out\" && tar -c ipa/*.ipa *.log'" | tar -x -C "$dest"
+          mac "bash -O nullglob -c 'cd \"\$HOME/$run/out\" && tar -c ipa/*.ipa ipa/*-symbols.txt.gz *.log'" | tar -x -C "$dest"
           python3 - "$dest/build.json" "$commit_full" "$m/subject" "$started_at" "$locked_at" <<'EOF'
           import json, sys, time
           path, commit, subject, started, locked = sys.argv[1:6]

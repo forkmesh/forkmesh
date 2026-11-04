@@ -1,11 +1,12 @@
 # Developer docs page (`/dashboard/docs`)
 
-Every Markdown file under `docs/` in the main repository, read from `main`,
+Part of [the App docs](README.md). Every Markdown file under `docs/` in the
+main repository (index: [../README.md](../README.md)), read from `main`,
 shown as one continuous page. A separator above each file names it and shows
 its last commit date. Admins (`users.is_admin`) can edit a file in place or
 delete selected blocks or sections; each save is one commit on `main`. On a
 white-label instance the page is the `developer-docs` plugin, off unless
-`INSTANCE_PLUGINS` names it ([../INSTANCES.md](../INSTANCES.md)).
+`INSTANCE_PLUGINS` names it ([instances](../operations/instances.md)).
 
 ## Code map
 
@@ -41,14 +42,9 @@ comes from a per-process cache (`_CACHE` in `docs_book.py`):
 - A save clears only the commit, so the next load rebuilds the same way.
 
 The cache holds one build (about 4 MB of text plus file metadata) per App
-process, so one per core.
-
-Until 2026-10-21 the cache was dropped every 30 s and on every move of
-`main`, and each rebuild made 23 `tree` reads and 7 `blobs` reads one after
-another, each a round trip through the public origin. On the served stack
-that made most loads take 3 to 16 s (once over 30 s), on all three cores.
-Now a load after a merge that does not touch `docs/` makes one read, and an
-edit to one file makes three.
+process, so one per core. A load after a merge that does not touch `docs/`
+makes one read, and an edit to one file makes three; a full rebuild (about 30
+sequential reads through the public origin) takes seconds.
 
 ## Editing
 
@@ -82,7 +78,7 @@ tree entries makes saves answer 503 `gateway_outdated`.
 ## Security
 
 - The check is `users.is_admin`, not the repository push rule
-  ([CORE_PUSH.md](../CORE_PUSH.md)). The push is made as the admin's account
+  ([core push](../operations/core-push.md)). The push is made as the admin's account
   and audited as `git.push` (`credential: "docs-page"`) and `docs.edit`.
 - A save can only replace one existing regular file under `docs/`; it cannot
   create, delete or rename files.

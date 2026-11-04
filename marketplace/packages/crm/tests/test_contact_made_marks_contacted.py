@@ -42,10 +42,10 @@ def test_mark_contacted_moves_a_contact_before_contacted_to_it():
         {"id": meeting, "lastContactedAt": stamp},
         {"id": lead, "lastContactedAt": stamp}]}), "/api/crm/acme/contacts/bulk")
     assert {item["id"]: item["stage"] for item in bulk["data"]["contacts"]} == {
-        meeting: "meeting", lead: "lead"}
+        meeting: "meeting", lead: "contacted"}
     contacts = _contacts(runtime)
     assert [contacts[key]["stage"] for key in (sourced, meeting, lead)] == [
-        "contacted", "meeting", "lead"]
+        "contacted", "meeting", "contacted"]
     assert all(contacts[key]["lastContactedAt"] == stamp
                for key in (sourced, meeting, lead))
 
@@ -118,7 +118,68 @@ def test_contacts_stamped_before_the_fix_are_moved_once():
          f"/api/crm/acme/contacts/{stuck}")
     assert _contacts(runtime)[stuck]["stage"] == "sourced"
     assert [row["name"] for row in runtime.db.execute(
-        "SELECT name FROM crm_backfills")] == ["contacted-stages"]
+        "SELECT name FROM crm_backfills")] == [
+            "contacted-stages", "customers-contacted-stage"]
+
+
+LEGACY_CUSTOMERS = ["lead", "qualified", "trial", "customer", "renewal", "inactive"]
+
+
+def _flow_stages(runtime, flow_id):
+    flows = call(runtime.use("GET"), "/api/crm/acme")["data"]["settings"]["flows"]
+    return next(flow["stages"] for flow in flows if flow["id"] == flow_id)
+
+
+def test_a_saved_customers_flow_gains_contacted_and_its_contacted_leads_move_once():
+    runtime = harness.Runtime()
+    call(runtime.use("PUT", body={"flows": [
+        {"id": "customers", "name": "Customers", "stages": LEGACY_CUSTOMERS},
+        {"id": "investors", "name": "Investors", "stages": ["new", "complete"]}]}),
+        "/api/crm/acme/settings")
+    stamp = runtime.clock - 10000
+    tooted = _contact(runtime, name="Tooted", email="tooted@example.com",
+                      flow="customers", stage="lead", lastContactedAt=stamp)
+    fresh = _contact(runtime, name="Fresh", email="fresh@example.com",
+                     flow="customers", stage="lead")
+    trial = _contact(runtime, name="Trial", email="trial@example.com",
+                     flow="customers", stage="trial", lastContactedAt=stamp)
+    backer = _contact(runtime, name="Backer", email="backer@example.com",
+                      flow="investors", stage="new", lastContactedAt=stamp)
+    contacts = _contacts(runtime)
+    assert [contacts[key]["stage"] for key in (tooted, fresh, trial, backer)] == [
+        "contacted", "lead", "trial", "new"]
+    assert _flow_stages(runtime, "customers") == [
+        "lead", "contacted", "qualified", "trial", "customer", "renewal", "inactive"]
+    assert _flow_stages(runtime, "investors") == ["new", "complete"]
+    call(runtime.use("PATCH", body={"stage": "lead"}),
+         f"/api/crm/acme/contacts/{tooted}")
+    assert _contacts(runtime)[tooted]["stage"] == "lead"
+
+
+def test_a_customised_customers_flow_is_left_as_it_is():
+    runtime = harness.Runtime()
+    call(runtime.use("PUT", body={"flows": [
+        {"id": "customers", "name": "Customers", "stages": ["lead", "won"]}]}),
+        "/api/crm/acme/settings")
+    lead = _contact(runtime, name="Lead", email="lead@example.com",
+                    flow="customers", stage="lead", lastContactedAt=runtime.clock - 10)
+    assert _contacts(runtime)[lead]["stage"] == "lead"
+    assert _flow_stages(runtime, "customers") == ["lead", "won"]
+
+
+def test_a_toot_to_a_customers_lead_moves_it_to_contacted():
+    runtime = _runtime()
+    lead = _contact(runtime, name="Grace", mastodon="@grace@mastodon.social",
+                    flow="customers", stage="lead")
+    linked = call(runtime.use("POST", body={
+        "provider": "mastodon", "messageId": "117553531438448328",
+        "direction": "outbound", "handle": "grace@mastodon.social",
+        "account": "founder@mastodon.social", "contactId": lead,
+        "providerUrl": "https://mastodon.social/@founder/117553531438448328"}),
+        "/api/crm/acme/emails/link")
+    assert linked["data"]["stageAdvanced"] is True
+    contact = _contacts(runtime)[lead]
+    assert contact["stage"] == "contacted" and contact["lastContactedAt"] > 0
 
 
 def test_an_automatic_outreach_send_moves_the_contact_to_contacted():

@@ -1,10 +1,11 @@
 # Desktop Genie spider and marketing coach
 
-Part of [the desktop docs](README.md). The desktop port of the phone's Genie
-spider ([../native/GENIE.md](../native/GENIE.md)): a pet whose health follows
+The desktop port of the phone's Genie spider ([../native/GENIE.md](../native/GENIE.md)): a pet whose health follows
 code velocity and marketing velocity, and a marketing coach. It has no voice,
 model or tools of its own; replies go to the Genie special agent. The web has a
 tips-only variant ([../www/genie-spider.md](../www/genie-spider.md)).
+
+Part of [Desktop](README.md).
 
 ## Where the code is
 
@@ -35,10 +36,9 @@ platforms.
 - Only a spot the user chose is saved: `GenieSpiderWidget::placed` fires when a
   drag or a throw from the desktop settles, and `genie/spot` (or
   `genie/desktopSpot`) is written then, skipped when unchanged. `moved` fires
-  on every arrival, wander and hop included, and only re-places the coach.
-  Saving on `moved` rewrote `ForkMesh.conf` every 11 s (16 of 36 rewrites in a
-  3-minute watch for report #10), each one two `fdatasync` calls that the next
-  `QSettings` on the GUI thread paid for.
+  on every arrival, wander and hop included, and only re-places the coach;
+  saving there would rewrite `ForkMesh.conf` (two `fdatasync` calls on the GUI
+  thread) every few seconds.
 - A plain click shows one 5–10 word line (`GenieCoaching::lines`) in a bubble
   for 5 s; a drag says nothing; a 0.55 s press opens the menu. The one line it
   says unasked announces a badge: when a fresh `badge` ping celebrates,
@@ -62,9 +62,9 @@ The frame timer runs at 60 fps in flight, 24 fps while walking, reacting or
 hovered, lower at rest and when the app is inactive, and stops while hidden or
 minimized. A tick that finds the window unexposed or minimized, or the
 application hidden or suspended, only re-arms itself at 2 Hz: every repaint of
-the window is a GPU buffer swap that the compositor can hold for seconds
-(2026-10-22 stall logs). Frames are painted to an image only when a tick changed them; the
-head, turban, joints and eye sockets are cached images.
+the window is a GPU buffer swap that the compositor can hold for seconds.
+Frames are painted to an image only when a tick changed them; the head, turban,
+joints and eye sockets are cached images.
 
 ## Playing with the window and keeping clear
 
@@ -119,7 +119,7 @@ button.
 Each tip bubble has **Reply** and the menu has **Reply to the spider…**. Both
 open the Genie special agent's page (`.forkmesh/workflows/genie.json`) with the
 tip quoted in the composer. The agent is on-demand, read-only plus external
-tools, and sets `"lowCostModel": true` (see [agents-ui.md](agents-ui.md)). Each
+tools, and sets `"lowCostModel": true` (see [special agents](special-agents.md#agent-choice-and-permissions)). Each
 run's prompt carries `genieAgentBriefing`: health, recent tips, closed stages,
 taught contacts and the teaching contract. The agent answers with a block:
 

@@ -1,7 +1,9 @@
 # Releases and tags on the web
 
-Writers draft, edit and delete releases on the Releases tab, and a release
-creates its tag, without the desktop app.
+Part of [the App docs](README.md). Writers draft, edit and delete releases on
+the Releases tab, and a release creates its tag, without the desktop app.
+Signed software distribution through the mirrors is described in
+[mirroring](../mirroring.md).
 
 ## What a web release is
 
@@ -49,8 +51,10 @@ Read-only mirrors refuse the route like `/file-edit`.
 
 The Releases tab shows **Draft a new release** to writers: tag, target
 branch for a new tag, title, notes with Write/Preview and a pre-release box.
-Each web release card has **Edit**, **Delete** and **Attach files** (with a remove button per attached file); editing a release of a core-hosted repository can also move its tag to the target's latest commit. Notes render as Markdown
-on every release.
+Each web release card has **Edit**, **Delete** and **Attach files** (with a
+remove button per attached file); editing a release of a core-hosted
+repository can also move its tag to the target's latest commit. Notes render
+as Markdown on every release.
 
 ## Not on the web
 

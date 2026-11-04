@@ -9,7 +9,7 @@ than stopping at a report.
 
 0. Start from [`docs/README.md`](../../docs/README.md), which maps each
    subsystem to its developer home page (under `docs/`) and to the public
-   pages under `www/docs/`. Source files hold no comments (`AGENTS.md`), so
+   pages under `docs/`. Source files hold no comments (`AGENTS.md`), so
    the docs are the only written explanation: keep each home page's sections
    (Code map, Architecture, Protocols and interfaces, Configuration, Build,
    run, test, Operations, Security, Traps, Recent changes, Related docs) and

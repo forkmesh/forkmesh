@@ -333,7 +333,7 @@ struct ShellComposerOverlay: View {
                         .fmText(.bodySmall, color: composer.fix == nil ? fm.danger : fm.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    FmMessageTools(message)
+                        .fmMessageTools(message)
                     if let fix = composer.fix {
                         Button {
                             FmHaptics.tap()

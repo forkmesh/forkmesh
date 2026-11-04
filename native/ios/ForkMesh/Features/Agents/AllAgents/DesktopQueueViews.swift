@@ -176,6 +176,7 @@ struct DesktopQueueSheet: View {
                                         }
                                     }
                                 }
+                                .textSelection(.disabled)
                                 .contextMenu {
                                     menu(row, index: index, count: waiting.count)
                                 }

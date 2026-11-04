@@ -1,4 +1,4 @@
-"""ForkMesh-hosted repositories on the Next core nodes (docs/HOSTED_REPOS.md).
+"""ForkMesh-hosted repositories on the Next core nodes (docs/operations/core-hosted-repositories.md).
 
 ``hosted_git.py`` creates a repository from the website and authorizes pushes
 to it. On a relay with ``HOSTED_GIT_CORE_NODES`` set (Next: the three core

@@ -409,6 +409,37 @@
     return match ? `${match[1] || ""}${match[2]} data-md-figure ${match[3]}${match[4] || ""}` : html;
   }
 
+  const NOTE_SVG_MAX_BYTES = 262144;
+  const NOTE_PAGE_BREAK_LINE = /^\s*<!--\s*pagebreak\s*-->\s*$/i;
+  const NOTE_LAYOUT_LINE = /^\s*<!--\s*page:([\s\S]*?)-->\s*$/i;
+
+  function noteSvgFigure(info, code) {
+    const words = /^\s*(\S+)\s*([\s\S]*?)\s*$/.exec(String(info || ""));
+    if (!words || words[1].toLowerCase() !== "svg") return null;
+    const svg = String(code || "");
+    const start = svg.replace(/^(?:\s+|<\?xml[\s\S]*?\?>|<!--[\s\S]*?-->)*/, "");
+    if (!/^<svg[\s>/]/i.test(start)) return null;
+    if (new TextEncoder().encode(svg).length > NOTE_SVG_MAX_BYTES) return null;
+    return { caption: words[2], svg };
+  }
+
+  function noteSvgDataUrl(svg) {
+    const bytes = new TextEncoder().encode(svg);
+    let binary = "";
+    for (let at = 0; at < bytes.length; at += 8192) {
+      binary += String.fromCharCode(...bytes.subarray(at, at + 8192));
+    }
+    return `data:image/svg+xml;base64,${btoa(binary)}`;
+  }
+
+  function noteFigureHtml(figure) {
+    const caption = figure.caption ? `<figcaption>${escapeHtml(figure.caption)}</figcaption>` : "";
+    return `<figure class="note-figure"><img src="${noteSvgDataUrl(figure.svg)}" alt="${escapeHtml(figure.caption || "Diagram")}" decoding="async" />${caption}</figure>`;
+  }
+
+  const NOTE_PAGE_BREAK_HTML =
+    '<div class="note-page-break" role="separator" aria-label="Page break"><span>Page break</span></div>';
+
   // Small, dependency-free markdown renderer: headings, fenced code blocks,
   // block quotes, nested ordered/unordered lists, tables, hr, raw HTML blocks,
   // and paragraphs, with basic inline formatting, links and images. Not a full
@@ -485,14 +516,22 @@
     let i = 0;
     while (i < lines.length) {
       const line = lines[i];
-      const fence = line.match(/^\s*(```|~~~)/);
+      if (context?.noteDocument && (NOTE_LAYOUT_LINE.test(line) || NOTE_PAGE_BREAK_LINE.test(line))) {
+        closeLists();
+        if (NOTE_PAGE_BREAK_LINE.test(line)) out.push(NOTE_PAGE_BREAK_HTML);
+        i++;
+        continue;
+      }
+      const fence = line.match(/^\s*(```|~~~)(.*)$/);
       if (fence) {
         closeLists();
         const code = [];
         i++;
         while (i < lines.length && !new RegExp(`^\\s*${fence[1]}`).test(lines[i])) { code.push(lines[i]); i++; }
         i++;
-        out.push(`<pre class="my-3 overflow-auto rounded-md border border-border bg-secondary/40 p-3 text-xs"><code class="font-mono">${escapeHtml(code.join("\n"))}</code></pre>`);
+        const figure = context?.noteDocument ? noteSvgFigure(fence[2], code.join("\n")) : null;
+        out.push(figure ? noteFigureHtml(figure)
+          : `<pre class="my-3 overflow-auto rounded-md border border-border bg-secondary/40 p-3 text-xs"><code class="font-mono">${escapeHtml(code.join("\n"))}</code></pre>`);
         continue;
       }
       const heading = line.match(/^(#{1,6})\s+(.*)$/);
@@ -920,7 +959,7 @@
       navigateHistory(repoCodeLinkUrl(repo, "blob", path));
       window.lucide?.createIcons();
     } catch (_) {
-      // A markdown link to a folder ("[docs](www/docs)") has no trailing slash
+      // A markdown link to a folder ("[docs](docs)") has no trailing slash
       // to say so. When the path lists as a tree, show that folder instead of
       // a dead file view.
       if (!repoPreviewKindFromPath(path)) {
@@ -1536,7 +1575,7 @@
         Object.assign(parsed, relations);
         const draft = String(container.querySelector("[data-repo-issue-comment-body]")?.value || "");
         paintRepoIssueDetail(container, renderRepoRecordDetail(repo, "issues", number, parsed));
-        mountIssueStickyHeader(container);
+        mountRecordStickyHeader(container);
         if (draft) {
           const body = container.querySelector("[data-repo-issue-comment-body]");
           if (body) body.value = draft;
@@ -3127,6 +3166,10 @@
       && tree.pullReviews && typeof tree.pullReviews === "object"
       ? tree.pullReviews
       : null;
+    const pullPeople = config.dir === ".forkmesh/pulls"
+      && tree.pullPeople && typeof tree.pullPeople === "object"
+      ? tree.pullPeople
+      : null;
     const records = dirs.concat(branchOnlyDirs).map((entry) => {
       const number = Number(entry.name);
       const blob = blobs[recordPath(entry)];
@@ -3164,6 +3207,10 @@
         review: pullReviews && indexedNames.has(String(entry.name))
           ? pullListReviewState(pullReviews[String(entry.name)] || [], values.author || "",
             values.status || values.state || "open", pullListIsDraft(values))
+          : null,
+        people: pullPeople && indexedNames.has(String(entry.name))
+          && Array.isArray(pullPeople[String(entry.name)])
+          ? pullPeople[String(entry.name)]
           : null,
       };
     });
@@ -3233,6 +3280,20 @@
     if (!names.length) return "";
     const shown = names.map((name) => forgeIdentity(name) ? `@${forgeIdentity(name).login}` : name);
     return `<span data-repo-issue-row-commenters class="flex items-center justify-end [&>span]:-ml-1.5 [&>span]:ring-2 [&>span]:ring-[rgb(var(--dashboard-canvas-rgb))]" title="${escapeHtml(`Recent comments: ${shown.join(", ")}`)}">${names.map((name) => issueActorAvatarHtml(name, name, "h-5 w-5", false, false)).join("")}</span>`;
+  }
+
+  function renderPullRowPeople(item) {
+    const names = [];
+    const seen = new Set();
+    for (const raw of [...(Array.isArray(item.people) ? item.people : []), item.author]) {
+      const name = String(raw || "").trim();
+      if (!name || name === "unknown" || seen.has(name.toLowerCase())) continue;
+      seen.add(name.toLowerCase());
+      names.push(name);
+    }
+    if (!names.length) return "";
+    const shown = names.map((name) => forgeIdentity(name) ? `@${forgeIdentity(name).login}` : name);
+    return `<span data-repo-pull-row-people class="flex items-center justify-end [&>span]:-ml-1.5 [&>span]:ring-2 [&>span]:ring-[rgb(var(--dashboard-canvas-rgb))]" title="${escapeHtml(`Latest first: ${shown.join(", ")}`)}">${names.map((name, index) => `<span class="relative rounded-full" style="z-index:${names.length - index}">${issueActorAvatarHtml(name, name, "h-5 w-5", false, false)}</span>`).join("")}</span>`;
   }
 
   function pullStateIconHtml(stateLabel, extra = "") {
@@ -3341,6 +3402,7 @@
           </span>
           <span class="flex shrink-0 items-start pt-0.5 text-[12px] text-muted-foreground">
             ${item.wantsAgent ? '<i data-lucide="bot" class="h-4 w-4" title="Assigned to agent"></i>' : ""}
+            <span class="hidden justify-end sm:flex">${renderPullRowPeople(item)}</span>
           </span>`;
       const rowGrid = "grid-cols-[1rem_minmax(0,1fr)_auto]";
       if (item.unavailable) {
@@ -6389,6 +6451,44 @@
     return Boolean(name) && name === String(target.authorName || "").trim().toLowerCase();
   }
 
+  const PULL_DESCRIPTION_TARGET = "description";
+
+  function pullDescriptionEditApplies(change, values) {
+    if (!change || change.type !== "comment-edit" || String(change.target || "") !== PULL_DESCRIPTION_TARGET) return false;
+    if (change.author && change.author === values?.author) return true;
+    const name = String(change.authorName || "").trim().toLowerCase();
+    return Boolean(name) && name === String(values?.authorName || "").trim().toLowerCase();
+  }
+
+  function pullDescriptionEdit(values, conversation) {
+    let latest = null;
+    for (const ev of Array.isArray(conversation) ? conversation : []) {
+      if (!pullDescriptionEditApplies(ev, values)) continue;
+      if (!latest || pullTimestamp(latest.ts) <= pullTimestamp(ev.ts)) latest = ev;
+    }
+    return latest;
+  }
+
+  function pullDescriptionEditable(values) {
+    if (String(values?.status || "open").trim().toLowerCase() === "deleted") return false;
+    return webSessionAuthored({ author: values?.author, authorName: values?.authorName });
+  }
+
+  function recordOpeningBodyHtml(repo, body) {
+    return String(body || "").trim()
+      ? `<div data-repo-record-body data-repo-record-opening-text class="px-4 py-4 ${MD_BODY_CLASS}">${renderRecordMarkdown(body, repo)}</div>`
+      : `<p data-repo-record-opening-text class="px-4 py-4 text-[14px] italic text-muted-foreground">No description provided.</p>`;
+  }
+
+  function paintPullDescription(repo, body) {
+    const card = document.querySelector("[data-repo-pull-description-card]");
+    const text = card?.querySelector("[data-repo-record-opening-text]");
+    if (!text) return;
+    text.outerHTML = recordOpeningBodyHtml(repo, body);
+    card.dataset.repoRecordDescription = String(body || "").trim() ? "body" : "empty";
+    card.querySelector("[data-repo-pull-description-edited]")?.removeAttribute("hidden");
+  }
+
   function pullReviewKeepsVerdict(target) {
     return target?.type === "review" && (target.state === "approved" || target.state === "changes_requested");
   }
@@ -6527,6 +6627,7 @@
         parsed.pullMetadataCommit = servedCommit;
         const freshParsed = parseFrontMatter(blobText(record));
         const freshValues = freshParsed.values || {};
+        if (parsed.pullMerge?.state === "merged") freshValues.status = "merged";
         const statusChanged =
           (freshValues.status || "open") !== (values.status || "open");
         parsed.values = freshValues;
@@ -6536,6 +6637,7 @@
           const container = $("[data-repo-pulls]");
           if (container) {
             container.innerHTML = renderRepoRecordDetail(repo, "pulls", number, parsed);
+            mountRecordStickyHeader(container);
             window.lucide?.createIcons();
           }
         }
@@ -6553,13 +6655,7 @@
     parsed.pullCommits = commits;
     parsed.pullAgents = agents;
     parsed.pullTimeline = buildRepoPullTimeline(values, conversation, commits, agents);
-    const timeline = $("[data-repo-pull-conversation]");
-    if (timeline) {
-      timeline.dataset.empty = parsed.pullTimeline.length ? "false" : "true";
-      timeline.innerHTML = renderRepoPullConversation(parsed.pullTimeline);
-    }
-    const count = $("[data-repo-pull-timeline-count]");
-    if (count) count.textContent = formatCount(parsed.pullTimeline.length);
+    paintRepoPullTimeline(parsed);
     // An agent pushing to the head branch also grows the Commits tab, which
     // stays mounted (hidden) behind the conversation.
     const commitList = $("[data-repo-pull-commits]");
@@ -6594,6 +6690,26 @@
     if (!pullDetailIsCurrent(repo, number)) return;
     parsed.pullRequiredChecks = await loadRepoPullRequiredChecks(repo, values, readiness);
     if (!pullDetailIsCurrent(repo, number)) return;
+    paintRepoPullChecks(repo, parsed);
+    updateRepoPullMergePanel(repo, number, parsed);
+    void hydrateRepoPullAttention(repo, number, parsed);
+    window.lucide?.createIcons();
+    scheduleRepoPullActivityRefresh(repo, number,
+      agents.some((event) => pullAgentStatusIsActive(event.status)));
+  }
+
+  function paintRepoPullTimeline(parsed) {
+    const events = parsed.pullTimeline || [];
+    const timeline = $("[data-repo-pull-conversation]");
+    if (timeline) {
+      timeline.dataset.empty = events.length ? "false" : "true";
+      timeline.innerHTML = renderRepoPullConversation(events);
+    }
+    const count = $("[data-repo-pull-timeline-count]");
+    if (count) count.textContent = formatCount(events.length);
+  }
+
+  function paintRepoPullChecks(repo, parsed) {
     const rulesSlot = $("[data-repo-pull-rules-slot]");
     if (rulesSlot) rulesSlot.innerHTML = renderRepoPullRules(parsed.pullRules);
     const checkList = $("[data-repo-pull-checks]");
@@ -6604,11 +6720,116 @@
     if (checkCount) {
       checkCount.textContent = formatCount((parsed.pullChecks?.runs || []).length);
     }
+  }
+
+  function loadRepoPullLiveState(repo, number, values) {
+    const readiness = loadRepoPullReadiness(repo, number, values);
+    const mergeAuthorized = loadRepoPullMergeAuthorization(repo);
+    const live = Promise.all([
+      loadRepoPullAgentActivity(repo, number, values),
+      mergeAuthorized,
+      mergeAuthorized.then((authorized) => loadRepoPullUpdateAuthorization(repo, values, authorized)),
+      loadRepoPullMergeBase(repo, values),
+      readiness,
+      readiness.then((result) => loadRepoPullChecks(repo, values, result)),
+      readiness.then((result) => loadRepoPullRules(repo, number, result)),
+      readiness.then((result) => loadRepoPullRequiredChecks(repo, values, result)),
+    ]);
+    live.catch(() => {});
+    return live;
+  }
+
+  async function finishRepoPullLiveState(repo, number, parsed, live) {
+    let rows = null;
+    try {
+      rows = await live;
+    } catch (_) {
+      rows = null;
+    }
+    if (state.repoRecordDetail?.parsed !== parsed) return;
+    if (rows) {
+      const [agents, mergeAuthorized, updateAuthorized, mergeBase, readiness, checks, rules, requiredChecks] = rows;
+      parsed.pullAgents = agents;
+      parsed.pullTimeline = buildRepoPullTimeline(
+        parsed.values || {}, parsed.pullConversation || [], parsed.pullCommits || [], agents);
+      parsed.pullMergeAuthorized = mergeAuthorized;
+      parsed.pullUpdateAuthorized = updateAuthorized;
+      parsed.pullMergeBase = mergeBase;
+      parsed.pullReadiness = readiness;
+      parsed.pullChecks = checks;
+      parsed.pullRules = rules;
+      parsed.pullRequiredChecks = requiredChecks;
+    }
+    parsed.pullPending = false;
+    paintRepoPullTimeline(parsed);
+    paintRepoPullChecks(repo, parsed);
     updateRepoPullMergePanel(repo, number, parsed);
+    if (rows) storeRepoPullSnapshot(repo, number, parsed);
     void hydrateRepoPullAttention(repo, number, parsed);
+    if (state.session?.sessionToken) {
+      scheduleRepoPullActivityRefresh(repo, number, (parsed.pullAgents || []).some(
+        (event) => pullAgentStatusIsActive(event.status)));
+    }
+  }
+
+  const REPO_PULL_SNAPSHOT_STORE = "forkmesh.pullSnapshots.v1";
+  const REPO_PULL_SNAPSHOT_LIMIT = 12;
+  const REPO_PULL_SNAPSHOT_PATCH_MAX = 400000;
+  const REPO_PULL_SNAPSHOT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+  const REPO_PULL_SNAPSHOT_FIELDS = [
+    "values", "body", "pullMetadataCommit", "pullPatch", "pullConversation", "pullCommits",
+    "pullAgents", "pullChecks", "pullRules", "pullRequiredChecks", "repoCollabSettings",
+  ];
+
+  function repoPullSnapshotKey(repo, number) {
+    return `${String(repoKey(repo) || "").toLowerCase()}#${Number(number) || 0}`;
+  }
+
+  function readRepoPullSnapshots() {
+    try {
+      const rows = JSON.parse(localStorage.getItem(REPO_PULL_SNAPSHOT_STORE) || "[]");
+      return Array.isArray(rows) ? rows.filter((row) => row && typeof row.key === "string") : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function storeRepoPullSnapshot(repo, number, parsed) {
+    if (!repo || repo.isPrivate || !parsed?.values) return;
+    if (String(parsed.pullPatch?.patch || "").length > REPO_PULL_SNAPSHOT_PATCH_MAX) return;
+    const key = repoPullSnapshotKey(repo, number);
+    const snapshot = { key, at: Date.now(), parsed: {} };
+    REPO_PULL_SNAPSHOT_FIELDS.forEach((field) => {
+      if (parsed[field] !== undefined) snapshot.parsed[field] = parsed[field];
+    });
+    const rows = [snapshot, ...readRepoPullSnapshots().filter((row) => row.key !== key)];
+    for (let size = Math.min(rows.length, REPO_PULL_SNAPSHOT_LIMIT); size > 0; size = Math.floor(size / 2)) {
+      try {
+        localStorage.setItem(REPO_PULL_SNAPSHOT_STORE, JSON.stringify(rows.slice(0, size)));
+        return;
+      } catch (_) {}
+    }
+    try { localStorage.removeItem(REPO_PULL_SNAPSHOT_STORE); } catch (_) {}
+  }
+
+  function showRepoPullSnapshot(repo, number, container) {
+    if (!repo || repo.isPrivate || !container) return false;
+    const key = repoPullSnapshotKey(repo, number);
+    const entry = readRepoPullSnapshots().find((row) => row.key === key);
+    if (!entry?.parsed?.values || Date.now() - Number(entry.at || 0) > REPO_PULL_SNAPSHOT_MAX_AGE_MS) return false;
+    const parsed = { ...entry.parsed, pullPending: true, pullMergeAuthorized: false, pullUpdateAuthorized: false };
+    parsed.pullTimeline = buildRepoPullTimeline(parsed.values, parsed.pullConversation || [],
+      parsed.pullCommits || [], parsed.pullAgents || []);
+    try {
+      const html = renderRepoRecordDetail(repo, "pulls", number, parsed);
+      state.repoRecordDetail = { repo, kind: "pulls", number, parsed };
+      container.innerHTML = html;
+    } catch (_) {
+      return false;
+    }
+    mountRecordStickyHeader(container);
     window.lucide?.createIcons();
-    scheduleRepoPullActivityRefresh(repo, number,
-      agents.some((event) => pullAgentStatusIsActive(event.status)));
+    return true;
   }
 
   function scheduleRepoPullActivityRefresh(repo, number, active) {
@@ -7259,11 +7480,11 @@
   function openIssueCommentEditor(target, body, selector = "[data-repo-issue-comment-edit]", key = "repoIssueCommentEdit") {
     const button = visibleCommentEditButton(target, selector, key);
     const inline = button?.closest("[data-repo-pull-inline-comment-card]");
-    const card = inline || button?.closest("[data-repo-issue-comment]");
+    const card = inline || button?.closest("[data-repo-issue-comment], [data-repo-pull-description-card]");
     const panel = inline ? inline.querySelector("[data-repo-pull-inline-comment-text]")?.parentElement : card?.querySelector(".rounded-md.border");
     if (!panel) return Promise.resolve(window.prompt("Edit comment", body));
     panel.querySelector("[data-repo-issue-comment-editor]")?.remove();
-    const text = panel.querySelector("[data-repo-issue-comment-text], [data-repo-pull-inline-comment-text]");
+    const text = panel.querySelector("[data-repo-issue-comment-text], [data-repo-pull-inline-comment-text], [data-repo-record-opening-text]");
     const form = document.createElement("form");
     form.dataset.repoIssueCommentEditor = "";
     form.className = "grid gap-2 p-3";
@@ -8409,7 +8630,10 @@
       .filter((run) => pullCheckStateMeta(run.status).outcome === "passed")
       .map((run) => run.workflow));
     const missingRequired = requiredNames.filter((name) => !passedNames.has(name));
-    if (summary.tone === "bad") {
+    if (parsed?.pullPending === true) {
+      checksRow.tone = "pending";
+      checksRow.title = "Loading checks…";
+    } else if (summary.tone === "bad") {
       checksRow.tone = "bad";
       checksRow.title = "Some checks failed";
     } else if (summary.tone === "pending") {
@@ -8435,8 +8659,13 @@
     checksRow.actions.push({ kind: "actions", label: runs.length ? "Open Actions" : "Run checks" });
     rows.push(checksRow);
 
+    const pending = parsed?.pullPending === true;
     const branchRow = { id: "branch", actions: [] };
-    if (!readiness.available) {
+    if (pending) {
+      branchRow.tone = "pending";
+      branchRow.title = "Checking mergeability…";
+      branchRow.detail = "Asking an online mirror for a merge trial of this pull request.";
+    } else if (!readiness.available) {
       branchRow.tone = "muted";
       branchRow.title = "Mergeability unknown";
       branchRow.detail = "No mirror answered a merge trial for this pull request just now. It is re-tried while the page is open.";
@@ -8518,6 +8747,9 @@
     if (status !== "open" && !merged) {
       footer.tone = "muted";
       footer.text = "This pull request is closed.";
+    } else if (pending && !merged && !busy) {
+      footer.tone = "pending";
+      footer.text = "Loading merge readiness from the live mirror…";
     } else if (merged) {
       footer.tone = "good";
       footer.text = `Merged into ${baseBranch}. The merged state is pinned as current and every mirror is syncing it.`;
@@ -8557,8 +8789,9 @@
       footer.tone = "good";
       footer.text = `Ready to merge into ${baseBranch}. An online mirror lands the exact reviewed commits with a merge commit.`;
     }
-    const canAct = authorized && status === "open" && !merged && Boolean(context) && !hardBlocked;
+    const canAct = authorized && status === "open" && !merged && Boolean(context) && !hardBlocked && !pending;
     return {
+      pending,
       open: status === "open",
       authorized,
       merged,
@@ -8736,28 +8969,30 @@
 
   function patchRepoPullMutationProgress(repo, number, parsed, kind) {
     if (!pullDetailIsCurrent(repo, number)) return;
-    const slot = document.querySelector("[data-repo-pull-merge-slot]");
-    const block = slot?.querySelector?.(`[data-repo-pull-merge-progress="${kind}"]`);
-    const model = block ? repoPullMergeModel(repo, number, parsed) : null;
+    const slots = [...document.querySelectorAll("[data-repo-pull-merge-slot], [data-repo-pull-files-merge-slot]")];
+    const blocks = slots.map((slot) => slot.querySelector(`[data-repo-pull-merge-progress="${kind}"]`));
+    const model = blocks.length && blocks.every(Boolean) ? repoPullMergeModel(repo, number, parsed) : null;
     const progress = kind === "merge"
       ? model?.footer.progress
       : model?.rows.find((row) => row.id === "branch")?.progress;
-    if (!block || !progress) {
+    if (!progress) {
       updateRepoPullMergePanel(repo, number, parsed);
       return;
     }
     const scratch = document.createElement("div");
     scratch.innerHTML = renderRepoPullMutationProgress(progress);
     const fresh = scratch.firstElementChild;
-    const now = block.querySelector("[data-repo-pull-merge-now]");
     const freshNow = fresh.querySelector("[data-repo-pull-merge-now]");
-    if (now.textContent !== freshNow.textContent) now.textContent = freshNow.textContent;
-    ["data-late-after", "data-late-since", "data-late-text"].forEach((name) => {
-      if (freshNow.hasAttribute(name)) now.setAttribute(name, freshNow.getAttribute(name));
-      else now.removeAttribute(name);
+    blocks.forEach((block) => {
+      const now = block.querySelector("[data-repo-pull-merge-now]");
+      if (now.textContent !== freshNow.textContent) now.textContent = freshNow.textContent;
+      ["data-late-after", "data-late-since", "data-late-text"].forEach((name) => {
+        if (freshNow.hasAttribute(name)) now.setAttribute(name, freshNow.getAttribute(name));
+        else now.removeAttribute(name);
+      });
+      block.dataset.state = fresh.dataset.state;
+      block.querySelector("[data-repo-pull-merge-progress-body]").innerHTML = fresh.querySelector("[data-repo-pull-merge-progress-body]").innerHTML;
     });
-    block.dataset.state = fresh.dataset.state;
-    block.querySelector("[data-repo-pull-merge-progress-body]").innerHTML = fresh.querySelector("[data-repo-pull-merge-progress-body]").innerHTML;
     window.lucide?.createIcons();
     startRepoPullMutationTicker();
   }
@@ -8868,6 +9103,15 @@
           ${actions ? `<div class="fm-merge-row-actions">${actions}</div>` : ""}
         </div>`;
     }).join("");
+    return `
+      <section data-repo-pull-merge-box class="fm-merge-box" aria-label="Merge readiness">
+        ${rows}
+        ${model.open ? renderRepoPullQuickReplies(repo, number, parsed) : ""}
+        ${renderRepoPullMergeFooter(model)}
+      </section>`;
+  }
+
+  function renderRepoPullMergeFooter(model) {
     const footer = model.footer;
     const changes = footer.changes?.length
       ? `<ul class="fm-merge-changes">${footer.changes.map((change) => `<li>${escapeHtml(change)}</li>`).join("")}</ul>`
@@ -8890,14 +9134,30 @@
       ? `<button type="button" data-repo-pull-merge-override class="fm-btn fm-btn-danger"><i data-lucide="shield-alert"></i>Merge without review</button>`
       : "";
     return `
-      <section data-repo-pull-merge-box class="fm-merge-box" aria-label="Merge readiness">
-        ${rows}
-        ${model.open ? renderRepoPullQuickReplies(repo, number, parsed) : ""}
         <div data-repo-pull-merge-panel ${footer.progress ? "" : 'role="status" aria-live="polite" aria-atomic="true" '}aria-busy="${model.busy ? "true" : "false"}" class="fm-merge-footer" data-tone="${escapeHtml(footer.tone)}">
           ${footer.progress ? renderRepoPullMutationProgress(footer.progress) : `<p class="fm-merge-footer-text">${escapeHtml(footer.text)}</p>`}
           ${changes}
           ${showControls || model.merged ? `<div class="fm-merge-footer-actions">${method}<div class="fm-merge-buttons">${override}${mergeButton}</div></div>` : ""}
-        </div>
+        </div>`;
+  }
+
+  function renderRepoPullFilesMergeBar(repo, number, parsed) {
+    const model = repoPullMergeModel(repo, number, parsed);
+    if (!model.open && !model.merged) return "";
+    if (!model.authorized && !model.merged && !model.pending) return "";
+    const status = repoPullMergeStatus(model);
+    const blockers = model.merged || model.busy ? [] : model.rows.filter((row) => ["bad", "warn", "pending"].includes(row.tone));
+    const chips = blockers.length
+      ? `<ul class="fm-merge-files-blockers">${blockers.map((row) => `<li data-tone="${escapeHtml(row.tone)}"><i data-lucide="${PULL_MERGE_ROW_ICONS[row.tone] || PULL_MERGE_ROW_ICONS.muted}"${row.tone === "pending" ? ' class="animate-spin"' : ""}></i>${escapeHtml(row.title)}</li>`).join("")}</ul>`
+      : "";
+    const details = status && !model.busy
+      ? `<button type="button" data-repo-pull-merge-status class="fm-btn fm-btn-sm"><i data-lucide="list-checks"></i>Merge details</button>`
+      : "";
+    return `
+      <section data-repo-pull-files-merge class="fm-merge-box fm-merge-files" aria-label="Merge this pull request">
+        <div class="fm-merge-files-head"><span class="fm-merge-files-title"><i data-lucide="git-merge"></i>Merge this pull request</span>${details}</div>
+        ${chips}
+        ${renderRepoPullMergeFooter(model)}
       </section>`;
   }
 
@@ -8920,6 +9180,9 @@
     const detail = blocking.map((row) => row.title);
     if (model.busy) {
       return { tone: "pending", icon: "loader-circle", label: "Merging…", detail: [model.footer.text] };
+    }
+    if (model.pending) {
+      return { tone: "pending", icon: "loader-circle", label: "Checking…", detail: [model.footer.text] };
     }
     if (failing.length || model.footer.tone === "bad") {
       const first = failing[0];
@@ -8970,6 +9233,8 @@
     const banner = document.querySelector("[data-repo-pull-conflict-slot]");
     const status = document.querySelector("[data-repo-pull-merge-status-slot]");
     if (status) status.innerHTML = renderRepoPullMergeStatus(repo, number, parsed);
+    const filesSlot = document.querySelector("[data-repo-pull-files-merge-slot]");
+    if (filesSlot) filesSlot.innerHTML = renderRepoPullFilesMergeBar(repo, number, parsed);
     if (banner) {
       const html = renderRepoPullConflictBanner(repo, number, parsed);
       if (banner.dataset.rendered !== html) {
@@ -9624,7 +9889,28 @@
     }
     parsed.pullMerge = outcome;
     updateRepoPullMergePanel(repo, number, parsed);
-    if (outcome?.state === "merged") refreshRepoPullActivity(repo, number);
+    if (outcome?.state === "merged") {
+      celebrateRepoPullMerge(repo, number, parsed);
+      refreshRepoPullActivity(repo, number);
+    }
+  }
+
+  function celebrateRepoPullMerge(repo, number, parsed) {
+    if (!pullDetailIsCurrent(repo, number)) return;
+    parsed.values = { ...(parsed.values || {}), status: "merged" };
+    const article = document.querySelector('[data-repo-record-detail="pulls"]');
+    article?.querySelectorAll("[data-repo-record-state], [data-repo-record-sticky-state]").forEach((pill) => {
+      pill.classList.remove("bg-success", "bg-destructive", "bg-[#6e7681]");
+      pill.classList.add("bg-primary");
+      const size = pill.hasAttribute("data-repo-record-sticky-state") ? "h-3.5 w-3.5" : "h-4 w-4";
+      pill.innerHTML = `<i data-lucide="git-merge" class="${size}"></i>Merged`;
+    });
+    updateRepoPullMergePanel(repo, number, parsed);
+    window.lucide?.createIcons();
+    if (!commentReactionMotionOk()) return;
+    const origin = [...document.querySelectorAll("[data-repo-pull-merge-panel]")]
+      .find((panel) => panel.getClientRects().length) || article?.querySelector("[data-repo-record-state]");
+    if (origin) commentReactionConfetti(origin.getBoundingClientRect());
   }
 
   async function handleRepoPullMergeOverride(repo) {
@@ -9789,8 +10075,18 @@
   async function handleRepoPullCheckDecision(repo, action, value, button) {
     const detail = state.repoRecordDetail;
     if (!repo || detail?.kind !== "pulls" || !value) return;
-    if (action === "approve" && !window.confirm(`Run this pull request's checks on commit ${value.slice(0, 10)}? Its code runs on the runner without secrets or write access.`)) return;
-    if (action === "trust" && !window.confirm(`Always run checks for @${value} without asking? You can stop this from the Checks tab.`)) return;
+    if (action === "approve" && !await confirmAccountAction({
+      title: "Approve and run checks?",
+      body: `Run this pull request's checks on commit ${value.slice(0, 10)}? Its code runs on the runner without secrets or write access.`,
+      confirmLabel: "Approve and run",
+      danger: false,
+    })) return;
+    if (action === "trust" && !await confirmAccountAction({
+      title: `Always run checks for @${value}?`,
+      body: "Checks for this contributor's pull requests will run without asking. You can stop this from the Checks tab.",
+      confirmLabel: "Always run",
+      danger: false,
+    })) return;
     if (button) button.disabled = true;
     try {
       await orgAgentRequest("POST", `${repoApiBase(repo)}/pulls/${detail.number}/checks`,
@@ -10136,7 +10432,9 @@
     // An empty description stays empty (issue #651): substituting placeholder
     // copy here guaranteed the opening block always had a padded body to show,
     // so a title-only issue rendered a large card saying nothing.
-    const body = parsed.body || "";
+    const descriptionEdit = kind === "pulls" ? pullDescriptionEdit(values, parsed.pullConversation) : null;
+    const body = descriptionEdit ? String(descriptionEdit.body || "") : parsed.body || "";
+    const canEditDescription = kind === "pulls" && pullDescriptionEditable(values);
     const recordLabel = `#${escapeHtml(number)}`;
     const isPulls = kind === "pulls";
     const isDiscussions = kind === "discussions";
@@ -10169,18 +10467,17 @@
     // keep a slim "opened" line because their hero spends that row naming the
     // merge refs instead.
     const isOwner = String(repo.owner || "").toLowerCase() === String(values.author || author).toLowerCase();
-    const openingBody = hasBody
-      ? `<div data-repo-record-body class="px-4 py-4 ${MD_BODY_CLASS}">${renderRecordMarkdown(displayBody, repo)}</div>`
-      : `<p class="px-4 py-4 text-[14px] italic text-muted-foreground">No description provided.</p>`;
+    const openingBody = recordOpeningBodyHtml(repo, displayBody);
     const openingBlock = `
-                <div data-repo-record-description="${hasBody ? "body" : "empty"}" class="grid min-w-0 gap-4 sm:grid-cols-[40px_minmax(0,1fr)]">
+                <div data-repo-record-description="${hasBody ? "body" : "empty"}"${isPulls ? " data-repo-pull-description-card" : ""} class="grid min-w-0 gap-4 sm:grid-cols-[40px_minmax(0,1fr)]">
                   <span class="hidden sm:block">${issueActorAvatarHtml(author, values.author, "h-10 w-10")}</span>
                   <div class="relative min-w-0 overflow-hidden rounded-md border border-border bg-background">
                     <div class="flex min-w-0 flex-wrap items-center gap-1.5 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] py-1.5 pl-4 pr-2 text-[14px] text-muted-foreground">
-                      <span class="min-w-0 truncate">${issueCardAuthorHtml(author, values.author)} commented <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time></span>
+                      <span class="min-w-0 truncate">${issueCardAuthorHtml(author, values.author)} commented <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time>${isPulls ? `<span data-repo-pull-description-edited${descriptionEdit ? "" : " hidden"}> · edited</span>` : ""}</span>
                       <span class="ml-auto flex shrink-0 items-center gap-1">
                         <span class="rounded-full border border-border px-2 text-[12px] font-medium leading-5">${isOwner ? "Owner" : "Contributor"}</span>
                         <span class="rounded-full border border-border px-2 text-[12px] font-medium leading-5">Author</span>
+                        ${canEditDescription ? `<button type="button" data-repo-pull-description-edit="${PULL_DESCRIPTION_TARGET}" aria-label="Edit description" title="Edit description" class="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="pencil" class="h-4 w-4"></i></button>` : ""}
                       </span>
                     </div>
                     ${openingBody}
@@ -10275,6 +10572,17 @@
       ...(parsed.discussionConversation || []).map((ev) => ev.authorName || ev.author).filter(Boolean)]));
     return `
       <article data-repo-record-detail="${escapeHtml(kind)}" class="min-w-0 bg-background">
+        ${isPulls ? `<div data-repo-record-sticky aria-hidden="true" class="pointer-events-none sticky top-0 z-20 -mx-3 mb-0 flex h-0 items-start overflow-visible sm:-mx-5">
+          <div data-repo-record-sticky-bar class="flex w-full -translate-y-full flex-col gap-1 border-b border-border bg-background/95 px-3 pt-2 opacity-0 backdrop-blur transition duration-150 sm:px-5">
+            <div class="flex min-w-0 items-center gap-2">
+              <span data-repo-record-sticky-state class="inline-flex h-6 shrink-0 items-center gap-1 rounded-full ${statePillTone} px-2 text-[12px] font-medium text-white"><i data-lucide="${stateIcon}" class="h-3.5 w-3.5"></i>${escapeHtml(stateLabel)}</span>
+              <span class="min-w-0 truncate text-[14px] font-semibold text-foreground">${escapeHtml(title)} <span class="font-normal text-muted-foreground">${recordLabel}</span></span>
+            </div>
+            <nav class="flex min-w-0 items-end overflow-x-auto" aria-label="Pull request sections">
+              ${[["conversation", "Conversation"], ["commits", "Commits"], ["checks", "Checks"], ["files", "Files changed"], ["badge", "Badge"]].map(([name, label]) => `<button type="button" data-repo-record-sticky-tab="${name}" aria-selected="${name === activeSection ? "true" : "false"}" class="-mb-px inline-flex h-8 shrink-0 items-center border-b-2 border-transparent px-3 text-[13px] text-muted-foreground hover:text-foreground aria-selected:border-[var(--dashboard-link)] aria-selected:text-foreground">${label}</button>`).join("")}
+            </nav>
+          </div>
+        </div>` : ""}
         <header data-repo-record-hero class="${isPulls ? "" : "border-b border-border pb-4"}">
           <div class="flex flex-wrap items-start justify-between gap-3">
             <h1 class="min-w-0 flex-1 text-[26px] font-normal leading-tight text-foreground [overflow-wrap:anywhere] sm:text-[32px]">${escapeHtml(title)} <span class="font-light text-muted-foreground">${recordLabel}</span></h1>
@@ -10292,7 +10600,6 @@
               : `${issuePersonNameHtml(author)} started this conversation in <span class="font-semibold text-foreground">${escapeHtml(discussionCategory)}</span> <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time> · ${formatCount(discussionConversation.length)} ${discussionConversation.length === 1 ? "reply" : "replies"}`}</span>
             ${isPulls ? renderPullAiModelChip(values, body, parsed.repoCollabSettings) : ""}
           </div>
-          ${isPulls && stateKey === "open" ? renderPullReviewPrompt(pullReviewPromptFields(repo, number, values, parsed.pullPatch), number, parsed.repoCollabSettings?.reviewPromptTemplate || "") : ""}
           ${recordTabs}
         </header>
         ${isPulls ? `<div data-repo-pull-conflict-slot class="fm-conflict-slot">${renderRepoPullConflictBanner(repo, number, parsed)}</div>` : ""}
@@ -10325,7 +10632,7 @@
                   <div data-repo-pull-checks class="divide-y divide-border">${renderRepoPullChecks(parsed.pullChecks, repo)}</div>
                 </section>
               </div>
-              <div data-repo-record-panel="files" class="${recordPanelClass("files")}">${pullFilesSection}</div>
+              <div data-repo-record-panel="files" class="${recordPanelClass("files")}">${pullFilesSection}<div data-repo-pull-files-merge-slot class="min-w-0">${renderRepoPullFilesMergeBar(repo, number, parsed)}</div></div>
               <div data-repo-record-panel="badge" class="${recordPanelClass("badge")}">
                 <section class="overflow-hidden rounded-md border border-border">
                   <div class="flex items-center gap-2 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-2 text-[14px] font-semibold text-foreground"><i data-lucide="fingerprint" class="h-4 w-4 text-muted-foreground"></i>Badge</div>
@@ -10334,8 +10641,9 @@
               </div>` : ""}
           </div>
           <aside data-repo-record-sidebar class="${activeSection === "conversation" ? "" : "hidden "}min-w-0 self-start">
-            ${isPulls ? sidebarSection("Reviewers", `<span data-repo-pull-reviewers class="grid gap-1">${renderPullReviewers(pullConversation, values.author || "", values.authorName || "")}</span>`) : ""}
+            ${isPulls ? sidebarSection("Reviewers", `<span data-repo-pull-reviewers class="grid gap-0.5">${renderPullReviewers(pullConversation, values.author || "", values.authorName || "")}</span>`) : ""}
             ${isPulls ? renderPullAiReviewSidebar(repo, number) : ""}
+            ${isPulls && stateKey === "open" ? sidebarSection("Diff and files", renderPullReviewPrompt(pullReviewPromptFields(repo, number, values, parsed.pullPatch), number, parsed.repoCollabSettings?.reviewPromptTemplate || "")) : ""}
             ${isPulls ? sidebarSection("Assignees", `<span class="text-muted-foreground">No one assigned</span>`) : sidebarSection("Category", `<span class="inline-flex items-center gap-1.5 font-semibold"><span aria-hidden="true">${discussionCategoryEmoji(discussionCategory)}</span>${escapeHtml(discussionCategory)}</span>`)}
             ${sidebarSection("Labels", labelValue)}
             ${rewardValue ? sidebarSection("Reward", rewardValue) : ""}
@@ -10616,12 +10924,11 @@
       .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ").replace(/\s+/g, " ").trim();
   }
 
-  function renderIssueAiPrompt(repo, number, title, template = "") {
+  function renderIssueAiPrompt(repo, number, title, template = "", extraButtons = "") {
     const prompt = issueAiPromptText(repo, number, title, template);
-    return `<div data-repo-issue-ai-prompt class="mt-3 flex min-w-0 items-start gap-2 rounded-md border border-border bg-[rgb(var(--dashboard-subtle-rgb))] py-1 pl-3 pr-1 text-[12px] text-muted-foreground">
-            <i data-lucide="bot" class="h-4 w-4 shrink-0"></i>
-            <code data-repo-issue-ai-prompt-text title="${escapeHtml(prompt)}" class="min-w-0 flex-1 break-words font-mono text-foreground">${escapeHtml(prompt)}</code>
-            <button type="button" data-dashboard-copy="${escapeHtml(prompt)}" aria-label="AI prompt for this issue" title="Copy this prompt into your coding agent" class="copy-button inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 font-medium text-foreground hover:bg-secondary"><i data-lucide="copy" class="copy-icon h-3.5 w-3.5"></i><i data-lucide="check" class="copy-check h-3.5 w-3.5"></i><span class="copy-icon">Copy prompt</span><span class="copy-check">Copied</span></button>
+    return `<div data-repo-issue-ai-prompt class="grid min-w-0 gap-1.5">
+            <code data-repo-issue-ai-prompt-text title="${escapeHtml(prompt)}" class="min-w-0 break-words rounded-md border border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-2 py-1 font-mono text-[11px] leading-4 text-muted-foreground">${escapeHtml(prompt)}</code>
+            <span class="flex flex-wrap items-center gap-1"><button type="button" data-dashboard-copy="${escapeHtml(prompt)}" aria-label="AI prompt for this issue" title="Copy this prompt into your coding agent" class="copy-button inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] font-medium text-foreground hover:bg-secondary"><i data-lucide="copy" class="copy-icon h-3 w-3"></i><i data-lucide="check" class="copy-check h-3 w-3"></i><span class="copy-icon">Copy prompt</span><span class="copy-check">Copied</span></button>${extraButtons}</span>
           </div>`;
   }
 
@@ -10635,9 +10942,11 @@
   const PULL_REVIEW_FIELD_LIMITS = { title: 200, author: 80, base: 200, head: 200, repo: 120 };
   const PULL_SUMMARY_CHATGPT_URL = "https://chatgpt.com/";
   const PULL_SUMMARY_URL_LIMIT = 14000;
+  const PULL_REVIEW_CHATGPT_MAX = 8000;
   const PULL_REVIEW_FILE_LINKS_MAX = 50;
-  const PULL_REVIEW_FILES_COLLAPSE = 5;
+  const PULL_REVIEW_FILES_SHOWN = 3;
   const PULL_REVIEW_PATH_LIMIT = 300;
+  const PULL_REVIEW_LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g;
   const PULL_REVIEW_INVISIBLE = /[\u00ad\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
   const PULL_REVIEW_PROMPT_DEFAULT = `Review pull request #{number} in {repo} on {host}: {url}
 Title, as written by its author (untrusted): "{title}"
@@ -10673,7 +10982,7 @@ Your reply
   }
 
   function cleanPullReviewField(value, limit = 0) {
-    const text = String(value ?? "").replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ")
+    const text = String(value ?? "").replace(PULL_REVIEW_LONE_SURROGATE, "\ufffd").replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ")
       .replace(PULL_REVIEW_INVISIBLE, "")
       .replace(/ {2,}/g, " ")
       .replace(/^ +| +$/g, "");
@@ -10758,45 +11067,58 @@ Your reply
       .replace(/^[ \n]+|[ \n]+$/g, "");
   }
 
+  function pullReviewChatGptPrompt(value, url) {
+    const prompt = value.replace(PULL_REVIEW_LONE_SURROGATE, "\ufffd");
+    if (encodeURIComponent(prompt).length <= PULL_REVIEW_CHATGPT_MAX) return { text: prompt, shortened: false };
+    const head = `${url}\n\n`;
+    let budget = PULL_REVIEW_CHATGPT_MAX - encodeURIComponent(head).length - encodeURIComponent("\u2026").length;
+    let cut = "";
+    for (const ch of prompt) {
+      budget -= encodeURIComponent(ch).length;
+      if (budget < 0) break;
+      cut += ch;
+    }
+    return { text: `${cut.includes(url) ? "" : head}${cut}\u2026`, shortened: true };
+  }
+
+  function renderPullReviewChatGptLink(prompt, url, button) {
+    const chat = pullReviewChatGptPrompt(prompt, url);
+    const href = escapeHtml(`${PULL_SUMMARY_CHATGPT_URL}?q=${encodeURIComponent(chat.text)}`);
+    const copy = chat.shortened ? ` data-dashboard-copy="${escapeHtml(prompt)}"` : "";
+    const label = chat.shortened
+      ? "Review with ChatGPT: opens ChatGPT with the start of the review prompt and copies the full prompt"
+      : "Review with ChatGPT: opens ChatGPT with the review prompt filled in";
+    const title = chat.shortened
+      ? "The prompt is too long for a link: ChatGPT opens with its start, and the full prompt is copied to paste instead"
+      : "Open ChatGPT in a new tab with this prompt";
+    return `<a href="${href}" target="_blank" rel="noopener noreferrer"${copy} data-repo-pull-review-chatgpt aria-label="${label}" title="${title}" class="${button}"><i data-lucide="bot" class="h-3.5 w-3.5"></i></a>`;
+  }
+
   function renderPullReviewPrompt(fields, number, template = "") {
-    const prompt = escapeHtml(pullReviewPromptText(fields, template));
-    const files = fields.files || [];
+    const text = pullReviewPromptText(fields, template);
+    const prompt = escapeHtml(text);
+    const files = (fields.files || []).slice(0, PULL_REVIEW_FILES_SHOWN);
     const more = (fields.fileCount || 0) - files.length;
-    const toggle = files.length + (more > 0 ? 1 : 0) > PULL_REVIEW_FILES_COLLAPSE;
-    const boxId = `repo-pull-review-prompt-${Number(number)}`;
     const raw = fields.rawDiffUrl || "";
     const link = "font-medium text-[var(--dashboard-link)] hover:underline";
+    const button = "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground";
     const diffLinks = raw
       ? `<a href="${escapeHtml(raw)}" data-repo-pull-diff-link class="${link}">Diff</a><a href="${escapeHtml(fields.patchUrl)}" data-repo-pull-patch-link class="${link}">Patch</a>`
       : "";
-    const toggleButton = toggle
-      ? `<button type="button" data-repo-pull-review-prompt-toggle aria-expanded="false" aria-controls="${boxId}" class="inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-2 font-medium text-foreground hover:bg-secondary"><i data-lucide="chevron-down" class="h-3.5 w-3.5"></i><span data-repo-pull-review-prompt-toggle-label>Show all</span></button>`
-      : "";
-    let rows = files.map(([path, href]) => (href
-      ? `<li class="truncate"><a href="${escapeHtml(href)}" title="${escapeHtml(path)}" class="text-[var(--dashboard-link)] hover:underline">${escapeHtml(path)}</a></li>`
-      : `<li class="truncate" title="${escapeHtml(path)}">${escapeHtml(path)}</li>`)).join("");
-    if (more > 0) rows += `<li class="text-muted-foreground">and ${more} more</li>`;
+    let rows = files.map(([path, href]) => {
+      const name = escapeHtml(path.split("/").pop() || path);
+      return href
+        ? `<li class="truncate"><a href="${escapeHtml(href)}" title="${escapeHtml(path)}" class="text-[var(--dashboard-link)] hover:underline">${name}</a></li>`
+        : `<li class="truncate" title="${escapeHtml(path)}">${name}</li>`;
+    }).join("");
+    if (more > 0) rows += `<li><a href="${escapeHtml(fields.filesUrl)}" data-repo-record-tab="files" data-repo-pull-files-more class="font-sans text-muted-foreground hover:text-foreground hover:underline">+${more} more ${more === 1 ? "file" : "files"}</a></li>`;
     const listing = rows
       ? `
-            <ul id="${boxId}" data-repo-pull-review-files class="${toggle ? "max-h-28" : "max-h-none"} overflow-hidden border-t border-border bg-background px-3 py-2 font-mono text-[12px] leading-5 text-foreground">${rows}</ul>`
+            <ul data-repo-pull-review-files class="min-w-0 font-mono text-[11px] leading-5 text-foreground">${rows}</ul>`
       : "";
-    return `<section data-repo-pull-review-prompt aria-label="Diff and files" class="mt-3 min-w-0 overflow-hidden rounded-md border border-border bg-[rgb(var(--dashboard-subtle-rgb))] text-[12px] text-muted-foreground">
-            <div class="flex min-w-0 flex-wrap items-center gap-2 py-1 pl-3 pr-1">
-              <i data-lucide="code" class="h-4 w-4 shrink-0"></i><span class="whitespace-nowrap font-semibold text-foreground">Diff and files</span>${diffLinks}
-              <span class="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1">${toggleButton}<a href="${escapeHtml(pullSummaryChatGptUrl(fields))}" target="_blank" rel="noopener noreferrer" data-repo-pull-chatgpt-summary title="Open ChatGPT with a request to summarize this pull request" class="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 font-medium text-foreground hover:bg-secondary"><i data-lucide="external-link" class="h-3.5 w-3.5"></i>Summarize in ChatGPT</a><button type="button" data-dashboard-copy="${prompt}" aria-label="Copy the review prompt for this pull request" title="Copy a review prompt for your coding agent" class="copy-button inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 font-medium text-foreground hover:bg-secondary"><i data-lucide="copy" class="copy-icon h-3.5 w-3.5"></i><i data-lucide="check" class="copy-check h-3.5 w-3.5"></i><span class="copy-icon">Copy review prompt</span><span class="copy-check">Copied</span></button></span>
-            </div>${listing}
-          </section>`;
-  }
-
-  function togglePullReviewPrompt(button) {
-    const box = document.getElementById(button.getAttribute("aria-controls") || "");
-    if (!box) return;
-    const expand = button.getAttribute("aria-expanded") !== "true";
-    button.setAttribute("aria-expanded", expand ? "true" : "false");
-    box.classList.toggle("max-h-28", !expand);
-    box.classList.toggle("max-h-none", expand);
-    const label = button.querySelector("[data-repo-pull-review-prompt-toggle-label]");
-    if (label) label.textContent = expand ? "Show less" : "Show all";
+    return `<div data-repo-pull-review-prompt aria-label="Diff and files" class="grid min-w-0 gap-1 text-[12px]">
+            <span class="flex min-w-0 items-center gap-3">${diffLinks}<span class="ml-auto flex items-center gap-0.5"><button type="button" data-dashboard-copy="${prompt}" aria-label="Copy the review prompt for this pull request" title="Copy a review prompt for your coding agent" class="copy-button ${button}"><i data-lucide="copy" class="copy-icon h-3.5 w-3.5"></i><i data-lucide="check" class="copy-check h-3.5 w-3.5"></i></button>${renderPullReviewChatGptLink(text, fields.url, button)}<a href="${escapeHtml(pullSummaryChatGptUrl(fields))}" target="_blank" rel="noopener noreferrer" data-repo-pull-chatgpt-summary aria-label="Summarize in ChatGPT" title="Open ChatGPT with a request to summarize this pull request" class="${button}"><i data-lucide="external-link" class="h-3.5 w-3.5"></i></a></span></span>${listing}
+          </div>`;
   }
 
   function renderRepoIssueDetail(repo, number, parsed) {
@@ -10811,6 +11133,8 @@ Your reply
     const hasBody = Boolean(String(body).trim());
     const canManage = Boolean(parsed.issueMutationAuthorized);
     const events = Array.isArray(parsed.issueEvents) ? parsed.issueEvents : [];
+    const openEvent = events.find((ev) => ev?.type === "open" && String(ev.id || "") === String(parsed.issueOpenEventId || ""));
+    const canEditText = canManage || webSessionAuthored(openEvent || { author: values.author, authorName: values.authorName });
     const commentCount = issueCommentCount(events);
     const participants = issueParticipants(parsed);
     const labels = parseFrontMatterList(values.labels);
@@ -10844,10 +11168,10 @@ Your reply
                       </form>`;
     const description = hasBody
       ? `<div data-repo-record-description="body">
-                      <div data-repo-record-body data-repo-issue-task-list class="px-4 py-4 ${MD_BODY_CLASS}">${renderRecordMarkdown(issueDescriptionWithoutDependencies(body), repo, { issueTasks: true, interactiveTasks: canManage })}</div>
+                      <div data-repo-record-body data-repo-issue-task-list class="px-4 py-4 ${MD_BODY_CLASS}">${renderRecordMarkdown(issueDescriptionWithoutDependencies(body), repo, { issueTasks: true, interactiveTasks: canEditText })}</div>
                       ${reactionRow}
-                    </div>${canManage ? descriptionForm : ""}`
-      : canManage
+                    </div>${canEditText ? descriptionForm : ""}`
+      : canEditText
         ? `<div data-repo-record-description="add" class="px-4 py-2"><button type="button" data-repo-issue-description-edit class="inline-flex h-7 items-center gap-1.5 rounded-md px-1 text-[14px] text-muted-foreground hover:text-[var(--dashboard-link)]"><i data-lucide="plus" class="h-4 w-4"></i>Add a description</button></div>${descriptionForm}`
         : `<p data-repo-record-description="empty" class="px-4 py-2 text-[14px] italic text-muted-foreground">No description provided.</p>`;
 
@@ -10858,7 +11182,7 @@ Your reply
                     <div class="flex min-w-0 items-center gap-1.5 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] py-1.5 pl-4 pr-2 text-[14px] text-muted-foreground">
                       <span class="min-w-0 truncate">${issueCardAuthorHtml(author, values.author)} opened <time datetime="${escapeHtml(opened.iso)}" title="${escapeHtml(opened.label)}">${escapeHtml(formatTimeAgo(openedAt))}</time></span>
                       <span class="ml-auto shrink-0 rounded-full border border-border px-2 text-[12px] font-medium leading-5">${isOwner ? "Owner" : "Contributor"}</span>
-                      ${canManage && hasBody ? `<button type="button" data-repo-issue-description-edit aria-label="Edit description" title="Edit description" class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="pencil" class="h-4 w-4"></i></button>` : ""}
+                      ${canEditText && hasBody ? `<button type="button" data-repo-issue-description-edit aria-label="Edit description" title="Edit description" class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="pencil" class="h-4 w-4"></i></button>` : ""}
                     </div>
                     ${description}
                   </div>
@@ -10890,7 +11214,7 @@ Your reply
     // Self-assignment is open to every visitor, not only issue managers
     // (issue #570): a claim moves only the caller's own name. Signed-out
     // clicks route through /login.
-    const selfAssignControl = `<button type="button" data-repo-issue-claim="${viewerAssigned ? "release" : "claim"}" class="mt-2 inline-flex items-center gap-1.5 text-[12px] text-muted-foreground hover:text-[var(--dashboard-link)]"><i data-lucide="${viewerAssigned ? "user-minus" : "user-plus"}" class="h-3.5 w-3.5"></i>${viewerAssigned ? "Unassign yourself" : "Assign yourself"}</button>`;
+    const selfAssignControl = `<button type="button" data-repo-issue-claim="${viewerAssigned ? "release" : "claim"}" class="mt-2 flex w-fit items-center gap-1.5 text-[12px] text-muted-foreground hover:text-[var(--dashboard-link)]"><i data-lucide="${viewerAssigned ? "user-minus" : "user-plus"}" class="h-3.5 w-3.5"></i>${viewerAssigned ? "Unassign yourself" : "Assign yourself"}</button>`;
     const assigneeValue = `${issueAssignees.length
       ? `<div class="grid gap-1.5">${issueAssignees.map((assignee) => {
         const row = `<span class="inline-flex min-w-0 items-center gap-2">${issueActorAvatarHtml(assignee, assignee, "h-5 w-5")}${issuePersonNameHtml(assignee, "truncate font-semibold")}</span>`;
@@ -10901,10 +11225,14 @@ Your reply
       }).join("")}</div>`
       : `<span class="text-muted-foreground">No one assigned</span>`}${selfAssignControl}`;
     const latestAgentEvent = events.slice().reverse().find((event) => event?.type === "agent");
-    const agentValue = `${latestAgentEvent && Number(latestAgentEvent.agentSessionId) > 0 && latestAgentEvent.agentStatus !== "cleared"
+    const agentStatusValue = `${latestAgentEvent && Number(latestAgentEvent.agentSessionId) > 0 && latestAgentEvent.agentStatus !== "cleared"
       ? `<span class="inline-flex items-center gap-2">${issueActorAvatarHtml(latestAgentEvent.agentProvider || "Agent", "", "h-5 w-5", true)}<span class="font-semibold">${escapeHtml(latestAgentEvent.agentProvider || "Agent")}</span><span class="text-muted-foreground">session #${escapeHtml(latestAgentEvent.agentSessionId)}</span>${latestAgentEvent.agentStatus ? `<span class="rounded-full border border-attention/40 px-1.5 font-mono text-[11px] leading-[18px] text-attention">${escapeHtml(latestAgentEvent.agentStatus)}</span>` : ""}</span>`
-      : `<span class="text-muted-foreground">No agent assigned</span>`}
-        <button type="button" data-repo-issue-mcp-prompt title="${state.session?.sessionToken ? "Copy a ready-to-paste agent prompt that works this issue end to end, MCP server configuration and a generated connector token included (shift-click to paste a token this node already published)" : "Sign in to copy the agent prompt for this issue"}" class="mt-2 flex items-center gap-1.5 text-[12px] text-muted-foreground hover:text-[var(--dashboard-link)]"><i data-lucide="copy" class="h-3.5 w-3.5"></i>Copy MCP prompt</button>`;
+      : `<span class="text-muted-foreground">No agent assigned</span>`}`;
+    const issueMcpButton = `<button type="button" data-repo-issue-mcp-prompt title="${state.session?.sessionToken ? "Copy a ready-to-paste agent prompt that works this issue end to end, MCP server configuration and a generated connector token included (shift-click to paste a token this node already published)" : "Sign in to copy the agent prompt for this issue"}" class="inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] font-medium text-foreground hover:bg-secondary"><i data-lucide="copy" class="h-3 w-3"></i>Copy MCP prompt</button>`;
+    const agentValue = `${agentStatusValue}
+        <div class="mt-2">${closed || instancePluginOff("issue-ai-prompt")
+          ? `<span class="flex flex-wrap items-center gap-1">${issueMcpButton}</span>`
+          : renderIssueAiPrompt(repo, number, title, parsed.repoCollabSettings?.aiPromptTemplate || "", issueMcpButton)}</div>`;
     const labelValue = labels.length
       ? `<div class="flex flex-wrap gap-1">${labels.map((label) => renderIssueLabelChip(label)).join("")}</div>`
       : `<span class="text-muted-foreground">No labels</span>`;
@@ -10953,13 +11281,13 @@ Your reply
         <header data-repo-record-hero class="border-b border-border pb-4">
           <div class="flex flex-wrap items-start justify-between gap-3">
             <h1 data-repo-issue-title-heading class="min-w-0 flex-1 text-[26px] font-normal leading-tight text-foreground [overflow-wrap:anywhere] sm:text-[32px]">${escapeHtml(title)} <span class="font-light text-muted-foreground">${recordLabel}</span></h1>
-            ${canManage ? `<form data-repo-issue-title-form class="hidden min-w-0 basis-full flex-wrap items-center gap-2 sm:flex-1 sm:flex-nowrap">
+            ${canEditText ? `<form data-repo-issue-title-form class="hidden min-w-0 basis-full flex-wrap items-center gap-2 sm:flex-1 sm:flex-nowrap">
               <input data-repo-issue-title-input value="${escapeHtml(title)}" maxlength="240" aria-label="Issue title" class="h-11 min-w-0 basis-full rounded-md border border-border bg-background px-3 text-[20px] text-foreground outline-none focus:border-[var(--dashboard-link)] sm:flex-1" />
               <button type="submit" class="h-8 rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground">Save</button>
               <button type="button" data-repo-issue-title-cancel class="h-8 rounded-md px-3 text-[14px] text-[var(--dashboard-link)] hover:underline">Cancel</button>
             </form>` : ""}
             <div class="flex shrink-0 items-center gap-2 pt-1">
-              ${canManage ? `<button type="button" data-repo-issue-title-edit class="inline-flex h-8 items-center rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground hover:bg-secondary/70">Edit</button>` : ""}
+              ${canEditText ? `<button type="button" data-repo-issue-title-edit class="inline-flex h-8 items-center rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground hover:bg-secondary/70">Edit</button>` : ""}
               ${renderIssueSourceLink(parsed.issueSourceUrl)}<button type="button" data-repo-issue-new class="inline-flex h-8 items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">New issue</button>
               <button type="button" data-dashboard-copy="${escapeHtml(issueUrl)}" aria-label="Copy link to this issue" title="Copy link" class="copy-button inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="link" class="copy-icon h-4 w-4"></i><i data-lucide="check" class="copy-check h-4 w-4"></i></button>
             </div>
@@ -10972,7 +11300,6 @@ Your reply
             <span>${formatCount(participants.length)} ${participants.length === 1 ? "participant" : "participants"}</span>
             ${issueViewsHtml(repo, number)}
           </p>
-          ${closed || instancePluginOff("issue-ai-prompt") ? "" : renderIssueAiPrompt(repo, number, title, parsed.repoCollabSettings?.aiPromptTemplate || "")}
         </header>
         <div data-repo-record-layout class="mt-6 grid gap-8 lg:grid-cols-[minmax(0,1fr)_18.5rem]">
           <div class="grid min-w-0 gap-4 self-start">
@@ -11047,7 +11374,6 @@ Your reply
               ? `<span class="inline-flex h-8 items-center gap-1.5 rounded-full ${closed ? "bg-[#6e7681]" : "bg-success"} px-3 font-medium text-white"><i data-lucide="${closed ? "circle-check" : "circle-dot"}" class="h-4 w-4"></i>${closed ? "Closed" : "Open"}</span><span>${formatCount(Number(item.commentCount) || 0)} ${Number(item.commentCount) === 1 ? "comment" : "comments"}</span>`
               : `${bar("w-20", "h-8 rounded-full")}${bar("w-24")}`}
           </p>
-          ${item && !closed && !instancePluginOff("issue-ai-prompt") ? renderIssueAiPrompt(repo, number, item.title, cachedSettings?.aiPromptTemplate || "") : ""}
         </header>
         <div class="mt-6 grid gap-8 lg:grid-cols-[minmax(0,1fr)_18.5rem]">
           <div class="grid min-w-0 gap-4 self-start">
@@ -11071,7 +11397,7 @@ Your reply
           </div>
           <aside class="min-w-0 self-start">
             ${section("Assignees", item ? (assignees.length ? `<div class="grid gap-1.5">${assignees.map((name) => `<span class="inline-flex items-center gap-2">${issueActorAvatarHtml(name, name, "h-5 w-5")}${issuePersonNameHtml(name, "font-semibold")}</span>`).join("")}</div>` : `<span class="text-muted-foreground">No one assigned</span>`) : bar("w-1/2"))}
-            ${section("Agent", bar("w-2/3"))}
+            ${section("Agent", item && !closed && !instancePluginOff("issue-ai-prompt") ? `${bar("w-2/3")}<div class="mt-2">${renderIssueAiPrompt(repo, number, item.title, cachedSettings?.aiPromptTemplate || "")}</div>` : bar("w-2/3"))}
             ${section("Labels", item ? (labels.length ? `<div class="flex flex-wrap gap-1">${labels.map((label) => renderIssueLabelChip(label)).join("")}</div>` : `<span class="text-muted-foreground">No labels</span>`) : bar("w-3/4"))}
             ${section("Fields", item && Number(item.priority) > 0 ? `<span class="rounded-md border border-border px-1.5 font-mono text-[12px] leading-[18px]">P${Number(item.priority)}</span>` : bar("w-1/2"))}
             ${section("Milestone", item ? (item.milestone ? `<span class="font-semibold">${escapeHtml(item.milestone)}</span>` : `<span class="text-muted-foreground">No milestone</span>`) : bar("w-2/3"))}
@@ -11096,6 +11422,30 @@ Your reply
   function takeRepoFirstViewIssue(repo, number) {
     const kept = repoFirstViewIssue;
     repoFirstViewIssue = null;
+    if (!kept || !repo || kept.number !== String(number) || kept.path !== location.pathname) return null;
+    return kept.node;
+  }
+
+  let repoFirstViewPull = null;
+  function keepRepoFirstViewPull(detail) {
+    repoFirstViewPull = null;
+    const heading = detail?.querySelector?.("[data-repo-ssr] h2.fm-ssr-h1");
+    const match = /\/pulls?\/(\d+)(?:\/|$)/.exec(location.pathname);
+    if (!heading || !match) return;
+    const view = document.createElement("div");
+    view.className = "fm-ssr";
+    view.dataset.repoSsrPull = match[1];
+    for (let node = heading; node;) {
+      const next = node.nextSibling;
+      view.appendChild(node);
+      node = next;
+    }
+    repoFirstViewPull = { number: match[1], path: location.pathname, node: view };
+  }
+
+  function takeRepoFirstViewPull(repo, number) {
+    const kept = repoFirstViewPull;
+    repoFirstViewPull = null;
     if (!kept || !repo || kept.number !== String(number) || kept.path !== location.pathname) return null;
     return kept.node;
   }
@@ -11578,9 +11928,9 @@ Your reply
   }
 
   // The compact title bar slides in once the full header scrolls away.
-  function mountIssueStickyHeader(container) {
-    const hero = container?.querySelector?.('[data-repo-record-detail="issues"] [data-repo-record-hero]');
-    const bar = container?.querySelector?.("[data-repo-issue-sticky-bar]");
+  function mountRecordStickyHeader(container) {
+    const hero = container?.querySelector?.('[data-repo-record-detail="issues"] [data-repo-record-hero], [data-repo-record-detail="pulls"] [data-repo-record-hero]');
+    const bar = container?.querySelector?.("[data-repo-issue-sticky-bar], [data-repo-record-sticky-bar]");
     state.issueStickyObserver?.disconnect?.();
     if (!hero || !bar || typeof IntersectionObserver !== "function") return;
     state.issueStickyObserver = new IntersectionObserver(([entry]) => {
@@ -11964,9 +12314,10 @@ Your reply
     const html = renderRepoRecordDetail(repo, kind, number, parsed);
     if (kind === "issues") paintRepoIssueDetail(container, html);
     else container.innerHTML = html;
-    if (kind === "issues") mountIssueStickyHeader(container);
+    if (kind === "issues" || kind === "pulls") mountRecordStickyHeader(container);
     window.lucide?.createIcons();
     if (typeof loadCommentTipWallets === "function") void loadCommentTipWallets(commentReactionSubject(kind, number));
+    if (typeof scheduleCommentReactionCheer === "function") scheduleCommentReactionCheer(commentReactionSubject(kind, number));
   }
 
   async function loadRepoIssueDependencies(repo, body, currentNumber, known = []) {
@@ -12033,8 +12384,12 @@ Your reply
     const recordPath = `${config.dir}/${number}/${recordFile}`;
     const staleMark = repoStaleReadMark();
     const reconnect = { key: viewKey, container, retry: () => loadRepoRecordDetail(repo, kind, number, preferMirror) };
-    if (!quietRefresh && !reconnecting) {
-      const firstView = kind === "issues" ? takeRepoFirstViewIssue(repo, number) : null;
+    const snapshotShown = kind === "pulls" && !quietRefresh && !reconnecting
+      && showRepoPullSnapshot(repo, number, container);
+    let pullLive = null;
+    if (!quietRefresh && !reconnecting && !snapshotShown) {
+      const firstView = kind === "issues" ? takeRepoFirstViewIssue(repo, number)
+        : kind === "pulls" ? takeRepoFirstViewPull(repo, number) : null;
       if (firstView) {
         container.replaceChildren(firstView);
       } else {
@@ -12116,30 +12471,18 @@ Your reply
       if (kind === "pulls") {
         parsed.pullMetadataCommit = pullMetadataCommit;
         const values = parsed.values || {};
-        const readiness = loadRepoPullReadiness(repo, number, values);
-        const [pullPatch, conversation, commits, agents, mergeAuthorized, mergeBase, checks, rules, requiredChecks] = await Promise.all([
+        pullLive = loadRepoPullLiveState(repo, number, values);
+        const [pullPatch, conversation, commits] = await Promise.all([
           loadRepoPullPatch(repo, number, pullMetadataCommit, values),
           loadRepoPullConversation(repo, number, pullMetadataCommit),
           loadRepoPullCommits(repo, number, pullMetadataCommit, values),
-          loadRepoPullAgentActivity(repo, number, values),
-          loadRepoPullMergeAuthorization(repo),
-          loadRepoPullMergeBase(repo, values),
-          readiness.then((result) => loadRepoPullChecks(repo, values, result)),
-          readiness.then((result) => loadRepoPullRules(repo, number, result)),
-          readiness.then((result) => loadRepoPullRequiredChecks(repo, values, result)),
         ]);
         if (pullPatch) parsed.pullPatch = pullPatch;
         parsed.pullConversation = conversation;
         parsed.pullCommits = commits;
-        parsed.pullAgents = agents;
-        parsed.pullTimeline = buildRepoPullTimeline(values, conversation, commits, agents);
-        parsed.pullMergeAuthorized = mergeAuthorized;
-        parsed.pullUpdateAuthorized = await loadRepoPullUpdateAuthorization(repo, values, mergeAuthorized);
-        parsed.pullReadiness = await readiness;
-        parsed.pullMergeBase = mergeBase;
-        parsed.pullChecks = checks;
-        parsed.pullRules = rules;
-        parsed.pullRequiredChecks = requiredChecks;
+        parsed.pullAgents = [];
+        parsed.pullTimeline = buildRepoPullTimeline(values, conversation, commits, []);
+        parsed.pullPending = true;
       }
       if (kind === "issues") {
         const [mutationAuthorized, subscription] = await issueAccess;
@@ -12162,9 +12505,9 @@ Your reply
       }
       if (optimistic) forgetOptimisticRepoRecord(repo, kind, number);
       // The reader may have left the optimistic detail while this poll ran.
-      if (quietRefresh && !repoRecordDetailOnScreen(repo, kind, number, container)) return;
+      if ((quietRefresh || snapshotShown) && !repoRecordDetailOnScreen(repo, kind, number, container)) return;
       if (quietRefresh && container.querySelector("[data-repo-issue-comment-editor]")) return;
-      const commentDraft = quietRefresh
+      const commentDraft = quietRefresh || snapshotShown
         ? String(container.querySelector("[data-repo-issue-comment-body]")?.value || "")
         : "";
       state.repoRecordDetail = { repo, kind, number, parsed };
@@ -12172,8 +12515,9 @@ Your reply
       if (kind === "issues") paintRepoIssueDetail(container, html);
       else container.innerHTML = html;
       finishRepoRead(staleMark, reconnect);
-      if (kind === "issues") mountIssueStickyHeader(container);
+      if (kind === "issues" || kind === "pulls") mountRecordStickyHeader(container);
       if (typeof loadCommentTipWallets === "function") void loadCommentTipWallets(commentReactionSubject(kind, number));
+      if (typeof scheduleCommentReactionCheer === "function") scheduleCommentReactionCheer(commentReactionSubject(kind, number));
       if (kind === "issues") decorateIssueModeration(container, repo, number, parsed);
       if (commentDraft) {
         const commentBody = container.querySelector("[data-repo-issue-comment-body]");
@@ -12183,14 +12527,8 @@ Your reply
       if (issueRelations) void showRepoIssueRelationsLater(repo, number, parsed, container, issueRelations);
       if (kind === "issues") recordIssueView(repo, number);
       void refreshRepoRecordDevelopment(repo, kind, number);
-      if (kind === "pulls") void hydrateRepoPullAttention(repo, number, parsed);
       if (kind === "pulls") void loadPullAiReview(repo, number);
-      // Members watch an open pull for agent activity; signed-out visitors
-      // cannot read organization sessions at all, so they get no timer.
-      if (kind === "pulls" && state.session?.sessionToken) {
-        scheduleRepoPullActivityRefresh(repo, number, (parsed.pullAgents || []).some(
-          (event) => pullAgentStatusIsActive(event.status)));
-      }
+      if (kind === "pulls") void finishRepoPullLiveState(repo, number, parsed, pullLive);
     } catch (error) {
       // The relay already accepted this numbered record. Keep its complete
       // detail visible while the mirror commit converges, then retry quietly.
@@ -15343,8 +15681,8 @@ Your reply
     probe.src = url;
   }
 
-  const REPO_FEATURE_TABS = ["issues", "pulls", "discussions", "actions"];
-  const REPO_FEATURE_SWITCHES = [...REPO_FEATURE_TABS, "protectDefaultBranch"];
+  const REPO_FEATURE_TABS = ["issues", "pulls", "discussions", "forum", "actions"];
+  const REPO_FEATURE_SWITCHES = [...REPO_FEATURE_TABS, "protectDefaultBranch", "stalePulls", "stalePullsDeleteBranch"];
 
   function repoFirstViewSeed(repo) {
     let seed = null;
@@ -16258,268 +16596,6 @@ Your reply
         : "Mirror saved.", "good");
     } catch (error) {
       setRepoForgeMirrorStatus(repoForgeMirrorErrorText(error), "bad");
-    } finally {
-      if (submit) submit.disabled = false;
-    }
-    return true;
-  }
-
-  function repoArchiveSyncState(repo) {
-    const key = repoKey(repo).toLowerCase();
-    if (!state.repoArchiveSync || state.repoArchiveSync.key !== key) {
-      state.repoArchiveSync = { key, body: null, editing: false };
-    }
-    return state.repoArchiveSync;
-  }
-
-  async function repoArchiveSyncRequest(repo, payload) {
-    const response = await fetch(`${repoApiBase(repo)}/archive-sync`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ownerAccount: state.session?.nodeName || "",
-        sessionToken: state.session?.sessionToken || "",
-        ...payload,
-      }),
-    });
-    const body = await response.json().catch(() => ({}));
-    if (body?.error) {
-      const error = new Error(body.error);
-      error.detail = body.message || "";
-      throw error;
-    }
-    if (!response.ok) throw new Error("archive_request_failed");
-    return body;
-  }
-
-  function repoArchiveSyncErrorText(error) {
-    if (error?.detail) return error.detail;
-    switch (String(error?.message || "")) {
-      case "invalid_identifier":
-        return "Enter an item identifier of 5 to 100 letters, digits, dots, dashes or underscores.";
-      case "invalid_access_key":
-        return "Paste the S3 access key from your archive.org account.";
-      case "invalid_secret":
-        return "The secret key has letters and digits only.";
-      case "secret_required":
-        return "Paste the S3 secret key that goes with this access key.";
-      case "invalid_interval":
-        return "Choose every day, every week or every month.";
-      case "private_repository":
-        return "Only public repositories can be archived: everything on archive.org is public.";
-      case "sync_too_soon":
-        return "A backup was requested a moment ago. Try again in ten minutes.";
-      case "not_authorized":
-        return "Only the repository owner can manage its archive.";
-      case "not_configured":
-        return "This repository is not archived yet.";
-      default:
-        return "The archive settings could not be updated. Try again in a moment.";
-    }
-  }
-
-  function setRepoArchiveSyncStatus(message, tone = "") {
-    const status = $("[data-repo-archive-sync-status]");
-    if (!status) return;
-    status.textContent = message || "";
-    status.className = `text-[11px] ${tone === "bad" ? "text-destructive" : tone === "good" ? "text-success" : "text-muted-foreground"}`;
-  }
-
-  function repoArchiveSyncIntervalLabel(body, key) {
-    const entry = (body?.catalog?.intervals || []).find((item) => item.key === key);
-    return entry?.label || "Every week";
-  }
-
-  function renderRepoArchiveSyncForm(body) {
-    const archive = body?.archive || null;
-    const interval = archive?.interval || body?.catalog?.defaultInterval || "weekly";
-    const options = (body?.catalog?.intervals || []).map((item) =>
-      `<option value="${escapeHtml(item.key)}"${item.key === interval ? " selected" : ""}>${escapeHtml(item.label)}</option>`).join("");
-    const keepsSecret = Boolean(archive?.secretHint);
-    return `<form data-repo-archive-sync-form class="grid gap-4">
-      <div class="grid gap-3 sm:grid-cols-2">
-        <label class="grid gap-1 text-[11px] font-medium text-foreground">Item identifier
-          <span class="flex h-8 min-w-0 items-center rounded-md bg-secondary text-xs">
-            <span class="shrink-0 pl-2 font-mono text-muted-foreground">archive.org/details/</span>
-            <input data-repo-archive-sync-identifier type="text" autocomplete="off" spellcheck="false" required value="${escapeHtml(archive?.identifier || "")}" placeholder="${escapeHtml(state.selectedRepo ? repoKey(state.selectedRepo).replace("/", "-") : "owner-name")}" class="h-8 min-w-0 flex-1 bg-transparent px-1 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground" />
-          </span>
-        </label>
-        <label class="grid gap-1 text-[11px] font-medium text-foreground">How often
-          <select data-repo-archive-sync-interval class="h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none focus:border-accent">${options}</select>
-        </label>
-        <label class="grid gap-1 text-[11px] font-medium text-foreground">S3 access key
-          <input data-repo-archive-sync-access type="text" autocomplete="off" spellcheck="false" required value="${escapeHtml(archive?.accessKey || "")}" class="h-8 w-full rounded-md bg-secondary px-2 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground" />
-        </label>
-        <label class="grid gap-1 text-[11px] font-medium text-foreground">S3 secret key
-          <input data-repo-archive-sync-secret type="password" autocomplete="new-password" spellcheck="false"${keepsSecret ? "" : " required"} placeholder="${keepsSecret ? `Saved (${escapeHtml(archive.secretHint)}). Leave blank to keep it` : ""}" class="h-8 w-full rounded-md bg-secondary px-2 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground" />
-        </label>
-      </div>
-      <p class="text-[11px] leading-5 text-muted-foreground">The item is created on the first upload if it does not exist yet. <a href="${escapeHtml(body?.catalog?.keysUrl || "https://archive.org/account/s3.php")}" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline">Get your S3 keys on archive.org</a>. They are stored encrypted, used only for this backup, and the secret is never shown again.</p>
-      <div class="flex flex-wrap items-center justify-end gap-2">
-        ${archive ? `<button type="button" data-repo-archive-sync-cancel class="inline-flex h-8 items-center rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary">Cancel</button>` : ""}
-        <button type="submit" class="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90"><i data-lucide="archive" class="h-3.5 w-3.5"></i>${archive ? "Save backup" : "Start backing up"}</button>
-      </div>
-    </form>`;
-  }
-
-  function repoArchiveSyncUploadLine(archive, body) {
-    const upload = archive.status?.upload || {};
-    const every = repoArchiveSyncIntervalLabel(body, archive.interval).toLowerCase();
-    if (!body?.codeHosted) return { tone: "", text: `Waiting for this repository to be hosted on ${platformName()}.` };
-    if (!upload.at) return { tone: "", text: "The first upload starts within a few minutes." };
-    if (!upload.ok) return { tone: "bad", text: `Last upload failed ${relativeTimeLabel(upload.at)}: ${upload.error || "unknown error"}` };
-    const size = Number(upload.bytes || 0);
-    const sizeText = size >= 1048576 ? `${(size / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(size / 1024))} KB`;
-    return { tone: "good", text: `Uploaded ${archive.file} (${sizeText}) ${relativeTimeLabel(upload.at)}. Next upload ${every}, once something changes.` };
-  }
-
-  function renderRepoArchiveSyncOverview(body) {
-    const archive = body.archive;
-    const status = archive.status || {};
-    const upload = repoArchiveSyncUploadLine(archive, body);
-    const connectionTone = status.error ? "bad" : status.username ? "good" : "";
-    const history = (archive.history || []).slice(0, 6).map((entry) =>
-      `<li class="flex min-w-0 items-start gap-2">${repoForgeMirrorDot(entry.ok ? "good" : "bad")}<span class="min-w-0 flex-1 break-words">${escapeHtml(entry.message || entry.kind || "")}</span><span class="shrink-0 text-[10px]">${escapeHtml(relativeTimeLabel(entry.at) || "just now")}</span></li>`).join("");
-    return `<div class="grid gap-4">
-      <div class="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
-        <div class="grid min-w-0">
-          <a href="${escapeHtml(archive.itemUrl)}" target="_blank" rel="noopener noreferrer" class="truncate font-mono text-xs font-semibold text-foreground hover:underline">archive.org/details/${escapeHtml(archive.identifier)}</a>
-          <span class="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">${repoForgeMirrorDot(connectionTone)}${status.error ? escapeHtml(status.error) : `As ${escapeHtml(status.username || "unknown")} · ${escapeHtml(repoArchiveSyncIntervalLabel(body, archive.interval))}`}</span>
-        </div>
-        <span class="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">${repoForgeMirrorDot(archive.active ? "good" : "")}${archive.active ? "Backing up" : "Paused"}</span>
-      </div>
-      <p class="flex items-start gap-2 text-[11px] text-muted-foreground">${repoForgeMirrorDot(upload.tone)}<span>${escapeHtml(upload.text)}</span></p>
-      ${body.private ? `<p class="text-[11px] text-destructive">${escapeHtml(repoArchiveSyncErrorText({ message: "private_repository" }))} Nothing is uploaded while it is private.</p>` : ""}
-      <div class="flex flex-wrap items-center gap-2">
-        <button type="button" data-repo-archive-sync-sync class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[11px] font-medium text-foreground hover:bg-secondary"><i data-lucide="upload-cloud" class="h-3.5 w-3.5 text-muted-foreground"></i>Back up now</button>
-        <button type="button" data-repo-archive-sync-edit class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[11px] font-medium text-foreground hover:bg-secondary"><i data-lucide="sliders-horizontal" class="h-3.5 w-3.5 text-muted-foreground"></i>Change settings</button>
-        <button type="button" data-repo-archive-sync-verify class="inline-flex h-7 items-center rounded-md border border-border px-2.5 text-[11px] font-medium text-foreground hover:bg-secondary">Check keys</button>
-        <button type="button" data-repo-archive-sync-toggle data-repo-archive-sync-active="${archive.active ? "1" : "0"}" class="inline-flex h-7 items-center rounded-md border border-border px-2.5 text-[11px] font-medium text-foreground hover:bg-secondary">${archive.active ? "Pause" : "Resume"}</button>
-        <button type="button" data-repo-archive-sync-disconnect class="inline-flex h-7 items-center rounded-md border border-destructive/60 px-2.5 text-[11px] font-semibold text-destructive hover:bg-destructive/10">Stop backing up</button>
-      </div>
-      ${history ? `<div class="grid gap-2"><span class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Recent activity</span><ul class="grid gap-1.5 text-[11px] text-muted-foreground">${history}</ul></div>` : ""}
-    </div>`;
-  }
-
-  function renderRepoArchiveSync() {
-    const holder = $("[data-repo-archive-sync-body]");
-    const archiveState = state.repoArchiveSync;
-    if (!holder || !archiveState?.body) return;
-    const body = archiveState.body;
-    const summary = $("[data-repo-archive-sync-summary]");
-    if (summary) {
-      summary.innerHTML = body.archive
-        ? `${repoForgeMirrorDot(body.archive.status?.error || body.archive.status?.upload?.ok === false ? "bad" : body.archive.active ? "good" : "")}<span>${escapeHtml(body.archive.identifier)}</span>`
-        : "Off";
-    }
-    if (!body.archive && body.private) {
-      holder.innerHTML = `<p class="text-[11px] leading-5 text-muted-foreground">${escapeHtml(repoArchiveSyncErrorText({ message: "private_repository" }))} Make the repository public to back it up there.</p>`;
-      return;
-    }
-    holder.innerHTML = body.archive && !archiveState.editing
-      ? renderRepoArchiveSyncOverview(body)
-      : renderRepoArchiveSyncForm(body);
-    window.lucide?.createIcons();
-  }
-
-  async function loadRepoArchiveSync(repo) {
-    const holder = $("[data-repo-archive-sync-body]");
-    if (!holder || !sessionAdministersRepo(repo)) return;
-    const archiveState = repoArchiveSyncState(repo);
-    try {
-      const body = await repoArchiveSyncRequest(repo, { action: "get" });
-      if (!repoAboutStillCurrent(repo)) return;
-      archiveState.body = body;
-      renderRepoArchiveSync();
-    } catch (error) {
-      if (!repoAboutStillCurrent(repo)) return;
-      holder.innerHTML = `<p class="text-[11px] text-destructive">${escapeHtml(repoArchiveSyncErrorText(error))}</p>`;
-    }
-  }
-
-  async function handleRepoArchiveSyncClick(event) {
-    const card = event.target.closest("[data-repo-archive-sync-card]");
-    const repo = state.selectedRepo;
-    if (!card || !repo || !sessionAdministersRepo(repo)) return false;
-    const archiveState = repoArchiveSyncState(repo);
-    if (event.target.closest("[data-repo-archive-sync-edit]")) {
-      archiveState.editing = true;
-      renderRepoArchiveSync();
-      return true;
-    }
-    if (event.target.closest("[data-repo-archive-sync-cancel]")) {
-      archiveState.editing = false;
-      renderRepoArchiveSync();
-      return true;
-    }
-    const button = event.target.closest("button");
-    const actions = [
-      ["[data-repo-archive-sync-sync]", "sync"],
-      ["[data-repo-archive-sync-verify]", "verify"],
-      ["[data-repo-archive-sync-toggle]", "toggle"],
-      ["[data-repo-archive-sync-disconnect]", "disconnect"],
-    ];
-    const match = button && actions.find(([selector]) => button.matches(selector));
-    if (!match) return false;
-    const action = match[1];
-    if (action === "disconnect" && !window.confirm(
-      "Stop backing up this repository to the Internet Archive? The stored keys are deleted. Nothing already uploaded is removed from archive.org.",
-    )) return true;
-    const payload = { action };
-    if (action === "toggle") payload.active = button.dataset.repoArchiveSyncActive !== "1";
-    const pending = {
-      sync: "Requesting a backup…",
-      verify: "Checking the keys…",
-      toggle: payload.active ? "Resuming…" : "Pausing…",
-      disconnect: "Stopping…",
-    }[action];
-    button.disabled = true;
-    setRepoArchiveSyncStatus(pending);
-    try {
-      const body = await repoArchiveSyncRequest(repo, payload);
-      if (!repoAboutStillCurrent(repo)) return true;
-      archiveState.body = body;
-      if (action === "disconnect") archiveState.editing = false;
-      renderRepoArchiveSync();
-      setRepoArchiveSyncStatus({
-        sync: "Backup requested. The upload starts within a few minutes.",
-        verify: body.archive?.status?.error ? body.archive.status.error : "The keys work.",
-        toggle: payload.active ? "Backups resumed." : "Backups paused.",
-        disconnect: "Stopped backing up.",
-      }[action], action === "verify" && body.archive?.status?.error ? "bad" : "good");
-    } catch (error) {
-      setRepoArchiveSyncStatus(repoArchiveSyncErrorText(error), "bad");
-    } finally {
-      button.disabled = false;
-    }
-    return true;
-  }
-
-  async function handleRepoArchiveSyncSubmit(event) {
-    const form = event.target.closest("[data-repo-archive-sync-form]");
-    if (!form) return false;
-    event.preventDefault();
-    const repo = state.selectedRepo;
-    if (!repo || !sessionAdministersRepo(repo)) return true;
-    const archiveState = repoArchiveSyncState(repo);
-    const submit = form.querySelector('button[type="submit"]');
-    if (submit) submit.disabled = true;
-    setRepoArchiveSyncStatus("Checking the keys with archive.org…");
-    try {
-      const body = await repoArchiveSyncRequest(repo, {
-        action: "save",
-        identifier: form.querySelector("[data-repo-archive-sync-identifier]")?.value || "",
-        accessKey: form.querySelector("[data-repo-archive-sync-access]")?.value || "",
-        secret: form.querySelector("[data-repo-archive-sync-secret]")?.value || "",
-        interval: form.querySelector("[data-repo-archive-sync-interval]")?.value || "",
-      });
-      if (!repoAboutStillCurrent(repo)) return true;
-      archiveState.body = body;
-      archiveState.editing = false;
-      renderRepoArchiveSync();
-      setRepoArchiveSyncStatus("Backup saved.", "good");
-    } catch (error) {
-      setRepoArchiveSyncStatus(repoArchiveSyncErrorText(error), "bad");
     } finally {
       if (submit) submit.disabled = false;
     }

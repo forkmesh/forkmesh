@@ -1,8 +1,10 @@
 # Mirror fleet operations
 
 Running a fleet of mirror hosts installed from the desktop and repairing them
-by hand. Ask the desktop's Hosts page which hosts exist. No IP addresses or
-keys belong here.
+by hand (daemon overview: [Go daemon](README.md); why mirrors exist:
+[mirroring](../mirroring.md); running your own:
+[self-hosting](../self-hosting.md)). Ask the desktop's Hosts page
+which hosts exist. No IP addresses or keys belong here.
 
 ## Files on a mirror
 
@@ -65,7 +67,7 @@ errors.
 2. On the host: `journalctl -u forkmesh-mirror-node`,
    `curl -s 127.0.0.1:8791/v1/status`, `curl -s 127.0.0.1:8791/readyz`
    (`readyz` also needs a recent successful sync, so it stays false while the
-   relay is down).
+   App is unreachable).
 3. Host logs reach the desktop's log over HTTP/3 (`/v1/node/logs`) or SSH.
 
 ## Traps when repairing by hand
@@ -91,4 +93,4 @@ errors.
   must push the fleet: forced for `agent/*` and tags, fast-forward only for
   `main` and `forkmesh/pulls`.
 - **Unborn HEAD / empty repositories** publish nothing and look like a dead
-  node to the autoscaler; see [README.md](README.md#traps).
+  node to the autoscaler; see [Go daemon](README.md#traps).

@@ -1,5 +1,9 @@
 # Chat protocol v3: signed, post-quantum, forward-secret chat
 
+Part of [the App docs](README.md); background in
+[encryption](../encryption.md) and the
+[threat model](../protocol/threat-model.md).
+
 Status: adopted 2026-10-16. Replaces RoomSeal v2 (`type:"sealed", v:2`,
 `type:"e2ee-key", v:2`) on every client (iOS `FMCrypto/RoomSeal.swift`,
 Android `crypto/RoomSeal.kt`, desktop `desktop/src/RoomSeal.cpp`, web
@@ -7,7 +11,7 @@ Android `crypto/RoomSeal.kt`, desktop `desktop/src/RoomSeal.cpp`, web
 ignores v2 frames, so nothing can be downgraded. Every client and the server
 are deployed together.
 
-DM rooms (strict policy) now use v4 sealed frames with a per-message ratchet:
+DM rooms (strict policy) use v4 sealed frames with a per-message ratchet:
 [chat-protocol-v4.md](chat-protocol-v4.md). Everything else on this page still
 applies to them.
 
@@ -17,7 +21,7 @@ every client must open: `conformance/chat/v3/vectors.json` (checked by
 
 ## Why
 
-The 2026-10-16 audit of v2 found (details in
+An audit of v2 found (details in
 [chat-private-rooms.md](chat-private-rooms.md)):
 
 1. The server could read future DMs: it holds the outer room passphrase,
@@ -145,7 +149,31 @@ Clients show a system line in the conversation for every new pending device
 then approve or block.") and a banner with Approve and Block. The iPhone app
 folds every waiting device into one line and one banner ("2 new devices for
 Alex want to join this chat"), so a safety-number change that brings several
-devices at once asks once; Approve and Block act on all of them.
+devices at once asks once; Approve and Block act on all of them. The desktop
+and the web do the same (Approve all, Block all).
+
+### Same-node successor
+
+An app that comes back with a new `IK` after an update or reinstall but the
+same node key must not ask for approval again. Every client therefore also
+signs its strict (DM) bundles with the node key (`nsig`, as in
+[chat-relay-hardening.md](chat-relay-hardening.md#r1-bundles-are-bound-to-the-node-key)),
+whenever `node` is the b64u of that key. A receiver taking a strict bundle for
+an unknown `kid` whose `nsig` verifies:
+
+- drops it if any record of the scope (its own included) has the same `acct`
+  and `node` and an `spk.ts` at least as new: a replayed bundle of a replaced
+  key cannot take the trust back;
+- otherwise, if other records have the same `acct` and `node`, the new key
+  replaces them: it inherits the newest one's state and `verified`, the old
+  records are removed, and the safety number is recomputed without clearing
+  `verified` or announcing a change.
+
+A device's own record replaces its own older keys of the same `acct` and
+`node` the same way. Whoever holds the node key can therefore swap a device
+key without a prompt; that key already controls the account
+([portable-identities.md](../portable-identities.md)). Without a valid `nsig`
+the TOFU and pending rules above apply unchanged.
 
 ## Sealed frames v3
 
@@ -360,7 +388,7 @@ while the focus rule holds.
 
 ## Push notifications
 
-APNs payloads for chat and DMs no longer carry the sender or channel name:
+APNs payloads for chat and DMs carry no sender or channel name:
 the visible title is "New message" and there is no `sender` field. The iOS
 notification service extension opens the v3 frame (the prekeys, identity and
 trust records are in the shared keychain group) and fills the sender and text

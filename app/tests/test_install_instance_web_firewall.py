@@ -125,7 +125,7 @@ def test_the_setting_is_validated_and_kept(tmp_path):
     refused = parse(tmp_path, settings(webFirewall="closed"))
     assert refused.returncode == 2 and "webFirewall" in refused.stdout
     writer = TEXT.split("write_settings() {", 1)[1].split("\n}\n", 1)[0]
-    assert '"webFirewall"]' in writer and '"${CFG_webFirewall:-}"' in writer
+    assert '"webFirewall"' in writer and '"${CFG_webFirewall:-}"' in writer
 
 
 def test_the_tool_is_valid_python(tmp_path):

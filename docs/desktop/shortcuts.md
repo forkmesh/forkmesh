@@ -7,6 +7,8 @@ LAN control link (`insights.*` family, see [networking.md](networking.md)).
 The feature is the built-in `shortcuts` package
 ([../marketplace/core-plugins.md](../marketplace/core-plugins.md)).
 
+Part of [Desktop](README.md).
+
 Code: `desktop/src/MainWindowShortcuts.cpp` (page, runs, queue),
 `desktop/src/MainWindowLocalControlInsights.cpp` and
 `desktop/src/LocalControlInsights.cpp` (phone API),
@@ -18,8 +20,7 @@ Code: `desktop/src/MainWindowShortcuts.cpp` (page, runs, queue),
 ## Starter shortcuts
 
 Shortcuts live in each repository, so someone else's repository shows none
-until it has its own `.forkmesh/shortcuts/` folder. Users asked on 2026-10-29
-why the shortcuts did not show for another user, so the Shortcuts package now
+until it has its own `.forkmesh/shortcuts/` folder. So the Shortcuts package
 ships five general-purpose prompt shortcuts that work in any repository:
 
 | File | Name |
@@ -49,9 +50,9 @@ it:
 - **Web.** The package declares each file as a `content.shortcut`
   contribution, so the Workflows Repository view lists them for accounts with
   the Shortcuts package installed and adds one as a commit after review
-  ([../marketplace/README.md](../marketplace/README.md#protocols-and-interfaces)).
-  Because the package now has a `content/` folder, it is a selectable plugin
-  and is listed in `marketplace/plugins.json`.
+  ([package system](../marketplace/package-system.md#protocols-and-interfaces)).
+  Because the package has a `content/` folder, it is a selectable plugin
+  listed in `marketplace/plugins.json`.
 
 The phones list whatever the desktop's folder holds, so the starters show on
 both phones once added. `test_shortcuts_plugin_ships_starter_shortcuts_the_desktop_embeds`
@@ -59,9 +60,9 @@ in `app/tests/test_workflows.py` checks that every file parses without
 warnings, has a `# name:` matching the manifest, mentions no ForkMesh
 specifics, and is embedded by the desktop.
 
-`.forkmesh/shortcuts/code-review.md` had no header and asked the user to
-paste code, which a one-tap run cannot do; it now holds the same text as
-`review-changes.md`.
+`.forkmesh/shortcuts/code-review.md` holds the same text as
+`review-changes.md` (a prompt that asks the user to paste code cannot run in
+one tap).
 
 ## One tap from the list
 
@@ -71,25 +72,23 @@ Every platform runs a shortcut straight from its list:
   starts its dedicated agent (`# agent:`).
 - **Desktop, table**: each runnable row has a play button in its first column;
   double-click still works.
-- **iPhone**: each runnable row has a play button. It no longer opens the
-  detail page or the confirmation sheet first. Prompt shortcuts that run on
-  the phone open the composer the same way the detail page does.
+- **iPhone**: each runnable row has a play button that runs without the
+  detail page or confirmation sheet. Prompt shortcuts that run on the phone
+  open the composer the same way the detail page does.
 - **Android**: the row's **Run** button runs it without the confirmation
   dialog.
 
 The phones still use the desktop's two-step `insights.prepare` /
-`insights.run` token exchange, since it ties each action to the paired device.
-They just send both steps in one tap and skip the sheet. The user asked for
-one-tap runs, and the list already shows what each row does. The detail page
-on iPhone keeps its **Run** button with the sheet.
+`insights.run` token exchange, since it ties each action to the paired device;
+they send both steps in one tap. The detail page on iPhone keeps its **Run**
+button with the sheet.
 
 A run started from a paired phone counts as the user's approval of that
 file. The desktop records the approval for the file as it is now, the same
 store its **Allow repository workflows?** window writes, logs "approved on
 this desktop by a run from <phone>" and runs it. The same goes for running a
-workflow from the phone (`workflows.run`). The user asked for this on
-2026-10-29: the phone is their own device and should not depend on someone
-clicking Allow at the desktop. Unattended runs (schedules, repository events,
+workflow from the phone (`workflows.run`): the phone is the user's own device
+and should not depend on someone clicking Allow at the desktop. Unattended runs (schedules, repository events,
 special-agent schedules) still wait for an approval, and a later change to
 the file asks again (S-44 and S-70 in
 [../security/findings.md](../security/findings.md)). An older desktop still

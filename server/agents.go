@@ -1576,7 +1576,7 @@ func runCodexAgent(ctx context.Context, command agentCommandRunner, node string,
 	if err != nil {
 		return agentRunOutcome{}, err
 	}
-	defer removeTreeUnder(filepath.Dir(workdir), scratch)
+	defer removeJobOwnedUnder(filepath.Dir(workdir), scratch)
 	// The job user owns the workdir; let it write its last message here.
 	messageOwner := os.Geteuid()
 	if info, err := os.Stat(workdir); err == nil {

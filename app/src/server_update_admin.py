@@ -52,12 +52,25 @@ NOTICES = {
     "auto_unprotected": ("Protect the source repository's default branch "
                          "first: anyone who can merge into it could "
                          "otherwise deploy code to this server.", "bad"),
+    "follow_on": ("This server now merges the latest ForkMesh about once "
+                  "a day and updates itself.", "ok"),
+    "follow_off": ("This server no longer merges ForkMesh on its own.", "ok"),
+    "follow_started": ("Merging the latest ForkMesh. This page refreshes "
+                       "while it runs.", "ok"),
     "csrf": ("Action blocked: reload the page and try again.", "bad"),
     "invalid": ("Action failed: unknown action.", "bad"),
 }
 ACTIONS = ("check_update", "start_update", "save_repo_paths",
-           "save_repo_projects", "save_legal_page", "save_auto_update")
-TRIGGER_LABELS = {"admin": "Update button", "merge": "Merged pull request"}
+           "save_repo_projects", "save_legal_page", "save_auto_update",
+           "save_follow", "start_follow")
+TRIGGER_LABELS = {"admin": "Update button", "merge": "Merged pull request",
+                  "follow": "ForkMesh follow"}
+FOLLOW_LABELS = {
+    "current": ("Up to date with ForkMesh", "ok"),
+    "merged": ("Merged ForkMesh", "ok"),
+    "conflict": ("Needs a manual sync", "warn"),
+    "failed": ("Failed", "bad"),
+}
 OUTCOME_LABELS = {"requested": "Update requested",
                   "queued": "Joined the update already waiting",
                   "write_failed": "The request could not be saved",
@@ -263,7 +276,7 @@ def _daemon_notice(source):
         '<span class="mono">server/cmd/forkmesh-mirror-node</span> from the '
         'running commit and run the update with '
         '<span class="mono">FORKMESH_INSTANCE_DAEMON</span> '
-        '(docs/INSTANCES.md).</p>' % _esc(
+        '(docs/operations/instances.md).</p>' % _esc(
             _short(source["daemonBuiltCommit"]) or "unknown commit"))
 
 
@@ -317,6 +330,41 @@ async def _auto_update_section(env, csrf_field, admin_query, now):
                    button)
 
 
+def _follow_section(env, status, busy, csrf_field, admin_query, now):
+    shell = _admin_shell  # noqa: F821
+    follow = status["follow"]
+    on = server_update.follow_on(env)
+    rows = []
+    if follow["state"]:
+        label, tone = FOLLOW_LABELS[follow["state"]]
+        detail = shell.pill(label, tone)
+        if follow["upstream"]:
+            detail += ' <span class="mono">%s</span>%s' % (
+                _esc(_short(follow["upstream"])),
+                " (%d new commits)" % follow["behind"] if follow["behind"]
+                else "")
+        rows.append(("Last run", "%s: %s" % (
+            shell.time_html(follow["at"], now), detail)))
+    if follow["message"] and follow["state"] in ("conflict", "failed"):
+        rows.append(("Why", _esc(follow["message"])))
+    if follow["files"]:
+        rows.append(("Files", "<br>".join(
+            '<span class="mono">%s</span>' % _esc(f) for f in follow["files"])))
+    buttons = _form("save_follow", "Turn off" if on else "Turn on",
+                    csrf_field, admin_query,
+                    extra='<input type="hidden" name="follow" value="%s">'
+                    % ("0" if on else "1"))
+    if not busy:
+        buttons += _form("start_follow", "Merge ForkMesh now", csrf_field,
+                         admin_query, confirm="Merge, update and restart now")
+    return _switch(
+        "Follow ForkMesh", on,
+        "About once a day, merges the newest ForkMesh into this server's "
+        "source and updates, never during an Actions job. A merge that needs "
+        "a person stops and lists its files. Needs a protected source branch "
+        'and <span class="mono">followOwner</span> in instance.json.', rows, '<div class="form-row">%s</div>' % buttons)
+
+
 async def render_update(env, csrf_field, admin_query, now):
     shell = _admin_shell  # noqa: F821
     kind = server_update.mode(env)
@@ -362,7 +410,10 @@ async def render_update(env, csrf_field, admin_query, now):
             body=update_body)
         update += shell.card(
             title="Automatic updates",
-            body=await _auto_update_section(env, csrf_field, admin_query, now))
+            body=await _auto_update_section(env, csrf_field, admin_query, now)
+            + '<hr style="border:0;border-top:1px solid var(--border);'
+            'margin:14px 0">'
+            + _follow_section(env, status, busy, csrf_field, admin_query, now))
     elif kind == "core":
         button = "" if busy else _form(
             "start_update", "Update ForkMesh", csrf_field, admin_query,
@@ -695,6 +746,21 @@ async def _save_auto_update(env, form):
         "branch": wanted[2] if wanted else ""}
 
 
+async def _save_follow(env, form):
+    if server_update.mode(env) != "instance":
+        return "unavailable", {}
+    on = _first(form, "follow") == "1"
+    if on:
+        wanted = await _self_update.current_target(env)
+        if not wanted:
+            return "auto_no_target", {"follow": on}
+        if not await _self_update.source_protected(env, *wanted):
+            return "auto_unprotected", {"follow": on}
+    if not server_update.set_follow(env, on):
+        return "write_failed", {"follow": on}
+    return ("follow_on" if on else "follow_off"), {"follow": on}
+
+
 async def _handle_post(env, request, view, admin_query, account):
     try:
         raw = await request.text()
@@ -729,17 +795,22 @@ async def _handle_post(env, request, view, admin_query, account):
             details = saved
     elif action == "save_auto_update":
         notice, details = await _save_auto_update(env, form)
-    elif action == "start_update" and _first(form, "confirm") != "yes":
+    elif action == "save_follow":
+        notice, details = await _save_follow(env, form)
+    elif action in ("start_update", "start_follow") and \
+            _first(form, "confirm") != "yes":
         return _redirect(location("unconfirmed"))
     else:
         kind = server_update.mode(env)
         if kind == "instance":
             if server_update.busy(server_update.instance_status(env)):
                 notice = "busy"
-            elif server_update.request_instance(
-                    env, "update" if action == "start_update" else "check"):
-                notice = ("update_started" if action == "start_update"
-                          else "check_started")
+            elif server_update.request_instance(env, {
+                    "start_update": "update", "start_follow": "follow"}.get(
+                        action, "check")):
+                notice = {"start_update": "update_started",
+                          "start_follow": "follow_started"}.get(
+                              action, "check_started")
             else:
                 notice = "write_failed"
         elif kind == "core" and action == "start_update":

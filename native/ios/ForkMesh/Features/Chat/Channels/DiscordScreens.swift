@@ -190,6 +190,7 @@ struct DiscordChannelScreen: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
+        .textSelection(.disabled)
         .contextMenu {
             if channel?.canSend == true {
                 Button(action: { replyTo = message }) { Label("Reply", systemImage: "arrowshape.turn.up.left") }

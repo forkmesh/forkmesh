@@ -531,9 +531,12 @@ final class AuthServiceTests: XCTestCase {
         let auth = h.auth(try h.identity(), http: http)
         try await auth.login(identifier: "alice", password: "pw")
         XCTAssertNotNil(h.secure.read(AuthService.sessionKeyFor(AppEnv.prodHost)))
+        var cleared = 0
+        auth.onLocalSessionCleared = { cleared += 1 }
 
         await auth.logout()
 
+        XCTAssertEqual(cleared, 1)
         XCTAssertFalse(auth.isAuthenticated)
         XCTAssertNil(h.secure.read(AuthService.sessionKeyFor(AppEnv.prodHost)))
         let logout = try XCTUnwrap(http.lastRequest)

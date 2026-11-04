@@ -704,8 +704,16 @@ workflows:
           build="$(sed -n 's/^CURRENT_PROJECT_VERSION *= *\([0-9]*\) *$/\1/p' Config/Version.xcconfig)"
           mv "$ipa" "$CM_BUILD_DIR/ipa/ForkMesh-native-${name}-${build}-adhoc.ipa"
           echo "Ad hoc IPA: ForkMesh-native-${name}-${build}-adhoc.ipa (installs on the team's registered devices only)"
+          dwarf="$CM_BUILD_DIR/forkmesh-native.xcarchive/dSYMs/ForkMesh.app.dSYM/Contents/Resources/DWARF/ForkMesh"
+          if [ -f "$dwarf" ]; then
+            nm -n -U "$dwarf" | gzip -9 > "$CM_BUILD_DIR/ipa/ForkMesh-native-${name}-${build}-symbols.txt.gz"
+            echo "Symbols: ForkMesh-native-${name}-${build}-symbols.txt.gz (native/ios/tools/symbolize_offsets.py names report offsets)"
+          else
+            echo "WARNING: no ForkMesh dSYM in the archive; performance report offsets cannot be named" >&2
+          fi
     artifacts:
       - $CM_BUILD_DIR/ipa/*.ipa
+      - $CM_BUILD_DIR/ipa/*-symbols.txt.gz
       - $CM_BUILD_DIR/*.log
     publishing:
       email:

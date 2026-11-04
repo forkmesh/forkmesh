@@ -1,6 +1,7 @@
 # Move an issue to a task
 
-Every client can turn a repository issue into an organization task and delete
+Part of [the App docs](README.md). Every client can turn a repository issue
+into an organization task and delete
 the issue: the web issue page, the desktop issue view, and the iOS and Android
 issue screens. It is the reverse of the desktop Tasks page's **Move to issue**
 ([tasks-page](../desktop/tasks-page.md)).
