@@ -16,6 +16,7 @@ and the AST test suite loads them straight from this file.
 """
 
 import base64
+import re
 import time
 
 from js import Object
@@ -140,10 +141,22 @@ def _to_js_bytes(value):
     return Uint8Array.new(_to_js(bytes(value)))
 
 
-def b64url_decode(value):
+_B64URL_UNPADDED = re.compile(r"[A-Za-z0-9_-]*")
+
+
+def _b64url_decode_lenient(value):
     value = (value or "").strip()
     value += "=" * (-len(value) % 4)
     return base64.urlsafe_b64decode(value.encode())
+
+
+def b64url_decode(value):
+    if not isinstance(value, str) or not _B64URL_UNPADDED.fullmatch(value):
+        raise ValueError("invalid base64url")
+    raw = base64.urlsafe_b64decode((value + "=" * (-len(value) % 4)).encode())
+    if base64.urlsafe_b64encode(raw).rstrip(b"=").decode() != value:
+        raise ValueError("non-canonical base64url")
+    return raw
 
 
 ED25519_WEAK_KEYS = frozenset(bytes.fromhex(value) for value in (
@@ -168,7 +181,7 @@ async def ed25519_verify(pubkey_b64url, sig_b64url, data_bytes):
     # Verify a raw Ed25519 signature using the runtime's WebCrypto, matching the
     # desktop client's identity (raw 32-byte key + 64-byte sig, base64url).
     try:
-        raw_key = b64url_decode(pubkey_b64url)
+        raw_key = _b64url_decode_lenient(pubkey_b64url)
         signature = b64url_decode(sig_b64url)
     except Exception:
         return False

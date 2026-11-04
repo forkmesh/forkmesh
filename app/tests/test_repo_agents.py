@@ -1051,4 +1051,5 @@ def test_issues_handler_wants_agent_uses_authorization_helper():
     # self-asserted ownerAccount string, so request is threaded through.
     start = ENTRY_TEXT.index('if meta_in.get("wantsAgent"):')
     wants_agent_body = ENTRY_TEXT[start:ENTRY_TEXT.index("meta = {", start)]
-    assert "_authorize_owner_account(env, owner, data, request)" in wants_agent_body
+    assert "_authorize_owner_account(env, owner, data, request,\n" in wants_agent_body
+    assert "allow_admin=False" in wants_agent_body

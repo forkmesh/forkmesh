@@ -19,7 +19,8 @@ KEY_RE = re.compile(r"^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=$")
 REPLICA_NET_RE = re.compile(r"^10\.77\.0\.2[1-9]/32$")
 STATES = ("joining", "serving", "draining", "removing")
 QUERY = ("SELECT name, wg_ip, wg_pubkey, public_ipv4, state, created_by "
-         "FROM autoscale_nodes WHERE pool='app'")
+         "FROM autoscale_nodes WHERE pool='app' AND token_used_ms IS NOT NULL "
+         "AND ids_pubkey IS NOT NULL")
 INTERVAL = 15
 
 

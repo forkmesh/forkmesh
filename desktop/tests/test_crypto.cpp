@@ -1590,6 +1590,22 @@ int main(int argc, char *argv[])
         check(!ForkMeshIdentity::verifySignature(identity.publicKey(),
                                                  tamperedSignature, canonical),
               "verifySignature rejects a tampered signature");
+        const QString alphabet = QStringLiteral(
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_");
+        const int last = alphabet.indexOf(sig.back());
+        const QString aliasedSignature =
+            sig.left(sig.size() - 1) + alphabet.at(last ^ 1);
+        check(QByteArray::fromBase64(aliasedSignature.toLatin1(),
+                                     QByteArray::Base64UrlEncoding) ==
+                  QByteArray::fromBase64(sig.toLatin1(),
+                                         QByteArray::Base64UrlEncoding),
+              "aliased signature decodes to the same bytes");
+        check(!ForkMeshIdentity::verifySignature(identity.publicKey(),
+                                                 aliasedSignature, canonical),
+              "verifySignature rejects a non-canonical signature encoding");
+        check(!ForkMeshIdentity::verifySignature(identity.publicKey(),
+                                                 sig + QStringLiteral("=="), canonical),
+              "verifySignature rejects a padded signature");
     }
 
     // The #welcome greeting must survive a restart (a fresh ForkMeshIdentity

@@ -203,6 +203,25 @@ def test_digest_mismatch_never_activates_or_migrates_a_package(tmp_path):
         ).fetchone() is None
 
 
+@pytest.mark.parametrize("claim", [
+    {"creator": {"id": "did:forkmesh:forkmesh", "handle": "forkmesh",
+                 "displayName": "ForkMesh", "verified": True}},
+    {"trust": {"signature": "verified-bundle"}},
+])
+def test_downloaded_package_cannot_claim_verified_trust(tmp_path, claim):
+    source = tmp_path / "source"
+    manifest = _package(source)
+    manifest.update(claim)
+    (source / "manifest.json").write_text(json.dumps(manifest))
+    archive = tmp_path / "demo.fmpkg"
+    digest, size = _archive(source, archive)
+    catalog = _catalog(tmp_path, archive, digest, size)
+    install_root = tmp_path / "installed"
+    with pytest.raises(MarketplaceError, match="cannot claim a verified"):
+        install_package(catalog, "demo-plugin", install_root, tmp_path / "device.sqlite")
+    assert not (install_root / "packages" / "demo-plugin").exists()
+
+
 def test_approved_manifest_digest_is_enforced_inside_valid_archive(tmp_path):
     source = tmp_path / "source"
     _package(source)
