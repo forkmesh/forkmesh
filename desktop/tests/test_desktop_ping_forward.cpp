@@ -242,6 +242,31 @@ static void checkCelebration()
     check(!isFreshCelebration(nameless, now), "a ping without an id does not");
 }
 
+static void checkCelebrationHeadline()
+{
+    const QString post = QStringLiteral("\U0001F389 Mastodon post tracked in the CRM");
+    const QString email = QStringLiteral("\U0001F389 Email tracked in the CRM");
+    check(celebrationHeadline({post}) == post, "one ping keeps its own title");
+    check(celebrationHeadline({post, post, post}) ==
+              QStringLiteral("\U0001F389 3 Mastodon posts tracked in the CRM"),
+          "three toots count up on one card");
+    check(celebrationHeadline({email, email}) ==
+              QStringLiteral("\U0001F389 2 emails tracked in the CRM"),
+          "two emails count up on one card");
+    check(celebrationHeadline({email, post}) ==
+              QStringLiteral("\U0001F389 2 messages tracked in the CRM"),
+          "an email and a toot count as messages");
+    const QString contact = QStringLiteral("\U0001F389 New CRM contact from Mastodon");
+    check(celebrationHeadline({contact, contact}) == contact + QStringLiteral(" (2)"),
+          "a title without a noun to count shows the count after it");
+    check(celebrationHeadline({email, contact}) == contact + QStringLiteral(" (+1 more)"),
+          "mixed titles show the newest and how many more");
+    check(celebrationHeadline({}) == QStringLiteral("\U0001F389"), "no title is a party popper");
+    check(celebrationHeadline({QString(), QString()}) ==
+              QStringLiteral("\U0001F389 2 updates"),
+          "untitled pings still count");
+}
+
 static void checkOnline()
 {
     const qint64 now = 1760000000000;
@@ -320,6 +345,7 @@ int main()
     checkGate();
     checkEcho();
     checkCelebration();
+    checkCelebrationHeadline();
     checkOnline();
     checkDelete();
     checkOnScreen();

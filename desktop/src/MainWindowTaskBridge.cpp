@@ -215,6 +215,19 @@ bool MainWindow::runTaskWindowCommand(const QString &command,
         appendTextToActivePrompt(text);
         return true;
     }
+    if (command == QLatin1String("agent.start")) {
+        const QString text = args.value(QStringLiteral("text")).toString().trimmed();
+        if (text.isEmpty() || !m_issueQuickAdd)
+            return false;
+        if (m_promptOverlayCollapsed && !m_promptOverlayDetached)
+            setPromptOverlayCollapsed(false);
+        m_issueQuickAdd->setPlainText(text);
+        QTextCursor cursor = m_issueQuickAdd->textCursor();
+        cursor.movePosition(QTextCursor::End);
+        m_issueQuickAdd->setTextCursor(cursor);
+        m_issueQuickAdd->setFocus();
+        return startAgentFromComposer();
+    }
     if (command == QLatin1String("agent.show")) {
         const int id = args.value(QStringLiteral("id")).toInt();
         if (id <= 0)

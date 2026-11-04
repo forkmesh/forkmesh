@@ -8,6 +8,7 @@
 #include "ProcessReaper.h"
 #include "MainWindowInternal.h"
 #include "DesktopPingForward.h"
+#include "CompactCelebration.h"
 #include "PingBatch.h"
 #include "ReleaseManifestTag.h"
 #include "ActionFailureSummary.h"
@@ -7714,7 +7715,7 @@ void MainWindow::refreshWebAlerts(bool force)
 void MainWindow::celebrateFreshWebAlerts()
 {
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
-    QJsonObject newest;
+    QList<QJsonObject> fresh;
     for (const QJsonValue &value : std::as_const(m_webAlerts)) {
         const QJsonObject alert = value.toObject();
         if (!forkmesh::pingforward::isFreshCelebration(alert, now))
@@ -7723,21 +7724,34 @@ void MainWindow::celebrateFreshWebAlerts()
         if (m_celebratedWebAlertIds.contains(id))
             continue;
         m_celebratedWebAlertIds.insert(id);
-        if (newest.isEmpty() ||
-            alert.value(QStringLiteral("ts")).toDouble() >
-                newest.value(QStringLiteral("ts")).toDouble())
-            newest = alert;
+        fresh.append(alert);
     }
-    if (newest.isEmpty() || pingsPaused())
+    if (fresh.isEmpty() || pingsPaused())
         return;
+    std::stable_sort(fresh.begin(), fresh.end(),
+                     [](const QJsonObject &left, const QJsonObject &right) {
+                         return left.value(QStringLiteral("ts")).toDouble() <
+                                right.value(QStringLiteral("ts")).toDouble();
+                     });
+    const QJsonObject newest = fresh.last();
     const QString title =
         newest.value(QStringLiteral("title")).toString().trimmed();
     const QString body =
         newest.value(QStringLiteral("body")).toString().trimmed();
-    new forkmesh::ui::CelebrationOverlay(
-        this, 10000, title.isEmpty() ? QStringLiteral("🎉") : title, body, 2);
+    if (!m_compactCelebration)
+        m_compactCelebrationTitles.clear();
+    for (const QJsonObject &alert : std::as_const(fresh))
+        m_compactCelebrationTitles.append(
+            alert.value(QStringLiteral("title")).toString().trimmed());
+    const QString headline =
+        forkmesh::pingforward::celebrationHeadline(m_compactCelebrationTitles);
+    if (m_compactCelebration)
+        m_compactCelebration->showMessage(headline, body);
+    else
+        m_compactCelebration =
+            new forkmesh::ui::CompactCelebrationOverlay(this, headline, body);
     logSystem(title.isEmpty() ? QStringLiteral("🎉") : title);
-    showPingTrayMessage(title, body);
+    showPingTrayMessage(title.isEmpty() ? headline : title, body);
     cheerGenieFor(newest);
 }
 

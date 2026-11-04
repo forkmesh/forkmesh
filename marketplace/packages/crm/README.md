@@ -263,7 +263,7 @@ the normal shape of an imported list.
   `crm.flows.add`; a member's import never changes pipelines. Files that mix
   pipelines open a plain list, as before.
 - **Ranked grants** (1.37.0): an empty Grants-type pipeline offers **Load the
-  100 ranked grants**, on the web as a button where the empty list would be
+  ranked grants**, on the web as a button where the empty list would be
   and on the desktop in the pipeline tab's right-click menu. It is one
   `POST /api/crm/<org>/contacts/grants` with `{"flow", "viewId"}`, for owners
   and admins only. The worker reads `content/worker/crm_grants.csv`, which
@@ -460,6 +460,139 @@ named for grants get the grant-funder angle.
 the prompt in the URL (or on the clipboard past 14,000 characters). Nothing is
 sent from the CRM and nothing is stored except a saved brief. Tests:
 `tests/test_ai_writer.py`.
+
+## Mastodon outreach
+
+Mastodon is where internet-freedom maintainers answer us (2026-11-04: toots to
+journalists and large organization accounts got no reply; a personal toot to
+a maintainer who had followed us got one within the hour), so the CRM keeps a queue of
+prepared toots, sends one with a click, notices replies and keeps score per
+segment. Prepared toots are contact fields, not a new table, so they live with
+the contact, show in table views and can be written by any client or agent:
+
+| Field | Value |
+| --- | --- |
+| `mastodon_draft` | the prepared toot, starting with the handle; at most 500 characters as Mastodon counts them (a link is 23, a mention counts its user part) |
+| `mastodon_status` | `ready`, `follow-first` (locked account we don't follow), `follow-requested`, `sent`, `replied` or `skipped` |
+| `mastodon_why` | one line: the true, specific hook the toot opens with |
+| `mastodon_segment` | strategy group: `tor`, `relay-operator`, `circumvention-dev`, `privacy-tool`, `distribution`, `researcher`, `rights-org`, `letter-org`, `follower`, `other` |
+| `mastodon_ask` | `interview`, `letter` or `mirror` |
+| `mastodon_prepared` | `YYYY-MM-DD <who>`: the day and the member or agent that wrote it |
+
+Every toot sent is a linked message (`provider: "mastodon"`), as before.
+
+### Worker routes
+
+- `GET /api/crm/<org>/mastodon`: `queue` (contacts with `mastodon_status`
+  `ready`, `follow-first` or `follow-requested`, oldest `mastodon_prepared`
+  first, each with id, name, handle, the six fields, stage and flow), `stats`
+  (`today` and `week`: outbound toots and replies in the caller's `?tz=` day;
+  `segments` and `asks`: `{key, prepared, sent, replied}` counted from the
+  contacts' fields and their linked toots), `dailyTarget` (25),
+  `dailyLimit` (`MASTODON_DAILY_LIMIT`, 40 a rolling 24 hours per
+  organization), `canSend` (an organization token is saved) and `prompt`, the
+  text a **Prepare more** session starts from (`MASTODON_PREPARE_PROMPT` with
+  today's counts, the best and worst segments and the
+  [strategy note](#strategy-note) title filled in).
+- `POST /api/crm/<org>/mastodon/drafts {drafts: [...]}` (members who can edit
+  contacts, at most 50 per call): each item is `{handle, name?, draft, why,
+  segment, ask, status?, email?, website?, github?, notes?, tags?, flow?}`.
+  An item whose handle matches a contact (`_contact_handles`) updates that
+  contact's six fields and appends `notes`; otherwise it creates the contact
+  on `flow` (default `customers`) at its first stage with source
+  `Mastodon research <date>`. A contact that already has a toot from us gets
+  `status: sent` kept, never a second `ready`. Answers `{created, updated,
+  skipped, ids}`.
+- `POST /api/crm/<org>/mastodon/send {contactId, text}` (owners, admins and
+  the outreach team; the saved organization token needs `write:statuses`):
+  looks the handle up on the organization's instance, answers
+  `409 follow_first` for a locked account we don't follow (and sets
+  `follow-first`), else posts `{status, visibility: "direct"}` with an
+  `Idempotency-Key`, links the toot, stamps the contact contacted and sets
+  `mastodon_status: sent`. Over the daily limit it answers
+  `429 mastodon_daily_limit`.
+- Replies: a toot logged as **inbound** from a contact whose
+  `mastodon_status` is `sent` (by the browser extension, **Log toot**, a
+  client's reply check or the toots sync) sets `replied` and moves a contact
+  at its flow's contacted stage one stage on (`qualified` on Customers).
+  The toots sync with a token holding `read:notifications` also reads
+  mentions and logs those from known contacts as inbound.
+- `activity` gains a `toots` kind (outbound Mastodon toots per member per
+  day) for the leaderboard; Mastodon rows no longer count as `emails`.
+- The `mastodon_*` fields never count as a contact's handles
+  (`MASTODON_OUTREACH_FIELDS` in `_contact_handles`), so a draft that names
+  someone else cannot match them.
+- Agents use the MCP tools `crm_mastodon_outreach` (queue and counts, no
+  prompt) and `crm_save_mastodon_drafts` (`tools/forkmesh_mcp_server.py`).
+
+Code: `_mastodon_outreach`, `_save_mastodon_drafts`, `_mastodon_send`,
+`_mastodon_outreach_step` (called from `_link_message`), `_sync_mentions`,
+`_mastodon_toot_rows`, `_mastodon_length`. Tests:
+`tests/test_mastodon_outreach.py`, `tools/test_forkmesh_mcp_server.py`.
+
+### Clients
+
+- **Mastodon page** (web: More > Mastodon, `?section=mastodon`; desktop: the
+  **Mastodon** tab): today's sent count against the daily target, replies
+  this week, **Prepare more**, the queue as cards (name, handle linking the
+  profile, segment and ask, why, the editable draft with a live Mastodon
+  character count, **Send**, **Skip**, **Follow** for `follow-first`) and a
+  strategy table (segment and ask: prepared, sent, replied, reply rate).
+- **Send**: the desktop sends with the account signed in to the Mastodon
+  package (`mastodonSignIn`, scopes read, write, follow): lookup and
+  relationship first (locked and not followed means **Follow** instead),
+  then `POST /api/v1/statuses` with `visibility: direct`, then
+  `POST /emails/toot {url, contactId, direction: "outbound"}` and the
+  `mastodon_status: sent` field. The web uses `/mastodon/send`, or without an
+  organization token opens `https://<instance>/share?text=…` (the browser
+  extension logs it).
+- **Check replies** (desktop, and when the page opens): reads the signed-in
+  account's mention notifications and logs each one from a known contact as
+  inbound, so the stage moves on its own.
+- **Prepare more** starts a desktop agent session from `prompt` (the
+  `agent.start` window command fills the new-agent composer and starts it);
+  the web copies `prompt` for an agent. The session researches handles, checks
+  each account exists, is active and whether it is locked, writes personal
+  toots and saves them with `crm_save_mastodon_drafts`.
+- **Leaderboard strip**: every CRM page shows one small line under its header,
+  the top three members over 7 days by emails, outreach and toots
+  (`7 days · <name> <n> · …`); it opens the Team leaderboard.
+- The web Team leaderboard has a **Toots** column and counts toots in its
+  total, so the strip and the page agree; the strip opens it at 7 days. A
+  `follow-first` card hides **Send** (the web cannot follow) and offers
+  **Open profile**; after the share fallback the card stays until the toot is
+  logged. Code (web): `loadCrmMastodon`, `renderCrmMastodon`,
+  `crmMastodonCardHtml`, `crmMastodonStrategyHtml`, `crmTootLength`,
+  `sendCrmMastodon`, `skipCrmMastodon`, `prepareCrmMastodon`,
+  `renderCrmLeaderboardStrip`, `crmLeaderboardTop`. Tests:
+  `tests/test_web_mastodon.py` with `tests/mastodon_page_checks.js`.
+- Desktop: `startAgentFromComposer` (now driving the live prompt box, which
+  the old dead `m_agentCompose*` path never created) backs `agent.start`;
+  without a repository it leaves the prompt in the box and returns false. The
+  share fallback opens with `QDesktopServices` because `openWebPage` only takes
+  ForkMesh paths. Code (desktop): `CrmFeature::loadMastodonOutreach`,
+  `renderMastodonOutreach`, `mastodonOutreachCard`, `prepareMoreMastodon`,
+  `sendMastodonDraft`, `postMastodonDraft`, `logMastodonDraft`,
+  `skipMastodonDraft`, `followMastodonDraft`, `checkMastodonReplies`,
+  `mastodonLength`, `leaderboardLine`, `renderLeaderboardStrip`;
+  `forkmesh::ui::CompactCelebrationOverlay` (`desktop/src/CompactCelebration.h`).
+  Tests: `tests/test_qt_plugin_contracts.py`,
+  `desktop/tests/test_compact_celebration.cpp`,
+  `desktop/tests/test_desktop_ping_forward.cpp`.
+- The desktop's celebration for a tracked email or toot is a small card in the
+  middle of the window (fixed 14/11 pt text, at most 420 px wide, no
+  full-window confetti, 3.5 s, click-through); several in a row update one
+  card ("3 Mastodon posts tracked in the CRM") instead of stacking.
+
+### Strategy note
+
+What worked and what didn't lives in the organization note **Mastodon outreach
+strategy** (Notes package): dated lessons, the segments' reply rates and the
+rules every prepared toot follows (open with their work and a specific hook,
+one 15-minute ask with the interview link, no funder named in a first toot,
+follow before sending, skip large organization accounts and locked accounts
+we don't follow). Prepare sessions read it first and add a dated line at the
+end.
 
 ## Boxes
 

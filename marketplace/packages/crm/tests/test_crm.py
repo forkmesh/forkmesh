@@ -2706,7 +2706,7 @@ def test_the_summary_ranks_members_by_daily_activity_in_the_callers_time_zone():
              "external", status, created, "sealed:{}"))
 
     activity = call(runtime.use("GET"), "/api/crm/acme")["data"]["activity"]
-    assert activity["kinds"] == ["emails", "outreach", "contacts"]
+    assert activity["kinds"] == ["emails", "outreach", "contacts", "toots"]
     assert len(activity["days"]) == crm.ACTIVITY_DAYS
     assert activity["days"][-1] == "2033-05-18"
     members = {item["name"]: item for item in activity["members"]}
