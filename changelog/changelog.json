@@ -11,6 +11,10 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-04", "area": "Desktop", "text": "Tracked email and Mastodon alerts are now a small card in the middle of the window that never blocks a click; several in a row update one card."},
+  {"date": "2026-11-04", "area": "Desktop", "text": "Prepare more on the CRM's Mastodon page starts an agent session that finds people on Mastodon and drafts toots for you."},
+  {"date": "2026-11-04", "area": "Market", "text": "Every CRM page shows a small 7-day leaderboard of who is reaching out, counting emails, outreach and toots."},
+  {"date": "2026-11-04", "area": "Market", "text": "The CRM has a Mastodon page: prepared toots you can edit and send with one click, Follow for locked accounts, replies that move the contact forward, and reply rates by segment."},
   {"date": "2026-11-04", "area": "Desktop", "text": "Text you copy anywhere in the desktop now pastes with its line breaks, paragraph spacing, list markers and table columns."},
   {"date": "2026-11-04", "area": "Market", "text": "In the CRM's Mastodon column, contacts you already follow now show Following instead of a Follow button."},
   {"date": "2026-11-04", "area": "Market", "text": "The CRM's Load the ranked grants button no longer states a fixed number of grants."},

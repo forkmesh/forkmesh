@@ -566,6 +566,19 @@ Code: `_mastodon_outreach`, `_save_mastodon_drafts`, `_mastodon_send`,
   `sendCrmMastodon`, `skipCrmMastodon`, `prepareCrmMastodon`,
   `renderCrmLeaderboardStrip`, `crmLeaderboardTop`. Tests:
   `tests/test_web_mastodon.py` with `tests/mastodon_page_checks.js`.
+- Desktop: `startAgentFromComposer` (now driving the live prompt box, which
+  the old dead `m_agentCompose*` path never created) backs `agent.start`;
+  without a repository it leaves the prompt in the box and returns false. The
+  share fallback opens with `QDesktopServices` because `openWebPage` only takes
+  ForkMesh paths. Code (desktop): `CrmFeature::loadMastodonOutreach`,
+  `renderMastodonOutreach`, `mastodonOutreachCard`, `prepareMoreMastodon`,
+  `sendMastodonDraft`, `postMastodonDraft`, `logMastodonDraft`,
+  `skipMastodonDraft`, `followMastodonDraft`, `checkMastodonReplies`,
+  `mastodonLength`, `leaderboardLine`, `renderLeaderboardStrip`;
+  `forkmesh::ui::CompactCelebrationOverlay` (`desktop/src/CompactCelebration.h`).
+  Tests: `tests/test_qt_plugin_contracts.py`,
+  `desktop/tests/test_compact_celebration.cpp`,
+  `desktop/tests/test_desktop_ping_forward.cpp`.
 - The desktop's celebration for a tracked email or toot is a small card in the
   middle of the window (fixed 14/11 pt text, at most 420 px wide, no
   full-window confetti, 3.5 s, click-through); several in a row update one
