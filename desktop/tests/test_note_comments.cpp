@@ -435,6 +435,208 @@ void testPresence()
           "the colour hash is the web page's hash * 31 + code point");
 }
 
+QJsonObject reaction(const QString &id, const QString &author, const QString &emoji,
+                     const QString &quote = QString(), int start = 0,
+                     qint64 created = 1, const QString &prefix = QString(),
+                     const QString &suffix = QString())
+{
+    return QJsonObject{{QStringLiteral("id"), id},
+                       {QStringLiteral("author"), author},
+                       {QStringLiteral("emoji"), emoji},
+                       {QStringLiteral("quote"), quote},
+                       {QStringLiteral("prefix"), prefix},
+                       {QStringLiteral("suffix"), suffix},
+                       {QStringLiteral("start"), start},
+                       {QStringLiteral("end"), start + int(quote.size())},
+                       {QStringLiteral("createdAt"), double(created)}};
+}
+
+void testReactions()
+{
+    const QString up = QStringLiteral("\U0001F44D");
+    const QString heart = QStringLiteral("❤️");
+    const QString party = QStringLiteral("\U0001F389");
+    check(noteQuickReactions() ==
+              QStringList({up, heart, QStringLiteral("\U0001F602"), party,
+                           QStringLiteral("\U0001F62E"), QStringLiteral("\U0001F440")}),
+          "the quick set is the shared six, in order");
+
+    const QString text = QStringLiteral("cat one. the cat sat. a cat ran.");
+    const QJsonArray raw{
+        reaction(QStringLiteral("r3"), QStringLiteral("bo"), up, QStringLiteral("cat"), 13, 30,
+                 QStringLiteral("the "), QStringLiteral(" sat")),
+        reaction(QStringLiteral("r1"), QStringLiteral("ana"), up, QStringLiteral("cat"), 13, 10,
+                 QStringLiteral("the "), QStringLiteral(" sat")),
+        reaction(QStringLiteral("r2"), QStringLiteral("Me"), heart, QStringLiteral("cat"), 0, 20,
+                 QStringLiteral("zz"), QStringLiteral(" sat")),
+        reaction(QStringLiteral("r4"), QStringLiteral("me"), up, QStringLiteral("cat"), 13, 40,
+                 QStringLiteral("the "), QStringLiteral(" sat")),
+        reaction(QStringLiteral("r5"), QStringLiteral("ana"), party, QString(), 0, 5),
+        reaction(QStringLiteral("r6"), QStringLiteral("ana"), up, QStringLiteral("dog"), 0, 6),
+        reaction(QStringLiteral("r7"), QStringLiteral("cy"), up, QStringLiteral("cat"), 24, 7,
+                 QStringLiteral("a "), QStringLiteral(" ran")),
+        QJsonObject{{QStringLiteral("id"), QStringLiteral("r8")}},
+        QJsonObject{{QStringLiteral("emoji"), up}},
+        reaction(QStringLiteral("r9"), QString(), up, QString(), 0, 50),
+        reaction(QStringLiteral("r10"), QStringLiteral("ANA"), up, QStringLiteral("cat"), 13, 60,
+                 QStringLiteral("the "), QStringLiteral(" sat")),
+    };
+    const QList<NoteReaction> reactions = noteReactions(raw);
+    check(reactions.size() == 9, "reactions without an id or emoji are dropped");
+    check(reactions.value(0).id == QStringLiteral("r5") &&
+              reactions.value(1).id == QStringLiteral("r6"),
+          "reactions are kept oldest first");
+    check(reactions.value(7).author == QStringLiteral("Someone"),
+          "a reaction without an author is from Someone");
+
+    const QList<NoteReactionGroup> groups =
+        noteReactionGroups(reactions, text, QStringLiteral("me"));
+    check(groups.size() == 3,
+          "reactions resolving to one passage share a group; missing quotes hide");
+    check(groups.value(0).wholeNote() && groups.value(0).key() == QStringLiteral("note"),
+          "whole-note reactions form one group, listed first");
+    check(groups.value(0).chips.size() == 2 &&
+              groups.value(0).chips.value(0).emoji == party &&
+              groups.value(0).chips.value(1).people ==
+                  QStringList({QStringLiteral("Someone")}),
+          "the whole-note group has a chip per emoji");
+    const NoteReactionGroup &sat = groups.value(1);
+    check(sat.anchor.start == 13 && sat.anchor.end == 16 &&
+              sat.key() == QStringLiteral("13:16"),
+          "a passage group sits where the anchor resolves");
+    check(sat.first.id == QStringLiteral("r1"),
+          "a group's first reaction is its oldest");
+    check(sat.chips.size() == 2 && sat.chips.value(0).emoji == up &&
+              sat.chips.value(1).emoji == heart,
+          "chips are in order of first use");
+    check(sat.chips.value(0).people ==
+              QStringList({QStringLiteral("ana"), QStringLiteral("bo"), QStringLiteral("me")}),
+          "a chip names each person once, in order of reacting");
+    check(sat.chips.value(0).count() == 3, "a chip counts its people");
+    check(sat.chips.value(0).mine() && sat.chips.value(0).mineId == QStringLiteral("r4") &&
+              sat.chips.value(1).mineId == QStringLiteral("r2"),
+          "a chip knows my reaction, matched case-insensitively");
+    check(groups.value(2).anchor.start == 24 && !groups.value(2).chips.value(0).mine(),
+          "the same quote elsewhere is its own group");
+    check(noteReactionChipLabel(sat.chips.value(0)) == up + QStringLiteral(" 3"),
+          "a chip shows the emoji and the count");
+    check(noteReactionChipTip(sat.chips.value(1)) ==
+              QStringLiteral("Me reacted with ") + heart,
+          "a chip's tooltip names the people");
+    check(noteReactionGroupTip(sat) ==
+              QStringLiteral("ana, bo, me reacted with ") + up +
+                  QStringLiteral("\nMe reacted with ") + heart,
+          "a passage tooltip lists every emoji and its people");
+    check(noteReactionGroupsSignature(groups) ==
+              noteReactionGroupsSignature(noteReactionGroups(reactions, text,
+                                                             QStringLiteral("me"))),
+          "the same reactions give the same signature");
+    check(noteReactionGroupsSignature(groups) !=
+              noteReactionGroupsSignature(noteReactionGroups(
+                  reactions, QStringLiteral("x ") + text, QStringLiteral("me"))),
+          "a moved passage changes the signature");
+    check(noteReactionGroupsSignature(groups) !=
+              noteReactionGroupsSignature(noteReactionGroups(reactions, text,
+                                                             QStringLiteral("bo"))),
+          "whose reactions are mine changes the signature");
+
+    NoteReactionToggle toggle = noteReactionToggle(sat, sat.chips.value(0));
+    check(toggle.method == "DELETE" && toggle.reactionId == QStringLiteral("r4"),
+          "clicking my chip deletes my reaction");
+    const NoteReactionGroup other = groups.value(2);
+    toggle = noteReactionToggle(other, other.chips.value(0));
+    check(toggle.method == "POST" && toggle.reactionId.isEmpty() &&
+              toggle.body.value(QStringLiteral("emoji")).toString() == up &&
+              toggle.body.value(QStringLiteral("quote")).toString() == QStringLiteral("cat") &&
+              toggle.body.value(QStringLiteral("prefix")).toString() == QStringLiteral("a ") &&
+              toggle.body.value(QStringLiteral("suffix")).toString() == QStringLiteral(" ran") &&
+              toggle.body.value(QStringLiteral("start")).toInt() == 24 &&
+              toggle.body.value(QStringLiteral("end")).toInt() == 27,
+          "clicking someone else's chip posts with the group's first anchor");
+    toggle = noteReactionToggle(groups.value(0), groups.value(0).chips.value(0));
+    check(toggle.method == "POST" && toggle.body.size() == 1 &&
+              toggle.body.contains(QStringLiteral("emoji")),
+          "a whole-note chip posts just the emoji");
+
+    const CommentQuote quote = commentQuoteAt(text, 12, 17);
+    const QJsonObject body = noteReactionRequest(party, quote);
+    check(body.value(QStringLiteral("emoji")).toString() == party &&
+              body.value(QStringLiteral("quote")).toString() == QStringLiteral("cat") &&
+              body.value(QStringLiteral("prefix")).toString() == QStringLiteral("cat one. the ") &&
+              body.value(QStringLiteral("start")).toInt() == 13,
+          "a selection's reaction carries the same anchor as a comment");
+    check(noteReactionRequest(party, CommentQuote()) ==
+              QJsonObject({{QStringLiteral("emoji"), party}}),
+          "no selection reacts to the whole note");
+
+    check(noteReactionError(QStringLiteral("too_many_reactions"), {}).contains(
+              QStringLiteral("2000")) &&
+              noteReactionError(QStringLiteral("reaction_not_found"), {}) ==
+                  QStringLiteral("That reaction was already removed.") &&
+              noteReactionError(QStringLiteral("other"), QStringLiteral("x")) ==
+                  QStringLiteral("x"),
+          "reaction errors read plainly and fall back");
+}
+
+void testEditingLinesAndOpenView()
+{
+    const QJsonArray raw{
+        QJsonObject{{QStringLiteral("clientId"), QStringLiteral("c1")},
+                    {QStringLiteral("name"), QStringLiteral("ana")},
+                    {QStringLiteral("state"), QStringLiteral("editing")},
+                    {QStringLiteral("line"), 7}},
+        QJsonObject{{QStringLiteral("clientId"), QStringLiteral("c2")},
+                    {QStringLiteral("name"), QStringLiteral("bo")},
+                    {QStringLiteral("state"), QStringLiteral("editing")},
+                    {QStringLiteral("line"), 2}},
+        QJsonObject{{QStringLiteral("clientId"), QStringLiteral("c3")},
+                    {QStringLiteral("name"), QStringLiteral("cy")},
+                    {QStringLiteral("state"), QStringLiteral("viewing")},
+                    {QStringLiteral("line"), 3}},
+        QJsonObject{{QStringLiteral("clientId"), QStringLiteral("c4")},
+                    {QStringLiteral("name"), QStringLiteral("dee")},
+                    {QStringLiteral("state"), QStringLiteral("editing")},
+                    {QStringLiteral("line"), 0}},
+        QJsonObject{{QStringLiteral("clientId"), QStringLiteral("me")},
+                    {QStringLiteral("name"), QStringLiteral("me")},
+                    {QStringLiteral("state"), QStringLiteral("editing")},
+                    {QStringLiteral("line"), 4}},
+        QJsonObject{{QStringLiteral("clientId"), QStringLiteral("c5")},
+                    {QStringLiteral("name"), QStringLiteral("eve")},
+                    {QStringLiteral("state"), QStringLiteral("editing")},
+                    {QStringLiteral("line"), 40}},
+    };
+    const QList<NotePeer> peers = notePeers(raw);
+    QList<NoteEditingLine> lines = noteEditingLines(peers, QStringLiteral("me"), 0);
+    check(lines.size() == 3 && lines.value(0).line == 2 && lines.value(1).line == 7 &&
+              lines.value(2).line == 40,
+          "only other editors with a line are marked, top to bottom");
+    lines = noteEditingLines(peers, QStringLiteral("me"), 7);
+    check(lines.size() == 2 && lines.value(1).line == 7 &&
+              lines.value(1).peers.size() == 2,
+          "a line past the end marks the last line, sharing it");
+    check(noteEditingLineTip(lines.value(0)) == QStringLiteral("bo is editing this line") &&
+              noteEditingLineTip(lines.value(1)) ==
+                  QStringLiteral("ana and eve are editing this line"),
+          "the line tooltip names who is editing");
+    check(noteEditingSignature(lines) != noteEditingSignature(
+              noteEditingLines(peers, QStringLiteral("me"), 0)),
+          "a peer moving line changes the signature");
+    check(noteEditingLines({}, QStringLiteral("me"), 5).isEmpty() &&
+              noteEditingSignature({}).isEmpty(),
+          "nobody editing marks nothing");
+
+    check(noteOpenInLiveKey() == QStringLiteral("notes/openInLive"),
+          "the remembered tab uses the new key");
+    check(noteOpenView(true, true, false) == NoteOpenView::Live &&
+              noteOpenView(true, true, true) == NoteOpenView::Live,
+          "notes you can edit open in Live when Live is preferred");
+    check(noteOpenView(true, false, false) == NoteOpenView::Preview &&
+              noteOpenView(false, true, false) == NoteOpenView::Preview &&
+              noteOpenView(false, true, true) == NoteOpenView::Write,
+          "otherwise a note opens in Preview, or Write when empty");
+}
+
 }
 
 int main(int argc, char **argv)
@@ -450,6 +652,8 @@ int main(int argc, char **argv)
     testErrorsAndTimes();
     testPresence();
     testFollowAndChat();
+    testReactions();
+    testEditingLinesAndOpenView();
     if (failures == 0)
         std::puts("note comments: all checks passed");
     return failures == 0 ? 0 : 1;

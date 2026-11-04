@@ -189,6 +189,52 @@ void testPageBreaks()
           "a break inside a code block is code");
 }
 
+void testImageOptionLines()
+{
+    const QString options = QStringLiteral(
+        "<!-- image: wrap=behind; align=left; width=80; height=60; rotate=0; margin=3.2; "
+        "x=20; y=30; pages=all; recolor=grayscale; transparency=40; brightness=0; "
+        "contrast=0 -->");
+    check(isImageOptionsLine(options), "an image options line is recognised");
+    check(isImageOptionsLine(QStringLiteral("  <!--IMAGE:-->  ")),
+          "upper case, no spaces and empty options are still an options line");
+    check(isImageOptionsLine(QStringLiteral("<!--  image: width=50  -->")),
+          "spaces inside the comment are allowed");
+    check(!isImageOptionsLine(QStringLiteral("<!-- image: width=50 --> text")),
+          "text after the comment is not an options line");
+    check(!isImageOptionsLine(QStringLiteral("text <!-- image: width=50 -->")),
+          "an options comment inside a line is not an options line");
+    check(!isImageOptionsLine(QStringLiteral("<!-- images: width=50 -->")) &&
+              !isImageOptionsLine(QStringLiteral("<!-- page: size=a4 -->")),
+          "only the image: word makes an options line");
+    check(!isPageLayoutLine(options) && !isPageBreakLine(options),
+          "an options line is neither a layout line nor a break");
+
+    const QList<NotePart> parts = noteParts(
+        QStringLiteral("Intro\n") + options + QStringLiteral("\n![Cat](cat.png)\nEnd"));
+    check(parts.size() == 1 && parts.first().kind == NotePartKind::Markdown &&
+              parts.first().markdown == QStringLiteral("Intro\n![Cat](cat.png)\nEnd"),
+          "the options line is hidden and the image below it stays");
+    check(noteParts(options + QStringLiteral("\r\n![Cat](cat.png)")).value(0).markdown ==
+              QStringLiteral("![Cat](cat.png)"),
+          "CRLF line ends are accepted");
+    const QList<NotePart> fenced = noteParts(
+        QStringLiteral("```\n") + options + QStringLiteral("\n```\n~~~~\n") + options +
+        QStringLiteral("\n~~~~"));
+    check(fenced.size() == 1 && fenced.first().markdown.count(options) == 2,
+          "an options line inside a code fence is code");
+    check(notePageLayout(options + QStringLiteral("\n<!-- page: size=letter -->")).size ==
+              PaperSize::Letter,
+          "an options line does not hide the layout line after it");
+    const PlaceholderMarkdown out = withObjectPlaceholders(
+        options + QStringLiteral("\n![Cat](cat.png)\n<!-- pagebreak -->\nEnd"),
+        QStringLiteral("tokx"));
+    check(!out.markdown.contains(QStringLiteral("image:")) &&
+              out.markdown.contains(QStringLiteral("![Cat](cat.png)")) &&
+              out.objects.size() == 1,
+          "the preview gets the image without its options line");
+}
+
 void testPlaceholders()
 {
     const QString token = QStringLiteral("tokx");
@@ -478,6 +524,7 @@ int main(int argc, char **argv)
     testLayoutWriting();
     testFigures();
     testPageBreaks();
+    testImageOptionLines();
     testPlaceholders();
     testHeadings();
     testFileNames();

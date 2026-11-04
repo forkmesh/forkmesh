@@ -71,6 +71,10 @@ let noteErrorMessages: [String: String] = [
     "too_many_comments": "This note already has 1000 comments, the most it can hold.",
     "comment_author_required": "Only the comment's author can do that.",
     "resolve_not_allowed": "Only the note's owner, an editor or the thread's author can resolve it.",
+    "invalid_reaction": "React with a single emoji.",
+    "too_many_reactions": "This note already has 2000 reactions, the most it can hold.",
+    "reaction_not_found": "That reaction was already removed.",
+    "reaction_author_required": "Only the person who reacted, or the note's owner, can remove a reaction.",
     "invalid_emoji": "Use a single emoji, such as 📝 or 🇫🇷.",
     "page_not_found": "This page no longer exists, or you no longer have access to it.",
     "invalid_page": "Some of this page's settings are not valid.",
@@ -875,6 +879,22 @@ public final class NoteEditorModel {
     }
 
     public var canComment: Bool { comments != nil }
+
+    public var reactionMarks: [Range<Int>] {
+        comments?.reactionGroups(markdown: markdown).compactMap(\.range) ?? []
+    }
+
+    public func pick(_ group: NoteReactionGroup) {
+        guard let range = group.range, range.upperBound <= markdown.utf16.count else { return }
+        comments?.focus(nil)
+        mode = .write
+        requestSelection(range)
+    }
+
+    public func reactOnSelection(_ emoji: String) async -> ToolsOutcome {
+        guard let comments, shownMode == .write, let quote = selectedQuote else { return ToolsOutcome() }
+        return await comments.react(emoji, to: quote)
+    }
 
     public func commentOnSelection() {
         guard let comments else { return }

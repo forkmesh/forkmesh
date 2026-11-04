@@ -424,6 +424,208 @@ inline QString commentError(const QString &code, const QString &fallback)
     return fallback;
 }
 
+inline QStringList noteQuickReactions()
+{
+    return {QStringLiteral("\U0001F44D"), QStringLiteral("❤️"),
+            QStringLiteral("\U0001F602"), QStringLiteral("\U0001F389"),
+            QStringLiteral("\U0001F62E"), QStringLiteral("\U0001F440")};
+}
+
+struct NoteReaction {
+    QString id;
+    QString author;
+    QString emoji;
+    QString quote;
+    QString prefix;
+    QString suffix;
+    int start = 0;
+    int end = 0;
+    qint64 createdAt = 0;
+    bool wholeNote() const { return quote.isEmpty(); }
+};
+
+inline QList<NoteReaction> noteReactions(const QJsonArray &values)
+{
+    QList<NoteReaction> reactions;
+    for (const QJsonValue &value : values) {
+        const QJsonObject item = value.toObject();
+        NoteReaction reaction;
+        reaction.id = item.value(QLatin1String("id")).toString();
+        reaction.emoji = item.value(QLatin1String("emoji")).toString();
+        if (reaction.id.isEmpty() || reaction.emoji.isEmpty())
+            continue;
+        reaction.author = item.value(QLatin1String("author")).toString().trimmed();
+        if (reaction.author.isEmpty())
+            reaction.author = QStringLiteral("Someone");
+        reaction.quote = item.value(QLatin1String("quote")).toString();
+        reaction.prefix = item.value(QLatin1String("prefix")).toString();
+        reaction.suffix = item.value(QLatin1String("suffix")).toString();
+        reaction.start = item.value(QLatin1String("start")).toInt();
+        reaction.end = item.value(QLatin1String("end")).toInt();
+        reaction.createdAt = qint64(item.value(QLatin1String("createdAt")).toDouble());
+        reactions.append(reaction);
+    }
+    std::stable_sort(reactions.begin(), reactions.end(),
+                     [](const NoteReaction &a, const NoteReaction &b) {
+        return a.createdAt < b.createdAt;
+    });
+    return reactions;
+}
+
+struct NoteReactionChip {
+    QString emoji;
+    QStringList people;
+    QString mineId;
+    int count() const { return int(people.size()); }
+    bool mine() const { return !mineId.isEmpty(); }
+};
+
+struct NoteReactionGroup {
+    NoteReaction first;
+    CommentAnchor anchor;
+    QList<NoteReactionChip> chips;
+    bool wholeNote() const { return first.wholeNote(); }
+    QString quote() const { return first.quote; }
+    QString key() const
+    {
+        return wholeNote() ? QStringLiteral("note")
+                           : QStringLiteral("%1:%2").arg(anchor.start).arg(anchor.end);
+    }
+};
+
+inline QList<NoteReactionGroup> noteReactionGroups(const QList<NoteReaction> &reactions,
+                                                   const QString &markdown,
+                                                   const QString &me)
+{
+    QList<NoteReactionGroup> groups;
+    QHash<QString, int> index;
+    for (const NoteReaction &reaction : reactions) {
+        NoteReactionGroup probe;
+        probe.first = reaction;
+        if (!reaction.wholeNote()) {
+            probe.anchor = findCommentAnchor(markdown, reaction.quote, reaction.prefix,
+                                             reaction.suffix, reaction.start);
+            if (!probe.anchor.found())
+                continue;
+        }
+        const QString key = probe.key();
+        int at = index.value(key, -1);
+        if (at < 0) {
+            at = int(groups.size());
+            index.insert(key, at);
+            groups.append(probe);
+        }
+        QList<NoteReactionChip> &chips = groups[at].chips;
+        auto chip = std::find_if(chips.begin(), chips.end(),
+                                 [&reaction](const NoteReactionChip &item) {
+            return item.emoji == reaction.emoji;
+        });
+        if (chip == chips.end()) {
+            chips.append(NoteReactionChip{reaction.emoji, {}, {}});
+            chip = chips.end() - 1;
+        }
+        const bool known = std::any_of(chip->people.cbegin(), chip->people.cend(),
+                                       [&reaction](const QString &name) {
+            return sameAccount(name, reaction.author);
+        });
+        if (!known)
+            chip->people << reaction.author;
+        if (chip->mineId.isEmpty() && sameAccount(reaction.author, me))
+            chip->mineId = reaction.id;
+    }
+    std::stable_sort(groups.begin(), groups.end(),
+                     [](const NoteReactionGroup &a, const NoteReactionGroup &b) {
+        if (a.wholeNote() != b.wholeNote())
+            return a.wholeNote();
+        if (a.anchor.start != b.anchor.start)
+            return a.anchor.start < b.anchor.start;
+        return a.anchor.end < b.anchor.end;
+    });
+    return groups;
+}
+
+inline QString noteReactionGroupsSignature(const QList<NoteReactionGroup> &groups)
+{
+    QStringList parts;
+    for (const NoteReactionGroup &group : groups) {
+        QStringList chips;
+        for (const NoteReactionChip &chip : group.chips)
+            chips << QStringLiteral("%1%2%3").arg(chip.emoji).arg(chip.count())
+                         .arg(chip.mine() ? QStringLiteral("*") : QString());
+        parts << group.key() + QLatin1Char('=') + chips.join(QLatin1Char('/'));
+    }
+    return parts.join(QLatin1Char(','));
+}
+
+inline QString noteReactionChipLabel(const NoteReactionChip &chip)
+{
+    return QStringLiteral("%1 %2").arg(chip.emoji).arg(chip.count());
+}
+
+inline QString noteReactionChipTip(const NoteReactionChip &chip)
+{
+    return QStringLiteral("%1 reacted with %2")
+        .arg(chip.people.join(QStringLiteral(", ")), chip.emoji);
+}
+
+inline QString noteReactionGroupTip(const NoteReactionGroup &group)
+{
+    QStringList lines;
+    for (const NoteReactionChip &chip : group.chips)
+        lines << noteReactionChipTip(chip);
+    return lines.join(QLatin1Char('\n'));
+}
+
+inline QJsonObject noteReactionRequest(const QString &emoji, const CommentQuote &quote)
+{
+    QJsonObject body = commentQuoteFields(quote);
+    body.insert(QStringLiteral("emoji"), emoji);
+    return body;
+}
+
+inline QJsonObject noteReactionRequest(const QString &emoji, const NoteReaction &like)
+{
+    QJsonObject body{{QStringLiteral("emoji"), emoji}};
+    if (like.wholeNote())
+        return body;
+    body.insert(QStringLiteral("quote"), like.quote);
+    body.insert(QStringLiteral("prefix"), like.prefix);
+    body.insert(QStringLiteral("suffix"), like.suffix);
+    body.insert(QStringLiteral("start"), like.start);
+    body.insert(QStringLiteral("end"), like.end);
+    return body;
+}
+
+struct NoteReactionToggle {
+    QByteArray method;
+    QString reactionId;
+    QJsonObject body;
+};
+
+inline NoteReactionToggle noteReactionToggle(const NoteReactionGroup &group,
+                                             const NoteReactionChip &chip)
+{
+    if (chip.mine())
+        return {QByteArrayLiteral("DELETE"), chip.mineId, {}};
+    return {QByteArrayLiteral("POST"), QString(),
+            noteReactionRequest(chip.emoji, group.first)};
+}
+
+inline QString noteReactionError(const QString &code, const QString &fallback)
+{
+    if (code == QLatin1String("invalid_reaction"))
+        return QStringLiteral("React with a single emoji.");
+    if (code == QLatin1String("too_many_reactions"))
+        return QStringLiteral("This note already has the most reactions it can "
+                              "hold (2000).");
+    if (code == QLatin1String("reaction_not_found"))
+        return QStringLiteral("That reaction was already removed.");
+    if (code == QLatin1String("reaction_author_required"))
+        return QStringLiteral("Only the person who reacted, or the note's owner, "
+                              "can remove a reaction.");
+    return fallback;
+}
+
 inline QString commentTimeLabel(qint64 stamp, qint64 now)
 {
     if (stamp <= 0)
@@ -529,6 +731,58 @@ inline bool notePeerHere(const QList<NotePeer> &peers, const QString &name)
 {
     return std::any_of(peers.cbegin(), peers.cend(),
                        [&name](const NotePeer &peer) { return peer.name == name; });
+}
+
+struct NoteEditingLine {
+    int line = 0;
+    QList<NotePeer> peers;
+};
+
+inline QList<NoteEditingLine> noteEditingLines(const QList<NotePeer> &peers,
+                                               const QString &selfClientId,
+                                               int lineCount)
+{
+    QList<NoteEditingLine> lines;
+    for (const NotePeer &peer : peers) {
+        if (!peer.editing() || peer.line <= 0 || peer.clientId == selfClientId)
+            continue;
+        const int line = lineCount > 0 ? qMin(peer.line, lineCount) : peer.line;
+        auto found = std::find_if(lines.begin(), lines.end(),
+                                  [line](const NoteEditingLine &entry) {
+            return entry.line == line;
+        });
+        if (found == lines.end()) {
+            lines.append(NoteEditingLine{line, {}});
+            found = lines.end() - 1;
+        }
+        found->peers.append(peer);
+    }
+    std::stable_sort(lines.begin(), lines.end(),
+                     [](const NoteEditingLine &a, const NoteEditingLine &b) {
+        return a.line < b.line;
+    });
+    return lines;
+}
+
+inline QString noteEditingLineTip(const NoteEditingLine &line)
+{
+    QStringList names;
+    for (const NotePeer &peer : line.peers)
+        names << peer.name;
+    if (names.size() == 1)
+        return QStringLiteral("%1 is editing this line").arg(names.first());
+    const QString last = names.takeLast();
+    return QStringLiteral("%1 and %2 are editing this line")
+        .arg(names.join(QStringLiteral(", ")), last);
+}
+
+inline QString noteEditingSignature(const QList<NoteEditingLine> &lines)
+{
+    QStringList parts;
+    for (const NoteEditingLine &line : lines)
+        for (const NotePeer &peer : line.peers)
+            parts << QStringLiteral("%1@%2:%3").arg(peer.clientId, peer.name).arg(line.line);
+    return parts.join(QLatin1Char(','));
 }
 
 struct NoteChatMessage {
@@ -739,6 +993,20 @@ inline QList<NoteVersionEntry> noteVersionEntries(const QJsonArray &values)
                          item.value(QLatin1String("author")).toString()});
     }
     return versions;
+}
+
+inline QString noteOpenInLiveKey()
+{
+    return QStringLiteral("notes/openInLive");
+}
+
+enum class NoteOpenView { Write, Preview, Live };
+
+inline NoteOpenView noteOpenView(bool preferLive, bool canEdit, bool empty)
+{
+    if (preferLive && canEdit)
+        return NoteOpenView::Live;
+    return empty ? NoteOpenView::Write : NoteOpenView::Preview;
 }
 
 inline int notePresencePollMs(bool following, bool chatOpen)

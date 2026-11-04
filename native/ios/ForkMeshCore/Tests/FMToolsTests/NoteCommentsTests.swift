@@ -382,3 +382,178 @@ final class NoteEditorCommentsTests: XCTestCase {
         XCTAssertEqual(editor.selectionRequest?.range, 4..<10)
     }
 }
+
+func reactionJSON(
+    _ id: String, author: String = "ana", emoji: String = "👍", quote: String = "", prefix: String = "", suffix: String = "",
+    start: Int = 0, createdAt: Int64 = 1
+) -> JSONValue {
+    .object([
+        "id": .string(id), "author": .string(author), "emoji": .string(emoji), "quote": .string(quote),
+        "prefix": .string(prefix), "suffix": .string(suffix), "start": .int(Int64(start)),
+        "end": .int(Int64(start + quote.utf16.count)), "createdAt": .int(createdAt),
+    ])
+}
+
+func textOffset(_ needle: String, in text: String) -> Int {
+    let found = text.range(of: needle)!
+    return text.utf16.distance(from: text.utf16.startIndex, to: found.lowerBound.samePosition(in: text.utf16)!)
+}
+
+final class NoteReactionTests: XCTestCase {
+    let markdown = "alpha beta gamma beta"
+
+    var sample: [JSONValue] {
+        [
+            reactionJSON("r1", author: "bob", emoji: "👍", quote: "beta", prefix: "alpha ", suffix: " gamma", start: 6),
+            reactionJSON("r2", author: "alice", emoji: "❤️"),
+            reactionJSON("r3", author: "Alice", emoji: "👍", quote: "beta", prefix: "alpha ", start: 6),
+            reactionJSON("r4", author: "cy", emoji: "🎉", quote: "beta", prefix: "gamma ", start: 17),
+            reactionJSON("r5", author: "bob", emoji: "❤️", quote: "beta", prefix: "alpha ", suffix: " gamma", start: 6),
+            reactionJSON("r6", author: "dee", emoji: "👍", quote: "delta", start: 0),
+            reactionJSON("r7", author: "bob", emoji: "👍"),
+            reactionJSON("", author: "bob", emoji: "👍"),
+            reactionJSON("r9", author: "bob", emoji: ""),
+        ]
+    }
+
+    func testDecodesAndGroupsByResolvedPassage() {
+        let reactions = NoteReactions.list(.array(sample))
+        XCTAssertEqual(reactions.map(\.id), ["r1", "r2", "r3", "r4", "r5", "r6", "r7"])
+        XCTAssertEqual(reactions[0], NoteReaction(
+            id: "r1", author: "bob", emoji: "👍", quote: "beta", prefix: "alpha ", suffix: " gamma", start: 6, end: 10, createdAt: 1))
+        XCTAssertTrue(reactions[1].whole)
+        XCTAssertNil(reactions[1].anchor)
+
+        let groups = NoteReactions.groups(reactions, markdown: markdown, me: "Alice")
+        XCTAssertEqual(groups.map(\.id), ["whole", "6-10", "17-21"])
+        XCTAssertTrue(groups[0].whole)
+        XCTAssertEqual(groups[0].chips, [
+            NoteReactionChip(emoji: "❤️", people: ["alice"], mine: ["r2"]),
+            NoteReactionChip(emoji: "👍", people: ["bob"], mine: []),
+        ])
+        XCTAssertEqual(groups[1].range, 6..<10)
+        XCTAssertEqual(groups[1].quote, "beta")
+        XCTAssertEqual(groups[1].anchor, NoteQuote(quote: "beta", prefix: "alpha ", suffix: " gamma", start: 6, end: 10))
+        XCTAssertEqual(groups[1].chips.map(\.emoji), ["👍", "❤️"])
+        XCTAssertEqual(groups[1].chips[0].count, 2)
+        XCTAssertTrue(groups[1].chips[0].reacted)
+        XCTAssertFalse(groups[1].chips[1].reacted)
+        XCTAssertEqual(groups[1].chips[0].label, "bob, Alice reacted with 👍")
+        XCTAssertEqual(groups[1].summary, "👍 2  ❤️ 1")
+        XCTAssertEqual(groups[1].label, "bob, Alice reacted with 👍. bob reacted with ❤️")
+        XCTAssertEqual(groups[2].chips, [NoteReactionChip(emoji: "🎉", people: ["cy"], mine: [])])
+        XCTAssertEqual(NoteReactions.groups(reactions, markdown: markdown, me: "").flatMap { $0.chips.flatMap(\.mine) }, [])
+        XCTAssertEqual(NoteReactions.groups([], markdown: markdown, me: "alice"), [])
+        XCTAssertEqual(NoteReactions.quickSet.map(\.emoji), ["👍", "❤️", "😂", "🎉", "😮", "👀"])
+    }
+
+    func testChipsToggleWithTheGroupsFirstAnchor() {
+        let groups = NoteReactions.groups(NoteReactions.list(.array(sample)), markdown: markdown, me: "alice")
+        let anchor = NoteQuote(quote: "beta", prefix: "alpha ", suffix: " gamma", start: 6, end: 10)
+        XCTAssertEqual(NoteReactions.action(groups[1].chips[0], in: groups[1]), .remove(["r3"]))
+        XCTAssertEqual(NoteReactions.action(groups[1].chips[1], in: groups[1]), .add(emoji: "❤️", anchor: anchor))
+        XCTAssertEqual(NoteReactions.action(groups[0].chips[1], in: groups[0]), .add(emoji: "👍", anchor: nil))
+        XCTAssertNil(NoteReactions.action(adding: "👍", to: groups[1]))
+        XCTAssertEqual(NoteReactions.action(adding: "😮", to: groups[1]), .add(emoji: "😮", anchor: anchor))
+        XCTAssertEqual(NoteReactions.body(emoji: "👍", anchor: nil), ["emoji": "👍"])
+        XCTAssertEqual(NoteReactions.body(emoji: "😮", anchor: anchor), [
+            "emoji": "😮", "quote": "beta", "prefix": "alpha ", "suffix": " gamma", "start": 6, "end": 10,
+        ])
+    }
+
+    func testPreviewPlacesEachGroupUnderItsBlock() {
+        let text = "# Title\n\nFirst paragraph that is\nwrapped over lines.\n\n- item one\n- item two\n\nTitle again"
+        let probes: [String?] = ["Title", "First paragraph that is wrapped over lines.", "item one", nil, "missing words", "Title again"]
+        let starts = NoteReactions.blockStarts(probes, in: text)
+        XCTAssertEqual(starts, [2, 9, textOffset("item one", in: text), nil, nil, textOffset("Title again", in: text)])
+
+        let parsed = DocsMarkdown.blocks(text).map(NoteReactions.probe)
+        let found = NoteReactions.blockStarts(parsed, in: text)
+        XCTAssertEqual(found.count, parsed.count)
+        XCTAssertEqual(found.compactMap { $0 }, [2, 9, textOffset("item one", in: text), textOffset("item two", in: text), textOffset("Title again", in: text)])
+        XCTAssertNil(NoteReactions.probe(.rule))
+
+        let group = { (from: Int, to: Int) in NoteReactionGroup(range: from..<to, anchor: nil, chips: []) }
+        let wrapped = textOffset("wrapped", in: text)
+        let again = textOffset("again", in: text)
+        let placed = NoteReactions.placed(
+            [NoteReactionGroup(range: nil, anchor: nil, chips: []), group(0, 1), group(wrapped, wrapped + 7), group(again, again + 5)],
+            starts: starts)
+        XCTAssertEqual(placed.map { $0.map(\.id) }, [["0-1"], ["\(wrapped)-\(wrapped + 7)"], [], [], [], ["\(again)-\(again + 5)"]])
+        XCTAssertEqual(NoteReactions.placed([group(0, 1)], starts: [nil, nil]).map(\.count), [0, 0])
+    }
+
+    @MainActor
+    func testChipsPostAndDeleteAndApplyTheAnswer() async {
+        var stored: [JSONValue] = [
+            reactionJSON("r1", author: "bob", emoji: "👍", quote: "ship it", prefix: "- ", start: 12),
+            reactionJSON("r2", author: "alice", emoji: "❤️", quote: "ship it", prefix: "- ", start: 12),
+        ]
+        var refuse = false
+        let api = FakeToolsApi { method, suffix, body in
+            switch (method, suffix) {
+            case ("GET", "/\(noteId)/comments"):
+                var payload = commentsPayload([])
+                payload["reactions"] = .array(stored)
+                return payload
+            case ("POST", "/\(noteId)/reactions"):
+                if refuse { throw OrgApiException("too_many_reactions", "full") }
+                stored.append(reactionJSON(
+                    "n\(stored.count)", author: "alice", emoji: body?["emoji"]?.stringValue ?? "", quote: body?["quote"]?.stringValue ?? "",
+                    prefix: body?["prefix"]?.stringValue ?? "", start: Int(body?["start"]?.intValue ?? 0)))
+                var payload = commentsPayload([])
+                payload["reactions"] = .array(stored)
+                payload["reaction"] = stored.last!
+                return payload
+            case ("DELETE", "/\(noteId)/reactions/r2"):
+                stored.removeAll { $0.objectValue?["id"]?.stringValue == "r2" }
+                var payload = commentsPayload([])
+                payload["reactions"] = .array(stored)
+                return payload
+            case ("GET", _):
+                return ["ok": true, "note": .object(noteJSON())]
+            default:
+                throw OrgApiException("unexpected", "\(method) \(suffix)")
+            }
+        }
+        let editor = NoteEditorModel(noteId: noteId, call: api.call, clock: FixedClock(epochMillis: toolsNowMillis), sleep: { _ in }, me: "alice")
+        await editor.load()
+        let model = editor.comments!
+        await model.load()
+        XCTAssertEqual(model.reactions.map(\.id), ["r1", "r2"])
+        XCTAssertEqual(editor.reactionMarks, [12..<19])
+        var group = model.reactionGroups(markdown: editor.markdown)[0]
+        XCTAssertEqual(group.summary, "👍 1  ❤️ 1")
+
+        let outcome = await model.toggle(group.chips[1], in: group)
+        XCTAssertNil(outcome.notice)
+        XCTAssertEqual(api.last?.method, "DELETE")
+        XCTAssertEqual(model.reactions.map(\.id), ["r1"])
+
+        group = model.reactionGroups(markdown: editor.markdown)[0]
+        _ = await model.toggle(group.chips[0], in: group)
+        XCTAssertEqual(api.last?.suffix, "/\(noteId)/reactions")
+        XCTAssertEqual(api.last?.body, ["emoji": "👍", "quote": "ship it", "prefix": "- ", "suffix": "", "start": 12, "end": 19])
+        group = model.reactionGroups(markdown: editor.markdown)[0]
+        XCTAssertEqual(group.chips[0].count, 2)
+        XCTAssertTrue(group.chips[0].reacted)
+        let calls = api.calls.count
+        _ = await model.add("👍", to: group)
+        XCTAssertEqual(api.calls.count, calls)
+
+        editor.mode = .preview
+        editor.pick(group)
+        XCTAssertEqual(editor.mode, .write)
+        XCTAssertEqual(editor.selection, 12..<19)
+
+        editor.selectionChanged(2..<8)
+        _ = await editor.reactOnSelection("🎉")
+        XCTAssertEqual(api.last?.body, ["emoji": "🎉", "quote": "Launch", "prefix": "# ", "suffix": "\n\n- ship it", "start": 2, "end": 8])
+        XCTAssertEqual(model.reactionGroups(markdown: editor.markdown).map(\.id), ["2-8", "12-19"])
+
+        refuse = true
+        let failed = await model.add("😮", to: group)
+        XCTAssertEqual(failed.notice?.message, "This note already has 2000 reactions, the most it can hold.")
+        XCTAssertEqual(failed.notice?.isError, true)
+    }
+}

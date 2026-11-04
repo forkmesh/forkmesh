@@ -14220,7 +14220,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "36ec6eeb070a4cabb36f5b533b197e63e82d93fe14494a7910395286e185c4f8"
+    "09aa3734fb747fb043555339aff41b8becb97ab68678268b5b7e611bd9ef3e31"
 )
 
 

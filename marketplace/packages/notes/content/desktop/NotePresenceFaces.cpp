@@ -15,6 +15,13 @@
 
 namespace forkmesh::notes {
 
+QColor notePresenceColor(const QString &name)
+{
+    return QColor(QString::fromLatin1(
+        Theme::kSenderPalette[noteAvatarIndex(name.toLower(),
+                                              Theme::kSenderPaletteSize)]));
+}
+
 namespace {
 constexpr int kFace = 24;
 constexpr int kFaceStep = 18;
@@ -23,9 +30,7 @@ constexpr int kBadge = 12;
 
 QColor faceColor(const QString &name)
 {
-    return QColor(QString::fromLatin1(
-        Theme::kSenderPalette[noteAvatarIndex(name.toLower(),
-                                              Theme::kSenderPaletteSize)]));
+    return notePresenceColor(name);
 }
 
 QPixmap facePixmap(const NotePeer &peer, const QPixmap &picture, int side)

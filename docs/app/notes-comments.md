@@ -94,6 +94,57 @@ the list with its quote shown as removed text, and nothing is highlighted.
 - Opening `/dashboard/notes?note=<id>&comment=<commentId>` opens the note
   with that thread shown.
 
+## Reactions
+
+Since 2026-11-04 anyone who can open a note can react with an emoji to a
+passage of it, and everyone else with the note open sees the reaction appear
+beside that passage. A reaction is anchored like an inline comment (quote,
+prefix, suffix, start, end, found again the same way, see
+[above](#finding-the-quoted-passage)); one with no quote is about the whole
+note.
+
+`note_reactions` (migration `0301_note_reactions.sql`) holds one row per
+reaction: `reaction_id`, `note_id`, `author_bi`, the anchor offsets,
+`created_at` and `data`, the sealed `{emoji, quote, prefix, suffix}`. Rows go
+with the note (`ON DELETE CASCADE`); a note holds at most 2000 reactions
+(`MAX_REACTIONS`). The table is in the rekey lists of `tools/next_rekey.py`.
+
+Reactions travel with the comments, so no client needed a new live path:
+
+- every comments answer also carries `reactions`, oldest first, each `{id,
+  author, emoji, quote, prefix, suffix, start, end, createdAt}`;
+- `POST /api/notes/<id>/reactions` with `{emoji, quote?, prefix?, suffix?,
+  start?, end?}` adds yours and answers 201 with the comments payload and the
+  new `reaction`. The same emoji from you on the same quote, prefix and suffix
+  answers 200 with the one already there instead of a copy;
+- `DELETE /api/notes/<id>/reactions/<reactionId>` removes it (its author or
+  the note's owner, `reaction_author_required` otherwise);
+- the emoji follows the note emoji rule (`_emoji` in `app/src/notes.py`: at
+  most 16 characters, no letters, spaces or plain digits), else
+  `invalid_reaction`; a full note is `too_many_reactions`, an unknown id
+  `reaction_not_found`;
+- every change sends `note-comments` to the room, and `commentsKey` gains the
+  reaction count and newest time when a note has reactions, so polling
+  clients reload too. Reactions are not logged in the activity and ping no
+  one.
+
+### What every client shows
+
+- **React** beside **Comment** wherever selecting text offers Comment, with
+  the quick set 👍 ❤️ 😂 🎉 😮 👀.
+- Reactions whose passages resolve to the same place form a group: one chip
+  per emoji with its count, in the accent colour when you are among the
+  people, naming them on hover or long press, and a "+" to add another emoji
+  there. A chip toggles your reaction; adding to someone else's chip reuses
+  their anchor so it joins the group. Reactions whose quote is no longer in
+  the note are hidden.
+- The web shows each group in a row under the block holding the passage, in
+  Live, Preview and Split's preview, with the passage quoted at its start;
+  whole-note reactions sit under the title. The desktop and the phones list the
+  groups at the top of the comments panel or sheet and mark the passages in
+  the editor ([desktop notes](../desktop/notes.md#reactions),
+  [phone notes](../native/notes.md)).
+
 ## Chat
 
 Since 2026-11-03 the side panel next to a note has a Chat tab beside
@@ -210,6 +261,9 @@ picking the faces lists everyone with their state.
 
 ## Tests
 
+`app/tests/test_notes_reactions.py` covers reactions: sealed anchors,
+listing with the comments, no duplicates, the emoji rule, outsiders refused,
+delete permissions, removal with the note, the cap and the `commentsKey`.
 `app/tests/test_notes_comments.py` covers the API: creating threads and
 replies, quotes kept sealed, mentions kept only for collaborators and pinged,
 replies pinging the thread, edit and resolve permissions, deleting a thread
@@ -220,7 +274,9 @@ or (as owner) anyone's, the 500-message window, removal with the note, the
 `chatKey`, the `activityKey`, and the room remembering cursor lines for polling
 followers; `app/tests/test_notes.py` covers viewing one version.
 `app/browser_tests/tests/dashboard-notes-live.spec.js` drives the web page:
-Live mode block editing, commenting on a selection in a live block, following
+Live as the default layout, Live mode block editing, reacting to a passage
+and seeing others' reactions arrive, the marks on blocks others are editing,
+commenting on a selection in a live block, following
 a collaborator, the chat tab with its unread count, and the column's Activity
 and History tabs updating from socket frames, viewing a version and opening
 History from the menu.

@@ -231,6 +231,30 @@ replaced after every change.
   wait. Reconnecting the socket reloads too, in case a frame was missed.
 - Errors show in the sheet in plain words (`NoteCommentText.error`).
 
+### Reactions
+
+The same on Android and iOS ([reactions](../app/notes-comments.md#reactions)).
+**React** sits next to Comment in the text-selection menu and as a button
+beside Comment in the editor toolbar, with the quick set 👍 ❤️ 😂 🎉 😮 👀.
+Picking an emoji posts it on the selection, anchored like a comment. Compose's text menu cannot nest a submenu, so its React item opens the quick set at the toolbar's React button.
+
+The comments sheet opens with a Reactions section (below the new-comment box
+when one is open): each passage's quote, or "On the whole note", then one chip
+per emoji with its count, in the accent colour when you reacted, and an
+add-reaction chip with the quick set. A long press shows, and screen readers
+read, "ana, bo reacted with 👍". Tapping a quote closes the sheet and selects
+the passage; tapping a chip you reacted with removes your reactions on it,
+otherwise it adds yours with the passage's first anchor. The answer replaces
+comments and reactions at once, and other people's reactions arrive with the
+`note-comments` reload.
+
+Reacted passages get a faint accent background in the editor, lighter than a
+focused comment. In Preview a pill such as "👍 2 ❤️ 1" sits under the block
+holding the passage (each rendered block's start is found in the Markdown to
+place it); tapping it opens the comments sheet. The image options line
+(`<!-- image: … -->`, [image options](../app/notes-documents.md#image-options))
+is hidden like the layout line; the phones show the image without the options.
+
 ### History, activity and chat
 
 The phone version of the web and desktop editor's right column
@@ -338,6 +362,7 @@ the history text, the chat, activity and version requests, and the
 `NotePagesTest` covers the emoji rules and the common set, parsing pages and
 the page detail, outline rows with folding and locked notes, reading order,
 outline editing, the saved fields and links, and every page request.
+`NoteReactionsTest` covers parsing reactions, grouping by passage, the chips, the toggle requests and the Preview pills; `NoteDocumentTest` also covers hiding the image options line.
 `NavigationTest` covers `?note=<id>&comment=<cid>`, `?page=<id>[&note=<id>]`
 and the codec round trip.
 
@@ -583,6 +608,30 @@ On screen:
   text removes the highlight.
 - Comment boxes offer `@` suggestions as chips under the field.
 
+### Reactions
+
+The same on Android and iOS ([reactions](../app/notes-comments.md#reactions)).
+**React** sits next to Comment in the text-selection menu and as a button
+beside Comment in the editor toolbar, with the quick set 👍 ❤️ 😂 🎉 😮 👀.
+Picking an emoji posts it on the selection, anchored like a comment. The edit menu shows the quick set as a submenu.
+
+The comments sheet opens with a Reactions section (below the new-comment box
+when one is open): each passage's quote, or "On the whole note", then one chip
+per emoji with its count, in the accent colour when you reacted, and an
+add-reaction chip with the quick set. A long press shows, and screen readers
+read, "ana, bo reacted with 👍". Tapping a quote closes the sheet and selects
+the passage; tapping a chip you reacted with removes your reactions on it,
+otherwise it adds yours with the passage's first anchor. The answer replaces
+comments and reactions at once, and other people's reactions arrive with the
+`note-comments` reload.
+
+Reacted passages get a faint accent background in the editor, lighter than a
+focused comment. In Preview a pill such as "👍 2 ❤️ 1" sits under the block
+holding the passage (each rendered block's start is found in the Markdown to
+place it); tapping it opens the comments sheet. The image options line
+(`<!-- image: … -->`, [image options](../app/notes-documents.md#image-options))
+is hidden like the layout line; the phones show the image without the options.
+
 ### History, activity and chat
 
 The same sheet as on Android: `NoteLiveSheet` in `NotesScreen.swift`, with
@@ -723,4 +772,5 @@ editor's live sheet and its reloads on `note-chat`, `note-activity` and
 outline editing, the pages list, loading a page with its notes, the recorded
 view, customizing and conflicts, sharing with `includeNotes`, deleting, and
 note emoji in the editor and the list.
+`NoteCommentsTests.swift` also covers reactions (parsing, grouping, chips, the toggle requests and the Preview pills), and `NoteDocumentTests.swift` hiding the image options line.
 `FMApiTests/RouteParserTests.swift` covers the `comment` and `page` links.

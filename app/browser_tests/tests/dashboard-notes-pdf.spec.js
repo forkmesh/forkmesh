@@ -28,6 +28,7 @@ async function openNotes(page, { role = "owner", calls = [] } = {}) {
       nodeName: "alice", email: "alice@example.test", emailVerified: true,
       sessionToken: "test-session", status: "active",
     }));
+    localStorage.setItem("forkmesh.notes.layout", "split");
     localStorage.setItem("forkmesh.notes.activity", "closed");
     window.ForkMeshDashboard = {
       _registrations: [["notes", ({ builtinPage }) => builtinPage("notes")]],

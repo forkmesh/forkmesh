@@ -19,8 +19,21 @@
     ["shorter", "Make shorter"], ["longer", "Make longer"], ["professional", "Professional tone"],
     ["friendly", "Friendly tone"], ["bullets", "Bullet list"], ["summarize", "Summarize"],
   ];
-  const NOTE_MODE_KEY = "forkmesh.notes.mode";
-  const NOTE_MODES = ["write", "split", "preview", "live"];
+  const NOTE_MODE_KEY = "forkmesh.notes.layout";
+  const NOTE_REACTIONS = ["👍", "❤️", "😂", "🎉", "😮", "👀"];
+  const NOTE_MODES = ["write", "split", "preview", "live", "pages"];
+  const NOTE_IMAGE_SETTINGS_LINE = /^\s*<!--\s*image:([\s\S]*?)-->\s*$/i;
+  const NOTE_IMAGE_DEFAULTS = {
+    wrap: "inline", align: "left", width: 0, height: 0, rotate: 0, margin: 3.2, x: 0, y: 0, pages: "anchor",
+    recolor: "none", transparency: 0, brightness: 0, contrast: 0,
+  };
+  const NOTE_IMAGE_RULES = {
+    wrap: { choices: ["inline", "wrap", "break", "behind", "front"] }, align: { choices: ["left", "center", "right"] },
+    width: { min: 0, max: 2000 }, height: { min: 0, max: 2000 }, rotate: { min: -360, max: 360 }, margin: { min: 0, max: 100 },
+    x: { min: -2000, max: 2000 }, y: { min: -2000, max: 2000 }, pages: { choices: ["anchor", "all", "first", "rest"] },
+    recolor: { choices: ["none", "grayscale", "sepia", "negative"] }, transparency: { min: 0, max: 100 },
+    brightness: { min: -100, max: 100 }, contrast: { min: -100, max: 100 },
+  };
   const NOTE_CHAT_SEEN_KEY = "forkmesh.notes.chat-seen";
   const NOTE_SEARCH_MS = 250;
   const NOTE_ACTIVITY_KEY = "forkmesh.notes.activity";
@@ -71,6 +84,10 @@
     image_too_large: "That image is too large to paste into the note, even made smaller.",
     note_full: "This note has no room left for another image.",
     image_unreadable: "That image couldn't be read. Try copying it again, or as PNG.",
+    invalid_reaction: "Pick an emoji to react with.",
+    too_many_reactions: "This note has too many reactions. Remove some first.",
+    reaction_not_found: "That reaction was already removed.",
+    reaction_author_required: "You can only remove your own reactions.",
     get upstream_unavailable() { return `${platformName()} is restarting. Try again in a few seconds.`; },
     get sealed() { return `${platformName()} is restarting. Try again in a few seconds.`; },
   };
@@ -441,13 +458,22 @@
       if (noteLiveMode()) {
         renderNoteLive(preview, markdown);
         unmarkNoteComments(preview);
+        preview.querySelectorAll(".notes-reactions").forEach((row) => row.remove());
       } else {
         if (state.notesView.live) state.notesView.live = null;
         preview.innerHTML = markdown.trim()
           ? renderMarkdown(markdown, { noteDocument: true })
           : '<p class="notes-preview-empty">Nothing written yet.</p>';
       }
+      const lines = noteLines(markdown);
+      if (noteLiveMode()) {
+        for (const block of preview.querySelectorAll(":scope > .notes-live-block:not([data-editing=\"true\"])")) decorateNoteImagesIn(block, lines, Number(block.dataset.liveLine) || 0);
+      } else decorateNoteImagesIn(preview, lines);
+      if (state.notesView.imageSelection?.where === "live") requestAnimationFrame(reselectNoteImage);
+      if (notePagesMode()) scheduleNotePages();
       markNoteCommentsInPreview(preview);
+      renderNoteReactions(preview, markdown);
+      renderNotePeerMarks();
     }
     forgetNoteScrollGeometry();
     renderNoteOutline(markdown);
@@ -564,7 +590,12 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
 .note-contents { break-after: page; page-break-after: always; }
 .note-contents ol { list-style: none; margin: 0; padding: 0; }
 .note-contents li { margin: 0 0 5pt; }
-.note-contents .note-contents-2 { padding-left: 16pt; font-size: 10pt; }`;
+.note-contents .note-contents-2 { padding-left: 16pt; font-size: 10pt; }
+.note-image[data-wrap="wrap"] { float: left; margin: 2pt var(--note-image-margin) var(--note-image-margin) 0; }
+.note-image[data-wrap="wrap"][data-align="right"] { float: right; margin: 2pt 0 var(--note-image-margin) var(--note-image-margin); }
+.note-image[data-wrap="break"] { display: block; }
+.note-image[data-wrap="break"][data-align="center"] { margin-left: auto; margin-right: auto; }
+.note-image[data-wrap="break"][data-align="right"] { margin-left: auto; }`;
   }
 
   function notePrintDocument({ title, emoji = "", markdown, layout, date = new Date() }) {
@@ -586,7 +617,7 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
     return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(notePdfFileName(title).replace(/\.pdf$/, ""))}</title><style>${notePrintStyles(layout)}</style></head><body>${cover}${list}<article>${lead}${body}</article></body></html>`;
   }
 
-  function printNoteDocument(html) {
+  function printNoteDocument(html, layout = null, markdown = "") {
     document.querySelector("[data-note-print-frame]")?.remove();
     const frame = document.createElement("iframe");
     frame.dataset.notePrintFrame = "";
@@ -597,6 +628,7 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
     frame.addEventListener("load", async () => {
       const images = [...(frame.contentDocument?.images || [])];
       await Promise.all(images.map((image) => image.decode().catch(() => null)));
+      if (layout && frame.contentDocument) paginateNoteDocument(frame.contentDocument, layout, noteLines(markdown));
       frame.contentWindow?.focus();
       frame.contentWindow?.print();
     }, { once: true });
@@ -642,7 +674,656 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
       emoji: state.notesView.selected?.emoji || "",
       markdown: area.value,
       layout: resolved,
+    }), resolved, area.value);
+  }
+
+  function noteImageSettingsRead(text) {
+    const settings = { ...NOTE_IMAGE_DEFAULTS };
+    for (const pair of String(text || "").split(";")) {
+      const [key, raw] = pair.split("=").map((part) => String(part || "").trim().toLowerCase());
+      const rule = NOTE_IMAGE_RULES[key];
+      if (!rule || raw === undefined || raw === "") continue;
+      if (rule.choices) { if (rule.choices.includes(raw)) settings[key] = raw; continue; }
+      const number = Number(raw);
+      if (Number.isFinite(number)) settings[key] = Math.round(Math.min(rule.max, Math.max(rule.min, number)) * 10) / 10;
+    }
+    return settings;
+  }
+
+  function noteImageSettingsLine(settings) {
+    const pairs = Object.keys(NOTE_IMAGE_DEFAULTS)
+      .filter((key) => settings?.[key] !== undefined && settings[key] !== NOTE_IMAGE_DEFAULTS[key])
+      .map((key) => `${key}=${settings[key]}`);
+    return pairs.length ? `<!-- image: ${pairs.join("; ")} -->` : "";
+  }
+
+  function noteImageSettingsAt(lines, line) {
+    const match = NOTE_IMAGE_SETTINGS_LINE.exec(lines[line - 1] || "");
+    return noteImageSettingsRead(match ? match[1] : "");
+  }
+
+  function noteWithImageSettings(markdown, line, settings) {
+    const lines = noteLines(markdown);
+    const text = noteImageSettingsLine(settings);
+    const at = line > 0 && NOTE_IMAGE_SETTINGS_LINE.test(lines[line - 1] || "") ? line - 1 : -1;
+    let next = line;
+    if (at >= 0 && text) lines[at] = text;
+    else if (at >= 0) { lines.splice(at, 1); next = line - 1; }
+    else if (text) { lines.splice(line, 0, text); next = line + 1; }
+    return { markdown: lines.join("\n"), line: next };
+  }
+
+  function noteImageFilter(settings) {
+    const filters = [];
+    if (settings.recolor === "grayscale") filters.push("grayscale(1)");
+    if (settings.recolor === "sepia") filters.push("sepia(1)");
+    if (settings.recolor === "negative") filters.push("invert(1)");
+    if (settings.brightness) filters.push(`brightness(${(1 + settings.brightness / 100).toFixed(2)})`);
+    if (settings.contrast) filters.push(`contrast(${(1 + settings.contrast / 100).toFixed(2)})`);
+    return filters.join(" ");
+  }
+
+  function styleNoteImage(image, settings) {
+    image.classList.add("note-image");
+    image.dataset.wrap = settings.wrap;
+    image.dataset.align = settings.align;
+    image.style.width = settings.width ? `${settings.width}mm` : "";
+    image.style.height = settings.height ? `${settings.height}mm` : settings.width ? "auto" : "";
+    image.style.maxWidth = settings.width ? "none" : "";
+    image.style.transform = settings.rotate ? `rotate(${settings.rotate}deg)` : "";
+    image.style.opacity = settings.transparency ? String(1 - settings.transparency / 100) : "";
+    image.style.filter = noteImageFilter(settings);
+    image.style.setProperty("--note-image-margin", `${settings.margin}mm`);
+  }
+
+  function noteImageLineOf(lines, paragraphLine, index) {
+    let count = 0;
+    for (let line = paragraphLine; line < lines.length && lines[line].trim(); line += 1) {
+      const here = (lines[line].match(/!\[[^\]]*\]\(/g) || []).length;
+      if (index < count + here) return index === count && /^\s*(?:\[\s*)?!\[/.test(lines[line]) ? line : -1;
+      count += here;
+    }
+    return -1;
+  }
+
+  function decorateNoteImagesIn(root, lines, offset = 0) {
+    for (const paragraph of root.querySelectorAll("p[data-note-line]")) {
+      const start = Number(paragraph.dataset.noteLine) + offset;
+      [...paragraph.querySelectorAll("img")].forEach((image, index) => {
+        const line = noteImageLineOf(lines, start, index);
+        if (line < 0) return;
+        image.dataset.noteImageLine = String(line);
+        image.draggable = false;
+        styleNoteImage(image, noteImageSettingsAt(lines, line));
+      });
+    }
+  }
+
+  function notePageGeometry(layout) {
+    const [width, height] = NOTE_PAPER_MM[layout.size];
+    const [page, tall] = layout.orientation === "landscape" ? [height, width] : [width, height];
+    const margin = NOTE_MARGIN_MM[layout.margins];
+    return { width: page, height: tall, margin, contentWidth: page - 2 * margin, contentHeight: tall - 2 * margin };
+  }
+
+  function notePagesStyles(geometry, screen) {
+    const { width, height, margin, contentWidth, contentHeight } = geometry;
+    return `@page { size: ${width}mm ${height}mm; margin: 0; }
+html, body { margin: 0; }
+${screen ? "html { background: #e8eaed; } body { padding: 24px 0; }" : ""}
+.np-measure { position: absolute; left: 0; top: 0; visibility: hidden; }
+.np-flow { width: ${contentWidth}mm; height: ${contentHeight}mm; column-width: ${contentWidth}mm; column-gap: ${2 * margin}mm; column-fill: auto; }
+.np-flow img { max-height: ${contentHeight}mm; object-fit: contain; }
+.np-flow .note-cover, .np-flow .note-contents, .np-flow .note-page-break { break-after: column; }
+.np-pages { width: ${width}mm; margin: 0 auto; }
+.np-page { position: relative; width: ${width}mm; height: ${height}mm; overflow: hidden; background: #fff; break-after: page; page-break-after: always; }
+${screen ? `.np-page { margin: 0 auto 24px; box-shadow: 0 1px 3px rgb(60 64 67 / .3), 0 4px 8px rgb(60 64 67 / .15); }` : ".np-page:last-child { break-after: auto; page-break-after: auto; }"}
+.np-win { position: absolute; left: ${margin}mm; top: ${margin}mm; width: ${contentWidth}mm; height: ${contentHeight}mm; overflow: hidden; z-index: 1; }
+.np-win > .np-flow { position: absolute; top: 0; }
+.np-layer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.np-layer-behind { z-index: 0; } .np-layer-front { z-index: 2; }
+.np-layer img { position: absolute; max-width: none; max-height: none; margin: 0; transform-origin: center; pointer-events: auto; }
+.np-number { position: absolute; left: 0; right: 0; bottom: ${margin / 2}mm; transform: translateY(50%); z-index: 3; text-align: center; font: 9pt -apple-system, "Segoe UI", system-ui, Roboto, Arial, sans-serif; color: #57606a; }
+.np-select { position: fixed; z-index: 10; border: 2px solid #1a73e8; pointer-events: none; }
+.np-select span { position: absolute; right: -6px; bottom: -6px; width: 10px; height: 10px; border: 2px solid #fff; background: #1a73e8; pointer-events: auto; cursor: nwse-resize; }
+${screen ? ".np-page img[data-note-image-line] { cursor: pointer; } .np-layer img[data-note-image-line] { cursor: move; }" : ""}`;
+  }
+
+  function paginateNoteDocument(doc, layout, lines, { screen = false } = {}) {
+    const geometry = notePageGeometry(layout);
+    const { width, height, margin } = geometry;
+    const style = doc.createElement("style");
+    style.textContent = notePagesStyles(geometry, screen);
+    doc.head.appendChild(style);
+    const measure = doc.createElement("div");
+    measure.className = "np-measure";
+    const flow = doc.createElement("div");
+    flow.className = "np-flow";
+    flow.append(...doc.body.childNodes);
+    measure.appendChild(flow);
+    doc.body.appendChild(measure);
+    decorateNoteImagesIn(flow, lines);
+    const placed = [];
+    for (const image of flow.querySelectorAll("img[data-wrap=\"behind\"], img[data-wrap=\"front\"]")) {
+      const anchor = doc.createElement("span");
+      anchor.className = "np-anchor";
+      image.replaceWith(anchor);
+      placed.push({ image, anchor, settings: noteImageSettingsAt(lines, Number(image.dataset.noteImageLine)) });
+    }
+    const box = flow.getBoundingClientRect();
+    const perMm = box.width / geometry.contentWidth, pitch = width * perMm;
+    const pageAt = (x) => Math.max(0, Math.floor((x - box.left) / pitch));
+    let count = 1;
+    for (const element of flow.querySelectorAll("*")) {
+      const rect = element.getBoundingClientRect();
+      if (rect.width || rect.height) count = Math.max(count, pageAt(rect.right - 1) + 1);
+    }
+    const named = [...flow.querySelectorAll("[id]")].map((element) => pageAt(element.getBoundingClientRect().left + 1));
+    for (const item of placed) item.page = Math.min(count - 1, pageAt(item.anchor.getBoundingClientRect().left + 1));
+    const pages = doc.createElement("div");
+    pages.className = "np-pages";
+    for (let index = 0; index < count; index += 1) {
+      const page = doc.createElement("section");
+      page.className = "np-page";
+      page.dataset.page = String(index + 1);
+      const layers = { behind: doc.createElement("div"), front: doc.createElement("div") };
+      layers.behind.className = "np-layer np-layer-behind";
+      layers.front.className = "np-layer np-layer-front";
+      for (const item of placed) {
+        const { pages: which } = item.settings;
+        const shown = which === "all" || (which === "first" && index === 0) || (which === "rest" && index > 0) || (which === "anchor" && item.page === index);
+        if (!shown) continue;
+        const image = item.image.cloneNode(true);
+        image.style.left = `${item.settings.x}mm`;
+        image.style.top = `${item.settings.y}mm`;
+        layers[item.settings.wrap].appendChild(image);
+      }
+      const view = doc.createElement("div");
+      view.className = "np-win";
+      const copy = flow.cloneNode(true);
+      copy.style.left = `-${index * width}mm`;
+      [...copy.querySelectorAll("[id]")].forEach((element, at) => { if (named[at] !== index) element.removeAttribute("id"); });
+      view.appendChild(copy);
+      page.append(layers.behind, view, layers.front);
+      if (layout.numbers === "yes" && !(layout.cover === "yes" && index === 0)) {
+        const number = doc.createElement("div");
+        number.className = "np-number";
+        number.textContent = `${index + 1} / ${count}`;
+        page.appendChild(number);
+      }
+      pages.appendChild(page);
+    }
+    measure.remove();
+    doc.body.appendChild(pages);
+    return { count, geometry };
+  }
+
+  function noteDocumentLines() {
+    return noteLines($("[data-note-markdown]")?.value || "");
+  }
+
+  function noteCurrentDocument() {
+    const markdown = $("[data-note-markdown]")?.value || "";
+    return {
+      title: $("[data-note-title]")?.value || "", emoji: state.notesView.selected?.emoji || "",
+      markdown, layout: noteLayoutRead(markdown),
+    };
+  }
+
+  function notePagesMode() { return $("[data-note-work]")?.dataset.mode === "pages"; }
+
+  function scheduleNotePages(delay = 250) {
+    const view = state.notesView;
+    clearTimeout(view.pagesTimer);
+    view.pagesTimer = setTimeout(renderNotePagesView, delay);
+  }
+
+  function renderNotePagesView() {
+    const view = state.notesView, frame = $("[data-note-pages-frame]");
+    if (!frame || !notePagesMode() || !view.selected) return;
+    const current = noteCurrentDocument();
+    const key = JSON.stringify([view.selected.id, current.title, current.emoji, current.markdown]);
+    if (key === view.pagesKey && frame.contentDocument?.querySelector(".np-pages")) { fitNotePages(); return; }
+    view.pagesKey = key;
+    const scroll = frame.contentDocument?.scrollingElement?.scrollTop || 0;
+    frame.onload = async () => {
+      const doc = frame.contentDocument;
+      if (!doc) return;
+      await Promise.all([...doc.images].map((image) => image.decode().catch(() => null)));
+      const { count } = paginateNoteDocument(doc, current.layout, noteLines(current.markdown), { screen: true });
+      view.pagesCount = count;
+      const label = $("[data-note-pages-count]");
+      if (label) label.textContent = `${count} ${count === 1 ? "page" : "pages"}`;
+      wireNotePagesFrame(doc);
+      fitNotePages();
+      if (doc.scrollingElement) doc.scrollingElement.scrollTop = scroll;
+      if (view.imageSelection?.where === "pages") reselectNoteImage();
+    };
+    frame.srcdoc = notePrintDocument(current);
+  }
+
+  function fitNotePages() {
+    const view = state.notesView, frame = $("[data-note-pages-frame]"), doc = frame?.contentDocument;
+    const pages = doc?.querySelector(".np-pages");
+    if (!pages) return;
+    const choice = $("[data-note-pages-zoom]")?.value || "fit";
+    const page = pages.querySelector(".np-page");
+    const natural = page ? page.offsetWidth : 800;
+    const zoom = choice === "fit" ? Math.max(0.3, Math.min(2, (frame.clientWidth - 48) / natural)) : Number(choice) / 100;
+    pages.style.zoom = String(zoom);
+    view.pagesZoom = zoom;
+    if (view.imageSelection?.where === "pages") requestAnimationFrame(positionNoteImageChrome);
+  }
+
+  function wireNotePagesFrame(doc) {
+    doc.addEventListener("pointerdown", (event) => {
+      const image = event.target.closest?.("img[data-note-image-line]");
+      if (event.target.closest?.(".np-select span")) { startNoteImageResize(event); return; }
+      if (!image) { if (!event.target.closest?.(".np-select")) selectNoteImage(null); return; }
+      if (!noteCanEdit(state.notesView.selected)) return;
+      event.preventDefault();
+      selectNoteImage(image, "pages");
+      if (["behind", "front"].includes(image.dataset.wrap)) startNoteImageMove(event, image);
+    });
+    doc.addEventListener("keydown", noteImageKeydown);
+    doc.addEventListener("scroll", () => positionNoteImageChrome(), { passive: true });
+  }
+
+  function noteImageElements() {
+    const view = state.notesView, selection = view.imageSelection;
+    if (!selection) return [];
+    const line = String(selection.line);
+    const roots = selection.where === "pages" ? [$("[data-note-pages-frame]")?.contentDocument] : [$("[data-note-preview]")];
+    return roots.filter(Boolean).flatMap((root) => [...root.querySelectorAll(`img[data-note-image-line="${line}"]`)]);
+  }
+
+  function selectNoteImage(image, where = "live") {
+    const view = state.notesView;
+    if (!image) {
+      if (!view.imageSelection) return;
+      view.imageSelection = null;
+      document.querySelectorAll("[data-note-image-toolbar], [data-note-image-wrap-menu]").forEach((node) => { node.hidden = true; });
+      $("[data-note-pages-frame]")?.contentDocument?.querySelector(".np-select")?.remove();
+      $("[data-note-image-select]")?.setAttribute("hidden", "");
+      return;
+    }
+    if (view.live) endNoteLiveEdit();
+    view.imageSelection = { line: Number(image.dataset.noteImageLine), where, page: image.closest(".np-page")?.dataset.page || "" };
+    $("[data-note-comment-float]").hidden = true;
+    $("[data-note-react-float]").hidden = true;
+    $("[data-note-image-toolbar]").hidden = false;
+    positionNoteImageChrome();
+    if (!$("[data-note-image-panel]").hidden) renderNoteImagePanel();
+    refreshNoteIcons();
+  }
+
+  function reselectNoteImage() {
+    const view = state.notesView;
+    if (!view.imageSelection) return;
+    if (!noteImageElements().length) { selectNoteImage(null); return; }
+    positionNoteImageChrome();
+    if (!$("[data-note-image-panel]").hidden) renderNoteImagePanel();
+  }
+
+  function noteSelectedImage() {
+    const view = state.notesView, images = noteImageElements();
+    return images.find((image) => image.closest(".np-page")?.dataset.page === view.imageSelection?.page) || images[0] || null;
+  }
+
+  function positionNoteImageChrome() {
+    const view = state.notesView, image = noteSelectedImage(), toolbar = $("[data-note-image-toolbar]"), body = $(".notes-body");
+    if (!view.imageSelection || !image || !toolbar || !body) return;
+    let rect = image.getBoundingClientRect();
+    if (view.imageSelection.where === "pages") {
+      const frame = $("[data-note-pages-frame]"), doc = frame.contentDocument;
+      let box = doc.querySelector(".np-select");
+      if (!box) { box = doc.createElement("div"); box.className = "np-select"; box.appendChild(doc.createElement("span")); doc.body.appendChild(box); }
+      Object.assign(box.style, { left: `${rect.left - 2}px`, top: `${rect.top - 2}px`, width: `${rect.width}px`, height: `${rect.height}px` });
+      const outer = frame.getBoundingClientRect();
+      rect = { left: rect.left + outer.left, right: rect.right + outer.left, top: rect.top + outer.top, bottom: rect.bottom + outer.top, width: rect.width, height: rect.height };
+    } else {
+      const box = $("[data-note-image-select]");
+      box.hidden = false;
+      const outer = body.getBoundingClientRect();
+      Object.assign(box.style, { left: `${rect.left - outer.left - 2}px`, top: `${rect.top - outer.top - 2}px`, width: `${rect.width}px`, height: `${rect.height}px` });
+    }
+    const outer = body.getBoundingClientRect();
+    toolbar.style.left = `${Math.max(8, Math.min(outer.width - toolbar.offsetWidth - 8, rect.left - outer.left + rect.width / 2 - toolbar.offsetWidth / 2))}px`;
+    toolbar.style.top = `${Math.max(8, Math.min(outer.height - toolbar.offsetHeight - 8, rect.bottom - outer.top + 10))}px`;
+    const menu = $("[data-note-image-wrap-menu]");
+    if (menu && !menu.hidden) {
+      const button = toolbar.querySelector("[data-note-image-wrap-open]").getBoundingClientRect();
+      menu.style.left = `${Math.max(8, button.left - outer.left)}px`;
+      menu.style.top = `${button.bottom - outer.top + 6}px`;
+    }
+  }
+
+  function noteImageSettingsNow() {
+    const view = state.notesView;
+    if (!view.imageSelection) return null;
+    return noteImageSettingsAt(noteDocumentLines(), view.imageSelection.line);
+  }
+
+  function writeNoteImageSettings(settings, { render = true } = {}) {
+    const view = state.notesView, area = $("[data-note-markdown]");
+    if (!view.imageSelection || !area || !noteCanEdit(view.selected)) return;
+    const result = noteWithImageSettings(area.value, view.imageSelection.line, settings);
+    view.imageSelection.line = result.line;
+    for (const image of noteImageElements()) image.dataset.noteImageLine = String(result.line);
+    if (result.markdown === area.value) return;
+    area.value = result.markdown;
+    for (const image of noteImageElements()) if (!["behind", "front"].includes(settings.wrap) || image.closest(".np-layer")) styleNoteImage(image, settings);
+    if (render) area.dispatchEvent(new Event("input", { bubbles: true }));
+    else { scheduleNoteSave(); sendNoteDraft(); noteTyped(); }
+    requestAnimationFrame(positionNoteImageChrome);
+  }
+
+  function noteImageGeometry() {
+    const markdown = $("[data-note-markdown]")?.value || "";
+    return notePageGeometry(noteLayoutRead(markdown));
+  }
+
+  function noteImageSizeMm(image, settings) {
+    const zoom = state.notesView.imageSelection?.where === "pages" ? (state.notesView.pagesZoom || 1) : 1;
+    const rect = image?.getBoundingClientRect();
+    const perMm = 96 / 25.4 * zoom;
+    const naturalWidth = image?.naturalWidth ? image.naturalWidth * 25.4 / 96 : 0;
+    const naturalHeight = image?.naturalHeight ? image.naturalHeight * 25.4 / 96 : 0;
+    const width = settings.width || (image?.offsetWidth ? image.offsetWidth * 25.4 / 96 : rect ? rect.width / perMm : naturalWidth);
+    const height = settings.height || (image?.offsetHeight ? image.offsetHeight * 25.4 / 96 : naturalWidth ? width * naturalHeight / naturalWidth : width);
+    return { width, height, naturalWidth: naturalWidth || width, naturalHeight: naturalHeight || height };
+  }
+
+  function noteImageUnit() {
+    const layout = noteLayoutRead($("[data-note-markdown]")?.value || "");
+    return layout.size === "a4" ? { name: "cm", mm: 10 } : { name: "in", mm: 25.4 };
+  }
+
+  function renderNoteImagePanel() {
+    const view = state.notesView, panel = $("[data-note-image-panel]"), settings = noteImageSettingsNow(), image = noteSelectedImage();
+    if (!panel || !settings) return;
+    const unit = noteImageUnit(), size = noteImageSizeMm(image, settings);
+    const show = (value) => String(Math.round(value / unit.mm * 100) / 100);
+    const set = (key, value) => { const field = panel.querySelector(`[data-note-image-field="${key}"]`); if (field && document.activeElement !== field) { if (field.type === "checkbox") field.checked = Boolean(value); else field.value = value; } };
+    panel.querySelectorAll("[data-note-image-unit]").forEach((node) => { node.textContent = unit.name; });
+    set("width", show(size.width));
+    set("height", show(size.height));
+    set("widthScale", String(Math.round(size.width / size.naturalWidth * 100)));
+    set("heightScale", String(Math.round(size.height / size.naturalHeight * 100)));
+    set("lock", view.imageLock !== false);
+    set("rotate", String(settings.rotate));
+    set("margin", show(settings.margin));
+    set("x", show(settings.x));
+    set("y", show(settings.y));
+    set("pages", settings.pages);
+    set("transparency", String(settings.transparency));
+    set("brightness", String(settings.brightness));
+    set("contrast", String(settings.contrast));
+    const source = noteImageSource(view.imageSelection.line);
+    set("alt", source?.alt || "");
+    set("title", source?.title || "");
+    panel.querySelectorAll("[data-note-image-wrap]").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.noteImageWrap === settings.wrap)));
+    panel.querySelectorAll("[data-note-image-align]").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.noteImageAlign === settings.align)));
+    panel.querySelectorAll("[data-note-image-recolor]").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.noteImageRecolor === settings.recolor)));
+    const positioned = ["behind", "front"].includes(settings.wrap);
+    panel.querySelector("[data-note-image-position]").disabled = !positioned;
+    panel.querySelector("[data-note-image-position]").dataset.disabled = String(!positioned);
+    panel.querySelector("[data-note-image-align-row]").hidden = positioned || settings.wrap === "inline";
+    panel.querySelector("[data-note-image-margin-row]").hidden = settings.wrap !== "wrap";
+    panel.querySelectorAll("[data-note-image-align=\"center\"]").forEach((button) => { button.hidden = settings.wrap === "wrap"; });
+    const readOnly = !noteCanEdit(view.selected);
+    panel.querySelectorAll("input, select, button[data-note-image-wrap], button[data-note-image-align], button[data-note-image-recolor], button[data-note-image-action]").forEach((node) => { node.disabled = readOnly || (node.closest("[data-note-image-position]") && !positioned); });
+  }
+
+  function noteImageSource(line) {
+    const text = noteDocumentLines()[line] || "";
+    const match = /!\[((?:\\.|[^\]\\])*)\]\(\s*(<[^>]*>|[^)\s]+)(?:\s+"((?:\\.|[^"\\])*)")?\s*\)/.exec(text);
+    return match ? { match, alt: match[1].replace(/\\(.)/g, "$1"), url: match[2], title: (match[3] || "").replace(/\\(.)/g, "$1") } : null;
+  }
+
+  function writeNoteImageSource(alt, title) {
+    const view = state.notesView, area = $("[data-note-markdown]");
+    if (!view.imageSelection || !area || !noteCanEdit(view.selected)) return;
+    const lines = noteLines(area.value), source = noteImageSource(view.imageSelection.line);
+    if (!source) return;
+    const escape = (text, chars) => String(text || "").replace(/[\r\n]+/g, " ").replace(chars, (char) => `\\${char}`);
+    const text = `![${escape(alt, /[\\\]]/g)}](${source.url}${title ? ` "${escape(title, /[\\"]/g)}"` : ""})`;
+    const line = lines[view.imageSelection.line];
+    lines[view.imageSelection.line] = line.slice(0, source.match.index) + text + line.slice(source.match.index + source.match[0].length);
+    area.value = lines.join("\n");
+    area.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  function openNoteImagePanel() {
+    const panel = $("[data-note-image-panel]");
+    if (!panel || !state.notesView.imageSelection) return;
+    panel.hidden = false;
+    $("[data-note-image-wrap-menu]").hidden = true;
+    renderNoteImagePanel();
+    refreshNoteIcons();
+  }
+
+  function closeNoteImagePanel() {
+    const panel = $("[data-note-image-panel]");
+    if (panel) panel.hidden = true;
+  }
+
+  function changeNoteImage(update, options) {
+    const settings = noteImageSettingsNow();
+    if (!settings) return;
+    const next = { ...settings, ...update };
+    if (["behind", "front"].includes(next.wrap) && !["behind", "front"].includes(settings.wrap) && update.x === undefined) {
+      const geometry = noteImageGeometry();
+      next.x = geometry.margin; next.y = geometry.margin;
+      if (!next.width) next.width = Math.round(noteImageSizeMm(noteSelectedImage(), settings).width * 10) / 10;
+    }
+    writeNoteImageSettings(next, options);
+    renderNoteImagePanel();
+  }
+
+  function noteImageFieldChange(field) {
+    const key = field.dataset.noteImageField, unit = noteImageUnit(), view = state.notesView;
+    const settings = noteImageSettingsNow(), image = noteSelectedImage();
+    if (!settings) return;
+    const number = Number(field.value);
+    if (key === "alt" || key === "title") {
+      const panel = $("[data-note-image-panel]");
+      writeNoteImageSource(panel.querySelector("[data-note-image-field=\"alt\"]").value, panel.querySelector("[data-note-image-field=\"title\"]").value);
+      return;
+    }
+    if (key === "lock") { view.imageLock = field.checked; return; }
+    if (key === "pages") { changeNoteImage({ pages: field.value }); return; }
+    if (!Number.isFinite(number) || field.value === "") return;
+    const size = noteImageSizeMm(image, settings), lock = view.imageLock !== false;
+    const ratio = size.width ? size.height / size.width : 1;
+    const round = (value) => Math.round(value * 10) / 10;
+    if (key === "width" || key === "widthScale") {
+      const width = round(key === "width" ? number * unit.mm : size.naturalWidth * number / 100);
+      if (width > 0) changeNoteImage({ width, height: lock ? (settings.height ? round(width * ratio) : 0) : round(size.height) });
+    } else if (key === "height" || key === "heightScale") {
+      const height = round(key === "height" ? number * unit.mm : size.naturalHeight * number / 100);
+      if (height > 0) changeNoteImage({ height, width: lock ? round(height / ratio) : round(size.width) });
+    } else if (["margin", "x", "y"].includes(key)) changeNoteImage({ [key]: round(number * unit.mm) });
+    else if (key === "rotate") changeNoteImage({ rotate: number });
+    else if (["transparency", "brightness", "contrast"].includes(key)) changeNoteImage({ [key]: number }, { render: field.type !== "range" || field.dataset.committed === "true" });
+  }
+
+  function noteImageAction(action) {
+    const settings = noteImageSettingsNow();
+    if (!settings) return;
+    const geometry = noteImageGeometry();
+    if (action === "rotate90") changeNoteImage({ rotate: ((settings.rotate + 90 + 180) % 360) - 180 });
+    if (action === "fill") changeNoteImage({ wrap: settings.wrap === "front" ? "front" : "behind", x: 0, y: 0, width: geometry.width, height: geometry.height, rotate: 0 });
+    if (action === "center") {
+      const size = noteImageSizeMm(noteSelectedImage(), settings);
+      changeNoteImage({ x: Math.round((geometry.width - size.width) / 2 * 10) / 10, y: Math.round((geometry.height - size.height) / 2 * 10) / 10 });
+    }
+    if (action === "reset-size") changeNoteImage({ width: 0, height: 0, rotate: 0 });
+    if (action === "reset-adjust") changeNoteImage({ transparency: 0, brightness: 0, contrast: 0 });
+  }
+
+  function noteImageAnchor() {
+    const view = state.notesView, area = $("[data-note-markdown]");
+    if (!view.imageSelection || !area) return null;
+    const lines = noteLines(area.value), line = view.imageSelection.line, markdown = lines.join("\n");
+    const start = noteLineOffset(lines, line) + (lines[line].length - lines[line].trimStart().length);
+    const end = Math.min(start + lines[line].trim().length, start + NOTE_QUOTE_MAX);
+    return {
+      quote: markdown.slice(start, end), prefix: markdown.slice(Math.max(0, start - NOTE_COMMENT_CONTEXT), start),
+      suffix: markdown.slice(end, end + NOTE_COMMENT_CONTEXT), start, end,
+    };
+  }
+
+  function removeNoteImage() {
+    const view = state.notesView, area = $("[data-note-markdown]");
+    if (!view.imageSelection || !area || !noteCanEdit(view.selected)) return;
+    const lines = noteLines(area.value), line = view.imageSelection.line, source = noteImageSource(line);
+    if (!source) return;
+    const rest = (lines[line].slice(0, source.match.index) + lines[line].slice(source.match.index + source.match[0].length)).trim();
+    const from = NOTE_IMAGE_SETTINGS_LINE.test(lines[line - 1] || "") ? line - 1 : line;
+    if (rest) { lines[line] = rest; if (from < line) lines.splice(from, 1); }
+    else lines.splice(from, line - from + 1);
+    selectNoteImage(null);
+    area.value = lines.join("\n");
+    area.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  function noteImageKeydown(event) {
+    const view = state.notesView;
+    if (!view.imageSelection) return;
+    const typing = event.target.closest?.("input, textarea, select, [contenteditable]");
+    if (event.key === "Escape") { selectNoteImage(null); closeNoteImagePanel(); return; }
+    if (typing) return;
+    if (event.key === "Delete" || event.key === "Backspace") { event.preventDefault(); removeNoteImage(); }
+  }
+
+  function noteImagePerMm() {
+    const view = state.notesView;
+    return 96 / 25.4 * (view.imageSelection?.where === "pages" ? (view.pagesZoom || 1) : 1);
+  }
+
+  function startNoteImageMove(event, image) {
+    const settings = noteImageSettingsNow();
+    if (!settings) return;
+    const doc = image.ownerDocument, perMm = noteImagePerMm(), from = { x: event.clientX, y: event.clientY };
+    let moved = null;
+    const move = (next) => {
+      moved = { x: Math.round((settings.x + (next.clientX - from.x) / perMm) * 10) / 10, y: Math.round((settings.y + (next.clientY - from.y) / perMm) * 10) / 10 };
+      for (const copy of noteImageElements()) { copy.style.left = `${moved.x}mm`; copy.style.top = `${moved.y}mm`; }
+      positionNoteImageChrome();
+    };
+    const up = () => {
+      doc.removeEventListener("pointermove", move);
+      doc.removeEventListener("pointerup", up);
+      if (moved) changeNoteImage(moved);
+    };
+    doc.addEventListener("pointermove", move);
+    doc.addEventListener("pointerup", up);
+  }
+
+  function startNoteImageResize(event) {
+    const settings = noteImageSettingsNow(), image = noteSelectedImage();
+    if (!settings || !image || !noteCanEdit(state.notesView.selected)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const doc = event.target.ownerDocument, perMm = noteImagePerMm(), from = event.clientX;
+    const size = noteImageSizeMm(image, settings), ratio = size.width ? size.height / size.width : 1;
+    let width = 0;
+    const move = (next) => {
+      width = Math.max(5, Math.round((size.width + (next.clientX - from) / perMm) * 10) / 10);
+      for (const copy of noteImageElements()) { copy.style.width = `${width}mm`; copy.style.height = settings.height ? `${width * ratio}mm` : "auto"; copy.style.maxWidth = "none"; }
+      positionNoteImageChrome();
+    };
+    const up = () => {
+      doc.removeEventListener("pointermove", move);
+      doc.removeEventListener("pointerup", up);
+      if (width) changeNoteImage({ width, height: settings.height ? Math.round(width * ratio * 10) / 10 : 0 });
+    };
+    doc.addEventListener("pointermove", move);
+    doc.addEventListener("pointerup", up);
+  }
+
+  async function insertNoteImageFile(file, background) {
+    const area = $("[data-note-markdown]");
+    if (!file || !area || !noteCanEdit(state.notesView.selected)) return;
+    const budget = Math.min(NOTE_IMAGE_MAX_CHARS, NOTE_MARKDOWN_MAX - area.value.length - 256);
+    if (budget < 4096) { noteNotice("main", NOTE_ERRORS.note_full, "bad"); return; }
+    let url = "";
+    try { url = await noteImageDataUrl(file, budget); } catch (_) { noteNotice("main", NOTE_ERRORS.image_unreadable, "bad"); return; }
+    if (!url) { noteNotice("main", NOTE_ERRORS.image_too_large, "bad"); return; }
+    const markdown = area.value, layout = noteLayoutRead(markdown), geometry = notePageGeometry(layout);
+    let base = markdown;
+    if (background && noteLayoutLineIndex(noteLines(markdown)) < 0) base = noteWithLayout(markdown, layout);
+    const settings = background
+      ? noteImageSettingsLine({ ...NOTE_IMAGE_DEFAULTS, wrap: "behind", x: 0, y: 0, width: geometry.width, height: geometry.height, pages: "all" })
+      : "";
+    const trimmed = base.replace(/\s+$/, "");
+    area.value = `${trimmed}${trimmed ? "\n\n" : ""}${settings ? `${settings}\n` : ""}![${background ? "background" : "image"}](${url})\n`;
+    area.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  function wireNoteImages() {
+    const preview = $("[data-note-preview]"), toolbar = $("[data-note-image-toolbar]"), panel = $("[data-note-image-panel]"), menu = $("[data-note-image-wrap-menu]");
+    preview?.addEventListener("pointerdown", (event) => {
+      const image = event.target.closest("img[data-note-image-line]");
+      if (event.target.closest("[data-note-image-select] span")) return;
+      if (!image || !noteLiveMode() || !noteCanEdit(state.notesView.selected) || image.closest("[data-editing=\"true\"]")) return;
+      event.preventDefault();
+      selectNoteImage(image, "live");
+    });
+    $("[data-note-image-select] span")?.addEventListener("pointerdown", startNoteImageResize);
+    toolbar?.addEventListener("mousedown", (event) => event.preventDefault());
+    toolbar?.addEventListener("click", (event) => {
+      const button = event.target.closest("button"); if (!button) return;
+      if (button.matches("[data-note-image-options-open]")) openNoteImagePanel();
+      if (button.matches("[data-note-image-wrap-open]")) {
+        menu.hidden = !menu.hidden;
+        const settings = noteImageSettingsNow();
+        menu.querySelectorAll("[data-note-image-wrap]").forEach((item) => item.setAttribute("aria-checked", String(item.dataset.noteImageWrap === settings?.wrap)));
+        positionNoteImageChrome();
+      }
+      if (button.matches("[data-note-image-comment]")) { const anchor = noteImageAnchor(); if (anchor) { selectNoteImage(null); startNoteComment(anchor); } }
+      if (button.matches("[data-note-image-react]")) { const anchor = noteImageAnchor(); if (anchor) openNoteReactionPicker(anchor, button); }
+    });
+    menu?.addEventListener("click", (event) => {
+      const item = event.target.closest("[data-note-image-wrap]"); if (!item) return;
+      menu.hidden = true;
+      changeNoteImage({ wrap: item.dataset.noteImageWrap });
+    });
+    panel?.addEventListener("click", (event) => {
+      const button = event.target.closest("button"); if (!button || button.disabled) return;
+      if (button.matches("[data-note-image-panel-close]")) closeNoteImagePanel();
+      else if (button.dataset.noteImageWrap) changeNoteImage({ wrap: button.dataset.noteImageWrap });
+      else if (button.dataset.noteImageAlign) changeNoteImage({ align: button.dataset.noteImageAlign });
+      else if (button.dataset.noteImageRecolor) changeNoteImage({ recolor: button.dataset.noteImageRecolor });
+      else if (button.dataset.noteImageAction) noteImageAction(button.dataset.noteImageAction);
+    });
+    panel?.addEventListener("input", (event) => {
+      const field = event.target.closest("[data-note-image-field]");
+      if (field?.type === "range") { field.dataset.committed = "false"; noteImageFieldChange(field); }
+    });
+    panel?.addEventListener("change", (event) => {
+      const field = event.target.closest("[data-note-image-field]"); if (!field) return;
+      field.dataset.committed = "true";
+      noteImageFieldChange(field);
+    });
+    document.addEventListener("keydown", noteImageKeydown);
+    document.addEventListener("pointerdown", (event) => {
+      if (!state.notesView.imageSelection) return;
+      if (event.composedPath().some((node) => node?.matches?.("[data-note-image-toolbar], [data-note-image-wrap-menu], [data-note-image-panel], [data-note-image-select], [data-note-reaction-picker], img[data-note-image-line], [data-note-pages-frame]"))) return;
+      selectNoteImage(null);
+    });
+    $("[data-note-pages-zoom]")?.addEventListener("change", fitNotePages);
+    window.addEventListener("resize", () => { if (notePagesMode()) fitNotePages(); else positionNoteImageChrome(); });
+    $("[data-note-preview-pane]")?.addEventListener("scroll", () => positionNoteImageChrome(), { passive: true });
+    const picker = $("[data-note-image-file]");
+    document.querySelectorAll("[data-note-insert-image]").forEach((button) => button.addEventListener("click", () => {
+      picker.dataset.background = button.dataset.noteInsertImage;
+      picker.value = "";
+      picker.click();
     }));
+    picker?.addEventListener("change", () => void insertNoteImageFile(picker.files?.[0], picker.dataset.background === "background"));
+    $("[data-note-pages-export]")?.addEventListener("click", openNotePdfDialog);
   }
 
   function renderNoteMode(note) {
@@ -985,7 +1666,7 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
     try {
       const payload = await noteRequest(`/api/notes/${id}`);
       const same = view.selected?.id === payload.note.id;
-      if (!same) { view.conflict = null; view.emojiPending = null; $("[data-note-conflict]").hidden = true; }
+      if (!same) { view.conflict = null; view.emojiPending = null; $("[data-note-conflict]").hidden = true; selectNoteImage(null); closeNoteImagePanel(); view.pagesKey = ""; }
       storeNote(payload.note);
       rememberNoteInUrl(payload.note);
       renderNoteEditor(view.selected, { keepDraft: keepDraft && same && view.localDirty });
@@ -1236,6 +1917,7 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
       refreshNoteIcons();
     }
     if (faces?.innerHTML.includes("data-lucide")) refreshNoteIcons();
+    renderNotePeerMarks();
   }
 
   function connectNoteSocket(note) {
@@ -1510,7 +2192,7 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
   function noteLiveClick(event) {
     const view = state.notesView, preview = $("[data-note-preview]");
     if (!noteLiveMode() || !noteCanEdit(view.selected)) return;
-    if (event.target.closest("a, button, input, textarea, [data-note-thread-mark]")) return;
+    if (event.target.closest("a, button, input, textarea, [data-note-thread-mark], .notes-reactions, img[data-note-image-line]")) return;
     if (String(window.getSelection()?.toString() || "")) return;
     const block = event.target.closest(".notes-live-block");
     if (block && preview.contains(block)) { startNoteLiveEdit(block, noteLiveCaret(block, event)); return; }
@@ -2141,6 +2823,9 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
     state.notesView.mode = mode;
     try { localStorage.setItem(NOTE_MODE_KEY, mode); } catch (_) {}
     endNoteLiveEdit(false);
+    selectNoteImage(null);
+    closeNoteImagePanel();
+    state.notesView.pagesKey = "";
     if (state.notesView.selected) { renderNoteMode(state.notesView.selected); renderNotePreview(); }
   }
 
@@ -2411,7 +3096,7 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
   function applyNoteComments(noteId, payload) {
     const view = state.notesView;
     if (view.selected?.id !== noteId) return;
-    view.comments = { comments: payload.comments || [], people: payload.people || [], canResolve: Boolean(payload.canResolve) };
+    view.comments = { comments: payload.comments || [], reactions: payload.reactions || [], people: payload.people || [], canResolve: Boolean(payload.canResolve) };
     if (view.pendingComment && view.comments.comments.some((comment) => comment.id === view.pendingComment)) {
       const wanted = view.comments.comments.find((comment) => comment.id === view.pendingComment);
       view.commentFocus = wanted.parentId || wanted.id;
@@ -2647,6 +3332,7 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
     if (!view.selected) return;
     view.commentDraft = anchor || { quote: "", prefix: "", suffix: "", start: 0, end: 0 };
     $("[data-note-comment-float]").hidden = true;
+    $("[data-note-react-float]").hidden = true;
     openNotePanel("comments");
     $("[data-note-comment-new] [data-note-comment-input]")?.focus();
   }
@@ -2663,17 +3349,24 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
     const button = $("[data-note-comment-float]");
     if (!button || !view.selected) return;
     setTimeout(() => {
-      const anchor = noteSelectionAnchor(), assist = $("[data-note-assist-float]");
-      if (!anchor) { button.hidden = true; if (assist) assist.hidden = true; return; }
+      const anchor = noteSelectionAnchor(), assist = $("[data-note-assist-float]"), react = $("[data-note-react-float]");
+      if (!anchor) { button.hidden = true; if (assist) assist.hidden = true; if (react) react.hidden = true; return; }
       const body = $(".notes-body").getBoundingClientRect();
       const left = Math.max(8, Math.min(body.width - 220, event.clientX - body.left + 8));
       const top = Math.max(8, event.clientY - body.top + 12);
       button.style.left = `${left}px`;
       button.style.top = `${top}px`;
       button.hidden = false;
+      let next = left + button.offsetWidth + 6;
+      if (react) {
+        react.hidden = false;
+        react.style.left = `${next}px`;
+        react.style.top = `${top}px`;
+        next += react.offsetWidth + 6;
+      }
       if (assist) {
         assist.hidden = !noteCanEdit(view.selected) || view.assistReady === false || Boolean(view.assist && !$("[data-note-assist-panel]").hidden);
-        assist.style.left = `${left + button.offsetWidth + 6}px`;
+        assist.style.left = `${next}px`;
         assist.style.top = `${top}px`;
       }
       refreshNoteIcons();
@@ -2721,6 +3414,7 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
     view.assist = { noteId: view.selected.id, ...target, text, markdown, action: "", result: null, busy: false };
     $("[data-note-comment-float]").hidden = true;
     $("[data-note-assist-float]").hidden = true;
+    $("[data-note-react-float]").hidden = true;
     $("[data-note-assist-prompt]").value = "";
     noteNotice("assist", "");
     panel.hidden = false;
@@ -2910,6 +3604,171 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
     }
   }
 
+  function noteReactionGroups(markdown) {
+    const groups = new Map();
+    for (const reaction of state.notesView.comments?.reactions || []) {
+      let key = "note", range = null;
+      if (reaction.quote) {
+        range = noteLocateQuote(markdown, reaction);
+        if (!range) continue;
+        key = `${range.start}:${range.end}`;
+      }
+      if (!groups.has(key)) groups.set(key, { key, range, anchor: reaction, emojis: new Map() });
+      const emojis = groups.get(key).emojis;
+      if (!emojis.has(reaction.emoji)) emojis.set(reaction.emoji, []);
+      emojis.get(reaction.emoji).push(reaction);
+    }
+    return groups;
+  }
+
+  function noteReactionRowHtml(group) {
+    const me = noteMe();
+    const quote = String(group.anchor.quote || "").replace(/\s+/g, " ").trim();
+    const label = quote ? `<span class="notes-reaction-quote" title="${escapeHtml(quote)}">“${escapeHtml(quote.length > 40 ? `${quote.slice(0, 39)}…` : quote)}”</span>` : "";
+    const chips = [...group.emojis].map(([emoji, reactions]) => {
+      const names = reactions.map((reaction) => reaction.author || "Someone").join(", ");
+      const mine = reactions.some((reaction) => reaction.author && reaction.author === me);
+      return `<button type="button" class="notes-reaction" data-note-reaction-toggle="${escapeHtml(group.key)}" data-emoji="${escapeHtml(emoji)}" aria-pressed="${mine}" title="${escapeHtml(`${names} reacted with ${emoji}`)}"><span>${escapeHtml(emoji)}</span><span class="notes-reaction-count">${reactions.length}</span></button>`;
+    }).join("");
+    return `${label}${chips}<button type="button" class="notes-reaction notes-reaction-add" data-note-reaction-add="${escapeHtml(group.key)}" title="Add a reaction" aria-label="Add a reaction">${noteIcon("smile-plus")}</button>`;
+  }
+
+  function renderNoteReactions(preview, markdown) {
+    const view = state.notesView, live = noteLiveMode();
+    view.reactionGroups = noteReactionGroups(markdown);
+    const whole = view.reactionGroups.get("note"), top = $("[data-note-reactions-note]");
+    if (top) { top.innerHTML = whole ? noteReactionRowHtml(whole) : ""; top.hidden = !whole; }
+    const lines = markdown.split("\n");
+    const blocks = live ? [...preview.children].filter((child) => child.matches(".notes-live-block")) : [];
+    const last = new Map();
+    for (const group of [...view.reactionGroups.values()].filter((item) => item.range).sort((a, b) => a.range.start - b.range.start)) {
+      const line = markdown.slice(0, group.range.start).split("\n").length - 1;
+      let target = null;
+      if (live) {
+        for (const block of blocks) if (Number(block.dataset.liveLine) <= line) target = block;
+        if (target?.dataset.editing === "true") continue;
+      } else target = noteFollowPreviewElement(preview, lines, line);
+      if (!target) continue;
+      const row = document.createElement("div");
+      row.className = "notes-reactions";
+      row.innerHTML = noteReactionRowHtml(group);
+      if (last.has(target)) last.get(target).after(row);
+      else if (live || target.matches("li, td, th")) target.appendChild(row);
+      else target.after(row);
+      last.set(target, row);
+    }
+    refreshNoteIcons();
+  }
+
+  function renderNotePeerMarks() {
+    const view = state.notesView, preview = $("[data-note-preview]");
+    document.querySelectorAll("[data-view=\"notes\"] [data-peer-editing]").forEach((node) => {
+      node.removeAttribute("data-peer-editing");
+      node.style.removeProperty("--peer-color");
+    });
+    if (!preview || !view.selected || $("[data-note-work]")?.dataset.mode === "write") return;
+    const lines = ($("[data-note-markdown]")?.value || "").split("\n"), live = noteLiveMode();
+    const blocks = live ? [...preview.children].filter((child) => child.matches(".notes-live-block")) : [];
+    const marks = new Map();
+    const now = Date.now();
+    for (const peer of view.peers?.values() || []) {
+      const editing = peer.state === "editing" || now - (peer.draftAt || 0) < 5000;
+      if (!editing || !(peer.line > 0) || now - peer.seen > NOTE_PRESENCE_MS * 2.5) continue;
+      const index = Math.min(lines.length - 1, peer.line - 1);
+      let target = null;
+      if (live) { for (const block of blocks) if (Number(block.dataset.liveLine) <= index) target = block; }
+      else target = noteFollowPreviewElement(preview, lines, index);
+      if (!target) continue;
+      if (!marks.has(target)) marks.set(target, []);
+      if (!marks.get(target).includes(peer.name)) marks.get(target).push(peer.name);
+    }
+    for (const [target, names] of marks) {
+      target.dataset.peerEditing = names.join(", ");
+      target.style.setProperty("--peer-color", noteAvatarColor(names[0]));
+    }
+  }
+
+  function noteReactionAnchor(source) {
+    return {
+      quote: String(source?.quote || ""), prefix: String(source?.prefix || ""), suffix: String(source?.suffix || ""),
+      start: Number(source?.start) || 0, end: Number(source?.end) || 0,
+    };
+  }
+
+  async function sendNoteReaction(path, method, body) {
+    const view = state.notesView, note = view.selected;
+    if (!note) return;
+    try {
+      const payload = await noteRequest(`/api/notes/${note.id}/reactions${path}`, method, body);
+      view.commentsGeneration++;
+      applyNoteComments(note.id, payload);
+    } catch (error) {
+      noteNotice("main", error.message, "bad");
+    }
+  }
+
+  function toggleNoteReaction(key, emoji) {
+    const group = state.notesView.reactionGroups.get(key);
+    if (!group) return;
+    const mine = (group.emojis.get(emoji) || []).find((reaction) => reaction.author && reaction.author === noteMe());
+    if (mine) void sendNoteReaction(`/${mine.id}`, "DELETE");
+    else void sendNoteReaction("", "POST", { emoji, ...noteReactionAnchor(group.anchor) });
+  }
+
+  function closeNoteReactionPicker() {
+    const picker = $("[data-note-reaction-picker]");
+    if (picker) picker.hidden = true;
+    state.notesView.reactionAnchor = null;
+  }
+
+  function openNoteReactionPicker(anchor, reference) {
+    const view = state.notesView, picker = $("[data-note-reaction-picker]"), body = $(".notes-body");
+    if (!picker || !body || !view.selected) return;
+    view.reactionAnchor = noteReactionAnchor(anchor);
+    picker.innerHTML = NOTE_REACTIONS.map((emoji) =>
+      `<button type="button" data-note-reaction-pick="${escapeHtml(emoji)}" role="menuitem" aria-label="React with ${escapeHtml(emoji)}" title="React with ${escapeHtml(emoji)}">${escapeHtml(emoji)}</button>`).join("");
+    picker.hidden = false;
+    const box = body.getBoundingClientRect(), rect = reference.getBoundingClientRect();
+    picker.style.left = `${Math.max(8, Math.min(box.width - picker.offsetWidth - 8, rect.left - box.left))}px`;
+    picker.style.top = `${Math.max(8, rect.bottom - box.top + 6)}px`;
+    picker.querySelector("button")?.focus({ preventScroll: true });
+  }
+
+  function reactToNoteSelection(event) {
+    const anchor = noteSelectionAnchor();
+    if (!anchor) { noteNotice("main", "Select some text in the note first.", "bad"); return; }
+    $("[data-note-comment-float]").hidden = true;
+    $("[data-note-assist-float]").hidden = true;
+    openNoteReactionPicker(anchor, event.currentTarget);
+    $("[data-note-react-float]").hidden = true;
+  }
+
+  function wireNoteReactions() {
+    const float = $("[data-note-react-float]");
+    float?.addEventListener("mousedown", (event) => event.preventDefault());
+    float?.addEventListener("click", reactToNoteSelection);
+    $("[data-note-preview-pane]")?.addEventListener("click", (event) => {
+      const toggle = event.target.closest("[data-note-reaction-toggle]");
+      if (toggle) { toggleNoteReaction(toggle.dataset.noteReactionToggle, toggle.dataset.emoji); return; }
+      const add = event.target.closest("[data-note-reaction-add]");
+      const group = add && state.notesView.reactionGroups.get(add.dataset.noteReactionAdd);
+      if (group) openNoteReactionPicker(group.anchor, add);
+    });
+    const picker = $("[data-note-reaction-picker]");
+    picker?.addEventListener("mousedown", (event) => event.preventDefault());
+    picker?.addEventListener("click", (event) => {
+      const pick = event.target.closest("[data-note-reaction-pick]");
+      const anchor = state.notesView.reactionAnchor;
+      if (!pick || !anchor) return;
+      closeNoteReactionPicker();
+      void sendNoteReaction("", "POST", { emoji: pick.dataset.noteReactionPick, ...anchor });
+    });
+    document.addEventListener("click", (event) => {
+      if (!picker || picker.hidden || event.composedPath().some((node) => node === picker || node?.matches?.("[data-note-react-float], [data-note-reaction-add]"))) return;
+      closeNoteReactionPicker();
+    });
+  }
+
   function hideNoteMentions() {
     const list = $("[data-note-mention-list]");
     if (list) list.hidden = true;
@@ -2992,8 +3851,8 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
       $(`[data-note-thread="${mark.dataset.noteThreadMark}"]`)?.scrollIntoView({ block: "nearest" });
     });
     document.addEventListener("selectionchange", () => {
-      const button = $("[data-note-comment-float]"), assist = $("[data-note-assist-float]");
-      if (button && !button.hidden && !noteSelectionAnchor()) { button.hidden = true; if (assist) assist.hidden = true; }
+      const button = $("[data-note-comment-float]"), assist = $("[data-note-assist-float]"), react = $("[data-note-react-float]");
+      if (button && !button.hidden && !noteSelectionAnchor()) { button.hidden = true; if (assist) assist.hidden = true; if (react) react.hidden = true; }
     });
     const panel = $("[data-note-comments]");
     panel?.addEventListener("submit", (event) => {
@@ -3933,12 +4792,13 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
       pages: null, pagesError: "", pageId: "", page: null, pageNoteId: "", pageContent: new Map(),
       pageFetching: new Set(), pageCollapsed: new Map(), pageGeneration: 0, pageOutlineOpen: false,
       pageDraft: null, pageDraftVersion: 0, pageSaving: false, pageDrag: "",
-      live: null, follow: "", followTagTimer: 0, cursorTimer: 0, sentCursor: "", panelTab: "comments",
+      live: null, reactionGroups: new Map(), reactionAnchor: null, imageSelection: null, imageLock: true,
+      pagesTimer: 0, pagesKey: "", pagesZoom: 1, pagesCount: 0, follow: "", followTagTimer: 0, cursorTimer: 0, sentCursor: "", panelTab: "comments",
       chat: null, chatTimer: 0, chatGeneration: 0, chatSending: false, chatScroll: false,
       assist: null, assistReady: null, assistStatus: false,
       outlineOpen: false, outlineKey: "", outlineCurrent: -1, scrollGeometry: null, scrollLead: "source", scrollFrame: 0,
     });
-    try { view.mode = NOTE_MODES.includes(localStorage.getItem(NOTE_MODE_KEY)) ? localStorage.getItem(NOTE_MODE_KEY) : "split"; } catch (_) { view.mode = "split"; }
+    try { view.mode = NOTE_MODES.includes(localStorage.getItem(NOTE_MODE_KEY)) ? localStorage.getItem(NOTE_MODE_KEY) : "live"; } catch (_) { view.mode = "live"; }
 
     let sidePreference = "", sideTab = "";
     try { sidePreference = localStorage.getItem(NOTE_ACTIVITY_KEY) || ""; sideTab = localStorage.getItem(NOTE_SIDE_TAB_KEY) || ""; } catch (_) {}
@@ -3949,6 +4809,8 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
       else openNotePanel("activity");
     });
     wireNoteComments();
+    wireNoteReactions();
+    wireNoteImages();
     wireNoteAssist();
     wireNoteLiveAndChat();
     $("[data-note-panel=\"activity\"]")?.addEventListener("click", (event) => {
@@ -4000,6 +4862,8 @@ hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
         else if (window.matchMedia(NOTE_ACTIVITY_OVERLAY).matches && view.commentsOpen && !view.commentDraft) setNoteCommentsOpen(false, false);
         $("[data-note-comment-float]").hidden = true;
         $("[data-note-assist-float]").hidden = true;
+        $("[data-note-react-float]").hidden = true;
+        closeNoteReactionPicker();
         closeNoteAssist();
       }
     });

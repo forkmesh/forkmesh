@@ -260,9 +260,13 @@ parameter.
 
 ## Live mode
 
-Write, Split, Preview and Live sit in the editor's layout switch (remembered
-in `forkmesh.notes.mode`; people who can only view always get Preview). Live
-is the preview you can edit: the note is cut into blocks at blank lines
+Write, Split, Preview, Live and Pages ([Pages](notes-documents.md#pages))
+sit in the editor's layout switch (remembered
+in `forkmesh.notes.layout`; people who can only view always get Preview).
+Since 2026-11-04 a note opens in Live until you pick another layout; the key
+was renamed from `forkmesh.notes.mode` then, so people whose old default
+(Split) had been saved start in Live once too. Live is the preview you can
+edit: the note is cut into blocks at blank lines
 (a fenced code block stays whole), each rendered on its own, and clicking a
 block turns it into a box holding that block's Markdown, with the caret near
 where you clicked. Typing writes the block back into the note, which autosaves
@@ -274,7 +278,15 @@ title is editable in place. Unchanged blocks keep their rendered elements, so
 images do not reload while you type, and edits from others re-render the
 blocks around the one you are in. Selecting text in a rendered block or in the
 block you are editing offers Comment as in the other modes
-([notes comments](notes-comments.md)).
+([notes comments](notes-comments.md)), and React, whose chips then sit
+under the block ([reactions](notes-comments.md#reactions)).
+
+While others edit, the block holding each one's caret line gets a bar in
+their colour and their name at its corner (`renderNotePeerMarks`), from the
+`line` their cursor, draft and presence frames carry, so you see where
+everyone is typing as their edits arrive. Split's preview and Preview mark
+the element at that line the same way. A mark goes when the person stops
+editing for 10 seconds or leaves.
 
 ## Split mode, the outline and pasted images
 
@@ -321,19 +333,23 @@ Markdown export, delete, and turning a note into a task or an issue.
 
 Known differences:
 
-- Live presence and inline comments run everywhere
+- Live presence, inline comments and reactions run everywhere
   ([notes comments](notes-comments.md)). The web and phones use the note's
   socket; the desktop does not link QtWebSockets, so it polls
   `/api/notes/<id>/presence` every 5 seconds instead (every second while
   following someone, every 2 while the chat is open).
 - Live mode, following someone and the note chat are on the web and the
-  desktop; the phone apps do not have them yet. On the web Live renders the
+  desktop; the phone apps do not have them yet. Both open notes in Live by
+  default. The marks showing where others are editing are on the web (Live,
+  Split and Preview) and the desktop (Write and Live). On the web Live renders the
   note block by block and turns the block you click into its Markdown; on the
   desktop Live styles the Markdown in place and shows the marks only on the
   caret's line ([desktop notes](../desktop/notes.md#live-mode)).
 - The desktop editor has Write and Preview tabs but no split view; phones
-  have no room for one. The outline beside the editor and pasting images
-  from the clipboard are on the web only for now.
+  have no room for one. The outline beside the editor, pasting images
+  from the clipboard, the Pages view and image options are on the web only
+  for now; the other clients hide the options line and show the image as
+  before ([image options](notes-documents.md#image-options)).
 - The desktop autosaves Cloud-only notes. Local and Local + cloud notes save
   with the Save button, because each local save adds an on-disk snapshot.
 - On iOS the format bar adds text at the end of the note: the text editor

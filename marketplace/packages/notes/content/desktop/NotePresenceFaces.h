@@ -2,12 +2,15 @@
 
 #include "NoteComments.h"
 
+#include <QColor>
 #include <QPixmap>
 #include <QWidget>
 
 #include <functional>
 
 namespace forkmesh::notes {
+
+QColor notePresenceColor(const QString &name);
 
 class NotePresenceFaces : public QWidget
 {

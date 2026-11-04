@@ -649,6 +649,10 @@ iOS features Android does not have, because they need an Apple-only API:
   engine `fmm-call.js` has no separate face stream, so Android switches to a
   face stream when the server asks for viewers on weak links but not for its
   own uplink. Closing it means changing the web engine for every client.
+- **Note reactions in the text menu**: Compose's text-selection menu cannot
+  hold a submenu, so React there opens the quick set at the editor toolbar's
+  React button; iOS shows it as a submenu of the edit menu
+  ([phone notes](notes.md)).
 
 ## 12. Shell prompt targets
 
